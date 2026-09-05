@@ -1,0 +1,17 @@
+{
+  "name": "rhinocash-backend",
+  "version": "1.0.0",
+  "description": "Rhinocash Limited — real backend API (auth, RBAC, loans, payments, accounting, investors). Zero external dependencies — Node 20+ built-ins only.",
+  "main": "server.js",
+  "scripts": {
+    "seed": "node seed.js",
+    "seed:demo": "node seed.js --demo",
+    "start": "node server.js",
+    "test": "bash test/run-all.sh"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

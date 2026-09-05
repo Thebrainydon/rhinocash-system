@@ -1,0 +1,180 @@
+// accounting.test.js — real expense approval workflow, requisitions,
+// utility payments, branch/region-scoped financial reports, real
+// pagination on the General Ledger, and end-to-end financial integrity.
+'use strict';
+const BASE = process.env.BASE_URL || 'http://localhost:4000';
+let pass = 0, fail = 0;
+function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
+async function api(method, path, { token, body } = {}) {
+  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  let json = null; try { json = await res.json(); } catch { /* no body */ }
+  return { status: res.status, json };
+}
+async function login(email, password) { const r = await api('POST', '/api/auth/login', { body: { email, password } }); return r.json && r.json.token; }
+async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsToken, acctToken, adminToken, principal, term) {
+  const c = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Acct Test ' + Math.random().toString(36).slice(2, 8), phone: '07' + Math.floor(Math.random() * 90000000 + 10000000) } });
+  const products = await api('GET', '/api/loan-products', { token: officerToken });
+  const loan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: c.json.client.id, product_id: products.json.products[0].id, principal, term_months: term } });
+  await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: mgrToken, body: {} });
+  await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: regionalToken, body: {} });
+  await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: opsToken, body: {} });
+  await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: acctToken, body: {} });
+  await api('POST', `/api/loans/${loan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Bank' } });
+  return loan.json.loan.id;
+}
+
+(async () => {
+  const adminToken = await login('admin@rhinocash.co.ke', process.env.SEEDED_ADMIN_PASSWORD);
+  const managerToken = await login('manager.kisumu@rhinocash.co.ke', process.env.SEEDED_MANAGER_KISUMU_PASSWORD);
+  const nairobiManagerToken = await login('manager@rhinocash.co.ke', process.env.SEEDED_MANAGER_PASSWORD);
+  const regionalToken = await login('regional@rhinocash.co.ke', process.env.SEEDED_REGIONAL_PASSWORD);
+  const opsToken = await login('opsmanager@rhinocash.co.ke', process.env.SEEDED_OPSMGR_PASSWORD);
+  const acctToken = await login('accountant@rhinocash.co.ke', process.env.SEEDED_ACCOUNTANT_PASSWORD);
+  const officerToken = await login('officer@rhinocash.co.ke', process.env.SEEDED_OFFICER_PASSWORD);
+  const ceoToken = await login('ceo@rhinocash.co.ke', process.env.SEEDED_CEO_PASSWORD);
+  assert(adminToken && managerToken && regionalToken && opsToken && acctToken && officerToken && ceoToken, 'all needed accounts log in');
+
+  // =========================================================
+  // 1. LOAN DISBURSEMENT ACCOUNTING — real branch attribution
+  // =========================================================
+  {
+    const cashBefore = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    const loanId = await driveLoanToDisbursed(officerToken, managerToken, regionalToken, opsToken, acctToken, adminToken, 25000, 4);
+    const cashAfter = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'a real Kisumu-branch disbursement decreases the real Kisumu-scoped bank balance');
+
+    const glCheck = await api('GET', `/api/journal-entries?ref_type=loan&ref_id=${loanId}`, { token: adminToken });
+    assert(glCheck.json.entries.length === 2, 'the disbursement created exactly 2 real journal lines (balanced double-entry)');
+    const debits = glCheck.json.entries.reduce((s, e) => s + e.debit, 0);
+    const credits = glCheck.json.entries.reduce((s, e) => s + e.credit, 0);
+    assert(Math.abs(debits - credits) < 0.01, 'the disbursement journal entry is genuinely balanced (debits === credits)');
+    assert(glCheck.json.entries.every(e => e.branch_id === 'br_kisumu'), 'every disbursement journal line carries the real branch_id — previously journal_entries had no branch attribution at all');
+  }
+
+  // =========================================================
+  // 2. EXPENSE APPROVAL WORKFLOW — real Pending -> Approved -> Paid, not auto-Paid
+  // =========================================================
+  {
+    const submitted = await api('POST', '/api/expenses', { token: managerToken, body: { category: 'Stationery', amount: 3000, note: 'Office supplies' } });
+    assert(submitted.status === 201 && submitted.json.expense.status === 'Pending', 'a submitted expense starts as real Pending, not auto-Paid — the prior bug posted straight to the ledger with no approval gate at all');
+
+    const glBeforeApproval = await api('GET', `/api/journal-entries?ref_type=expense&ref_id=${submitted.json.expense.id}`, { token: adminToken });
+    assert(glBeforeApproval.json.entries.length === 0, 'no journal entry exists yet for a merely-submitted (unapproved) expense');
+
+    const wrongRolePay = await api('POST', `/api/expenses/${submitted.json.expense.id}/pay`, { token: managerToken, body: {} });
+    assert(wrongRolePay.status === 403, 'a Manager (no post_accounting_entries permission) cannot pay an expense — RBAC differentiates submit from approve/pay');
+
+    const approved = await api('POST', `/api/expenses/${submitted.json.expense.id}/approve`, { token: acctToken, body: {} });
+    assert(approved.status === 200 && approved.json.expense.status === 'Approved', 'Accountant can approve a real Pending expense');
+
+    const prematurePay = await api('POST', `/api/expenses/${submitted.json.expense.id}/approve`, { token: acctToken, body: {} });
+    assert(prematurePay.status === 409, 'approving an already-Approved expense is rejected — no re-approval of the same expense');
+
+    const paid = await api('POST', `/api/expenses/${submitted.json.expense.id}/pay`, { token: acctToken, body: { account_id: 'bank' } });
+    assert(paid.status === 200 && paid.json.expense.status === 'Paid', 'Accountant can pay a real Approved expense');
+
+    const glAfterPay = await api('GET', `/api/journal-entries?ref_type=expense&ref_id=${submitted.json.expense.id}`, { token: adminToken });
+    assert(glAfterPay.json.entries.length === 2, 'paying the expense NOW creates the real balanced 2-line journal entry, exactly once, only at payment time');
+    const expDebits = glAfterPay.json.entries.reduce((s, e) => s + e.debit, 0);
+    const expCredits = glAfterPay.json.entries.reduce((s, e) => s + e.credit, 0);
+    assert(Math.abs(expDebits - expCredits) < 0.01, 'the expense payment journal entry is balanced');
+
+    const doublePay = await api('POST', `/api/expenses/${submitted.json.expense.id}/pay`, { token: acctToken, body: {} });
+    assert(doublePay.status === 409, 'paying an already-Paid expense is rejected — no duplicate posting');
+
+    // Rejection path.
+    const toReject = await api('POST', '/api/expenses', { token: managerToken, body: { category: 'Travel', amount: 5000 } });
+    const rejected = await api('POST', `/api/expenses/${toReject.json.expense.id}/reject`, { token: acctToken, body: { reason: 'Not budgeted this quarter' } });
+    assert(rejected.status === 200 && rejected.json.expense.status === 'Rejected', 'Accountant can reject a real Pending expense with a reason');
+    const cantPayRejected = await api('POST', `/api/expenses/${toReject.json.expense.id}/pay`, { token: acctToken, body: {} });
+    assert(cantPayRejected.status === 409, 'a Rejected expense can never be paid');
+  }
+
+  // =========================================================
+  // 3. REQUISITIONS — real Submit -> Manager approval -> Accountant pays
+  // =========================================================
+  {
+    const submitted = await api('POST', '/api/requisitions', { token: officerToken, body: { category: 'Field Equipment', amount: 8000, description: 'New POS device' } });
+    assert(submitted.status === 201 && submitted.json.requisition.status === 'Pending', 'a Loan Officer can submit a real requisition, starting Pending');
+
+    const wrongBranchDecide = await api('POST', `/api/requisitions/${submitted.json.requisition.id}/decide`, { token: nairobiManagerToken, body: { decision: 'Approved' } });
+    assert(wrongBranchDecide.status === 403, 'a Nairobi Manager cannot decide on a Kisumu-branch requisition — real branch scope enforced');
+
+    const officerDecide = await api('POST', `/api/requisitions/${submitted.json.requisition.id}/decide`, { token: officerToken, body: { decision: 'Approved' } });
+    assert(officerDecide.status === 403, 'a Loan Officer cannot approve requisitions — no self-approval authority at that level');
+
+    const approved = await api('POST', `/api/requisitions/${submitted.json.requisition.id}/decide`, { token: managerToken, body: { decision: 'Approved' } });
+    assert(approved.status === 200 && approved.json.requisition.status === 'Approved', 'the real Kisumu Manager can approve a requisition within their own branch');
+
+    const paid = await api('POST', `/api/requisitions/${submitted.json.requisition.id}/pay`, { token: acctToken, body: {} });
+    assert(paid.status === 200 && paid.json.requisition.status === 'Paid', 'Accountant pays the Approved requisition, turning it into a real expense');
+    assert(paid.json.requisition.expense_id, 'the paid requisition is genuinely linked to a real expense record — not a second, disconnected financial mechanism');
+
+    const linkedExpense = await api('GET', '/api/expenses?status=Paid', { token: adminToken });
+    assert(linkedExpense.json.expenses.some(e => e.id === paid.json.requisition.expense_id), 'the real linked expense genuinely exists and is Paid');
+
+    const glCheck = await api('GET', `/api/journal-entries?ref_type=requisition&ref_id=${submitted.json.requisition.id}`, { token: adminToken });
+    assert(glCheck.json.entries.length === 2, 'the requisition payment created a real balanced 2-line journal entry');
+
+    // Cancellation and duplicate-decision protection.
+    const another = await api('POST', '/api/requisitions', { token: officerToken, body: { category: 'Supplies', amount: 1500 } });
+    const cancelled = await api('POST', `/api/requisitions/${another.json.requisition.id}/cancel`, { token: officerToken, body: {} });
+    assert(cancelled.status === 200, 'the original submitter can cancel their own Pending requisition');
+    const decideCancelled = await api('POST', `/api/requisitions/${another.json.requisition.id}/decide`, { token: managerToken, body: { decision: 'Approved' } });
+    assert(decideCancelled.status === 409, 'a Cancelled requisition cannot subsequently be approved');
+  }
+
+  // =========================================================
+  // 4. UTILITY PAYMENTS — real expense creation with utility-specific fields
+  // =========================================================
+  {
+    const cashBefore = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    const paid = await api('POST', '/api/utility-payments', { token: acctToken, body: { utility_type: 'Electricity', provider: 'Kenya Power', account_reference: 'ACC-99213', amount: 4500, branch_id: 'br_kisumu', payment_method: 'bank' } });
+    assert(paid.status === 201 && paid.json.utilityPayment.status === 'Paid', 'a real utility payment is created and immediately Paid (routine, pre-approved recurring bill)');
+    assert(paid.json.utilityPayment.expense_id, 'the utility payment is genuinely linked to a real expense record');
+
+    const cashAfter = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'the real utility payment genuinely decreased the real branch cash position');
+
+    const wrongRole = await api('POST', '/api/utility-payments', { token: officerToken, body: { utility_type: 'Water', amount: 1000 } });
+    assert(wrongRole.status === 403, 'a Loan Officer cannot post a utility payment — requires post_accounting_entries');
+  }
+
+  // =========================================================
+  // 5. BRANCH/REGION-SCOPED FINANCIAL REPORTS
+  // =========================================================
+  {
+    const managerTB = await api('GET', '/api/accounting/trial-balance', { token: managerToken });
+    assert(managerTB.status === 200 && managerTB.json.balanced !== undefined, 'a Manager can view a real trial balance, scoped to their own branch by default');
+
+    const managerTBOtherBranch = await api('GET', '/api/accounting/trial-balance?branch_id=br_nairobi', { token: managerToken });
+    assert(managerTBOtherBranch.status === 200, 'requesting another branch does not error out (no existence leak)');
+
+    const adminTB = await api('GET', '/api/accounting/trial-balance', { token: adminToken });
+    assert(adminTB.json.balanced === true, 'the real company-wide trial balance is genuinely balanced (debits === credits) after all this real activity');
+
+    const officerCashPosition = await api('GET', '/api/accounting/cash-position', { token: officerToken });
+    assert(officerCashPosition.status === 200, 'Loan Officer retains real (spec-allowed) accounting read access, scoped to their own branch');
+  }
+
+  // =========================================================
+  // 6. GENERAL LEDGER — real pagination
+  // =========================================================
+  {
+    const page1 = await api('GET', '/api/journal-entries?limit=5&page=1', { token: adminToken });
+    assert(page1.json.entries.length <= 5 && page1.json.pagination.total >= page1.json.entries.length, 'General Ledger returns real pagination metadata, not an unlimited dump');
+    assert(page1.json.pagination.total > 5, 'there is genuinely more than one page of real journal entries by this point in the test suite');
+  }
+
+  // =========================================================
+  // 7. CASHFLOW — real opening/closing balance over a date range
+  // =========================================================
+  {
+    const cf = await api('GET', '/api/accounting/cashflow', { token: adminToken });
+    assert(cf.status === 200 && typeof cf.json.opening === 'number' && typeof cf.json.closing === 'number', 'real cashflow report returns opening/closing balances derived from posted transactions');
+    assert(Math.abs(cf.json.closing - (cf.json.opening + cf.json.net)) < 0.01, 'closing = opening + net is mathematically consistent, not independently fabricated');
+  }
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
+})();

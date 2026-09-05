@@ -1,0 +1,252 @@
+// integration.test.js — hits the REAL, currently-running server with real
+// HTTP requests (Node's built-in fetch). Run the server first:
+//   node server.js &
+//   node test/integration.test.js
+'use strict';
+
+const BASE = process.env.BASE_URL || 'http://localhost:4000';
+let pass = 0, fail = 0;
+function assert(cond, msg) {
+  if (cond) { pass++; console.log('OK:', msg); }
+  else { fail++; console.error('FAIL:', msg); }
+}
+
+async function api(method, path, { token, body } = {}) {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json = null;
+  try { json = await res.json(); } catch { /* no body */ }
+  return { status: res.status, json };
+}
+
+(async () => {
+  // ---- 1. Health ----
+  {
+    const r = await api('GET', '/api/health');
+    assert(r.status === 200 && r.json.ok, 'health check responds');
+  }
+
+  // ---- 2. Auth: wrong password fails, tracked ----
+  {
+    const r = await api('POST', '/api/auth/login', { body: { email: 'admin@rhinocash.co.ke', password: 'wrong-password' } });
+    assert(r.status === 401, 'wrong password is rejected');
+  }
+
+  // ---- 3. Real admin login (using the credentials seed.js actually printed) ----
+  const ADMIN_EMAIL = 'admin@rhinocash.co.ke';
+  const ADMIN_PASSWORD = process.env.SEEDED_ADMIN_PASSWORD; // passed in by the test runner script
+  let adminToken;
+  {
+    const r = await api('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+    assert(r.status === 200 && r.json.token, 'admin logs in with real seeded credentials');
+    assert(r.json.mustChangePassword === true, 'fresh admin account is flagged to force a password change');
+    adminToken = r.json.token;
+  }
+
+  // ---- 4. Forced password change actually works, and old sessions elsewhere get revoked ----
+  {
+    const r = await api('POST', '/api/auth/change-password', { token: adminToken, body: { newPassword: 'N3wSecureAdminPass!' } });
+    assert(r.status === 200, 'admin can change password on first login');
+    const relogin = await api('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: 'N3wSecureAdminPass!' } });
+    assert(relogin.status === 200, 'admin can log in with the new password');
+    adminToken = relogin.json.token;
+    const oldPasswordAttempt = await api('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+    assert(oldPasswordAttempt.status === 401, 'the old temp password no longer works after change');
+  }
+
+  // ---- 5. RBAC: unauthenticated request is rejected ----
+  {
+    const r = await api('GET', '/api/users');
+    assert(r.status === 401, 'unauthenticated request to a protected route is rejected');
+  }
+
+  // ---- 6. Admin creates a new Loan Officer user ----
+  let officerToken, officerId, officerEmail;
+  {
+    officerEmail = 'test.officer@rhinocash.co.ke';
+    const r = await api('POST', '/api/users', {
+      token: adminToken,
+      body: { name: 'Test Officer', email: officerEmail, role_id: 'loan_officer', branch_id: 'br_kisumu', phone: '0700000099' },
+    });
+    assert(r.status === 201 && r.json.tempPassword, 'admin creates a new Loan Officer with a real generated temp password');
+    officerId = r.json.user.id;
+    const login = await api('POST', '/api/auth/login', { body: { email: officerEmail, password: r.json.tempPassword } });
+    assert(login.status === 200, 'the newly created officer can log in with their temp password');
+    officerToken = login.json.token;
+    // force through their own required password change so later calls aren't blocked
+    await api('POST', '/api/auth/change-password', { token: officerToken, body: { newPassword: 'OfficerPass!234' } });
+    const relogin = await api('POST', '/api/auth/login', { body: { email: officerEmail, password: 'OfficerPass!234' } });
+    officerToken = relogin.json.token;
+  }
+
+  // ---- 7. RBAC: a Loan Officer cannot create other users (no manage_users permission) ----
+  {
+    const r = await api('POST', '/api/users', { token: officerToken, body: { name: 'Should Fail', email: 'x@x.com', role_id: 'loan_officer' } });
+    assert(r.status === 403, 'loan officer is blocked from creating users (server-side, not just hidden UI)');
+  }
+
+  // ---- 8. RBAC: module-level restriction actually blocks access, even though role allows it ----
+  {
+    const before = await api('GET', '/api/notifications', { token: officerToken });
+    assert(before.status === 200, 'officer can access notifications before restriction');
+    const restrict = await api('PUT', `/api/users/${officerId}/module-access`, { token: adminToken, body: { modules: ['dashboard', 'clients'] } });
+    assert(restrict.status === 200, 'admin sets a personal module-access restriction on the officer');
+    const clientsCheck = await api('GET', '/api/clients', { token: officerToken });
+    assert(clientsCheck.status === 200, 'officer can still access an explicitly-allowed module (clients)');
+    const paymentsCheck = await api('GET', '/api/payments', { token: officerToken });
+    assert(paymentsCheck.status === 403, 'officer is blocked from a module NOT in their personal restriction, despite role normally allowing it');
+    const reset = await api('POST', `/api/users/${officerId}/reset-access`, { token: adminToken });
+    assert(reset.status === 200, 'admin resets officer access back to role defaults');
+    const paymentsAfterReset = await api('GET', '/api/payments', { token: officerToken });
+    assert(paymentsAfterReset.status === 200, 'after reset, officer regains normal role-based access');
+  }
+
+  // ---- 9. Suspended account cannot log in ----
+  {
+    const suspend = await api('POST', `/api/users/${officerId}/status`, { token: adminToken, body: { status: 'Suspended', reason: 'test' } });
+    assert(suspend.status === 200, 'admin suspends the officer');
+    const blockedLogin = await api('POST', '/api/auth/login', { body: { email: officerEmail, password: 'OfficerPass!234' } });
+    assert(blockedLogin.status === 403, 'suspended account cannot log in');
+    const reactivate = await api('POST', `/api/users/${officerId}/status`, { token: adminToken, body: { status: 'Active' } });
+    assert(reactivate.status === 200, 'admin reactivates the officer');
+    const okLogin = await api('POST', '/api/auth/login', { body: { email: officerEmail, password: 'OfficerPass!234' } });
+    assert(okLogin.status === 200, 'reactivated account can log in again');
+    officerToken = okLogin.json.token;
+  }
+
+  // ---- 10. Revoke sessions actually invalidates the token server-side ----
+  {
+    const meBefore = await api('GET', '/api/auth/me', { token: officerToken });
+    assert(meBefore.status === 200, 'officer session works before revocation');
+    const revoke = await api('POST', `/api/users/${officerId}/revoke-sessions`, { token: adminToken });
+    assert(revoke.status === 200 && revoke.json.revoked >= 1, 'admin revokes the officer\'s session(s)');
+    const meAfter = await api('GET', '/api/auth/me', { token: officerToken });
+    assert(meAfter.status === 401, 'the exact same token is now rejected — real server-side revocation, not just client-side logout');
+    const relogin = await api('POST', '/api/auth/login', { body: { email: officerEmail, password: 'OfficerPass!234' } });
+    officerToken = relogin.json.token;
+  }
+
+  // ---- 11. Full client + loan lifecycle, real sequential 4-level approval ----
+  let clientId, loanId;
+  {
+    const c = await api('POST', '/api/clients', { token: officerToken, body: { name: 'John Mwangi', phone: '0722555001', national_id: '30112233' } });
+    assert(c.status === 201, 'officer creates a client');
+    clientId = c.json.client.id;
+
+    const products = await api('GET', '/api/loan-products', { token: officerToken });
+    const productId = products.json.products[0].id;
+
+    const badAmount = await api('POST', '/api/loans', { token: officerToken, body: { client_id: clientId, product_id: productId, principal: 999999999, term_months: 6 } });
+    assert(badAmount.status === 400, 'loan amount outside product range is rejected server-side');
+
+    const loan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: clientId, product_id: productId, principal: 50000, term_months: 6, purpose: 'Stock' } });
+    assert(loan.status === 201 && loan.json.loan.status === 'Waiting for Manager', 'loan application starts at step 1: Waiting for Manager');
+    loanId = loan.json.loan.id;
+
+    // Loan officer cannot approve their own loan (no approve_loans permission)
+    const selfApprove = await api('POST', `/api/loans/${loanId}/approve`, { token: officerToken, body: {} });
+    assert(selfApprove.status === 403, 'loan officer cannot approve loans (server-enforced)');
+
+    // Regional Manager cannot approve out of order (loan is waiting for Manager, not them)
+    const rmLogin = await api('POST', '/api/auth/login', { body: { email: 'regional@rhinocash.co.ke', password: process.env.SEEDED_REGIONAL_PASSWORD } });
+    const outOfOrder = await api('POST', `/api/loans/${loanId}/approve`, { token: rmLogin.json.token, body: {} });
+    assert(outOfOrder.status === 403, 'Regional Manager blocked from approving out of sequence — loan is waiting for Manager, not them');
+
+    // Manager approves -> step 2 (must be the Kisumu-branch manager — the
+    // loan belongs to a Kisumu client/officer, and branch scope is now
+    // actually enforced, so the Nairobi manager correctly CANNOT do this).
+    const nairobiMgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });
+    const wrongBranchAttempt = await api('POST', `/api/loans/${loanId}/approve`, { token: nairobiMgrLogin.json.token, body: {} });
+    assert(wrongBranchAttempt.status === 403, 'a Manager from a DIFFERENT branch cannot approve this loan (branch scope enforced on the approval action itself)');
+    const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    const step1 = await api('POST', `/api/loans/${loanId}/approve`, { token: mgrLogin.json.token, body: { comments: 'Looks fine' } });
+    assert(step1.status === 200 && step1.json.loan.status === 'Waiting for Regional Manager', 'Manager approval advances loan to Waiting for Regional Manager');
+
+    // Now Manager trying again should be blocked (no longer their turn)
+    const managerAgain = await api('POST', `/api/loans/${loanId}/approve`, { token: mgrLogin.json.token, body: {} });
+    assert(managerAgain.status === 403, 'Manager cannot approve the same loan twice / out of turn');
+
+    // Regional Manager approves -> step 3
+    const step2 = await api('POST', `/api/loans/${loanId}/approve`, { token: rmLogin.json.token, body: {} });
+    assert(step2.status === 200 && step2.json.loan.status === 'Waiting for Operational Manager', 'Regional Manager approval advances to Waiting for Operational Manager');
+
+    // Operational Manager approves -> step 4
+    const omLogin = await api('POST', '/api/auth/login', { body: { email: 'opsmanager@rhinocash.co.ke', password: process.env.SEEDED_OPSMGR_PASSWORD } });
+    const step3 = await api('POST', `/api/loans/${loanId}/approve`, { token: omLogin.json.token, body: {} });
+    assert(step3.status === 200 && step3.json.loan.status === 'Waiting for Accountant', 'Operational Manager approval advances to Waiting for Accountant');
+
+    // Accountant approves -> Approved for Disbursement
+    const acctLogin = await api('POST', '/api/auth/login', { body: { email: 'accountant@rhinocash.co.ke', password: process.env.SEEDED_ACCOUNTANT_PASSWORD } });
+    const step4 = await api('POST', `/api/loans/${loanId}/approve`, { token: acctLogin.json.token, body: {} });
+    assert(step4.status === 200 && step4.json.loan.status === 'Approved for Disbursement', 'Accountant approval completes the chain: Approved for Disbursement');
+
+    // Full approval history recorded with approver/role/decision/timestamps
+    const detail = await api('GET', `/api/loans/${loanId}`, { token: adminToken });
+    assert(detail.json.approvals.length === 4, 'all 4 approval decisions are permanently recorded');
+    assert(detail.json.approvals.every(a => a.approver_id && a.role_id && a.decision && a.created_at), 'each approval record has approver, role, decision, and timestamp');
+
+    // Disburse — disbursement is a Manager/Operational Manager/Admin action, not the Accountant's
+    // (matches the original frontend's permission matrix: Accountant approves, doesn't disburse).
+    const accountantCannotDisburse = await api('POST', `/api/loans/${loanId}/disburse`, { token: acctLogin.json.token, body: { channel: 'M-Pesa' } });
+    assert(accountantCannotDisburse.status === 403, 'Accountant cannot disburse (approves only — server-enforced permission split)');
+    const disburse = await api('POST', `/api/loans/${loanId}/disburse`, { token: adminToken, body: { channel: 'M-Pesa' } });
+    assert(disburse.status === 200 && disburse.json.loan.status === 'Active', 'disbursement activates the loan');
+    assert(disburse.json.schedule.length === 6, 'disbursement generates a real 6-month repayment schedule');
+
+    // Record a payment, verify allocation + cash position moves
+    const cashBefore = await api('GET', '/api/accounting/cash-position', { token: adminToken });
+    const payment = await api('POST', '/api/payments', { token: officerToken, body: { loan_id: loanId, amount: 9500, channel: 'M-Pesa' } });
+    assert(payment.status === 201 && payment.json.payment.status === 'Posted', 'payment recorded and posted');
+    const cashAfter = await api('GET', '/api/accounting/cash-position', { token: adminToken });
+    assert(cashAfter.json.balances.mpesa > cashBefore.json.balances.mpesa, 'cash position (M-Pesa account) increases from a real posted payment, derived from the ledger');
+
+    // Reverse it (accountant permission), verify schedule unwinds
+    const scheduleBefore = (await api('GET', `/api/loans/${loanId}`, { token: adminToken })).json.schedule;
+    const paidBefore = scheduleBefore[0].paid_amount;
+    const reverse = await api('POST', `/api/payments/${payment.json.payment.id}/reverse`, { token: acctLogin.json.token, body: { reason: 'test reversal' } });
+    assert(reverse.status === 200 && reverse.json.payment.status === 'Reversed', 'accountant can reverse a payment');
+    const scheduleAfter = (await api('GET', `/api/loans/${loanId}`, { token: adminToken })).json.schedule;
+    assert(scheduleAfter[0].paid_amount < paidBefore, 'reversal actually unwinds the schedule allocation');
+  }
+
+  // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----
+  {
+    const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });
+    const managerClients = await api('GET', '/api/clients', { token: mgrLogin.json.token });
+    const foundKisumuClient = managerClients.json.clients.some(c => c.id === clientId);
+    assert(!foundKisumuClient, 'Nairobi-branch Manager does NOT see a client created in the Kisumu branch (real branch scoping)');
+  }
+
+  // ---- 13. Investor isolation: investor auth is structurally separate, cannot reach staff endpoints ----
+  {
+    const invLogin = await api('POST', '/api/investor-auth/login', { body: { email: 'sara.investor@example.com', password: process.env.SEEDED_INVESTOR_PASSWORD } });
+    assert(invLogin.status === 200, 'investor logs in through the dedicated investor auth endpoint');
+    const invToken = invLogin.json.token;
+    const meInv = await api('GET', '/api/investor/me', { token: invToken });
+    assert(meInv.status === 200 && meInv.json.name === 'Sara Mbula', 'investor sees only their own record');
+    const tryStaffRoute = await api('GET', '/api/users', { token: invToken });
+    assert(tryStaffRoute.status === 401, 'an investor token is structurally rejected by staff-only endpoints (no role_id at all)');
+    const payouts = await api('GET', '/api/investor/payouts', { token: invToken });
+    assert(payouts.status === 200, 'investor can view their own payout history');
+  }
+
+  // ---- 14. Audit log actually recorded everything above ----
+  {
+    const audit = await api('GET', '/api/audit-logs', { token: adminToken });
+    assert(audit.status === 200, 'admin can read the audit log');
+    const actions = audit.json.auditLogs.map(a => a.action);
+    ['User logged in', 'Created user', 'Approved loan', 'Disbursed loan', 'Reversed payment', 'Set status to Suspended', 'Revoked sessions']
+      .forEach(expected => assert(actions.includes(expected), `audit log contains a real "${expected}" entry`));
+    const nonAdmin = await api('GET', '/api/audit-logs', { token: officerToken });
+    assert(nonAdmin.status === 403, 'a Loan Officer cannot read the audit log (module-gated)');
+  }
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
+})();
