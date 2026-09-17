@@ -8,3 +8,9 @@ node_modules/
 .env
 *.tmp
 test/frontend-integration.combined.js
+
+# Scratch space for test/run-all.sh and test/run-frontend.sh — the test
+# database, its WAL/SHM sidecars, seed output, and server logs for each
+# suite. Never the real application database (see rhinocash-backend/data/
+# above); this directory only ever holds throwaway test-run artifacts.
+test/tmp/

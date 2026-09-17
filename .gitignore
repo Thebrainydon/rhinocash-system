@@ -18,5 +18,10 @@ rhinocash-backend/.env
 rhinocash-backend/test/frontend-integration.combined.js
 rhinocash-app/extracted.js
 
+# Scratch space for rhinocash-backend/test/run-all.sh and
+# run-frontend.sh — test database + WAL/SHM sidecars, seed output, and
+# server logs. Never the real application database.
+rhinocash-backend/test/tmp/
+
 *.tmp
 .DS_Store
