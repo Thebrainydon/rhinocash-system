@@ -28,47 +28,47 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   // =========================================================
   {
     const { run, all, get, transaction } = require('../src/db');
-    run('CREATE TABLE IF NOT EXISTS atomicity_probe (id INTEGER PRIMARY KEY, val TEXT)');
-    run('DELETE FROM atomicity_probe');
+    await run('CREATE TABLE IF NOT EXISTS atomicity_probe (id BIGSERIAL PRIMARY KEY, val TEXT)');
+    await run('DELETE FROM atomicity_probe');
 
-    transaction(() => {
-      run('INSERT INTO atomicity_probe (val) VALUES (?)', ['a']);
-      run('INSERT INTO atomicity_probe (val) VALUES (?)', ['b']);
+    await transaction(async () => {
+      await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['a']);
+      await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['b']);
     });
-    assert(all('SELECT * FROM atomicity_probe').length === 2, 'a real successful transaction commits every statement inside it');
+    assert((await all('SELECT * FROM atomicity_probe')).length === 2, 'a real successful transaction commits every statement inside it');
 
     let threw = false;
     try {
-      transaction(() => {
-        run('INSERT INTO atomicity_probe (val) VALUES (?)', ['c']);
-        run('INSERT INTO atomicity_probe (val) VALUES (?)', ['d']);
+      await transaction(async () => {
+        await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['c']);
+        await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['d']);
         throw new Error('deliberate mid-transaction failure — simulating a real crash between two financial writes');
       });
     } catch (e) { threw = true; }
     assert(threw, 'the deliberate error genuinely propagates out of transaction() — never silently swallowed');
-    assert(all('SELECT * FROM atomicity_probe').length === 2, 'the real rollback discarded BOTH statements from the failed transaction — never just the one that threw, and never left partially applied');
+    assert((await all('SELECT * FROM atomicity_probe')).length === 2, 'the real rollback discarded BOTH statements from the failed transaction — never just the one that threw, and never left partially applied');
 
     // Nested transaction() calls join the outer one — a real regression
     // guard for the exact pattern the payment/disbursement routes use
     // (e.g. a route-level transaction() wrapping a call to a function
     // that also wraps itself in transaction()).
-    transaction(() => {
-      run('INSERT INTO atomicity_probe (val) VALUES (?)', ['e']);
-      transaction(() => { run('INSERT INTO atomicity_probe (val) VALUES (?)', ['f']); });
+    await transaction(async () => {
+      await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['e']);
+      await transaction(async () => { await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['f']); });
     });
-    assert(all('SELECT * FROM atomicity_probe').length === 4, 'nested transaction() calls correctly join the outer transaction rather than erroring on a second real BEGIN');
+    assert((await all('SELECT * FROM atomicity_probe')).length === 4, 'nested transaction() calls correctly join the outer transaction rather than erroring on a second real BEGIN');
 
     let nestedFailureThrew = false;
     try {
-      transaction(() => {
-        run('INSERT INTO atomicity_probe (val) VALUES (?)', ['g']);
-        transaction(() => {
-          run('INSERT INTO atomicity_probe (val) VALUES (?)', ['h']);
+      await transaction(async () => {
+        await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['g']);
+        await transaction(async () => {
+          await run('INSERT INTO atomicity_probe (val) VALUES (?)', ['h']);
           throw new Error('failure inside the nested call');
         });
       });
     } catch (e) { nestedFailureThrew = true; }
-    assert(nestedFailureThrew && all('SELECT * FROM atomicity_probe').length === 4, 'a failure inside a NESTED transaction() call rolls back the entire OUTER transaction too, including the statement that ran before the nested call — proving nesting does not create a false sense of partial safety');
+    assert(nestedFailureThrew && (await all('SELECT * FROM atomicity_probe')).length === 4, 'a failure inside a NESTED transaction() call rolls back the entire OUTER transaction too, including the statement that ran before the nested call — proving nesting does not create a false sense of partial safety');
   }
 
   // =========================================================
@@ -90,7 +90,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
 
     // Verify the real journal entries genuinely exist for this exact payment — not just that the payment row exists.
     const { all: dbAll } = require('../src/db');
-    const journalRows = dbAll(`SELECT * FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [payment.json.payment.id]);
+    const journalRows = await dbAll(`SELECT * FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [payment.json.payment.id]);
     assert(journalRows.length >= 2, 'the real payment has real journal entries — confirming the transaction committed all statements together, not just the payment row');
     const totalDebit = journalRows.reduce((s, r) => s + r.debit, 0);
     const totalCredit = journalRows.reduce((s, r) => s + r.credit, 0);
@@ -113,9 +113,9 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(disburse.status === 200, 'real disbursement still succeeds with transaction wrapping in place');
 
     const { all: dbAll2, get: dbGet2 } = require('../src/db');
-    const loanRow = dbGet2('SELECT * FROM loans WHERE id = ?', [loanId]);
-    const scheduleRows = dbAll2('SELECT * FROM loan_schedule WHERE loan_id = ?', [loanId]);
-    const journalRows2 = dbAll2(`SELECT * FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId]);
+    const loanRow = await dbGet2('SELECT * FROM loans WHERE id = ?', [loanId]);
+    const scheduleRows = await dbAll2('SELECT * FROM loan_schedule WHERE loan_id = ?', [loanId]);
+    const journalRows2 = await dbAll2(`SELECT * FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId]);
     assert(loanRow.status === 'Active', 'the real loan status is genuinely Active');
     assert(scheduleRows.length === 3, 'the real loan schedule (3 installments) was genuinely built');
     assert(journalRows2.length === 2, 'the real disbursement journal entries (debit + credit) genuinely exist — status, schedule, and journal all committed together in the one real transaction');

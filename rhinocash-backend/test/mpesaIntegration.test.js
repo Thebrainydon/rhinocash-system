@@ -106,32 +106,32 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
 
     // First, register a real STK request mapping (what initiateStkPush does on success).
     const { run, get } = require('../src/db');
-    run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment, initiated_by) VALUES (?,?,?,?,?,?)`,
+    await run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment, initiated_by) VALUES (?,?,?,?,?,?)`,
       [checkoutId, loanId, '254712345678', 5000, 'sandbox', null]);
 
-    const recorded = mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 5000, mpesaReceiptNumber: 'NLJ7RT61SV', phone: '254712345678' });
+    const recorded = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 5000, mpesaReceiptNumber: 'NLJ7RT61SV', phone: '254712345678' });
     assert(!recorded.duplicate && recorded.loanId === loanId, 'recordCallback() correctly looks up the real loan via the real STK-request mapping, not a value trusted from the callback body');
 
-    const beforePayments = get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId]).c;
-    const processed = mpesa.processCallback(recorded.id, null);
+    const beforePayments = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    const processed = await mpesa.processCallback(recorded.id, null);
     assert(processed.ok && processed.created && processed.paymentId, 'processCallback() creates a real payment for a successful, real-loan-attributed callback');
-    const afterPayments = get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId]).c;
+    const afterPayments = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
     assert(afterPayments === beforePayments + 1, 'exactly one real new payment row was created — not zero, not two');
 
-    const payment = get('SELECT * FROM payments WHERE id = ?', [processed.paymentId]);
+    const payment = await get('SELECT * FROM payments WHERE id = ?', [processed.paymentId]);
     assert(payment && payment.channel === 'M-Pesa' && Math.abs(payment.amount - 5000) < 0.01, 'the real created payment has the correct channel and amount');
 
-    const journalRows = get(`SELECT COALESCE(SUM(debit),0) as d, COALESCE(SUM(credit),0) as c, COUNT(*) as n FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [processed.paymentId]);
+    const journalRows = await get(`SELECT COALESCE(SUM(debit),0) as d, COALESCE(SUM(credit),0) as c, COUNT(*) as n FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [processed.paymentId]);
     assert(journalRows.n >= 2 && Math.abs(journalRows.d - journalRows.c) < 0.01, 'a real, genuinely balanced journal entry was posted for the M-Pesa payment (funding + principal/interest allocation lines), via the same postPaymentJournal() every other channel uses — not a second accounting engine');
 
     // Idempotency: re-processing (simulating Safaricom retrying the same callback) creates nothing new.
-    const reprocessed = mpesa.processCallback(recorded.id, null);
+    const reprocessed = await mpesa.processCallback(recorded.id, null);
     assert(reprocessed.ok === false && reprocessed.alreadyProcessed === true, 'reprocessing an already-processed callback is a real no-op, not a silent success that could double-pay');
-    const afterReprocess = get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId]).c;
+    const afterReprocess = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
     assert(afterReprocess === afterPayments, 'no additional payment was created on reprocessing — real duplicate protection');
 
     // Duplicate callback at the recordCallback layer too (Safaricom literally POSTing the same CheckoutRequestID twice).
-    const duplicateCallback = mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 5000, mpesaReceiptNumber: 'NLJ7RT61SV', phone: '254712345678' });
+    const duplicateCallback = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 5000, mpesaReceiptNumber: 'NLJ7RT61SV', phone: '254712345678' });
     assert(duplicateCallback.duplicate === true, 'a real duplicate callback (same CheckoutRequestID) is recognized and never creates a second callback row');
   }
 
@@ -143,12 +143,12 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const crypto = require('node:crypto');
     const { run, get } = require('../src/db');
     const checkoutId = 'ws_CO_failtest_' + crypto.randomUUID();
-    run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment) VALUES (?,?,?,?,?)`, [checkoutId, loanId, '254712345678', 2000, 'sandbox']);
-    const recorded = mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 1032, resultDesc: 'Request cancelled by user', amount: null, mpesaReceiptNumber: null, phone: '254712345678' });
-    const beforeCount = get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId]).c;
-    const processed = mpesa.processCallback(recorded.id, null);
+    await run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment) VALUES (?,?,?,?,?)`, [checkoutId, loanId, '254712345678', 2000, 'sandbox']);
+    const recorded = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 1032, resultDesc: 'Request cancelled by user', amount: null, mpesaReceiptNumber: null, phone: '254712345678' });
+    const beforeCount = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    const processed = await mpesa.processCallback(recorded.id, null);
     assert(processed.ok && processed.created === false, 'a real failed/cancelled STK callback is correctly processed as "no payment", not silently ignored or errored');
-    const afterCount = get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId]).c;
+    const afterCount = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
     assert(afterCount === beforeCount, 'no real payment was created for a failed callback');
   }
 
@@ -178,9 +178,9 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const crypto = require('node:crypto');
     const checkoutId = 'ws_CO_detail_' + crypto.randomUUID();
     const { run } = require('../src/db');
-    run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment) VALUES (?,?,?,?,?)`, [checkoutId, loanId, '254712345678', 6000, 'sandbox']);
-    const recorded = mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 6000, mpesaReceiptNumber: 'DETAILREC1', phone: '254712345678' });
-    mpesa.processCallback(recorded.id, null);
+    await run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment) VALUES (?,?,?,?,?)`, [checkoutId, loanId, '254712345678', 6000, 'sandbox']);
+    const recorded = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 6000, mpesaReceiptNumber: 'DETAILREC1', phone: '254712345678' });
+    await mpesa.processCallback(recorded.id, null);
 
     const detail = await api('GET', `/api/mpesa/transactions/${recorded.id}`, { token: managerToken });
     assert(detail.status === 200 && detail.json.callback && detail.json.callback.id === recorded.id, 'real transaction detail returns the real callback record');

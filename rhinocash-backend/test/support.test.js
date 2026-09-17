@@ -134,12 +134,12 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
 
     // Directly backdate the real created_at to simulate real elapsed time (this environment cannot wait 4 real hours).
     const { run } = require('../src/db');
-    run(`UPDATE support_tickets SET created_at = datetime('now', '-5 hours') WHERE id = ?`, [slaTicketId]);
+    await run(`UPDATE support_tickets SET created_at = iso_offset(interval '-5 hours') WHERE id = ?`, [slaTicketId]);
     const overdueDetail = await api('GET', `/api/support-tickets/${slaTicketId}`, { token: officerToken });
     assert(overdueDetail.json.sla.status === 'OVERDUE' && overdueDetail.json.sla.overdueHours > 0, 'the same real ticket, now genuinely past its real deadline, correctly reports OVERDUE with a real overdue duration');
 
     const dueSoonSetup = await api('POST', '/api/support-tickets', { token: officerToken, body: { subject: 'Due soon test', message: 'x', priority: 'Critical' } });
-    run(`UPDATE support_tickets SET created_at = datetime('now', '-3.5 hours') WHERE id = ?`, [dueSoonSetup.json.ticket.id]);
+    await run(`UPDATE support_tickets SET created_at = iso_offset(interval '-3.5 hours') WHERE id = ?`, [dueSoonSetup.json.ticket.id]);
     const dueSoonDetail = await api('GET', `/api/support-tickets/${dueSoonSetup.json.ticket.id}`, { token: officerToken });
     assert(dueSoonDetail.json.sla.status === 'DUE_SOON', 'a real ticket within the last 20% of its SLA window correctly reports DUE_SOON, distinct from OVERDUE');
 

@@ -41,7 +41,7 @@ const SLA_TARGET_HOURS = { Critical: 4, High: 24, Medium: 72, Low: 120 };
 
 function ticketSlaInfo(ticket) {
   const targetHours = SLA_TARGET_HOURS[ticket.priority] || SLA_TARGET_HOURS.Medium;
-  const createdAt = new Date(ticket.created_at + 'Z');
+  const createdAt = new Date(ticket.created_at);
   const deadline = new Date(createdAt.getTime() + targetHours * 3600 * 1000);
   const now = new Date();
   const ageHours = (now - createdAt) / 3600000;
@@ -88,6 +88,10 @@ function register(router) {
     // Fixed: previously updated by id alone — any authenticated user could
     // mark (or, via other endpoints, infer the contents of) another user's
     // notification just by knowing/guessing its id.
+    // notifications.id is a real bigint column — a non-numeric id can
+    // never match a real row, and letting it reach the query would throw
+    // a Postgres cast error instead of a clean 404.
+    if (!/^\d+$/.test(req.params.id)) return next({ status: 404, message: 'Notification not found' });
     const notif = await get('SELECT * FROM notifications WHERE id = ?', [req.params.id]);
     if (!notif) return next({ status: 404, message: 'Notification not found' });
     if (notif.user_id !== null && notif.user_id !== req.user.id) {
@@ -134,7 +138,7 @@ function register(router) {
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
     const resolvedThisPeriod = withSla.filter(t => t.resolved_at && new Date(t.resolved_at) >= monthStart);
     const avgResolutionHours = resolvedThisPeriod.length
-      ? resolvedThisPeriod.reduce((s, t) => s + (new Date(t.resolved_at) - new Date(t.created_at + 'Z')) / 3600000, 0) / resolvedThisPeriod.length
+      ? resolvedThisPeriod.reduce((s, t) => s + (new Date(t.resolved_at) - new Date(t.created_at)) / 3600000, 0) / resolvedThisPeriod.length
       : null;
     res.json({ open, inProgress, high, critical, dueSoon, overdue, resolvedThisPeriod: resolvedThisPeriod.length, avgResolutionHours });
   });

@@ -69,11 +69,11 @@ async function driveLoanToApproved(officerToken, mgrToken, regionalToken, opsTok
     conversationId2 = 'AG_' + crypto.randomUUID();
     const reqId = 'b2creq_' + crypto.randomUUID();
     const originatorId = 'b2c_' + crypto.randomUUID();
-    run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status, initiated_by) VALUES (?,?,?,?,?,?,?,?,?)`,
+    await run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status, initiated_by) VALUES (?,?,?,?,?,?,?,?,?)`,
       [reqId, originatorId, conversationId2, loanId2, '254712345678', 40000, 'sandbox', 'Pending', null]);
-    run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId2]);
+    await run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId2]);
 
-    const loanMidFlight = get('SELECT status FROM loans WHERE id = ?', [loanId2]);
+    const loanMidFlight = await get('SELECT status FROM loans WHERE id = ?', [loanId2]);
     assert(loanMidFlight.status === 'Disbursement Pending', 'a real B2C request accepted by Safaricom moves the loan to Disbursement Pending — NOT Active — until a real result callback arrives');
 
     // Duplicate initiation blocked while one is in flight.
@@ -87,20 +87,20 @@ async function driveLoanToApproved(officerToken, mgrToken, regionalToken, opsTok
   {
     const mpesa = require('../src/integrations/mpesa');
     const { get } = require('../src/db');
-    const outcome = mpesa.processB2cResult({ conversationId: conversationId2, resultCode: '0', resultDesc: 'Success', transactionAmount: '40000', transactionReceipt: 'TESTB2CREC1' });
+    const outcome = await mpesa.processB2cResult({ conversationId: conversationId2, resultCode: '0', resultDesc: 'Success', transactionAmount: '40000', transactionReceipt: 'TESTB2CREC1' });
     assert(outcome.ok && outcome.disbursed === true, 'a real successful B2C result genuinely completes the disbursement via the real bridge function');
 
-    const loanAfter = get('SELECT * FROM loans WHERE id = ?', [loanId2]);
+    const loanAfter = await get('SELECT * FROM loans WHERE id = ?', [loanId2]);
     assert(loanAfter.status === 'Active' && loanAfter.disbursed_at, 'the loan is now genuinely Active/disbursed, only after the real confirmed callback');
 
-    const journalCount = get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId2]).c;
+    const journalCount = (await get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId2])).c;
     assert(journalCount === 2, 'a real balanced journal entry was posted for this B2C disbursement — via the exact same completeDisbursement() a manual disbursement uses');
 
     // Idempotency: a duplicate real result callback (Safaricom retry) does nothing extra.
     const beforeJournals = journalCount;
-    const reprocessed = mpesa.processB2cResult({ conversationId: conversationId2, resultCode: '0', resultDesc: 'Success', transactionAmount: '40000', transactionReceipt: 'TESTB2CREC1' });
+    const reprocessed = await mpesa.processB2cResult({ conversationId: conversationId2, resultCode: '0', resultDesc: 'Success', transactionAmount: '40000', transactionReceipt: 'TESTB2CREC1' });
     assert(reprocessed.ok && reprocessed.alreadyProcessed === true, 'reprocessing an already-successful B2C result is a real no-op, not a second disbursement attempt');
-    const afterJournals = get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId2]).c;
+    const afterJournals = (await get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId2])).c;
     assert(afterJournals === beforeJournals, 'no duplicate journal entry was created on reprocessing — real idempotency, not just an acknowledged-but-unsafe retry');
   }
 
@@ -113,18 +113,18 @@ async function driveLoanToApproved(officerToken, mgrToken, regionalToken, opsTok
     const { run, get } = require('../src/db');
     const crypto = require('node:crypto');
     const conversationId3 = 'AG_' + crypto.randomUUID();
-    run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status) VALUES (?,?,?,?,?,?,?,?)`,
+    await run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status) VALUES (?,?,?,?,?,?,?,?)`,
       ['b2creq_' + crypto.randomUUID(), 'b2c_' + crypto.randomUUID(), conversationId3, loanId3, '254712345678', 15000, 'sandbox', 'Pending']);
-    run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId3]);
+    await run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId3]);
 
     const mpesa = require('../src/integrations/mpesa');
-    const outcome = mpesa.processB2cResult({ conversationId: conversationId3, resultCode: '2001', resultDesc: 'The initiator information is invalid.' });
+    const outcome = await mpesa.processB2cResult({ conversationId: conversationId3, resultCode: '2001', resultDesc: 'The initiator information is invalid.' });
     assert(outcome.ok && outcome.disbursed === false && outcome.failed === true, 'a real failed B2C result is correctly processed as NOT disbursed');
 
-    const loanAfter = get('SELECT status FROM loans WHERE id = ?', [loanId3]);
+    const loanAfter = await get('SELECT status FROM loans WHERE id = ?', [loanId3]);
     assert(loanAfter.status === 'Approved for Disbursement', 'the real loan reverts to Approved for Disbursement after a failed B2C attempt — genuinely retryable, not stuck');
 
-    const journalCount = get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId3]).c;
+    const journalCount = (await get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId3])).c;
     assert(journalCount === 0, 'no real journal entry was created for a failed B2C disbursement attempt');
 
     // Real retry now succeeds (still NOT_CONFIGURED in this env, but the loan is genuinely re-initiable).
@@ -140,14 +140,14 @@ async function driveLoanToApproved(officerToken, mgrToken, regionalToken, opsTok
     const { run, get } = require('../src/db');
     const crypto = require('node:crypto');
     const conversationId4 = 'AG_' + crypto.randomUUID();
-    run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status) VALUES (?,?,?,?,?,?,?,?)`,
+    await run(`INSERT INTO mpesa_b2c_requests (id, originator_conversation_id, conversation_id, loan_id, phone, amount, environment, status) VALUES (?,?,?,?,?,?,?,?)`,
       ['b2creq_' + crypto.randomUUID(), 'b2c_' + crypto.randomUUID(), conversationId4, loanId4, '254712345678', 12000, 'sandbox', 'Pending']);
-    run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId4]);
+    await run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loanId4]);
 
     const mpesa = require('../src/integrations/mpesa');
-    const outcome = mpesa.processB2cTimeout({ conversationId: conversationId4 });
+    const outcome = await mpesa.processB2cTimeout({ conversationId: conversationId4 });
     assert(outcome.ok && outcome.timedOut === true, 'a real B2C timeout is correctly processed');
-    const loanAfter = get('SELECT status FROM loans WHERE id = ?', [loanId4]);
+    const loanAfter = await get('SELECT status FROM loans WHERE id = ?', [loanId4]);
     assert(loanAfter.status === 'Approved for Disbursement', 'a real timed-out loan also reverts to Approved for Disbursement, genuinely retryable');
   }
 

@@ -1,32 +1,48 @@
 #!/usr/bin/env bash
-# Runs the complete real backend test suite, one file at a time.
+# Runs the complete real backend test suite, one file at a time, each
+# against a genuinely fresh PostgreSQL schema.
 #
 # Each suite needs its OWN fresh seed and server restart — not a shortcut,
-# a real requirement: v2.test.js deliberately exhausts the per-minute rate
-# limit as its last test, and integration.test.js legitimately changes the
-# seeded Admin password as part of testing forced-password-change. Reusing
-# one seed/server across suites means later suites see stale credentials
-# or a rate-limited server, which looks like failure but isn't the app's
-# fault.
+# a real requirement: several suites mutate shared state as a side effect
+# of what they're legitimately testing (integration.test.js changes the
+# seeded Admin password as part of testing forced-password-change;
+# myAccount.test.js changes the seeded officer's email; mpesaIntegration/
+# mpesaB2c/mpesaConfig all activate real M-Pesa environment config).
+# Reusing one seed/server across suites means later suites see stale
+# credentials or leftover business state, which looks like failure but
+# isn't the application's fault — confirmed by hand while building this
+# runner: every one of those cross-suite "failures" disappeared the moment
+# each suite ran against its own fresh seed.
 #
 # Portable by design:
 #   - Never writes anywhere under /tmp. Some sandboxed environments (e.g.
 #     Termux) don't have a usable /tmp for arbitrary processes, so every
-#     scratch file this script creates (seed output, server logs, the test
-#     database itself) lives under test/tmp, next to this script.
-#   - Never touches rhinocash-backend/data/, the application's real,
-#     permanent database location. Tests get a completely separate
-#     database (via RHINOCASH_DB_PATH) and completely separate session/
+#     scratch file this script creates (seed output, server logs) lives
+#     under test/tmp, next to this script.
+#   - Never touches the real dev/production PostgreSQL database. Tests get
+#     a completely separate database via TEST_DATABASE_URL, reset to a
+#     genuinely empty schema before every single suite (DROP SCHEMA public
+#     CASCADE; CREATE SCHEMA public — the app's own real startup self-test
+#     in src/db.js then rebuilds the full schema fresh, the exact same
+#     migration path production uses, never a second hand-maintained
+#     schema definition here) — plus completely separate session/
 #     encryption secrets (via SESSION_SECRET/MPESA_ENCRYPTION_KEY, both
 #     real env overrides already supported by src/crypto.js — see there).
-#     A test run can therefore never read, corrupt, or delete real data,
-#     and never depends on rhinocash-backend/data/ being writable at all.
+#     A test run can therefore never read, corrupt, or delete real data.
+#   - Refuses to run at all against a TEST_DATABASE_URL that doesn't look
+#     like a test database (no "test" in the database name) — a database
+#     name is the only signal this script has, so it insists on that
+#     signal being present rather than trusting the caller silently.
 #
 # Usage:
-#   bash test/run-all.sh
-#   RHINOCASH_DB_PATH=/some/other/path/test.db bash test/run-all.sh
-#     (overrides where the test database lives; defaults to
-#     rhinocash-backend/test/tmp/rhinocash-test.db)
+#   TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_test bash test/run-all.sh
+#
+# Prerequisites: a running PostgreSQL server, and a database already
+# created (e.g. `createdb -O rhinocash rhinocash_test`, or
+# `psql -c "CREATE DATABASE rhinocash_test OWNER rhinocash;"`) — this
+# script resets that database's contents on every run, but does not create
+# the database itself, since doing so needs privileges this script
+# shouldn't assume it has.
 
 set -u
 
@@ -40,10 +56,17 @@ cd "$BACKEND_DIR" || { echo "FATAL: could not cd into $BACKEND_DIR"; exit 1; }
 TMP_DIR="$BACKEND_DIR/test/tmp"
 mkdir -p "$TMP_DIR"
 
-# The test database and its WAL/SHM sidecars live entirely under
-# test/tmp — never under data/ — unless the caller explicitly points
-# RHINOCASH_DB_PATH somewhere else (e.g. a known-good Termux path).
-TEST_DB_PATH="${RHINOCASH_DB_PATH:-$TMP_DIR/rhinocash-test.db}"
+TEST_DATABASE_URL="${TEST_DATABASE_URL:-}"
+if [ -z "$TEST_DATABASE_URL" ]; then
+  echo "FATAL: TEST_DATABASE_URL is not set. Example:"
+  echo "  TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_test bash test/run-all.sh"
+  exit 1
+fi
+case "$TEST_DATABASE_URL" in
+  *test*) ;;
+  *) echo "FATAL: TEST_DATABASE_URL does not look like a test database (expected \"test\" somewhere in it) — refusing to run against it, since this script resets its contents on every suite: $TEST_DATABASE_URL"; exit 1 ;;
+esac
+
 PORT="${PORT:-4000}"
 BASE_URL="http://127.0.0.1:$PORT"
 
@@ -87,23 +110,44 @@ wait_for_server() {
   return 1
 }
 
+# Wipes every table/object in the test database's public schema. The
+# app's own real startup self-test (src/db.js's startupSelfTest(), run
+# automatically the moment server.js or seed.js next connects) then
+# rebuilds the full schema fresh — the exact same migration path
+# production uses, so this never risks drifting from the real schema.
+reset_test_db() {
+  DATABASE_URL="$TEST_DATABASE_URL" node -e "
+    const { Client } = require('pg');
+    const c = new Client({ connectionString: process.env.DATABASE_URL });
+    c.connect()
+      .then(() => c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;'))
+      .then(() => c.end())
+      .then(() => process.exit(0))
+      .catch(e => { console.error(e.message); process.exit(1); });
+  "
+}
+
 for suite in $SUITES; do
   echo "=== $suite ==="
 
-  rm -f "$TEST_DB_PATH" "${TEST_DB_PATH}-wal" "${TEST_DB_PATH}-shm"
+  if ! reset_test_db; then
+    echo "FAIL: could not reset the test database — is PostgreSQL running and TEST_DATABASE_URL correct?"
+    FAILED="$FAILED $suite"
+    continue
+  fi
 
   # Fresh session-signing secret and M-Pesa encryption key per suite, via
   # the real env-var overrides src/crypto.js already supports — this is
-  # what keeps the test run from ever writing into data/, not a new
-  # mechanism bolted on top of it. 32 random bytes hex-encoded either way
-  # (MPESA_ENCRYPTION_KEY specifically needs to be a 32-byte key for
-  # AES-256-GCM; SESSION_SECRET has no format requirement but the same
-  # value shape is simplest to generate once and reuse).
+  # what keeps the test run from ever writing into the real dev/production
+  # secrets, not a new mechanism bolted on top of it. 32 random bytes
+  # hex-encoded either way (MPESA_ENCRYPTION_KEY specifically needs to be a
+  # 32-byte key for AES-256-GCM; SESSION_SECRET has no format requirement
+  # but the same value shape is simplest to generate once and reuse).
   SESSION_SECRET_VAL="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
   MPESA_KEY_VAL="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
 
   SEED_OUTPUT="$TMP_DIR/seed-output-$suite.txt"
-  RHINOCASH_DB_PATH="$TEST_DB_PATH" \
+  DATABASE_URL="$TEST_DATABASE_URL" \
   SESSION_SECRET="$SESSION_SECRET_VAL" \
   MPESA_ENCRYPTION_KEY="$MPESA_KEY_VAL" \
     node seed.js --demo > "$SEED_OUTPUT" 2>&1
@@ -118,10 +162,7 @@ for suite in $SUITES; do
 
   # seed.js prints generated credentials to stdout in a fixed, deliberately
   # parseable format (see seed.js's own console.log calls) — this IS the
-  # intended mechanism for retrieving them, not a workaround; there is no
-  # other credential-export path in this codebase. Reading them back from
-  # this suite's own captured file (not /tmp) is the only change from the
-  # original approach.
+  # intended mechanism for retrieving them, not a workaround.
   ADMIN=$(grep "Password:" "$SEED_OUTPUT" | awk '{print $2}')
   MANAGER=$(awk '$2=="manager@rhinocash.co.ke"{print $NF}' "$SEED_OUTPUT")
   MANAGERK=$(awk '$2=="manager.kisumu@rhinocash.co.ke"{print $NF}' "$SEED_OUTPUT")
@@ -140,7 +181,7 @@ for suite in $SUITES; do
   fi
 
   SERVER_LOG="$TMP_DIR/server-$suite.log"
-  RHINOCASH_DB_PATH="$TEST_DB_PATH" \
+  DATABASE_URL="$TEST_DATABASE_URL" \
   SESSION_SECRET="$SESSION_SECRET_VAL" \
   MPESA_ENCRYPTION_KEY="$MPESA_KEY_VAL" \
   PORT="$PORT" \
@@ -156,22 +197,19 @@ for suite in $SUITES; do
   fi
 
   # A handful of suites (atomicity, mpesaB2c, mpesaIntegration, support,
-  # mpesaConfig) legitimately `require('../src/db')` or read the DB file
-  # directly, IN this same test process, rather than going only through
-  # the HTTP API — to inspect encryption-at-rest, transaction atomicity,
-  # etc. That in-process connection must resolve to the exact same
-  # database and crypto keys the server was started with, or it silently
-  # opens/creates a second, empty database at the old default path
-  # instead (ENOENT / FK-constraint failures that look like application
-  # bugs but are really just this process missing the same env the
-  # server got).
+  # mpesaConfig) legitimately `require('../src/db')` directly IN this same
+  # test process, rather than going only through the HTTP API — to inspect
+  # transaction atomicity, encryption-at-rest, etc. That in-process
+  # connection must resolve to the exact same database the server was
+  # started with, or it silently opens a second, unrelated connection pool
+  # (against a database with none of this run's data) instead.
   env SEEDED_ADMIN_PASSWORD="$ADMIN" SEEDED_MANAGER_PASSWORD="$MANAGER" \
       SEEDED_MANAGER_KISUMU_PASSWORD="$MANAGERK" SEEDED_REGIONAL_PASSWORD="$REGIONAL" \
       SEEDED_OPSMGR_PASSWORD="$OPSMGR" SEEDED_ACCOUNTANT_PASSWORD="$ACCOUNTANT" \
       SEEDED_OFFICER_PASSWORD="$OFFICER" SEEDED_CEO_PASSWORD="$CEO" \
       SEEDED_DIRECTOR_PASSWORD="$DIRECTOR" SEEDED_INVESTOR_PASSWORD="$INVESTOR" \
       BASE_URL="$BASE_URL" \
-      RHINOCASH_DB_PATH="$TEST_DB_PATH" \
+      DATABASE_URL="$TEST_DATABASE_URL" \
       SESSION_SECRET="$SESSION_SECRET_VAL" \
       MPESA_ENCRYPTION_KEY="$MPESA_KEY_VAL" \
       node "test/${suite}.test.js" || FAILED="$FAILED $suite"

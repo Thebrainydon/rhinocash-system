@@ -6,8 +6,6 @@
 // so what's actually verified here is that the failure path is safe and
 // correct, not that a live Safaricom handshake succeeds).
 'use strict';
-const fs = require('node:fs');
-const path = require('node:path');
 const BASE = process.env.BASE_URL || 'http://localhost:4000';
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
@@ -75,14 +73,14 @@ async function login(email, password) {
     assert(cfg.json.sandboxStatus === 'Sandbox Configured (inactive)', 'status reflects configured-but-not-yet-active');
   }
 
-  // ---- 5. Real encryption at rest — inspect the actual database file on disk ----
+  // ---- 5. Real encryption at rest — inspect the actual stored row, bypassing the app's own decrypt path ----
   {
-    const dbPath = process.env.RHINOCASH_DB_PATH || path.join(__dirname, '..', 'data', 'rhinocash.db');
-    const raw = fs.readFileSync(dbPath);
-    const rawStr = raw.toString('latin1'); // byte-safe scan, avoids utf8 decode issues on binary db pages
-    assert(!rawStr.includes(testKey), 'the raw consumer key does NOT appear anywhere in the database file on disk (encrypted at rest)');
-    assert(!rawStr.includes(testSecret), 'the raw consumer secret does NOT appear anywhere in the database file on disk');
-    assert(!rawStr.includes(testPasskey), 'the raw passkey does NOT appear anywhere in the database file on disk');
+    const { get } = require('../src/db');
+    const row = await get('SELECT * FROM mpesa_environment_configs WHERE environment = ?', ['sandbox']);
+    const rawStr = JSON.stringify(row);
+    assert(!rawStr.includes(testKey), 'the raw consumer key does NOT appear anywhere in the stored row (encrypted at rest)');
+    assert(!rawStr.includes(testSecret), 'the raw consumer secret does NOT appear anywhere in the stored row');
+    assert(!rawStr.includes(testPasskey), 'the raw passkey does NOT appear anywhere in the stored row');
   }
 
   // ---- 6. Partial update — omitted fields keep their existing encrypted value ----
