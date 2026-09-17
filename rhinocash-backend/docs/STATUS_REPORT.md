@@ -7,21 +7,33 @@ of intended behavior.
 
 ```
 Backend:  776 passed, 0 failed  (25 suites — see test/run-all.sh)
-Frontend: 607 passed, 2 failed  (drives the real UI functions in
+Frontend: 609 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,383 passed, 2 failed
+Total:    1,385 passed, 0 failed
 ```
 
-The 2 frontend failures are both on the Operational Loan Portfolio page's
-content assertions. Confirmed by direct inspection: the backend response
-for that page's exact query (`GET /api/loans/operational-portfolio`) is
-complete and correct — every section the page needs is present in the
-response, and the request itself succeeds quickly. The failure is
-isolated to the frontend test's own render/timing sequence for that one
-page and does not reflect incorrect or missing data. Not yet root-caused
-further than that; stated here rather than hidden.
+Previously (through the initial Postgres migration) 2 of the frontend
+assertions failed intermittently on the Operational Loan Portfolio page.
+Root-caused and fixed: `loadOperationalPortfolio()` in
+`rhinocash-app/index.html` is triggered as a side effect of rendering the
+page whenever the cached data's filter state doesn't match the current
+one. Navigating to the page (which loads with default filters) and then
+immediately changing filters — the exact sequence the test performs —
+fired a second, differently-filtered request while the first was still in
+flight; whichever of the two HTTP responses happened to arrive *last*
+overwrote the shared `DB.operationalPortfolio` variable, regardless of
+which request was actually the more recent one. Depending on response
+timing, that could leave the page showing the wrong (or a mid-reload
+"Loading…") state at the moment it was inspected. Fixed by stamping each
+request with a sequence number and discarding any response whose sequence
+number has since been superseded by a newer request — so a stale response
+can never overwrite a fresher one, however the network resolves them.
+Verified with two independent full re-runs after the fix, both 609/609.
+This was a real, if narrow and self-correcting, frontend race condition —
+not a backend or data defect, and not present in any other currently
+tested page.
 
 Re-run them yourself — that's the point of them being real, not a claim
 to take on faith:

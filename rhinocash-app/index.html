@@ -4805,9 +4805,21 @@ function renderActiveLoansPage(){
 }
 
 // ==================== Operational Loan Portfolio — genuinely distinct focus: flow vs stock, composition, workload, concentration ====================
+let opPortfolioReqSeq = 0;
 async function loadOperationalPortfolio(){
   const st = session.opPortfolioState;
-  return withRequest('load-operational-portfolio', async ()=>{
+  // Keyed by the filter state, not a flat string, and stamped with a request
+  // sequence number: this page's render function re-triggers a load whenever
+  // DB.operationalPortfolio's cached stateKey doesn't match the current
+  // filters (e.g. navigating in with new filters while a stale,
+  // differently-filtered fetch is still in flight). A flat key would let
+  // withRequest's duplicate-guard silently drop the second, correct fetch;
+  // and even with distinct keys, two real concurrent requests can resolve
+  // out of order over the network, so the sequence check discards a
+  // response that a newer request has since superseded instead of letting
+  // whichever one happens to arrive last win.
+  const seq = ++opPortfolioReqSeq;
+  return withRequest('load-operational-portfolio:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams();
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
@@ -4817,8 +4829,10 @@ async function loadOperationalPortfolio(){
     if(st.q) params.set('q', st.q);
     params.set('page', st.page||1);
     params.set('page_size', 20);
-    DB.operationalPortfolio = await api.get('/api/loans/operational-portfolio?'+params.toString());
-    DB.operationalPortfolio.stateKey = JSON.stringify(st);
+    const result = await api.get('/api/loans/operational-portfolio?'+params.toString());
+    if(seq !== opPortfolioReqSeq) return; // a newer request has since superseded this one
+    result.stateKey = JSON.stringify(st);
+    DB.operationalPortfolio = result;
   });
 }
 async function exportOperationalPortfolio(){

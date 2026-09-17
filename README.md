@@ -111,11 +111,9 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **776 backend tests, all passing, and 607 of 609
-frontend tests passing** against a real PostgreSQL database — see
-`rhinocash-backend/docs/STATUS_REPORT.md` for the 2 known frontend
-failures (isolated to one page's test timing, not a data or backend
-issue).
+At last verification: **776 backend tests and 609 frontend tests, all
+passing** against a real PostgreSQL database — see
+`rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
 ## Security
 
