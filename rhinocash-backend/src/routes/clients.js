@@ -197,9 +197,11 @@ function register(router) {
   router.post('/api/leads', requireAuth, requireModule('clients'), async (req, res, next) => {
     const b = req.body;
     if (!b.name) return next({ status: 400, message: 'name is required' });
+    let branchId;
+    try { branchId = await resolveWriteBranchId(req.user, b.branch_id); } catch (e) { return next(e); }
     const id = 'lead_' + crypto.randomUUID();
-    await run('INSERT INTO client_leads (id, name, phone, source, notes, created_by) VALUES (?,?,?,?,?,?)',
-      [id, b.name, b.phone || null, b.source || null, b.notes || null, req.user.id]);
+    await run('INSERT INTO client_leads (id, name, phone, source, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?)',
+      [id, b.name, b.phone || null, b.source || null, b.notes || null, branchId, req.user.id]);
     await logAction(req, { action: 'Created lead', module: 'clients', recordType: 'Lead', recordId: id, newValue: { name: b.name } });
     res.status(201).json({ lead: await get('SELECT * FROM client_leads WHERE id = ?', [id]) });
   });

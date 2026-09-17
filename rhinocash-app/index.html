@@ -4619,7 +4619,9 @@ async function loadViewLoans(){
     if(st.q) params.set('q', st.q);
     params.set('page', st.page||1);
     params.set('page_size', 20);
-    DB.viewLoans = await api.get('/api/loans/view?'+params.toString());
+    const result = await api.get('/api/loans/view?'+params.toString());
+    if(!DB) return; // logged out while this request was still in flight
+    DB.viewLoans = result;
     DB.viewLoans.stateKey = JSON.stringify(st);
   });
 }

@@ -1,7 +1,7 @@
 {
   "name": "rhinocash-backend",
   "version": "1.0.0",
-  "description": "Rhinocash Limited — real backend API (auth, RBAC, loans, payments, accounting, investors). Zero external dependencies — Node 20+ built-ins only.",
+  "description": "Rhinocash Limited — real backend API (auth, RBAC, loans, payments, accounting, investors). Node 20+ built-ins plus the pg driver for PostgreSQL.",
   "main": "server.js",
   "scripts": {
     "seed": "node seed.js",

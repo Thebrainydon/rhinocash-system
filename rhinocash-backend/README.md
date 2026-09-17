@@ -2,49 +2,99 @@
 
 A real backend for the Rhinocash system: authentication, server-enforced
 role-based access control, the loan lifecycle (application → 4-level
-sequential approval → disbursement → repayment), payments, a basic
-accounting ledger, staff HR requests, and an isolated investor module.
+sequential approval → disbursement → repayment), payments, double-entry
+accounting, staff HR requests, and an isolated investor module.
 
-**Zero external dependencies.** No `npm install` step, no Express, no
-Postgres driver, no bcrypt package — everything runs on Node's built-ins
-(`node:http`, `node:sqlite`, `node:crypto`). This was a deliberate choice
-made in an offline environment with no package-registry access, but it's
-also a genuinely reasonable choice for a system this size: one process,
-one file-based database, nothing to misconfigure.
+**PostgreSQL-only, minimal dependencies.** The only npm package is `pg`
+(the PostgreSQL driver) — no Express, no ORM, no bcrypt package.
+Everything else runs on Node's built-ins (`node:http`, `node:crypto`).
+One process, one real relational database, nothing else to misconfigure.
 
 ## Quick start
 
 ```bash
-# Requires Node 20+ (Node 22 recommended — this is where node:sqlite
-# stabilized enough to build on; it's still flagged experimental upstream).
-node seed.js --demo   # sets up roles/permissions/workflow AND sample data
-node server.js        # -> http://localhost:4000
+npm install                          # installs the one dependency (pg)
+# Create a PostgreSQL database and role first — see "PostgreSQL setup" below.
+export DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_dev
+node seed.js --demo                  # creates the schema, then seeds roles/permissions/workflow AND sample data
+node server.js                       # -> http://localhost:4000
 ```
 
-No install step. No `.env` file required to get started (see below for
-what the env vars actually change).
+Requires Node 20+ and a running PostgreSQL server (16 is what this was
+built and tested against; anything reasonably recent should work). No
+`.env` file is required to get started beyond `DATABASE_URL` — see
+"Configuration" below for what every other env var changes.
+
+## PostgreSQL setup
+
+Rhinocash V2 requires a real PostgreSQL database — there is no SQLite
+fallback, and `server.js`/`seed.js` refuse to start without `DATABASE_URL`
+set. You need PostgreSQL installed and a database created; this backend
+does not install or manage the PostgreSQL server itself.
+
+```bash
+# 1. Install PostgreSQL (skip if you already have a server running).
+#    Debian/Ubuntu:
+sudo apt-get install postgresql postgresql-contrib
+sudo service postgresql start
+
+# 2. Create an application role and database.
+sudo -u postgres psql -c "CREATE ROLE rhinocash WITH LOGIN PASSWORD 'yourpassword';"
+sudo -u postgres psql -c "CREATE DATABASE rhinocash_dev OWNER rhinocash;"
+
+# 3. Point the app at it.
+export DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_dev
+```
+
+**There is no separate migration command to run.** `src/db.js` runs a real
+startup self-test the moment the app connects (from `server.js` or
+`seed.js`) — it creates every table with `CREATE TABLE IF NOT EXISTS`, so
+it's safe to run against both a brand-new database and one that already
+has the schema. This is the one and only place the schema is defined; if
+you ever need to inspect or extend it, that's the file to look at.
+
+**A second, separate database is expected for automated tests** — see
+"Running the tests" below. Never point `TEST_DATABASE_URL` at the same
+database as `DATABASE_URL`; the test runner resets its target database's
+contents before every suite.
 
 ## Running the tests
 
 ```bash
-bash test/run-all.sh        # full real backend suite (24 files) — fresh-seeds
-                             # and restarts the server before each one
-bash test/run-frontend.sh   # the real frontend, extracted from
-                             # ../rhinocash-app/index.html and driven
-                             # end-to-end against a live backend
+# Create a dedicated test database first (once):
+sudo -u postgres psql -c "CREATE DATABASE rhinocash_test OWNER rhinocash;"
+
+TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_test \
+  bash test/run-all.sh        # full real backend suite (25 files) — fresh
+                               # schema, fresh seed, and a fresh server
+                               # restart before each one
+
+bash test/run-frontend.sh     # the real frontend, extracted from
+                               # ../rhinocash-app/index.html and driven
+                               # end-to-end against a live backend
 ```
 
-Both scripts handle the fresh-seed-per-suite requirement themselves — you
-don't need to run `seed.js` manually first. Two reasons a shared seed
-across suites wouldn't work: `v2.test.js` deliberately exhausts the
-per-minute rate limit as its last test, and `integration.test.js`
-legitimately changes the seeded Admin password as part of testing the
-forced-password-change flow.
+`test/run-all.sh` refuses to run at all unless `TEST_DATABASE_URL` is set
+and its name looks like a test database — this script resets its target
+database's entire contents (`DROP SCHEMA public CASCADE`) before every
+single suite, so pointing it at anything you care about would be a real
+mistake, not a recoverable one.
+
+Each suite gets its own fresh schema, fresh seed, and fresh server
+process — not a shortcut, a real requirement: several suites legitimately
+mutate shared state as part of what they're testing (`integration.test.js`
+changes the seeded Admin password testing forced-password-change;
+`myAccount.test.js` changes the seeded officer's email; `v2.test.js`
+deliberately exhausts the per-minute rate limit as its last test). Reusing
+one seed/server across suites means later suites see stale credentials or
+leftover state, which looks like a failure but isn't the application's
+fault — confirmed by hand while building this runner.
 
 To run one backend suite by hand instead, see the credential-extraction
 pattern inside `test/run-all.sh` — every suite needs the same
 `SEEDED_*_PASSWORD` environment variables, read from `seed.js --demo`'s
-printed output.
+printed output, plus `DATABASE_URL` pointing at the same database the
+server you're testing against is using.
 
 ## The initial Administrator account
 
@@ -61,37 +111,44 @@ The password is never hardcoded, never stored in plaintext anywhere, and
 the account is created with `must_change_password = true` — the very
 first `/api/auth/change-password` call is required before anything else
 will treat that account as fully set up. If you lose the printed
-password, don't try to recover it: delete `data/rhinocash.db` and
-re-seed, or use `/api/users/:id/reset-password` from another admin
-account once one exists.
+password, don't try to recover it: use `/api/users/:id/reset-password`
+from another admin account once one exists, or connect to the database
+directly and update the row (`seed.js` will not recreate an Admin account
+that already exists).
 
 **Run `node seed.js --demo` and you'll also get a block of clearly
 labeled demo/test accounts** (one per role, plus a demo investor) — each
 with its own randomly generated password, printed the same way. These
-are separated from the required setup specifically because the project
-instructions call for seed/demo data to never be confused with
-production data. Don't run `--demo` against a real deployment.
+are separated from the required setup specifically because seed/demo
+data should never be confused with production data. Don't run `--demo`
+against a real deployment.
 
 ## Configuration
 
-All of it is optional env vars — sane defaults exist for everything so
-the app runs immediately:
+Only `DATABASE_URL` is required. Everything else has a sane default:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `DATABASE_URL` | *(none — required)* | PostgreSQL connection string |
+| `PGPOOL_MAX` | `10` | max connections in the pg connection pool |
 | `PORT` | `4000` | HTTP port |
-| `RHINOCASH_DB_PATH` | `data/rhinocash.db` | SQLite file location |
+| `UPLOAD_DIR` | `data/uploads` | where uploaded files are written/served from |
 | `SESSION_SECRET` | auto-generated, persisted to `data/.session_secret` | HMAC key for session tokens — set this explicitly in production |
 | `INITIAL_ADMIN_EMAIL` | `admin@rhinocash.co.ke` | seed-time only |
 | `INITIAL_ADMIN_PASSWORD` | randomly generated | seed-time only; set this if you want a known password instead of a generated one (still forced to change on first login) |
 | `CORS_ORIGIN` | `*` | tighten this to your frontend's real origin before going live |
+| `RATE_LIMIT_PER_MINUTE` | `180` | general per-IP rate limit across the whole API |
+
+See `.env.example` for the full list, including M-Pesa/SMS/Email
+integration variables.
 
 ## Architecture, briefly
 
 ```
-server.js            entry point — wires routes, handles file uploads
+server.js             entry point — wires routes, handles file uploads
 src/router.js         tiny dependency-free HTTP router (Express-shaped API)
-src/db.js             the entire schema (SQLite DDL) + query helpers
+src/db.js             the entire schema (PostgreSQL DDL) + async query
+                       helpers (all/get/run/transaction) built on `pg`
 src/crypto.js          password hashing (scrypt) + signed session tokens
 src/rbac.js            the access model: role→modules, role→permissions,
                         per-user overrides, branch/region data scoping
@@ -124,50 +181,51 @@ differently-shaped token, and their routes only ever query
 investor from ever reaching another investor's data or any internal
 staff endpoint — not a filter that could be forgotten on one page.
 
-## What's implemented vs. what's next
+**Every multi-step financial write is a real database transaction**
+(payment recording, loan disbursement, investor payouts, expenses,
+requisitions, adjustments) — `src/db.js`'s `transaction()` wraps them so a
+crash mid-write can never leave a payment recorded with no matching
+journal entry, or vice versa. Nested `transaction()` calls join the outer
+one rather than erroring on a second `BEGIN` — see `test/atomicity.test.js`
+for the direct proof, including deliberate failure injection.
 
-**V2 hardening (this pass) added:** real object-level branch/region
-authorization on every `GET/PATCH/:id` and action route (not just list
-filtering), server-side rejection of client-supplied `branch_id` for
-restricted roles, self-approval and out-of-branch-scope prevention on the
-loan workflow, a genuinely balanced double-entry ledger (found and fixed
-a real sign-convention bug — repayments were crediting cash instead of
-debiting it), a real duplicate-payment guard, notification-hijack and
-ticket-visibility fixes, reporting-line-enforced leave/salary-advance
-approval, scoped CEO/Director staff management (they can manage
-ordinary staff but never Admin/CEO/Director accounts or the most
-sensitive sub-actions), a real "Open New Branch" propose → approve →
-activate workflow (not a form that just creates a branch), general rate
-limiting, security headers, request size limits, and honest
-NOT_CONFIGURED interfaces for M-Pesa/SMS/Email. Full breakdown, including
-what's tested vs. manually-verified-only:
-**[`docs/STATUS_REPORT.md`](docs/STATUS_REPORT.md)**.
+## What's implemented
 
-**Working now, tested end-to-end (173 tests across 4 suites, 100%
-passing):** authentication (real password hashing, forced first-login
-password change, failed-login tracking, suspend/deactivate blocking
-login, session revocation), full user/staff management with module- and
-action-level permission overrides, branches & regions with real
-branch/region-scoped data visibility down to individual records, branch
-opening as a real approval workflow, clients (+leads+interactions
-+documents), loan products, loan applications through the real
-sequential 4-level approval workflow with a permanent approval history,
-disbursement and repayment with a genuinely balanced ledger, loan
-restructuring, leave & salary-advance requests with real reporting-line
-authorization, support tickets with role/branch-scoped visibility,
-ownership-checked notifications, audit logging, and the isolated
-investor module.
+**Working now, tested end-to-end (776 tests across 25 suites, 100%
+passing against a real PostgreSQL database):** authentication (real
+password hashing, forced first-login password change, failed-login
+tracking, suspend/deactivate blocking login, session revocation), full
+user/staff management with module- and action-level permission overrides,
+branches & regions with real branch/region-scoped data visibility down to
+individual records, branch opening as a real approval workflow, clients
+(+leads+interactions+documents), loan products, loan applications through
+the real sequential 4-level approval workflow with a permanent approval
+history, disbursement and repayment with a genuinely balanced ledger,
+loan restructuring, collections (sheet, MTD, rates, arrears/PAR,
+promises-to-pay), double-entry accounting (GL, trial balance, P&L,
+balance sheet, cashflow, expenses, requisitions, period close/reopen),
+leave & salary-advance requests with real reporting-line authorization,
+support tickets with role/branch-scoped visibility and SLA tracking,
+ownership-checked notifications, reports/dashboards per role, system
+administration (maintenance mode, backups, security settings), audit
+logging, and the isolated investor module.
 
-**Not built yet, stated plainly:** live M-Pesa transaction success against
-real Safaricom servers (the *configuration* system is real and tested —
-see below — but a live OAuth/STK Push handshake needs real network access
-and real credentials this build environment doesn't have), SMS/Email
-delivery (interfaces exist, correctly report `NOT_CONFIGURED` — no
-provider credentials available to build against), PostgreSQL migration
-(planned and documented, not executed — see below), schema-level input
-format validation, and the actual frontend-to-API wiring (the frontend
-prototype still runs on its own browser-local state). See
-`docs/STATUS_REPORT.md` for the itemized version of this list.
+**M-Pesa (STK, C2B, B2C, callback processing, reconciliation)** is
+code-complete and tested against the real integration functions directly
+(recordCallback/processCallback/processB2cResult, real database
+transactions, real idempotency on duplicate callbacks) — a live
+Safaricom handshake requires real credentials and real network egress to
+Safaricom's servers, neither of which this build/test environment has;
+the failure path for that case is itself tested and reports honestly
+rather than fabricating success.
+
+**Not built yet, stated plainly:** live SMS/Email delivery (interfaces
+exist, correctly report `NOT_CONFIGURED` — no provider adapter is wired
+up), schema-level input format validation (phone/email format beyond a
+basic check), and object storage for uploads (currently local disk —
+fine for a single instance, see `docs/SECURITY_CHECKLIST.md` for the
+multi-instance note). See `docs/STATUS_REPORT.md` for the itemized
+version of this list.
 
 ## M-Pesa Configuration (Admin only)
 
@@ -196,24 +254,25 @@ nowhere — a non-technical Master System Administrator can:
 **Security specifics:** credentials are encrypted at rest with
 AES-256-GCM (`src/crypto.js: encryptSecret/decryptSecret`) before
 touching the database — verified directly in `test/mpesaConfig.test.js`
-by reading the raw `.db` file bytes and confirming the plaintext
-key/secret/passkey appear nowhere in it. Every configuration change is
-audit-logged with the field names that changed, **never** the values.
-Only `role_id === 'admin'` can reach any of these endpoints — not even
-CEO/Director, who hold `manage_users` but not system-credential
+by reading the stored `mpesa_environment_configs` row straight back from
+PostgreSQL (bypassing the app's own decrypt path) and confirming the
+plaintext key/secret/passkey appear nowhere in it. Every configuration
+change is audit-logged with the field names that changed, **never** the
+values. Only `role_id === 'admin'` can reach any of these endpoints — not
+even CEO/Director, who hold `manage_users` but not system-credential
 authority (same principle as password reset and session revocation
 elsewhere in the system).
 
 **What "Test Connection" actually proves, honestly:** the code makes a
 genuine HTTPS request to Safaricom's real OAuth endpoint using Node's
-built-in `fetch` — nothing is simulated. From the environment this was
-*built* in, that outbound request cannot succeed (its network egress
-doesn't reach Safaricom's servers at all), so what's been verified is
-that the request is genuinely attempted and the **failure path** is
-handled safely — timeout, network-unreachable, invalid-credentials, and
-unexpected-response cases all resolve to a clear status with no secret
-leakage. A real deployment with real credentials and normal internet
-access will get a real success/failure result from Safaricom itself.
+built-in `fetch` — nothing is simulated. From a sandboxed build/test
+environment, that outbound request may not reach Safaricom's servers at
+all, so what's verified there is that the request is genuinely attempted
+and the **failure path** is handled safely — timeout, network-unreachable,
+invalid-credentials, and unexpected-response cases all resolve to a clear
+status with no secret leakage. A real deployment with real credentials
+and normal internet access will get a real success/failure result from
+Safaricom itself.
 
 ## Documentation
 
@@ -222,22 +281,15 @@ access will get a real success/failure result from Safaricom itself.
 - **[`docs/RBAC.md`](docs/RBAC.md)** — the full access model, the
   CEO/Director vs. Admin authority split, investor isolation, and how
   the sequential loan workflow is enforced.
-- **[`docs/POSTGRES_MIGRATION.md`](docs/POSTGRES_MIGRATION.md)** — exact,
-  scoped steps to move off SQLite, including every remaining
-  SQLite-specific SQL pattern and where it lives.
+- **[`docs/POSTGRESQL.md`](docs/POSTGRESQL.md)** — the database
+  architecture in detail: schema design decisions, the `?`→`$n`
+  placeholder translation, transaction propagation, and the SQL
+  translation notes relevant if you're extending the schema.
 - **[`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md)** —
   itemized Done/Partial/Deployment status for every security control.
 - **[`docs/STATUS_REPORT.md`](docs/STATUS_REPORT.md)** — the full
   feature-completeness matrix and the honest top-level status report.
 - **`.env.example`** — every environment variable, with defaults noted.
-
-## Moving to Postgres later
-
-`src/db.js` is the only file that knows it's SQLite. See
-`docs/POSTGRES_MIGRATION.md` for the exact, scoped steps — it's more
-involved than "swap the driver" (every `all/get/run` call site needs an
-`await` added, since Postgres access is async and SQLite's is not), but
-still fully isolated to that one file's contract with the rest of the app.
 
 ## The frontend
 

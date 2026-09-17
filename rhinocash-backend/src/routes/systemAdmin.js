@@ -16,15 +16,16 @@ function requireSystemAdminView(req, res, next) {
   return next({ status: 403, message: 'Your role does not have System Administration visibility' });
 }
 
+// INSERT ... ON CONFLICT DO NOTHING rather than a check-then-insert: two
+// concurrent requests hitting an uninitialized row both racing past a
+// SELECT-then-INSERT would otherwise throw a real duplicate-key error
+// under PostgreSQL's genuine concurrency (unlike the previous engine,
+// where each request ran to completion before the next could start).
 async function ensureOrgRow() {
-  if (!(await get('SELECT id FROM organization_settings WHERE id = 1'))) {
-    await run('INSERT INTO organization_settings (id) VALUES (1)');
-  }
+  await run('INSERT INTO organization_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
 }
 async function ensureSystemRow() {
-  if (!(await get('SELECT id FROM system_settings WHERE id = 1'))) {
-    await run('INSERT INTO system_settings (id) VALUES (1)');
-  }
+  await run('INSERT INTO system_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
 }
 
 function register(router) {

@@ -1,16 +1,15 @@
-data/*.db
-data/*.db-wal
-data/*.db-shm
 data/.session_secret
 data/.mpesa_encryption_key
-data/uploads/
+data/uploads/*
+!data/uploads/.gitkeep
 node_modules/
 .env
 *.tmp
 test/frontend-integration.combined.js
 
-# Scratch space for test/run-all.sh and test/run-frontend.sh — the test
-# database, its WAL/SHM sidecars, seed output, and server logs for each
-# suite. Never the real application database (see rhinocash-backend/data/
-# above); this directory only ever holds throwaway test-run artifacts.
+# Scratch space for test/run-all.sh and test/run-frontend.sh — seed
+# output and server logs for each suite. The test database itself lives
+# in PostgreSQL (TEST_DATABASE_URL), not a file, so there's nothing to
+# ignore for it here; this directory only ever holds throwaway
+# test-run artifacts, never the real application database.
 test/tmp/

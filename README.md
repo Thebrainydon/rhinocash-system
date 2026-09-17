@@ -10,9 +10,11 @@ comprehensive automated regression suite.
   CSS, and the client-side JS embedded in one `<script>` tag). This file is
   the single source of truth for the frontend; nothing else needs to be
   committed alongside it.
-- `rhinocash-backend/` — the Node.js/Express API server:
-  - `src/db.js` — the entire data layer (schema + connection). Every other
-    module talks to the database only through this file's exported helpers.
+- `rhinocash-backend/` — the Node.js API server (a small dependency-free
+  HTTP router, not Express — see `src/router.js`):
+  - `src/db.js` — the entire data layer (PostgreSQL schema + async
+    connection/query helpers). Every other module talks to the database
+    only through this file's exported helpers.
   - `src/routes/` — route handlers, one file per domain (loans, collections,
     clients, payments, accounting, staff, branches, investors, M-Pesa, etc).
   - `src/rbac.js` — role-based access control and branch/region scoping.
@@ -20,14 +22,19 @@ comprehensive automated regression suite.
     audit logging, and password/token hashing.
   - `seed.js` — creates the initial admin account and (with `--demo`) a full
     set of demo staff, branches, clients, and loans for testing.
-  - `test/` — the full regression suite (24 backend suites + a frontend
+  - `test/` — the full regression suite (25 backend suites + a frontend
     integration harness).
 
 ## Running the backend
 
+Requires a running PostgreSQL server and a database already created —
+see `rhinocash-backend/README.md` → "PostgreSQL setup" for exact commands
+if you don't have one yet.
+
 ```bash
 cd rhinocash-backend
 npm install
+export DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_dev
 node seed.js --demo
 node server.js
 ```
@@ -42,6 +49,9 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
 
 ## Recent improvements
 
+- Migrated the database layer from SQLite to PostgreSQL — see
+  `rhinocash-backend/docs/POSTGRESQL.md` for the architecture and
+  `rhinocash-backend/docs/STATUS_REPORT.md` for current test status.
 - Login gives explicit "Processing… please wait" / "Login successful…
   redirecting" feedback as soon as each phase actually happens, instead of
   a static button and an unexplained pause.
@@ -50,49 +60,45 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
   transferred for the bulk LoanBook/Collections endpoints, which matters
   most on slow mobile connections.
 
-## Database notes
+## Database
 
-The backend uses Node's built-in `node:sqlite` (`DatabaseSync`) — no external
-database dependency. `src/db.js` explicitly:
-
-- Verifies the data directory is writable at startup (fails loudly with an
-  actionable message if not, rather than failing silently later).
-- Runs in **WAL journal mode** rather than SQLite's default rollback-journal
-  mode, which is the standard, correct fix for "attempt to write a readonly
-  database" errors on constrained/FUSE-backed filesystems (this matters in
-  particular for Termux/Android deployments — see `src/db.js` for the full
-  explanation in comments).
-- Runs a real write self-test immediately after opening the connection, so a
-  genuinely unwritable database is caught at boot, not on a user's first
-  login.
-
-If you ever see a "readonly database" error despite this, it means the
-filesystem backing your data directory doesn't support WAL either (rare) —
-point `RHINOCASH_DB_PATH` at a location on truly local/internal storage.
+PostgreSQL is required — there is no SQLite fallback, and the server
+refuses to start without `DATABASE_URL` set. `src/db.js` runs a real
+startup self-test the moment the app connects (creating the schema with
+`CREATE TABLE IF NOT EXISTS` if it isn't there yet), so there's no
+separate migration command to run. See `rhinocash-backend/README.md` →
+"PostgreSQL setup" for creating a database, and
+`rhinocash-backend/docs/POSTGRESQL.md` for the schema design decisions,
+transaction handling, and SQL translation notes.
 
 ## Running the test suite
 
-Backend suites (each expects the server running, and seeded account passwords
-passed in as environment variables — see each test file for its exact
-variable names):
+Backend suites need a dedicated PostgreSQL test database (never the same
+one your dev server uses) and run through `test/run-all.sh`, which
+resets that database to a fresh schema, seeds it, and starts/stops the
+server automatically before and after every suite:
 
 ```bash
-node test/integration.test.js
-node test/v2.test.js
-# ...and so on for every file in test/
+cd rhinocash-backend
+TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_test \
+  bash test/run-all.sh
 ```
 
-The frontend regression suite is assembled from three parts and then run
-against a live server:
+The frontend regression suite extracts the `<script>` contents of
+`index.html`, combines it with a small test harness, and runs the result
+against a live, freshly-seeded server — also via its own script, for the
+same reset-before-run reasons:
 
 ```bash
-# From rhinocash-app/, extract the <script> contents of index.html into extracted.js,
-# then from rhinocash-backend/:
-cat test/frontend-harness-prefix.js ../rhinocash-app/extracted.js test/frontend-integration-suffix.js > test/frontend-integration.combined.js
-node test/frontend-integration.combined.js
+TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_test \
+  bash test/run-frontend.sh
 ```
 
-At last verification: **776 backend tests + 609 frontend tests, all passing.**
+At last verification: **776 backend tests, all passing, and 607 of 609
+frontend tests passing** against a real PostgreSQL database — see
+`rhinocash-backend/docs/STATUS_REPORT.md` for the 2 known frontend
+failures (isolated to one page's test timing, not a data or backend
+issue).
 
 ## Security
 
@@ -103,8 +109,8 @@ the permission and branch/region scoping model actually works.
 ## Configuration
 
 Copy `rhinocash-backend/.env.example` to `rhinocash-backend/.env` for
-production configuration — nothing there is required for local
-development (see the file's own comments for what each variable does).
+production configuration — only `DATABASE_URL` is required to get
+started (see the file's own comments for what each other variable does).
 No secrets, credentials, or local databases are committed to this
 repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
 
@@ -127,11 +133,11 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
 ## Generated files (intentionally not included)
 
 - `rhinocash-app/extracted.js` — the raw extracted `<script>` contents of
-  `index.html`. Regenerate it with the command shown above; `index.html`
-  alone is authoritative.
+  `index.html`. Regenerated automatically by `test/run-frontend.sh`;
+  `index.html` alone is authoritative.
 - `rhinocash-backend/test/frontend-integration.combined.js` — assembled from
   `frontend-harness-prefix.js` + the frontend's extracted script +
-  `frontend-integration-suffix.js`. Regenerate as shown above.
-- `rhinocash-backend/data/` — the SQLite database, session secret, and
-  encryption key are all generated at seed/first-run time and gitignored;
-  never commit them.
+  `frontend-integration-suffix.js`. Regenerated automatically as above.
+- `rhinocash-backend/data/` — the session secret and M-Pesa encryption key
+  are generated at first-run time and gitignored; never commit them. The
+  application database itself lives in PostgreSQL, not in this directory.

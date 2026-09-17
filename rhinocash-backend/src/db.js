@@ -369,6 +369,7 @@ CREATE TABLE IF NOT EXISTS client_leads (
   source TEXT,
   status TEXT NOT NULL DEFAULT 'New',
   notes TEXT,
+  branch_id TEXT REFERENCES branches(id),
   converted_client_id TEXT REFERENCES clients(id),
   created_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT iso_now()

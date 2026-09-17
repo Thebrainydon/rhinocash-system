@@ -3,9 +3,6 @@
 # relative to that folder — both are kept so the rules apply correctly
 # regardless of which directory git is invoked from.
 
-rhinocash-backend/data/*.db
-rhinocash-backend/data/*.db-wal
-rhinocash-backend/data/*.db-shm
 rhinocash-backend/data/.session_secret
 rhinocash-backend/data/.mpesa_encryption_key
 rhinocash-backend/data/uploads/*
@@ -19,8 +16,9 @@ rhinocash-backend/test/frontend-integration.combined.js
 rhinocash-app/extracted.js
 
 # Scratch space for rhinocash-backend/test/run-all.sh and
-# run-frontend.sh — test database + WAL/SHM sidecars, seed output, and
-# server logs. Never the real application database.
+# run-frontend.sh — seed output and server logs. The test database itself
+# lives in PostgreSQL (TEST_DATABASE_URL), not a file, so there's nothing
+# to ignore for it here; this never touches the real application database.
 rhinocash-backend/test/tmp/
 
 *.tmp
