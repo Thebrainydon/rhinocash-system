@@ -54,7 +54,7 @@ function hasPermission(user, permissionId) {
 // actions are still separately gated by module+action permissions above.
 function branchScopeSQL(user, branchColumn = 'branch_id') {
   const roleId = user.role_id;
-  if (['admin', 'ceo', 'director', 'accountant'].includes(roleId)) {
+  if (['admin', 'ceo', 'director', 'accountant', 'investor'].includes(roleId)) {
     return { clause: '1=1', params: [] };
   }
   if (roleId === 'regional_manager') {

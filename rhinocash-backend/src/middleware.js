@@ -40,6 +40,21 @@ function requireModule(moduleId) {
   };
 }
 
+// For real, genuinely read-only aggregate endpoints that legitimately
+// serve more than one module's audience (e.g. a client-count summary
+// that both Clients-module staff AND Reports-module-only roles like
+// Investor may safely see) — never used for a write action.
+function requireAnyModule(...moduleIds) {
+  return (req, res, next) => {
+    if (!moduleIds.some(m => hasModuleAccess(req.user, m))) {
+      const { logAction } = require('./audit');
+      logAction(req, { action: 'Blocked unauthorized module access', module: moduleIds.join('|'), recordType: 'Module', recordId: moduleIds.join('|') });
+      return next({ status: 403, message: `You do not have access to any of: ${moduleIds.join(', ')}` });
+    }
+    next();
+  };
+}
+
 function requirePermission(permissionId) {
   return (req, res, next) => {
     if (!hasPermission(req.user, permissionId)) {
@@ -51,4 +66,4 @@ function requirePermission(permissionId) {
   };
 }
 
-module.exports = { requireAuth, requireModule, requirePermission, extractToken };
+module.exports = { requireAuth, requireModule, requireAnyModule, requirePermission, extractToken };

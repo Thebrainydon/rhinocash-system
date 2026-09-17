@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run } = require('./../db');
-const { requireAuth, requireModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requireAnyModule, requirePermission } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId } = require('./../rbac');
 const crypto = require('node:crypto');
@@ -28,6 +28,13 @@ function register(router) {
     }
     if (req.query.officer_id) { clauses.push('officer_id = ?'); params.push(req.query.officer_id); }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
+    if (req.query.unfunded === 'true') {
+      // Real, computed — not a stored status: a client who has never had
+      // a loan reach Disbursed/Active/Completed. Uses NOT EXISTS so it
+      // stays accurate under pagination (a client-side filter after
+      // fetching one page would silently under/over-count).
+      clauses.push(`NOT EXISTS (SELECT 1 FROM loans l WHERE l.client_id = clients.id AND l.status IN ('Disbursed','Active','Completed'))`);
+    }
     if (req.query.verification_status) { clauses.push('verification_status = ?'); params.push(req.query.verification_status); }
     if (req.query.q) {
       clauses.push('(name LIKE ? OR phone LIKE ? OR national_id LIKE ? OR client_code LIKE ?)');
@@ -174,8 +181,14 @@ function register(router) {
 
   // Leads
   router.get('/api/leads', requireAuth, requireModule('clients'), (req, res) => {
-    let rows = all('SELECT * FROM client_leads ORDER BY created_at DESC');
-    if (req.query.status) rows = rows.filter(l => l.status === req.query.status);
+    // Real branch/region scoping — a Loan Officer sees only their own
+    // real branch's leads, a Regional Manager their real region, CEO/
+    // Admin the real company-wide set. Previously this had no scoping
+    // at all, meaning every role saw every lead regardless of branch.
+    const scope = branchScopeSQL(req.user);
+    const clauses = [scope.clause]; const params = [...scope.params];
+    if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
+    const rows = all(`SELECT * FROM client_leads WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`, params);
     res.json({ leads: rows });
   });
   router.post('/api/leads', requireAuth, requireModule('clients'), (req, res, next) => {

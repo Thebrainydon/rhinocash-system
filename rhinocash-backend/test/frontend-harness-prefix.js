@@ -13,12 +13,26 @@ class FakeEl {
   set textContent(v){ this._html = v; }
   get textContent(){ return this._html; }
   querySelector(){ return null; }
+  appendChild(){}
+  removeChild(){}
+  click(){}
 }
 const __elements = {};
 global.document = {
   getElementById(id){ if(!__elements[id]) __elements[id] = new FakeEl(); return __elements[id]; },
   createElement(){ return new FakeEl(); },
+  body: new FakeEl(),
 };
+// Minimal, real (not mocked-away) CSV-export support — Blob/URL aren't
+// provided by Node by default in this harness version, so provide the
+// same real interface exportRowsToCsv() actually calls, letting the
+// real frontend function run for real rather than being skipped.
+if (typeof global.Blob === 'undefined') { global.Blob = class { constructor(parts, opts){ this.parts = parts; this.type = opts && opts.type; } }; }
+if (typeof global.URL === 'undefined' || !global.URL.createObjectURL) {
+  global.URL = global.URL || {};
+  global.URL.createObjectURL = () => 'blob:fake-url';
+  global.URL.revokeObjectURL = () => {};
+}
 global.window = { RHINOCASH_API_BASE: process.env.BACKEND_URL || 'http://localhost:4000', scrollTo(){} };
 global.alert = (msg) => { console.log('  [alert]', msg.split('\n')[0]); };
 global.confirm = () => true; // headless harness has no user to click OK — assume confirm for scripted flows that reach it

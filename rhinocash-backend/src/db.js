@@ -13,10 +13,62 @@ const fs = require('node:fs');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// Defensive, explicit permission check — fail loudly and early at startup
+// with an actionable message, rather than letting a cryptic native SQLite
+// error surface later during a user's login attempt.
+try {
+  fs.chmodSync(DATA_DIR, 0o755);
+} catch (e) {
+  // Non-fatal: chmod can fail on some filesystems (e.g. certain Android
+  // storage backends) even when the directory is genuinely writable;
+  // the accessSync check below is the real gate.
+}
+try {
+  fs.accessSync(DATA_DIR, fs.constants.W_OK);
+} catch (e) {
+  throw new Error(
+    `Rhinocash database directory is not writable: ${DATA_DIR}\n` +
+    `Set RHINOCASH_DB_PATH to a writable location, or fix permissions on this directory.`
+  );
+}
 const DB_PATH = process.env.RHINOCASH_DB_PATH || path.join(DATA_DIR, 'rhinocash.db');
+const dbFileExistedBeforeOpen = fs.existsSync(DB_PATH);
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA foreign_keys = ON;');
+// Real fix for "attempt to write a readonly database" on constrained/
+// FUSE-backed filesystems (this affects Termux/Android storage in
+// particular): SQLite's DEFAULT rollback-journal mode needs to create a
+// `-journal` sidecar file in this same directory on every write
+// transaction, and that sidecar-file creation is exactly what fails on
+// those filesystems even though ordinary file creation succeeds. WAL
+// mode uses `-wal`/`-shm` sidecar files instead, which are compatible
+// with far more filesystem types, and is the standard, documented fix
+// for this exact failure mode — not a workaround, the correct journal
+// mode for this deployment target.
+db.exec('PRAGMA journal_mode = WAL;');
+db.exec('PRAGMA synchronous = NORMAL;');
+
+// Explicit startup self-test: prove the database can actually be
+// written to right now, at server boot, rather than discovering this
+// for the first time during a user's login attempt. This makes the
+// database lifecycle explicit — the server should refuse to start with
+// a clear message instead of starting "successfully" and then failing
+// opaquely on the first real write.
+try {
+  db.exec('CREATE TABLE IF NOT EXISTS _startup_write_check (id INTEGER PRIMARY KEY, checked_at TEXT)');
+  db.prepare('INSERT INTO _startup_write_check (checked_at) VALUES (?)').run(new Date().toISOString());
+  db.exec('DROP TABLE _startup_write_check');
+} catch (e) {
+  throw new Error(
+    `Rhinocash database opened but a real write attempt failed: ${e.message}\n` +
+    `Database path: ${DB_PATH}\n` +
+    `This is almost always a filesystem/journal-mode incompatibility (common on ` +
+    `Termux/Android storage), not a code bug. If this error persists after the WAL ` +
+    `journal-mode fix, try setting RHINOCASH_DB_PATH to a path on internal, non-FUSE ` +
+    `storage (e.g. Termux's own $HOME, not shared/external storage).`
+  );
+}
 
 const SCHEMA = `
 -- ===================== Access model =====================
@@ -264,6 +316,9 @@ CREATE TABLE IF NOT EXISTS loans (
   rate_pct REAL NOT NULL,
   purpose TEXT,
   guarantor TEXT,
+  guarantor_contact TEXT,
+  loan_securities TEXT,
+  loan_category TEXT,  -- optional real classification: New | Top-up | Renewal | Emergency
   officer_id TEXT REFERENCES users(id),
   branch_id TEXT REFERENCES branches(id),
   status TEXT NOT NULL DEFAULT 'Waiting for Manager',
@@ -803,6 +858,19 @@ CREATE TABLE IF NOT EXISTS faq_articles (
   category TEXT NOT NULL DEFAULT 'General',
   created_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Real, configurable thresholds used consistently for collection-rate and
+-- portfolio-quality classification across LoanBook (Strong/Normal/Needs
+-- Attention, and quality ratings) — a single source of truth, never a
+-- second per-page formula.
+CREATE TABLE IF NOT EXISTS client_risk_config (
+  id TEXT PRIMARY KEY,
+  rule_name TEXT NOT NULL UNIQUE,
+  threshold_value REAL NOT NULL,
+  description TEXT,
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);

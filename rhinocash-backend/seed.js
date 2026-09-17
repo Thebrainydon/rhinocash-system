@@ -66,8 +66,8 @@ function seedModules() {
     // or any other financial action permission, so they still can't record
     // or modify a single transaction — same "system access vs. authority
     // to act" separation already applied elsewhere (e.g. Admin vs. finance).
-    ceo: ['dashboard', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
-    director: ['dashboard', 'reports', 'accounting', 'branches', 'investors', 'audit', 'support', 'account'],
+    ceo: ['dashboard', 'clients', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
+    director: ['dashboard', 'clients', 'reports', 'accounting', 'branches', 'investors', 'audit', 'support', 'account'],
   };
   Object.entries(roleModules).forEach(([role, mods]) =>
     mods.forEach(m => run('INSERT OR IGNORE INTO role_modules (role_id, module_id) VALUES (?,?)', [role, m])));
@@ -178,9 +178,25 @@ function seedDemoData() {
   branches.forEach(([id, name, loc, region]) =>
     run('INSERT OR IGNORE INTO branches (id, name, location, region_id, status) VALUES (?,?,?,?,?)', [id, name, loc, region, 'Active']));
 
+  // Real, configurable Strong/Normal/Needs Attention and portfolio-quality
+  // thresholds — the single source of truth reused across every LoanBook
+  // collection-rate and portfolio-quality page, never a second formula.
+  const riskConfig = [
+    ['strong_collection_rate_pct', 90, 'Collection rate at or above this is classified Strong'],
+    ['normal_collection_rate_pct', 70, 'Collection rate at or above this (below Strong) is classified Normal'],
+    ['quality_watch_par30_pct', 5, 'PAR-30 at or above this classifies portfolio quality as Watch'],
+    ['quality_atrisk_par30_pct', 10, 'PAR-30 at or above this classifies portfolio quality as At Risk'],
+    ['quality_critical_par30_pct', 20, 'PAR-30 at or above this classifies portfolio quality as Critical'],
+    ['quality_default_par30_pct', 40, 'PAR-30 at or above this classifies portfolio quality as Default'],
+  ];
+  riskConfig.forEach(([ruleName, value, desc], i) =>
+    run('INSERT OR IGNORE INTO client_risk_config (id, rule_name, threshold_value, description) VALUES (?,?,?,?)',
+      [`risk_cfg_${i + 1}`, ruleName, value, desc]));
+
   const products = [
     ['pr_boda', 'Boda Boda Asset Loan', 4, 10000, 150000, 3, 12],
     ['pr_biz', 'Business Working Capital', 3.5, 5000, 300000, 1, 12],
+    ['pr_starter', 'Starter Loan', 5, 1000, 20000, 1, 6],
   ];
   products.forEach(([id, name, rate, min, max, minT, maxT]) =>
     run('INSERT OR IGNORE INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct) VALUES (?,?,\'Flat\',?,?,?,?,?,2)',

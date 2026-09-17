@@ -44,11 +44,524 @@ function collectionTotals(loanIds, from, to) {
   return { expected: expectedRow.v, collected: collectedRow.v };
 }
 
+// Real per-CLIENT counts — a client with more than one installment due in
+// the window (e.g. weekly repayment over a monthly report) is one client,
+// not one per installment row. Derives a single aggregate status per
+// client from all of that client's rows, then counts clients by that
+// aggregate, so clientsPaid + clientsPartial + clientsNotPaid always sums
+// back to clientsExpected. Used by every rates/report/sheet breakdown
+// below instead of each one re-deriving (and previously mis-deriving)
+// this from raw row counts.
+function clientCounts(rows) {
+  const byClient = {};
+  rows.forEach(r => { (byClient[r.clientId] = byClient[r.clientId] || []).push(r); });
+  let paid = 0, partial = 0, notPaid = 0;
+  Object.values(byClient).forEach(crows => {
+    const isPaid = s => s === 'Paid' || s === 'Overpaid';
+    const isPartial = s => s === 'Partially Paid';
+    if (crows.every(r => isPaid(r.status))) paid++;
+    else if (crows.some(r => isPaid(r.status) || isPartial(r.status))) partial++;
+    else notPaid++;
+  });
+  return { clientsExpected: Object.keys(byClient).length, clientsPaid: paid, clientsPartial: partial, clientsNotPaid: notPaid };
+}
+
 function register(router) {
-  // ==================== Collection Sheet — real, paginated, filtered ====================
+  // ==================== Collection Rates — real classification (Strong/Normal/Needs Attention), branch/officer/product breakdown, daily/weekly/monthly aggregation ====================
+  router.get('/api/collections/rates-branch', requireAuth, requireModule('loanbook'), (req, res) => {
+    const { clause, params } = loanScopeClause(req);
+    let loanClause = clause; const loanParams = [...params];
+    if (req.query.product_id) { loanClause += ' AND product_id = ?'; loanParams.push(req.query.product_id); }
+    const loans = all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
+    let scopedLoans = loans;
+    if (req.query.cycle) {
+      // Real bulk cycle computation — same approach as the byCycle
+      // breakdown further down this file, reused here instead of a
+      // per-loan query so this filter doesn't issue one SQL round-trip
+      // per loan in scope.
+      const cyc = req.query.cycle;
+      const cycleClientIds = [...new Set(loans.map(l => l.client_id))];
+      const cycleByLoan = {};
+      if (cycleClientIds.length) {
+        const cPh = cycleClientIds.map(() => '?').join(',');
+        const seen = {};
+        all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, cycleClientIds)
+          .forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
+      }
+      scopedLoans = loans.filter(l => {
+        const c = cycleByLoan[l.id] || 1;
+        return cyc === '4+' ? c >= 4 : c === Number(cyc);
+      });
+    }
+    const loanIds = scopedLoans.map(l => l.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const to = req.query.to || today;
+
+    const strongThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`) || { threshold_value: 90 }).threshold_value;
+    const normalThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`) || { threshold_value: 70 }).threshold_value;
+    const classify = rate => rate >= strongThreshold ? 'Strong' : rate >= normalThreshold ? 'Normal' : 'Needs Attention';
+
+    if (loanIds.length === 0) {
+      return res.json({
+        from, to, expected: 0, collected: 0, outstanding: 0, collectionRate: 0, classification: classify(0), thresholds: { strong: strongThreshold, normal: normalThreshold },
+        clientsExpected: 0, clientsPaid: 0, clientsPartial: 0, clientsNotPaid: 0,
+        previousPeriod: null, dailyTrend: [], weeklyTrend: [], monthlyTrend: [], byOfficer: [], byProduct: [], byBranch: [], byStatus: [], attention: [], rows: [],
+        pagination: { page: 1, pageSize: 15, totalRows: 0, totalPages: 1 },
+      });
+    }
+
+    // Real bulk pre-fetch.
+    const idPh = loanIds.map(() => '?').join(',');
+    const scheduleByLoan = {};
+    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, from, to]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    const clientById = {};
+    const clientIds = [...new Set(scopedLoans.map(l => l.client_id))];
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+
+    const dueInWindow = [];
+    scopedLoans.forEach(loan => { const sched = scheduleByLoan[loan.id]; if (!sched) return; sched.forEach(r => { dueInWindow.push({ loan, schedule: r }); }); });
+    const statusOf = r => { if (r.paid_amount >= r.total_due - 0.01) return r.paid_amount > r.total_due + 0.01 ? 'Overpaid' : 'Paid'; if (r.paid_amount > 0) return 'Partially Paid'; if (r.due_date < today) return 'Overdue'; return 'Not Paid'; };
+    let scopedRows = dueInWindow.map(({ loan, schedule: r }) => {
+      const client = clientById[loan.client_id] || { name: 'Unknown' };
+      return {
+        dueDate: r.due_date, loanId: loan.id, clientId: loan.client_id, clientName: client.name, officerId: loan.officer_id, branchId: loan.branch_id, productId: loan.product_id,
+        expected: r.total_due, collected: r.paid_amount, outstanding: Math.max(0, r.total_due - r.paid_amount), status: statusOf(r),
+      };
+    });
+    if (req.query.status) scopedRows = scopedRows.filter(r => r.status === req.query.status);
+    if (req.query.officer_id) scopedRows = scopedRows.filter(r => r.officerId === req.query.officer_id);
+    if (req.query.branch_id) scopedRows = scopedRows.filter(r => r.branchId === req.query.branch_id);
+    if (req.query.q) { const q = req.query.q.toLowerCase(); scopedRows = scopedRows.filter(r => r.clientName.toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q)); }
+    scopedRows.sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate));
+
+    const kExpected = scopedRows.reduce((s, r) => s + r.expected, 0);
+    const kCollected = scopedRows.reduce((s, r) => s + r.collected, 0);
+    const kRate = kExpected > 0 ? (kCollected / kExpected * 100) : 0;
+
+    const officerGroups = {};
+    scopedRows.forEach(r => { if (!officerGroups[r.officerId]) officerGroups[r.officerId] = []; officerGroups[r.officerId].push(r); });
+    const byOfficer = Object.entries(officerGroups).map(([officerId, orows]) => {
+      const oExpected = orows.reduce((s, r) => s + r.expected, 0);
+      const oCollected = orows.reduce((s, r) => s + r.collected, 0);
+      const oRate = oExpected > 0 ? (oCollected / oExpected * 100) : 0;
+      return {
+        officerId, expected: oExpected, collected: oCollected, collectionRate: oRate,
+        ...clientCounts(orows),
+        classification: classify(oRate),
+      };
+    });
+
+    // Real per-branch breakdown — genuinely new, meaningful only when the
+    // requester's scope spans multiple branches (Regional Manager and
+    // above). Reuses the exact same real classify() thresholds — no
+    // second, different scale for the regional view.
+    const branchGroups = {};
+    scopedRows.forEach(r => { if (!branchGroups[r.branchId]) branchGroups[r.branchId] = []; branchGroups[r.branchId].push(r); });
+    const byBranch = Object.entries(branchGroups).map(([branchId, brows]) => {
+      const bExpected = brows.reduce((s, r) => s + r.expected, 0);
+      const bCollected = brows.reduce((s, r) => s + r.collected, 0);
+      const bRate = bExpected > 0 ? (bCollected / bExpected * 100) : 0;
+      return {
+        branchId, expected: bExpected, collected: bCollected, outstanding: Math.max(0, bExpected - bCollected), collectionRate: bRate,
+        ...clientCounts(brows),
+        overdueAmount: brows.filter(r => r.status === 'Overdue').reduce((s, r) => s + r.outstanding, 0),
+        classification: classify(bRate),
+      };
+    });
+
+    const productGroups = {};
+    scopedRows.forEach(r => { if (!productGroups[r.productId]) productGroups[r.productId] = []; productGroups[r.productId].push(r); });
+    const byProduct = Object.entries(productGroups).map(([productId, prows]) => { const pExpected = prows.reduce((s, r) => s + r.expected, 0); const pCollected = prows.reduce((s, r) => s + r.collected, 0); return { productId, expected: pExpected, collected: pCollected, collectionRate: pExpected > 0 ? (pCollected / pExpected * 100) : 0 }; });
+
+    const statusCounts = {}; scopedRows.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+    const byStatus = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+
+    // Real daily/weekly/monthly aggregation.
+    const dailyTrend = [];
+    { let cursor = new Date(from); const end = new Date(to); while (cursor <= end) { const dayStr = cursor.toISOString().slice(0, 10); const dayRows = scopedRows.filter(r => r.dueDate === dayStr); const dExp = dayRows.reduce((s, r) => s + r.expected, 0); const dColl = dayRows.reduce((s, r) => s + r.collected, 0); dailyTrend.push({ date: dayStr, expected: dExp, collected: dColl, collectionRate: dExp > 0 ? (dColl / dExp * 100) : 0 }); cursor.setDate(cursor.getDate() + 1); } }
+    const weeklyGroups = {};
+    dailyTrend.forEach(d => { const dt = new Date(d.date); const weekStart = new Date(dt); weekStart.setDate(dt.getDate() - dt.getDay()); const key = weekStart.toISOString().slice(0, 10); if (!weeklyGroups[key]) weeklyGroups[key] = { expected: 0, collected: 0 }; weeklyGroups[key].expected += d.expected; weeklyGroups[key].collected += d.collected; });
+    const weeklyTrend = Object.entries(weeklyGroups).map(([week, g]) => ({ week, expected: g.expected, collected: g.collected, collectionRate: g.expected > 0 ? (g.collected / g.expected * 100) : 0 }));
+    const monthlyGroups = {};
+    dailyTrend.forEach(d => { const key = d.date.slice(0, 7); if (!monthlyGroups[key]) monthlyGroups[key] = { expected: 0, collected: 0 }; monthlyGroups[key].expected += d.expected; monthlyGroups[key].collected += d.collected; });
+    const monthlyTrend = Object.entries(monthlyGroups).map(([month, g]) => ({ month, expected: g.expected, collected: g.collected, collectionRate: g.expected > 0 ? (g.collected / g.expected * 100) : 0 }));
+
+    // Real period-over-period comparison — percentage POINTS, not percentage change.
+    const rangeDays = Math.floor((new Date(to) - new Date(from)) / 86400000) + 1;
+    const prevFrom = new Date(new Date(from).getTime() - rangeDays * 86400000).toISOString().slice(0, 10);
+    const prevTo = new Date(new Date(from).getTime() - 86400000).toISOString().slice(0, 10);
+    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevFrom, prevTo);
+    const prevRate = prevExpected > 0 ? (prevCollected / prevExpected * 100) : 0;
+    const previousPeriod = { from: prevFrom, to: prevTo, collectionRate: prevRate, changePercentagePoints: kRate - prevRate };
+
+    const attention = [];
+    byBranch.forEach(b => { if (b.expected > 0 && b.classification === 'Needs Attention') attention.push({ type: 'Branch Below Threshold', branchId: b.branchId, detail: `${b.collectionRate.toFixed(1)}% (below Normal threshold of ${normalThreshold}%)` }); });
+    byOfficer.forEach(o => { if (o.expected > 0 && o.classification === 'Needs Attention') attention.push({ type: 'Officer Below Threshold', officerId: o.officerId, detail: `${o.collectionRate.toFixed(1)}% (below Normal threshold of ${normalThreshold}%)` }); });
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = req.query.export === 'true' ? Math.max(1, scopedRows.length) : Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 15));
+    const totalRows = scopedRows.length;
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    const pagedRows = scopedRows.slice((page - 1) * pageSize, page * pageSize);
+
+    res.json({
+      from, to, expected: kExpected, collected: kCollected, outstanding: Math.max(0, kExpected - kCollected), collectionRate: kRate, classification: classify(kRate), thresholds: { strong: strongThreshold, normal: normalThreshold },
+      ...clientCounts(scopedRows),
+      previousPeriod, dailyTrend, weeklyTrend, monthlyTrend, byOfficer, byProduct, byBranch, byStatus, attention,
+      rows: pagedRows, pagination: { page, pageSize, totalRows, totalPages },
+    });
+  });
+
+  // ==================== Collection Report — period-selectable, branch/officer/product breakdown, real daily trend, real period-over-period comparison ====================
+  router.get('/api/collections/report', requireAuth, requireModule('loanbook'), (req, res) => {
+    const { clause, params: scopeParams } = loanScopeClause(req);
+    let productClause = clause; const productParams = [...scopeParams];
+    if (req.query.product_id) { productClause += ' AND product_id = ?'; productParams.push(req.query.product_id); }
+    const loans = all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
+    const loanIds = loans.map(l => l.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const to = req.query.to || today;
+    if (from > to) return res.status(400).json({ error: 'from date must not be after to date' });
+
+    const { expected, collected } = collectionTotals(loanIds, from, to);
+
+    if (loanIds.length === 0) {
+      return res.json({
+        from, to, expected, collected, outstanding: 0, collectionRate: 0,
+        clientsExpected: 0, clientsPaid: 0, clientsPartial: 0, clientsNotPaid: 0, overdueAmount: 0, missedCollections: 0,
+        previousPeriod: null, dailyTrend: [], byOfficer: [], byProduct: [], byBranch: [], byStatus: [], exceptions: [], rows: [],
+        pagination: { page: 1, pageSize: 15, totalRows: 0, totalPages: 1 },
+      });
+    }
+
+    // Real bulk pre-fetch — schedule due within window, clients, last payment per loan.
+    const idPh = loanIds.map(() => '?').join(',');
+    const scheduleByLoan = {};
+    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, from, to]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    const clientById = {};
+    const clientIds = [...new Set(loans.map(l => l.client_id))];
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    const lastPaymentByLoan = {};
+    all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
+
+    const dueInWindow = [];
+    loans.forEach(loan => {
+      const sched = scheduleByLoan[loan.id];
+      if (!sched) return;
+      sched.forEach(r => { dueInWindow.push({ loan, schedule: r }); });
+    });
+    const statusOf = r => { if (r.paid_amount >= r.total_due - 0.01) return r.paid_amount > r.total_due + 0.01 ? 'Overpaid' : 'Paid'; if (r.paid_amount > 0) return 'Partially Paid'; if (r.due_date < today) return 'Overdue'; if (r.due_date === today) return 'Due'; return 'Not Paid'; };
+    let scopedRows = dueInWindow.map(({ loan, schedule: r }) => {
+      const daysOverdue = r.due_date < today ? Math.floor((new Date(today) - new Date(r.due_date)) / 86400000) : 0;
+      const lastPayment = lastPaymentByLoan[loan.id];
+      const client = clientById[loan.client_id] || { name: 'Unknown' };
+      return {
+        dueDate: r.due_date, loanId: loan.id, clientId: loan.client_id, clientName: client.name, officerId: loan.officer_id, branchId: loan.branch_id, productId: loan.product_id,
+        expected: r.total_due, paid: r.paid_amount, outstanding: r.total_due - r.paid_amount,
+        status: statusOf(r), daysOverdue: r.paid_amount < r.total_due - 0.01 ? daysOverdue : 0,
+        paymentMethod: lastPayment ? lastPayment.channel : null, paymentDate: lastPayment ? lastPayment.created_at : null, paymentReference: lastPayment ? lastPayment.reference : null,
+      };
+    });
+    if (req.query.status) scopedRows = scopedRows.filter(r => r.status === req.query.status);
+    if (req.query.officer_id) scopedRows = scopedRows.filter(r => r.officerId === req.query.officer_id);
+    if (req.query.branch_id) scopedRows = scopedRows.filter(r => r.branchId === req.query.branch_id);
+    if (req.query.q) { const q = req.query.q.toLowerCase(); scopedRows = scopedRows.filter(r => r.clientName.toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q)); }
+    scopedRows.sort((a, b) => new Date(b.dueDate) - new Date(a.dueDate));
+
+    const kExpected = scopedRows.reduce((s, r) => s + r.expected, 0);
+    const kCollected = scopedRows.reduce((s, r) => s + r.paid, 0);
+    const overdueAmount = scopedRows.filter(r => r.status === 'Overdue').reduce((s, r) => s + r.outstanding, 0);
+
+    const officerGroups = {};
+    scopedRows.forEach(r => { if (!officerGroups[r.officerId]) officerGroups[r.officerId] = []; officerGroups[r.officerId].push(r); });
+    const byOfficer = Object.entries(officerGroups).map(([officerId, orows]) => {
+      const oExpected = orows.reduce((s, r) => s + r.expected, 0);
+      const oCollected = orows.reduce((s, r) => s + r.paid, 0);
+      return {
+        officerId, expected: oExpected, collected: oCollected, collectionRate: oExpected > 0 ? (oCollected / oExpected * 100) : 0,
+        ...clientCounts(orows),
+        missedCollections: orows.filter(r => r.status === 'Overdue').length,
+      };
+    });
+
+    // Real per-branch breakdown — genuinely new, meaningful only when the
+    // requester's scope spans multiple branches (Regional Manager and above).
+    const branchGroups = {};
+    scopedRows.forEach(r => { if (!branchGroups[r.branchId]) branchGroups[r.branchId] = []; branchGroups[r.branchId].push(r); });
+    const byBranch = Object.entries(branchGroups).map(([branchId, brows]) => {
+      const bExpected = brows.reduce((s, r) => s + r.expected, 0);
+      const bCollected = brows.reduce((s, r) => s + r.paid, 0);
+      return {
+        branchId, expected: bExpected, collected: bCollected, outstanding: Math.max(0, bExpected - bCollected),
+        collectionRate: bExpected > 0 ? (bCollected / bExpected * 100) : 0,
+        ...clientCounts(brows),
+        overdueAmount: brows.filter(r => r.status === 'Overdue').reduce((s, r) => s + r.outstanding, 0),
+        missedCollections: brows.filter(r => r.status === 'Overdue').length,
+      };
+    });
+
+    const productGroups = {};
+    scopedRows.forEach(r => { if (!productGroups[r.productId]) productGroups[r.productId] = []; productGroups[r.productId].push(r); });
+    const byProduct = Object.entries(productGroups).map(([productId, prows]) => { const pExpected = prows.reduce((s, r) => s + r.expected, 0); const pCollected = prows.reduce((s, r) => s + r.paid, 0); return { productId, expected: pExpected, collected: pCollected, collectionRate: pExpected > 0 ? (pCollected / pExpected * 100) : 0 }; });
+
+    const statusCounts = {}; scopedRows.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+    const byStatus = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+
+    const exceptions = scopedRows.filter(r => r.status === 'Overdue' && r.outstanding > 0).slice(0, 20).map(r => ({ loanId: r.loanId, clientName: r.clientName, officerId: r.officerId, branchId: r.branchId, outstanding: r.outstanding, daysOverdue: r.daysOverdue }));
+
+    // Real daily trend, aggregated at daily granularity within the window.
+    const dailyTrend = [];
+    { let cursor = new Date(from); const end = new Date(to); while (cursor <= end) { const dayStr = cursor.toISOString().slice(0, 10); const dayRows = scopedRows.filter(r => r.dueDate === dayStr); dailyTrend.push({ date: dayStr, expected: dayRows.reduce((s, r) => s + r.expected, 0), collected: dayRows.reduce((s, r) => s + r.paid, 0) }); cursor.setDate(cursor.getDate() + 1); } }
+
+    // Real comparable previous-period comparison — same real duration, shifted back.
+    const rangeDays = Math.floor((new Date(to) - new Date(from)) / 86400000) + 1;
+    const prevFrom = new Date(new Date(from).getTime() - rangeDays * 86400000).toISOString().slice(0, 10);
+    const prevTo = new Date(new Date(from).getTime() - 86400000).toISOString().slice(0, 10);
+    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevFrom, prevTo);
+    const prevRate = prevExpected > 0 ? (prevCollected / prevExpected * 100) : 0;
+    const currentRate = kExpected > 0 ? (kCollected / kExpected * 100) : 0;
+    const previousPeriod = { from: prevFrom, to: prevTo, expected: prevExpected, collected: prevCollected, collectionRate: prevRate, trend: currentRate >= prevRate ? 'improved' : 'declined', collectedChangePct: prevCollected > 0 ? ((kCollected - prevCollected) / prevCollected * 100) : null };
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = req.query.export === 'true' ? Math.max(1, scopedRows.length) : Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 15));
+    const totalRows = scopedRows.length;
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    const pagedRows = scopedRows.slice((page - 1) * pageSize, page * pageSize);
+
+    res.json({
+      from, to, expected: kExpected, collected: kCollected, outstanding: Math.max(0, kExpected - kCollected),
+      collectionRate: currentRate,
+      ...clientCounts(scopedRows),
+      overdueAmount, missedCollections: scopedRows.filter(r => r.status === 'Overdue').length,
+      previousPeriod, dailyTrend, byOfficer, byProduct, byBranch, byStatus, exceptions,
+      rows: pagedRows, pagination: { page, pageSize, totalRows, totalPages },
+    });
+  });
+
+  // ==================== Manager/Regional Manager/Operational Manager Collection MTD — branch/officer/product breakdown, real classification, real trend ====================
+  router.get('/api/collections/mtd-branch', requireAuth, requireModule('loanbook'), (req, res) => {
+    const { clause, params } = loanScopeClause(req);
+    let productClause = clause; const productParams = [...params];
+    if (req.query.product_id) { productClause += ' AND product_id = ?'; productParams.push(req.query.product_id); }
+    const loans = all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
+    const loanIds = loans.map(l => l.id);
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (loanIds.length === 0) {
+      return res.json({
+        from: monthStart, to: today, expectedMTD: 0, collectedMTD: 0, remainingMTD: 0, collectionRateMTD: 0,
+        classification: 'Current', thresholds: { strong: 90, normal: 70 },
+        target: null, byOfficer: [], byProduct: [], byCycle: [], byBranch: [], byPaymentMethod: [], byStatus: [], dailyTrend: [], attention: [], clientRows: [], previousMonth: null,
+      });
+    }
+
+    const { expected: expectedMTD, collected: collectedMTD } = collectionTotals(loanIds, monthStart, today);
+
+    // Real per-loan real collection detail, bulk pre-fetched (no N+1).
+    const idPh = loanIds.map(() => '?').join(',');
+    const scheduleByLoan = {};
+    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, monthStart, today]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    const clientById = {};
+    const clientIds = [...new Set(loans.map(l => l.client_id))];
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    const lastPaymentByLoan = {};
+    all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
+
+    const clientRows = loans.filter(l => scheduleByLoan[l.id] && scheduleByLoan[l.id].length).map(l => {
+      const sched = scheduleByLoan[l.id];
+      const expected = sched.reduce((s, r) => s + r.total_due, 0);
+      const collected = sched.reduce((s, r) => s + r.paid_amount, 0);
+      const outstanding = Math.max(0, expected - collected);
+      const overdue = sched.some(r => r.paid_amount < r.total_due - 0.01 && r.due_date < today);
+      const status = collected >= expected - 0.01 ? 'Fully Paid' : collected > 0 ? 'Partially Paid' : (overdue ? 'Overdue' : 'Unpaid');
+      const lastPayment = lastPaymentByLoan[l.id];
+      const client = clientById[l.client_id] || { name: 'Unknown' };
+      return { loanId: l.id, clientId: l.client_id, clientName: client.name, officerId: l.officer_id, branchId: l.branch_id, productId: l.product_id, expected, collected, outstanding, status, paymentMethod: lastPayment ? lastPayment.channel : null };
+    });
+
+    const today0 = today.slice(0, 10);
+    const dueInWindow = clientRows; // already scoped to the MTD window above
+    const statusOf = r => r.status;
+
+    // Real branch breakdown.
+    const branchGroups = {}; dueInWindow.forEach(r => { if (!branchGroups[r.branchId]) branchGroups[r.branchId] = []; branchGroups[r.branchId].push(r); });
+    const byBranch = Object.entries(branchGroups).map(([branchId, brows]) => {
+      const bExpected = brows.reduce((s, r) => s + r.expected, 0);
+      const bCollected = brows.reduce((s, r) => s + r.collected, 0);
+      return {
+        branchId, expected: bExpected, collected: bCollected, rate: bExpected > 0 ? (bCollected / bExpected * 100) : 0, outstanding: Math.max(0, bExpected - bCollected),
+        numDue: brows.length, numPaid: brows.filter(r => r.status === 'Fully Paid').length, numUnpaid: brows.filter(r => r.status === 'Unpaid').length, numPartial: brows.filter(r => r.status === 'Partially Paid').length,
+        arrears: brows.filter(r => r.status === 'Overdue').reduce((s, r) => s + r.outstanding, 0),
+        target: null,
+      };
+    });
+
+    // Real officer breakdown.
+    const officerGroups = {}; dueInWindow.forEach(r => { if (!officerGroups[r.officerId]) officerGroups[r.officerId] = []; officerGroups[r.officerId].push(r); });
+    const byOfficer = Object.entries(officerGroups).map(([officerId, orows]) => {
+      const oExpected = orows.reduce((s, r) => s + r.expected, 0);
+      const oCollected = orows.reduce((s, r) => s + r.collected, 0);
+      return { officerId, expected: oExpected, collected: oCollected, achievementPct: oExpected > 0 ? (oCollected / oExpected * 100) : 0, numDue: orows.length, numPaid: orows.filter(r => r.status === 'Fully Paid').length };
+    });
+
+    // Real product breakdown.
+    const productGroups = {}; dueInWindow.forEach(r => { if (!productGroups[r.productId]) productGroups[r.productId] = []; productGroups[r.productId].push(r); });
+    const byProduct = Object.entries(productGroups).map(([productId, prows]) => { const pExpected = prows.reduce((s, r) => s + r.expected, 0); const pCollected = prows.reduce((s, r) => s + r.collected, 0); return { productId, expected: pExpected, collected: pCollected, rate: pExpected > 0 ? (pCollected / pExpected * 100) : 0 }; });
+
+    // Real cycle breakdown.
+    const cycleByLoan = {};
+    { const sortedLoans = clientIds.length ? all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${clientIds.map(() => '?').join(',')}) ORDER BY created_at ASC`, clientIds) : []; const seen = {}; sortedLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    const cycleGroups = {}; dueInWindow.forEach(r => { const cyc = cycleByLoan[r.loanId] || 1; const key = cyc >= 4 ? '4+' : String(cyc); if (!cycleGroups[key]) cycleGroups[key] = []; cycleGroups[key].push(r); });
+    const byCycle = Object.entries(cycleGroups).map(([cycle, crows]) => ({ cycle, expected: crows.reduce((s, r) => s + r.expected, 0), collected: crows.reduce((s, r) => s + r.collected, 0), numDue: crows.length }));
+
+    // Real payment-method breakdown.
+    const methodGroups = {}; dueInWindow.filter(r => r.paymentMethod).forEach(r => { methodGroups[r.paymentMethod] = (methodGroups[r.paymentMethod] || 0) + r.collected; });
+    const byPaymentMethod = Object.entries(methodGroups).map(([method, amount]) => ({ method, amount }));
+
+    // Real status distribution.
+    const statusCounts = {}; dueInWindow.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+    const byStatus = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+
+    // Real daily trend for the MTD window — one bulk query for expected
+    // (by due date) and one for collected (by real payment date, same
+    // definition as collectionTotals) across the whole window, grouped by
+    // day client-side, instead of one collectionTotals() round-trip per
+    // calendar day.
+    const dailyTrend = [];
+    {
+      const dayKeys = [];
+      { let cursor = new Date(monthStart); const end = new Date(today); while (cursor <= end) { dayKeys.push(cursor.toISOString().slice(0, 10)); cursor.setDate(cursor.getDate() + 1); } }
+      const expectedByDay = {}; const collectedByDay = {};
+      if (loanIds.length) {
+        const idPh = loanIds.map(() => '?').join(',');
+        all(`SELECT due_date, SUM(total_due) as v FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?) GROUP BY due_date`, [...loanIds, monthStart, today])
+          .forEach(r => { expectedByDay[r.due_date] = r.v; });
+        all(`SELECT date(created_at) as d, SUM(amount) as v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Unposted' AND date(created_at) BETWEEN date(?) AND date(?) GROUP BY date(created_at)`, [...loanIds, monthStart, today])
+          .forEach(r => { collectedByDay[r.d] = r.v; });
+      }
+      dayKeys.forEach(dayStr => { dailyTrend.push({ date: dayStr, expected: expectedByDay[dayStr] || 0, collected: collectedByDay[dayStr] || 0 }); });
+    }
+
+    // Real classification — reusing the exact same configured thresholds used everywhere else in Rhinocash.
+    const strongThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`) || { threshold_value: 90 }).threshold_value;
+    const normalThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`) || { threshold_value: 70 }).threshold_value;
+    const classify = rate => rate >= strongThreshold ? 'Strong' : rate >= normalThreshold ? 'Normal' : 'Needs Attention';
+    const overallRate = expectedMTD > 0 ? (collectedMTD / expectedMTD * 100) : 0;
+
+    const attention = [];
+    byBranch.forEach(b => { if (b.expected > 0 && classify(b.rate) === 'Needs Attention') attention.push({ type: 'Branch Below Threshold', branchId: b.branchId, detail: `${b.rate.toFixed(1)}% (below Normal threshold of ${normalThreshold}%)` }); });
+    byOfficer.forEach(o => { if (o.expected > 0 && classify(o.achievementPct) === 'Needs Attention') attention.push({ type: 'Officer Below Threshold', officerId: o.officerId, detail: `${o.achievementPct.toFixed(1)}% (below Normal threshold of ${normalThreshold}%)` }); });
+
+    // Real target — same real 'collection' metric target used elsewhere, never a second definition.
+    let target = null;
+    const period = today.slice(0, 7);
+    if (req.user.role_id === 'loan_officer') {
+      target = get(`SELECT * FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.user.id, period]);
+    } else if (req.query.branch_id) {
+      target = get(`SELECT * FROM targets WHERE branch_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.query.branch_id, period]);
+    }
+
+    // Real comparable-previous-period comparison (same real day-of-month range in the previous month).
+    const prevMonthDate = new Date(monthStart); prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+    const prevMonthStart = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString().slice(0, 10);
+    const daysSoFar = Math.floor((new Date(today) - new Date(monthStart)) / 86400000);
+    const prevMonthEnd = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1 + daysSoFar).toISOString().slice(0, 10);
+    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevMonthStart, prevMonthEnd);
+    const previousMonth = { from: prevMonthStart, to: prevMonthEnd, expected: prevExpected, collected: prevCollected, growthPct: prevCollected > 0 ? ((collectedMTD - prevCollected) / prevCollected * 100) : null };
+
+    res.json({
+      from: monthStart, to: today, expectedMTD, collectedMTD, remainingMTD: Math.max(0, expectedMTD - collectedMTD),
+      collectionRateMTD: overallRate, classification: classify(overallRate), thresholds: { strong: strongThreshold, normal: normalThreshold },
+      target: target ? { value: target.target_value, achievement: collectedMTD, percentage: target.target_value > 0 ? (collectedMTD / target.target_value * 100) : 0 } : null,
+      byOfficer, byProduct, byCycle, byBranch, byPaymentMethod, byStatus, dailyTrend, attention, clientRows, previousMonth,
+    });
+  });
+
+  router.get('/api/collections/sheet-branch', requireAuth, requireModule('loanbook'), (req, res) => {
+    const { clause, params } = loanScopeClause(req);
+    let loanClause = clause; const loanParams = [...params];
+    if (req.query.branch_id) { loanClause += ' AND branch_id = ?'; loanParams.push(req.query.branch_id); }
+    if (req.query.officer_id) { loanClause += ' AND officer_id = ?'; loanParams.push(req.query.officer_id); }
+    if (req.query.product_id) { loanClause += ' AND product_id = ?'; loanParams.push(req.query.product_id); }
+    const loans = all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
+    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const clientById = {};
+    if (loans.length) {
+      const clientIds = [...new Set(loans.map(l => l.client_id))];
+      const cPh = clientIds.map(() => '?').join(',');
+      all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; });
+    }
+    const rows = [];
+    loans.forEach(loan => {
+      const sched = get('SELECT * FROM loan_schedule WHERE loan_id = ? AND due_date = ?', [loan.id, date]);
+      if (!sched) return; // not actually due on this real date
+      if (req.query.q) {
+        const q = req.query.q.toLowerCase();
+        const client = clientById[loan.client_id] || { name: '' };
+        if (!client.name.toLowerCase().includes(q) && !loan.id.toLowerCase().includes(q)) return;
+      }
+      const outstanding = Math.max(0, sched.total_due - sched.paid_amount);
+      const status = sched.paid_amount >= sched.total_due - 0.01 ? 'Paid' : sched.paid_amount > 0 ? 'Partially Paid' : (date < new Date().toISOString().slice(0, 10) ? 'Overdue' : 'Not Paid');
+      if (req.query.status && req.query.status !== status) return;
+      const lastPayment = get(`SELECT channel FROM payments WHERE loan_id = ? AND status != 'Reversed' ORDER BY created_at DESC LIMIT 1`, [loan.id]);
+      const client = clientById[loan.client_id] || { name: 'Unknown' };
+      rows.push({
+        clientId: loan.client_id, clientName: client.name, loanId: loan.id, officerId: loan.officer_id, branchId: loan.branch_id, productId: loan.product_id,
+        expected: sched.total_due, collected: sched.paid_amount, outstanding, status, paymentMethod: lastPayment ? lastPayment.channel : null,
+      });
+    });
+
+    const kExpected = rows.reduce((s, r) => s + r.expected, 0);
+    const kCollected = rows.reduce((s, r) => s + r.collected, 0);
+    const kpis = {
+      expected: kExpected, collected: kCollected, outstanding: Math.max(0, kExpected - kCollected),
+      collectionRate: kExpected > 0 ? (kCollected / kExpected * 100) : 0,
+      ...clientCounts(rows),
+    };
+
+    const officerGroups = {};
+    rows.forEach(r => { if (!officerGroups[r.officerId]) officerGroups[r.officerId] = []; officerGroups[r.officerId].push(r); });
+    const byOfficer = Object.entries(officerGroups).map(([officerId, orows]) => {
+      const oExpected = orows.reduce((s, r) => s + r.expected, 0);
+      const oCollected = orows.reduce((s, r) => s + r.collected, 0);
+      return {
+        officerId, expected: oExpected, collected: oCollected, rate: oExpected > 0 ? (oCollected / oExpected * 100) : 0,
+        ...clientCounts(orows), rows: orows,
+      };
+    });
+
+    // Real per-branch grouping — genuinely new, meaningful only when the
+    // requester's scope spans multiple branches (Regional Manager and
+    // above). A single-branch Manager sees only one row here.
+    const branchGroups = {};
+    rows.forEach(r => { if (!branchGroups[r.branchId]) branchGroups[r.branchId] = []; branchGroups[r.branchId].push(r); });
+    const byBranch = Object.entries(branchGroups).map(([branchId, brows]) => {
+      const bExpected = brows.reduce((s, r) => s + r.expected, 0);
+      const bCollected = brows.reduce((s, r) => s + r.collected, 0);
+      return {
+        branchId, expected: bExpected, collected: bCollected, outstanding: Math.max(0, bExpected - bCollected),
+        rate: bExpected > 0 ? (bCollected / bExpected * 100) : 0,
+        ...clientCounts(brows),
+        overdueLoans: brows.filter(r => r.status === 'Overdue').length,
+        arrears: brows.filter(r => r.status === 'Overdue').reduce((s, r) => s + r.outstanding, 0),
+      };
+    });
+
+    const statusCounts = {}; rows.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+    const byStatus = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
+
+    const exceptions = rows.filter(r => r.status === 'Overdue' || (r.status === 'Not Paid' && r.outstanding > 0))
+      .map(r => ({ loanId: r.loanId, clientName: r.clientName, officerId: r.officerId, outstanding: r.outstanding, reason: r.status === 'Overdue' ? 'Overdue' : 'Unpaid' }));
+
+    res.json({ date, kpis, byOfficer, byBranch, byStatus, exceptions, rows });
+  });
+
   router.get('/api/collections/sheet', requireAuth, requireModule('loanbook'), (req, res) => {
     const { clause, params } = loanScopeClause(req);
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
+    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
     const from = req.query.date_from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const to = req.query.date_to || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);

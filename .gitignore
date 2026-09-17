@@ -4,6 +4,8 @@
 # regardless of which directory git is invoked from.
 
 rhinocash-backend/data/*.db
+rhinocash-backend/data/*.db-wal
+rhinocash-backend/data/*.db-shm
 rhinocash-backend/data/.session_secret
 rhinocash-backend/data/.mpesa_encryption_key
 rhinocash-backend/data/uploads/*

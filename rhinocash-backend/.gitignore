@@ -1,4 +1,6 @@
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/.session_secret
 data/.mpesa_encryption_key
 data/uploads/
