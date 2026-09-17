@@ -74,6 +74,28 @@ class Router {
       req.body = {};
     }
 
+    // CORS preflight: browsers send OPTIONS before any cross-origin
+    // GET/POST/etc. request and expect an answer straight from the CORS
+    // middleware (registered via router.use in server.js) — never
+    // route-matched (routes are only ever registered for the real HTTP
+    // method, never OPTIONS) and never authenticated (route handlers, and
+    // any requireAuth call inside them, are never part of this chain).
+    // Previously this fell straight through to the 404 below, since no
+    // route's method is ever "OPTIONS" — breaking every real preflight
+    // from a browser. Run just the global middleware chain; the CORS
+    // middleware itself ends the response (204 + CORS headers).
+    if (req.method === 'OPTIONS') {
+      let mIdx = 0;
+      const mNext = async (err) => {
+        if (err) { res.status(err.status || 500).json({ error: 'Server error' }); return; }
+        const fn = this.middlewares[mIdx++];
+        if (!fn) { if (!res.headersSent) res.status(204).end(); return; }
+        try { await fn(req, res, mNext); } catch (e) { await mNext(e); }
+      };
+      await mNext();
+      return;
+    }
+
     const match = this.routes.find(r => r.method === req.method && r.regex.test(url.pathname));
     if (!match) { res.status(404).json({ error: 'Not found' }); return; }
     const m = url.pathname.match(match.regex);
