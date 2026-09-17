@@ -10,14 +10,14 @@ const crypto = require('node:crypto');
 // Every role-specific view below calls THROUGH these two functions —
 // there is exactly one place "expected" and "collected" are computed,
 // so figures can never silently diverge between roles.
-function loanScopeClause(req, extraOfficerCol) {
-  const scope = branchScopeSQL(req.user);
+async function loanScopeClause(req, extraOfficerCol) {
+  const scope = await branchScopeSQL(req.user);
   let clause = scope.clause; const params = [...scope.params];
   if (req.user.role_id === 'loan_officer') { clause += ` AND ${extraOfficerCol || 'officer_id'} = ?`; params.push(req.user.id); }
   if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
   if (req.query.officer_id && req.user.role_id !== 'loan_officer') { clause += ` AND ${extraOfficerCol || 'officer_id'} = ?`; params.push(req.query.officer_id); }
   if (req.query.region_id) {
-    const regionBranches = all('SELECT id FROM branches WHERE region_id = ?', [req.query.region_id]).map(b => b.id);
+    const regionBranches = (await all('SELECT id FROM branches WHERE region_id = ?', [req.query.region_id])).map(b => b.id);
     clause += regionBranches.length ? ` AND branch_id IN (${regionBranches.map(() => '?').join(',')})` : ' AND 1=0';
     params.push(...regionBranches);
   }
@@ -26,19 +26,19 @@ function loanScopeClause(req, extraOfficerCol) {
 
 // expected/collected for a set of loans over [from, to] — the same
 // definition used by MTD, Rate, and the Collection Sheet.
-function collectionTotals(loanIds, from, to) {
+async function collectionTotals(loanIds, from, to) {
   if (loanIds.length === 0) return { expected: 0, collected: 0 };
   const placeholders = loanIds.map(() => '?').join(',');
-  const expectedRow = get(
-    `SELECT COALESCE(SUM(total_due),0) as v FROM loan_schedule WHERE loan_id IN (${placeholders}) AND due_date BETWEEN date(?) AND date(?)`,
+  const expectedRow = await get(
+    `SELECT COALESCE(SUM(total_due),0) as v FROM loan_schedule WHERE loan_id IN (${placeholders}) AND (due_date)::date BETWEEN (?)::date AND (?)::date`,
     [...loanIds, from, to]
   );
   // "Collected" = real posted payments in the window, not schedule
   // paid_amount (which can reflect payments posted on a different date
   // than they were collected, e.g. backdated corrections) — using the
   // real payments ledger keeps this consistent with Accounting/Cashflow.
-  const collectedRow = get(
-    `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p WHERE p.loan_id IN (${placeholders}) AND p.status != 'Unposted' AND date(p.created_at) BETWEEN date(?) AND date(?)`,
+  const collectedRow = await get(
+    `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p WHERE p.loan_id IN (${placeholders}) AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`,
     [...loanIds, from, to]
   );
   return { expected: expectedRow.v, collected: collectedRow.v };
@@ -68,11 +68,11 @@ function clientCounts(rows) {
 
 function register(router) {
   // ==================== Collection Rates — real classification (Strong/Normal/Needs Attention), branch/officer/product breakdown, daily/weekly/monthly aggregation ====================
-  router.get('/api/collections/rates-branch', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
+  router.get('/api/collections/rates-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
     let loanClause = clause; const loanParams = [...params];
     if (req.query.product_id) { loanClause += ' AND product_id = ?'; loanParams.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
+    const loans = await all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
     let scopedLoans = loans;
     if (req.query.cycle) {
       // Real bulk cycle computation — same approach as the byCycle
@@ -85,7 +85,7 @@ function register(router) {
       if (cycleClientIds.length) {
         const cPh = cycleClientIds.map(() => '?').join(',');
         const seen = {};
-        all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, cycleClientIds)
+        (await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, cycleClientIds))
           .forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
       }
       scopedLoans = loans.filter(l => {
@@ -98,8 +98,8 @@ function register(router) {
     const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const to = req.query.to || today;
 
-    const strongThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`) || { threshold_value: 90 }).threshold_value;
-    const normalThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`) || { threshold_value: 70 }).threshold_value;
+    const strongThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`)) || { threshold_value: 90 }).threshold_value;
+    const normalThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`)) || { threshold_value: 70 }).threshold_value;
     const classify = rate => rate >= strongThreshold ? 'Strong' : rate >= normalThreshold ? 'Normal' : 'Needs Attention';
 
     if (loanIds.length === 0) {
@@ -114,10 +114,10 @@ function register(router) {
     // Real bulk pre-fetch.
     const idPh = loanIds.map(() => '?').join(',');
     const scheduleByLoan = {};
-    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, from, to]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date BETWEEN (?)::date AND (?)::date`, [...loanIds, from, to])).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
     const clientById = {};
     const clientIds = [...new Set(scopedLoans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
 
     const dueInWindow = [];
     scopedLoans.forEach(loan => { const sched = scheduleByLoan[loan.id]; if (!sched) return; sched.forEach(r => { dueInWindow.push({ loan, schedule: r }); }); });
@@ -191,7 +191,7 @@ function register(router) {
     const rangeDays = Math.floor((new Date(to) - new Date(from)) / 86400000) + 1;
     const prevFrom = new Date(new Date(from).getTime() - rangeDays * 86400000).toISOString().slice(0, 10);
     const prevTo = new Date(new Date(from).getTime() - 86400000).toISOString().slice(0, 10);
-    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevFrom, prevTo);
+    const { expected: prevExpected, collected: prevCollected } = await collectionTotals(loanIds, prevFrom, prevTo);
     const prevRate = prevExpected > 0 ? (prevCollected / prevExpected * 100) : 0;
     const previousPeriod = { from: prevFrom, to: prevTo, collectionRate: prevRate, changePercentagePoints: kRate - prevRate };
 
@@ -214,18 +214,18 @@ function register(router) {
   });
 
   // ==================== Collection Report — period-selectable, branch/officer/product breakdown, real daily trend, real period-over-period comparison ====================
-  router.get('/api/collections/report', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params: scopeParams } = loanScopeClause(req);
+  router.get('/api/collections/report', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params: scopeParams } = await loanScopeClause(req);
     let productClause = clause; const productParams = [...scopeParams];
     if (req.query.product_id) { productClause += ' AND product_id = ?'; productParams.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
+    const loans = await all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
     const loanIds = loans.map(l => l.id);
     const today = new Date().toISOString().slice(0, 10);
     const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const to = req.query.to || today;
     if (from > to) return res.status(400).json({ error: 'from date must not be after to date' });
 
-    const { expected, collected } = collectionTotals(loanIds, from, to);
+    const { expected, collected } = await collectionTotals(loanIds, from, to);
 
     if (loanIds.length === 0) {
       return res.json({
@@ -239,12 +239,12 @@ function register(router) {
     // Real bulk pre-fetch — schedule due within window, clients, last payment per loan.
     const idPh = loanIds.map(() => '?').join(',');
     const scheduleByLoan = {};
-    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, from, to]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date BETWEEN (?)::date AND (?)::date`, [...loanIds, from, to])).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     const lastPaymentByLoan = {};
-    all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
+    (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds)).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
 
     const dueInWindow = [];
     loans.forEach(loan => {
@@ -319,7 +319,7 @@ function register(router) {
     const rangeDays = Math.floor((new Date(to) - new Date(from)) / 86400000) + 1;
     const prevFrom = new Date(new Date(from).getTime() - rangeDays * 86400000).toISOString().slice(0, 10);
     const prevTo = new Date(new Date(from).getTime() - 86400000).toISOString().slice(0, 10);
-    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevFrom, prevTo);
+    const { expected: prevExpected, collected: prevCollected } = await collectionTotals(loanIds, prevFrom, prevTo);
     const prevRate = prevExpected > 0 ? (prevCollected / prevExpected * 100) : 0;
     const currentRate = kExpected > 0 ? (kCollected / kExpected * 100) : 0;
     const previousPeriod = { from: prevFrom, to: prevTo, expected: prevExpected, collected: prevCollected, collectionRate: prevRate, trend: currentRate >= prevRate ? 'improved' : 'declined', collectedChangePct: prevCollected > 0 ? ((kCollected - prevCollected) / prevCollected * 100) : null };
@@ -341,11 +341,11 @@ function register(router) {
   });
 
   // ==================== Manager/Regional Manager/Operational Manager Collection MTD — branch/officer/product breakdown, real classification, real trend ====================
-  router.get('/api/collections/mtd-branch', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
+  router.get('/api/collections/mtd-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
     let productClause = clause; const productParams = [...params];
     if (req.query.product_id) { productClause += ' AND product_id = ?'; productParams.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
+    const loans = await all(`SELECT * FROM loans WHERE ${productClause} AND status IN ('Active','Disbursed','Completed')`, productParams);
     const loanIds = loans.map(l => l.id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
@@ -358,17 +358,17 @@ function register(router) {
       });
     }
 
-    const { expected: expectedMTD, collected: collectedMTD } = collectionTotals(loanIds, monthStart, today);
+    const { expected: expectedMTD, collected: collectedMTD } = await collectionTotals(loanIds, monthStart, today);
 
     // Real per-loan real collection detail, bulk pre-fetched (no N+1).
     const idPh = loanIds.map(() => '?').join(',');
     const scheduleByLoan = {};
-    all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?)`, [...loanIds, monthStart, today]).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
+    (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date BETWEEN (?)::date AND (?)::date`, [...loanIds, monthStart, today])).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); });
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     const lastPaymentByLoan = {};
-    all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
+    (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds)).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; });
 
     const clientRows = loans.filter(l => scheduleByLoan[l.id] && scheduleByLoan[l.id].length).map(l => {
       const sched = scheduleByLoan[l.id];
@@ -413,7 +413,7 @@ function register(router) {
 
     // Real cycle breakdown.
     const cycleByLoan = {};
-    { const sortedLoans = clientIds.length ? all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${clientIds.map(() => '?').join(',')}) ORDER BY created_at ASC`, clientIds) : []; const seen = {}; sortedLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    { const sortedLoans = clientIds.length ? await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${clientIds.map(() => '?').join(',')}) ORDER BY created_at ASC`, clientIds) : []; const seen = {}; sortedLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
     const cycleGroups = {}; dueInWindow.forEach(r => { const cyc = cycleByLoan[r.loanId] || 1; const key = cyc >= 4 ? '4+' : String(cyc); if (!cycleGroups[key]) cycleGroups[key] = []; cycleGroups[key].push(r); });
     const byCycle = Object.entries(cycleGroups).map(([cycle, crows]) => ({ cycle, expected: crows.reduce((s, r) => s + r.expected, 0), collected: crows.reduce((s, r) => s + r.collected, 0), numDue: crows.length }));
 
@@ -437,17 +437,17 @@ function register(router) {
       const expectedByDay = {}; const collectedByDay = {};
       if (loanIds.length) {
         const idPh = loanIds.map(() => '?').join(',');
-        all(`SELECT due_date, SUM(total_due) as v FROM loan_schedule WHERE loan_id IN (${idPh}) AND due_date BETWEEN date(?) AND date(?) GROUP BY due_date`, [...loanIds, monthStart, today])
+        (await all(`SELECT due_date, SUM(total_due) as v FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date BETWEEN (?)::date AND (?)::date GROUP BY due_date`, [...loanIds, monthStart, today]))
           .forEach(r => { expectedByDay[r.due_date] = r.v; });
-        all(`SELECT date(created_at) as d, SUM(amount) as v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Unposted' AND date(created_at) BETWEEN date(?) AND date(?) GROUP BY date(created_at)`, [...loanIds, monthStart, today])
+        (await all(`SELECT (created_at)::date as d, SUM(amount) as v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Unposted' AND (created_at)::date BETWEEN (?)::date AND (?)::date GROUP BY (created_at)::date`, [...loanIds, monthStart, today]))
           .forEach(r => { collectedByDay[r.d] = r.v; });
       }
       dayKeys.forEach(dayStr => { dailyTrend.push({ date: dayStr, expected: expectedByDay[dayStr] || 0, collected: collectedByDay[dayStr] || 0 }); });
     }
 
     // Real classification — reusing the exact same configured thresholds used everywhere else in Rhinocash.
-    const strongThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`) || { threshold_value: 90 }).threshold_value;
-    const normalThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`) || { threshold_value: 70 }).threshold_value;
+    const strongThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'strong_collection_rate_pct'`)) || { threshold_value: 90 }).threshold_value;
+    const normalThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'normal_collection_rate_pct'`)) || { threshold_value: 70 }).threshold_value;
     const classify = rate => rate >= strongThreshold ? 'Strong' : rate >= normalThreshold ? 'Normal' : 'Needs Attention';
     const overallRate = expectedMTD > 0 ? (collectedMTD / expectedMTD * 100) : 0;
 
@@ -459,9 +459,9 @@ function register(router) {
     let target = null;
     const period = today.slice(0, 7);
     if (req.user.role_id === 'loan_officer') {
-      target = get(`SELECT * FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.user.id, period]);
+      target = await get(`SELECT * FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.user.id, period]);
     } else if (req.query.branch_id) {
-      target = get(`SELECT * FROM targets WHERE branch_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.query.branch_id, period]);
+      target = await get(`SELECT * FROM targets WHERE branch_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.query.branch_id, period]);
     }
 
     // Real comparable-previous-period comparison (same real day-of-month range in the previous month).
@@ -469,7 +469,7 @@ function register(router) {
     const prevMonthStart = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString().slice(0, 10);
     const daysSoFar = Math.floor((new Date(today) - new Date(monthStart)) / 86400000);
     const prevMonthEnd = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1 + daysSoFar).toISOString().slice(0, 10);
-    const { expected: prevExpected, collected: prevCollected } = collectionTotals(loanIds, prevMonthStart, prevMonthEnd);
+    const { expected: prevExpected, collected: prevCollected } = await collectionTotals(loanIds, prevMonthStart, prevMonthEnd);
     const previousMonth = { from: prevMonthStart, to: prevMonthEnd, expected: prevExpected, collected: prevCollected, growthPct: prevCollected > 0 ? ((collectedMTD - prevCollected) / prevCollected * 100) : null };
 
     res.json({
@@ -480,39 +480,39 @@ function register(router) {
     });
   });
 
-  router.get('/api/collections/sheet-branch', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
+  router.get('/api/collections/sheet-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
     let loanClause = clause; const loanParams = [...params];
     if (req.query.branch_id) { loanClause += ' AND branch_id = ?'; loanParams.push(req.query.branch_id); }
     if (req.query.officer_id) { loanClause += ' AND officer_id = ?'; loanParams.push(req.query.officer_id); }
     if (req.query.product_id) { loanClause += ' AND product_id = ?'; loanParams.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
+    const loans = await all(`SELECT * FROM loans WHERE ${loanClause} AND status IN ('Active','Disbursed','Completed')`, loanParams);
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     const clientById = {};
     if (loans.length) {
       const clientIds = [...new Set(loans.map(l => l.client_id))];
       const cPh = clientIds.map(() => '?').join(',');
-      all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; });
+      (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; });
     }
     const rows = [];
-    loans.forEach(loan => {
-      const sched = get('SELECT * FROM loan_schedule WHERE loan_id = ? AND due_date = ?', [loan.id, date]);
-      if (!sched) return; // not actually due on this real date
+    for (const loan of loans) {
+      const sched = await get('SELECT * FROM loan_schedule WHERE loan_id = ? AND due_date = ?', [loan.id, date]);
+      if (!sched) continue; // not actually due on this real date
       if (req.query.q) {
         const q = req.query.q.toLowerCase();
         const client = clientById[loan.client_id] || { name: '' };
-        if (!client.name.toLowerCase().includes(q) && !loan.id.toLowerCase().includes(q)) return;
+        if (!client.name.toLowerCase().includes(q) && !loan.id.toLowerCase().includes(q)) continue;
       }
       const outstanding = Math.max(0, sched.total_due - sched.paid_amount);
       const status = sched.paid_amount >= sched.total_due - 0.01 ? 'Paid' : sched.paid_amount > 0 ? 'Partially Paid' : (date < new Date().toISOString().slice(0, 10) ? 'Overdue' : 'Not Paid');
-      if (req.query.status && req.query.status !== status) return;
-      const lastPayment = get(`SELECT channel FROM payments WHERE loan_id = ? AND status != 'Reversed' ORDER BY created_at DESC LIMIT 1`, [loan.id]);
+      if (req.query.status && req.query.status !== status) continue;
+      const lastPayment = await get(`SELECT channel FROM payments WHERE loan_id = ? AND status != 'Reversed' ORDER BY created_at DESC LIMIT 1`, [loan.id]);
       const client = clientById[loan.client_id] || { name: 'Unknown' };
       rows.push({
         clientId: loan.client_id, clientName: client.name, loanId: loan.id, officerId: loan.officer_id, branchId: loan.branch_id, productId: loan.product_id,
         expected: sched.total_due, collected: sched.paid_amount, outstanding, status, paymentMethod: lastPayment ? lastPayment.channel : null,
       });
-    });
+    }
 
     const kExpected = rows.reduce((s, r) => s + r.expected, 0);
     const kCollected = rows.reduce((s, r) => s + r.collected, 0);
@@ -559,15 +559,15 @@ function register(router) {
     res.json({ date, kpis, byOfficer, byBranch, byStatus, exceptions, rows });
   });
 
-  router.get('/api/collections/sheet', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
+  router.get('/api/collections/sheet', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
     const from = req.query.date_from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const to = req.query.date_to || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
     let rows = [];
-    loans.forEach(loan => {
-      const schedule = all('SELECT * FROM loan_schedule WHERE loan_id = ? AND due_date BETWEEN date(?) AND date(?) ORDER BY due_date', [loan.id, from, to]);
+    for (const loan of loans) {
+      const schedule = await all('SELECT * FROM loan_schedule WHERE loan_id = ? AND (due_date)::date BETWEEN (?)::date AND (?)::date ORDER BY due_date', [loan.id, from, to]);
       schedule.forEach(r => {
         if (r.status === 'Paid') return; // fully settled installments aren't "due" for collection purposes
         const outstanding = Math.max(0, r.total_due - r.paid_amount);
@@ -575,7 +575,7 @@ function register(router) {
         if (req.query.status && req.query.status !== status) return;
         rows.push({ clientId: loan.client_id, loanId: loan.id, officerId: loan.officer_id, branchId: loan.branch_id, dueDate: r.due_date, expectedAmount: r.total_due, paidAmount: r.paid_amount, outstanding, status });
       });
-    });
+    }
     rows.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -584,19 +584,19 @@ function register(router) {
   });
 
   // ==================== Collection MTD ====================
-  router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
-    const loanIds = all(`SELECT id FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params).map(l => l.id);
+  router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const loanIds = (await all(`SELECT id FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params)).map(l => l.id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
     const dayStart = today;
-    const { expected: expectedMTD, collected: collectedMTD } = collectionTotals(loanIds, monthStart, today);
-    const { expected: expectedToday, collected: collectedToday } = collectionTotals(loanIds, dayStart, dayStart);
+    const { expected: expectedMTD, collected: collectedMTD } = await collectionTotals(loanIds, monthStart, today);
+    const { expected: expectedToday, collected: collectedToday } = await collectionTotals(loanIds, dayStart, dayStart);
     // Reuse the real target for 'collection' where one exists, rather than inventing a second target concept.
     const period = today.slice(0, 7);
     let target = null;
     if (req.user.role_id === 'loan_officer') {
-      target = get(`SELECT * FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.user.id, period]);
+      target = await get(`SELECT * FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND status = 'Active'`, [req.user.id, period]);
     }
     res.json({
       monthStart, asOf: today,
@@ -608,9 +608,9 @@ function register(router) {
   });
 
   // ==================== Collection Rate — real, period-configurable, aggregate not averaged ====================
-  router.get('/api/collections/rate', requireAuth, requireModule('loanbook'), (req, res) => {
-    const { clause, params } = loanScopeClause(req);
-    const loanIds = all(`SELECT id FROM loans WHERE ${clause}`, params).map(l => l.id);
+  router.get('/api/collections/rate', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const loanIds = (await all(`SELECT id FROM loans WHERE ${clause}`, params)).map(l => l.id);
     const period = req.query.period || 'monthly'; // daily | weekly | monthly
     const today = new Date();
     let from;
@@ -618,65 +618,65 @@ function register(router) {
     else if (period === 'weekly') { const d = new Date(today); d.setDate(d.getDate() - 7); from = d.toISOString().slice(0, 10); }
     else { from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10); }
     const to = today.toISOString().slice(0, 10);
-    const { expected, collected } = collectionTotals(loanIds, from, to);
+    const { expected, collected } = await collectionTotals(loanIds, from, to);
     res.json({ period, from, to, expected, collected, rate: expected > 0 ? (collected / expected * 100) : 0 });
   });
 
   // ==================== Collection Activities ====================
-  router.get('/api/collections/activities', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchIdsInScope(req.user);
+  router.get('/api/collections/activities', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchIdsInScope(req.user);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) { clauses.push(scope.length ? `branch_id IN (${scope.map(() => '?').join(',')})` : '1=0'); params.push(...scope); }
     if (req.user.role_id === 'loan_officer') { clauses.push('staff_id = ?'); params.push(req.user.id); }
     if (req.query.client_id) { clauses.push('client_id = ?'); params.push(req.query.client_id); }
-    const rows = all(`SELECT * FROM collection_activities WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
+    const rows = await all(`SELECT * FROM collection_activities WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
     res.json({ activities: rows });
   });
-  router.post('/api/collections/activities', requireAuth, requireModule('loanbook'), (req, res, next) => {
+  router.post('/api/collections/activities', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.activity_type) return next({ status: 400, message: 'client_id and activity_type are required' });
-    const client = get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
+    const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
     if (!client) return next({ status: 404, message: 'Client not found' });
-    assertRecordInScope(req.user, client.branch_id, 'client');
+    await assertRecordInScope(req.user, client.branch_id, 'client');
     const id = 'ca_' + crypto.randomUUID();
-    run('INSERT INTO collection_activities (id, client_id, loan_id, staff_id, activity_type, notes, outcome, next_follow_up_date, branch_id) VALUES (?,?,?,?,?,?,?,?,?)',
+    await run('INSERT INTO collection_activities (id, client_id, loan_id, staff_id, activity_type, notes, outcome, next_follow_up_date, branch_id) VALUES (?,?,?,?,?,?,?,?,?)',
       [id, b.client_id, b.loan_id || null, req.user.id, b.activity_type, b.notes || null, b.outcome || null, b.next_follow_up_date || null, client.branch_id]);
-    logAction(req, { action: 'Logged collection activity', module: 'collections', recordType: 'CollectionActivity', recordId: id, newValue: { activity_type: b.activity_type, client_id: b.client_id } });
-    res.status(201).json({ activity: get('SELECT * FROM collection_activities WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Logged collection activity', module: 'collections', recordType: 'CollectionActivity', recordId: id, newValue: { activity_type: b.activity_type, client_id: b.client_id } });
+    res.status(201).json({ activity: await get('SELECT * FROM collection_activities WHERE id = ?', [id]) });
   });
 
   // ==================== Follow-Ups ====================
-  router.get('/api/collections/follow-ups', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchIdsInScope(req.user);
+  router.get('/api/collections/follow-ups', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchIdsInScope(req.user);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) { clauses.push(scope.length ? `branch_id IN (${scope.map(() => '?').join(',')})` : '1=0'); params.push(...scope); }
     if (req.user.role_id === 'loan_officer') { clauses.push('responsible_staff_id = ?'); params.push(req.user.id); }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
-    const rows = all(`SELECT * FROM follow_ups WHERE ${clauses.join(' AND ')} ORDER BY follow_up_date ASC LIMIT 200`, params);
+    const rows = await all(`SELECT * FROM follow_ups WHERE ${clauses.join(' AND ')} ORDER BY follow_up_date ASC LIMIT 200`, params);
     const today = new Date().toISOString().slice(0, 10);
     // "Overdue" is derived at read time, never stored — a follow-up
     // doesn't need to be "moved" into an Overdue state by any process.
     rows.forEach(r => { if (r.status === 'Pending' && r.follow_up_date < today) r.effective_status = 'Overdue'; else r.effective_status = r.status; });
     res.json({ followUps: rows });
   });
-  router.post('/api/collections/follow-ups', requireAuth, requireModule('loanbook'), (req, res, next) => {
+  router.post('/api/collections/follow-ups', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.follow_up_date) return next({ status: 400, message: 'client_id and follow_up_date are required' });
-    const client = get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
+    const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
     if (!client) return next({ status: 404, message: 'Client not found' });
-    assertRecordInScope(req.user, client.branch_id, 'client');
+    await assertRecordInScope(req.user, client.branch_id, 'client');
     const responsible = b.responsible_staff_id || req.user.id;
     const id = 'fu_' + crypto.randomUUID();
-    run('INSERT INTO follow_ups (id, client_id, loan_id, responsible_staff_id, follow_up_date, reason, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+    await run('INSERT INTO follow_ups (id, client_id, loan_id, responsible_staff_id, follow_up_date, reason, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
       [id, b.client_id, b.loan_id || null, responsible, b.follow_up_date, b.reason || null, b.notes || null, client.branch_id, req.user.id]);
-    logAction(req, { action: 'Created follow-up', module: 'collections', recordType: 'FollowUp', recordId: id, newValue: { client_id: b.client_id, follow_up_date: b.follow_up_date } });
-    if (responsible !== req.user.id) notify(responsible, 'system', 'New follow-up assigned', `A collection follow-up for ${client.name} is due ${b.follow_up_date}.`);
-    res.status(201).json({ followUp: get('SELECT * FROM follow_ups WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Created follow-up', module: 'collections', recordType: 'FollowUp', recordId: id, newValue: { client_id: b.client_id, follow_up_date: b.follow_up_date } });
+    if (responsible !== req.user.id) await notify(responsible, 'system', 'New follow-up assigned', `A collection follow-up for ${client.name} is due ${b.follow_up_date}.`);
+    res.status(201).json({ followUp: await get('SELECT * FROM follow_ups WHERE id = ?', [id]) });
   });
-  router.patch('/api/collections/follow-ups/:id', requireAuth, requireModule('loanbook'), (req, res, next) => {
-    const fu = get('SELECT * FROM follow_ups WHERE id = ?', [req.params.id]);
+  router.patch('/api/collections/follow-ups/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const fu = await get('SELECT * FROM follow_ups WHERE id = ?', [req.params.id]);
     if (!fu) return next({ status: 404, message: 'Follow-up not found' });
-    assertRecordInScope(req.user, fu.branch_id, 'follow-up');
+    await assertRecordInScope(req.user, fu.branch_id, 'follow-up');
     if (fu.responsible_staff_id !== req.user.id && !['manager', 'regional_manager', 'operational_manager', 'admin'].includes(req.user.role_id)) {
       return next({ status: 403, message: 'Only the responsible staff member (or their manager) can update this follow-up' });
     }
@@ -686,35 +686,35 @@ function register(router) {
     if (req.body.notes !== undefined) { sets.push('notes = ?'); params.push(req.body.notes); }
     if (!sets.length) return next({ status: 400, message: 'Nothing to update' });
     params.push(fu.id);
-    run(`UPDATE follow_ups SET ${sets.join(', ')} WHERE id = ?`, params);
-    logAction(req, { action: 'Updated follow-up', module: 'collections', recordType: 'FollowUp', recordId: fu.id, newValue: req.body });
-    res.json({ followUp: get('SELECT * FROM follow_ups WHERE id = ?', [fu.id]) });
+    await run(`UPDATE follow_ups SET ${sets.join(', ')} WHERE id = ?`, params);
+    await logAction(req, { action: 'Updated follow-up', module: 'collections', recordType: 'FollowUp', recordId: fu.id, newValue: req.body });
+    res.json({ followUp: await get('SELECT * FROM follow_ups WHERE id = ?', [fu.id]) });
   });
 
   // ==================== Promise to Pay ====================
   // A promise is never a payment. Fulfillment is derived by comparing the
   // promised amount against REAL payments on that loan made on/after the
   // promise date — never recorded as if money had actually moved.
-  router.get('/api/collections/promises', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchIdsInScope(req.user);
+  router.get('/api/collections/promises', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchIdsInScope(req.user);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) { clauses.push(scope.length ? `branch_id IN (${scope.map(() => '?').join(',')})` : '1=0'); params.push(...scope); }
     if (req.user.role_id === 'loan_officer') { clauses.push('created_by = ?'); params.push(req.user.id); }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
-    const rows = all(`SELECT * FROM promises_to_pay WHERE ${clauses.join(' AND ')} ORDER BY promise_date DESC LIMIT 200`, params);
+    const rows = await all(`SELECT * FROM promises_to_pay WHERE ${clauses.join(' AND ')} ORDER BY promise_date DESC LIMIT 200`, params);
     res.json({ promises: rows });
   });
-  router.post('/api/collections/promises', requireAuth, requireModule('loanbook'), (req, res, next) => {
+  router.post('/api/collections/promises', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.loan_id || !b.promised_amount || !b.promise_date) return next({ status: 400, message: 'client_id, loan_id, promised_amount and promise_date are required' });
-    const loan = get('SELECT * FROM loans WHERE id = ?', [b.loan_id]);
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [b.loan_id]);
     if (!loan || loan.client_id !== b.client_id) return next({ status: 400, message: 'loan_id does not belong to the specified client' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     const id = 'ptp_' + crypto.randomUUID();
-    run('INSERT INTO promises_to_pay (id, client_id, loan_id, promised_amount, promise_date, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?,?)',
+    await run('INSERT INTO promises_to_pay (id, client_id, loan_id, promised_amount, promise_date, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?,?)',
       [id, b.client_id, b.loan_id, b.promised_amount, b.promise_date, b.notes || null, loan.branch_id, req.user.id]);
-    logAction(req, { action: 'Created promise to pay', module: 'collections', recordType: 'PromiseToPay', recordId: id, newValue: { loan_id: b.loan_id, amount: b.promised_amount } });
-    res.status(201).json({ promise: get('SELECT * FROM promises_to_pay WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Created promise to pay', module: 'collections', recordType: 'PromiseToPay', recordId: id, newValue: { loan_id: b.loan_id, amount: b.promised_amount } });
+    res.status(201).json({ promise: await get('SELECT * FROM promises_to_pay WHERE id = ?', [id]) });
   });
   // Re-evaluates fulfillment against real payments — callable any time,
   // and also applied automatically whenever the promise is listed past
@@ -725,40 +725,40 @@ function register(router) {
   // promise per loan at a time (the normal case); a production system
   // tracking concurrent promises per loan would need to link a specific
   // payment to a specific promise explicitly.
-  function evaluatePromise(promise) {
+  async function evaluatePromise(promise) {
     if (['Cancelled'].includes(promise.status)) return promise;
-    const paidSince = get(
-      `SELECT COALESCE(SUM(amount),0) as v FROM payments WHERE loan_id = ? AND status != 'Unposted' AND date(created_at) >= date(?)`,
+    const paidSince = (await get(
+      `SELECT COALESCE(SUM(amount),0) as v FROM payments WHERE loan_id = ? AND status != 'Unposted' AND (created_at)::date >= (?)::date`,
       [promise.loan_id, promise.promise_date]
-    ).v;
+    )).v;
     let status = promise.status;
     if (paidSince >= promise.promised_amount - 0.01) status = 'Fulfilled';
     else if (paidSince > 0) status = 'Partially Fulfilled';
     else if (new Date(promise.promise_date) < new Date(new Date().toISOString().slice(0, 10))) status = 'Broken';
     else status = 'Pending';
     if (status !== promise.status || paidSince !== promise.fulfilled_amount) {
-      run('UPDATE promises_to_pay SET status = ?, fulfilled_amount = ?, fulfilled_at = ? WHERE id = ?',
+      await run('UPDATE promises_to_pay SET status = ?, fulfilled_amount = ?, fulfilled_at = ? WHERE id = ?',
         [status, paidSince, status === 'Fulfilled' ? new Date().toISOString() : promise.fulfilled_at, promise.id]);
     }
     return get('SELECT * FROM promises_to_pay WHERE id = ?', [promise.id]);
   }
-  router.post('/api/collections/promises/:id/evaluate', requireAuth, requireModule('loanbook'), (req, res, next) => {
-    const promise = get('SELECT * FROM promises_to_pay WHERE id = ?', [req.params.id]);
+  router.post('/api/collections/promises/:id/evaluate', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const promise = await get('SELECT * FROM promises_to_pay WHERE id = ?', [req.params.id]);
     if (!promise) return next({ status: 404, message: 'Promise not found' });
-    assertRecordInScope(req.user, promise.branch_id, 'promise');
-    res.json({ promise: evaluatePromise(promise) });
+    await assertRecordInScope(req.user, promise.branch_id, 'promise');
+    res.json({ promise: await evaluatePromise(promise) });
   });
-  router.post('/api/collections/promises/:id/cancel', requireAuth, requireModule('loanbook'), (req, res, next) => {
-    const promise = get('SELECT * FROM promises_to_pay WHERE id = ?', [req.params.id]);
+  router.post('/api/collections/promises/:id/cancel', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const promise = await get('SELECT * FROM promises_to_pay WHERE id = ?', [req.params.id]);
     if (!promise) return next({ status: 404, message: 'Promise not found' });
-    assertRecordInScope(req.user, promise.branch_id, 'promise');
+    await assertRecordInScope(req.user, promise.branch_id, 'promise');
     if (promise.created_by !== req.user.id && !['manager', 'regional_manager', 'operational_manager', 'admin'].includes(req.user.role_id)) {
       return next({ status: 403, message: 'Only the creator (or their manager) can cancel this promise' });
     }
     if (['Fulfilled'].includes(promise.status)) return next({ status: 409, message: 'A fulfilled promise cannot be cancelled' });
-    run("UPDATE promises_to_pay SET status = 'Cancelled' WHERE id = ?", [promise.id]);
-    logAction(req, { action: 'Cancelled promise to pay', module: 'collections', recordType: 'PromiseToPay', recordId: promise.id });
-    res.json({ promise: get('SELECT * FROM promises_to_pay WHERE id = ?', [promise.id]) });
+    await run("UPDATE promises_to_pay SET status = 'Cancelled' WHERE id = ?", [promise.id]);
+    await logAction(req, { action: 'Cancelled promise to pay', module: 'collections', recordType: 'PromiseToPay', recordId: promise.id });
+    res.json({ promise: await get('SELECT * FROM promises_to_pay WHERE id = ?', [promise.id]) });
   });
 
   // ==================== Investor — restricted, aggregated-only view ====================
@@ -770,13 +770,13 @@ function register(router) {
   // with their own auth guard — requireAuth/requireModule can never
   // succeed for an investor token, by design, so this route uses the real
   // investor auth guard instead of trying to force them through the staff path.
-  router.get('/api/collections/investor-summary', requireInvestorAuth, (req, res) => {
-    const loanIds = all(`SELECT id FROM loans WHERE status IN ('Active','Disbursed')`).map(l => l.id);
+  router.get('/api/collections/investor-summary', requireInvestorAuth, async (req, res) => {
+    const loanIds = (await all(`SELECT id FROM loans WHERE status IN ('Active','Disbursed')`)).map(l => l.id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
-    const { expected, collected } = collectionTotals(loanIds, monthStart, today);
-    const arrearsRow = get(
-      `SELECT COALESCE(SUM(MAX(total_due - paid_amount, 0)),0) as v FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',') || "''"}) AND status != 'Paid' AND due_date < date('now')`,
+    const { expected, collected } = await collectionTotals(loanIds, monthStart, today);
+    const arrearsRow = await get(
+      `SELECT COALESCE(SUM(GREATEST(total_due - paid_amount, 0)),0) as v FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',') || "''"}) AND status != 'Paid' AND (due_date)::date < CURRENT_DATE`,
       loanIds
     );
     res.json({
@@ -789,42 +789,42 @@ function register(router) {
   // For Regional/Operational Manager: rank branches within real scope by
   // collection rate and arrears — not a separate calculation, just the
   // same collectionTotals() called once per branch in scope.
-  router.get('/api/collections/branch-comparison', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchIdsInScope(req.user);
-    let branches = all('SELECT * FROM branches WHERE status = ?', ['Active']);
+  router.get('/api/collections/branch-comparison', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchIdsInScope(req.user);
+    let branches = await all('SELECT * FROM branches WHERE status = ?', ['Active']);
     if (scope !== null) branches = branches.filter(b => scope.includes(b.id));
     if (req.query.region_id) branches = branches.filter(b => b.region_id === req.query.region_id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
-    const result = branches.map(b => {
-      const loanIds = all(`SELECT id FROM loans WHERE branch_id = ? AND status IN ('Active','Disbursed')`, [b.id]).map(l => l.id);
-      const { expected, collected } = collectionTotals(loanIds, monthStart, today);
-      const arrearsAmount = get(
-        `SELECT COALESCE(SUM(MAX(total_due - paid_amount, 0)),0) as v FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',') || "''"}) AND status != 'Paid' AND due_date < date('now')`,
+    const result = await Promise.all(branches.map(async b => {
+      const loanIds = (await all(`SELECT id FROM loans WHERE branch_id = ? AND status IN ('Active','Disbursed')`, [b.id])).map(l => l.id);
+      const { expected, collected } = await collectionTotals(loanIds, monthStart, today);
+      const arrearsAmount = (await get(
+        `SELECT COALESCE(SUM(GREATEST(total_due - paid_amount, 0)),0) as v FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',') || "''"}) AND status != 'Paid' AND (due_date)::date < CURRENT_DATE`,
         loanIds
-      ).v;
+      )).v;
       return { branchId: b.id, branchName: b.name, expected, collected, rate: expected > 0 ? (collected / expected * 100) : 0, arrearsAmount };
-    });
+    }));
     result.sort((a, b) => b.rate - a.rate);
     res.json({ branches: result });
   });
 
   // ==================== Officer Comparison — real, within a Manager's own branch ====================
-  router.get('/api/collections/officer-comparison', requireAuth, requireModule('loanbook'), (req, res, next) => {
+  router.get('/api/collections/officer-comparison', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     if (!['manager', 'regional_manager', 'operational_manager', 'admin'].includes(req.user.role_id)) {
       return next({ status: 403, message: 'Your role does not have team collection comparison authority' });
     }
-    const scope = branchIdsInScope(req.user);
-    let officers = all(`SELECT * FROM users WHERE role_id = 'loan_officer' AND status = 'Active'`);
+    const scope = await branchIdsInScope(req.user);
+    let officers = await all(`SELECT * FROM users WHERE role_id = 'loan_officer' AND status = 'Active'`);
     if (scope !== null) officers = officers.filter(o => scope.includes(o.branch_id));
     if (req.query.branch_id) officers = officers.filter(o => o.branch_id === req.query.branch_id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
-    const result = officers.map(o => {
-      const loanIds = all(`SELECT id FROM loans WHERE officer_id = ? AND status IN ('Active','Disbursed')`, [o.id]).map(l => l.id);
-      const { expected, collected } = collectionTotals(loanIds, monthStart, today);
+    const result = await Promise.all(officers.map(async o => {
+      const loanIds = (await all(`SELECT id FROM loans WHERE officer_id = ? AND status IN ('Active','Disbursed')`, [o.id])).map(l => l.id);
+      const { expected, collected } = await collectionTotals(loanIds, monthStart, today);
       return { officerId: o.id, officerName: o.name, branchId: o.branch_id, expected, collected, rate: expected > 0 ? (collected / expected * 100) : 0, activeLoans: loanIds.length };
-    });
+    }));
     result.sort((a, b) => b.rate - a.rate);
     res.json({ officers: result });
   });

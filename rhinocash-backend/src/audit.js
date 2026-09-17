@@ -4,9 +4,9 @@
 'use strict';
 const { run } = require('./db');
 
-function logAction(req, { action, module, recordType, recordId, previousValue, newValue, reason }) {
+async function logAction(req, { action, module, recordType, recordId, previousValue, newValue, reason }) {
   const user = req.user || null;
-  run(
+  await run(
     `INSERT INTO audit_logs (user_id, user_name, role_id, action, module, record_type, record_id, previous_value, new_value, reason, ip, user_agent)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
@@ -31,8 +31,8 @@ function logAction(req, { action, module, recordType, recordId, previousValue, n
 // and API existed but nothing ever inserted into it). `userId: null`
 // means a broadcast notification visible to everyone (see misc.js's
 // `user_id = ? OR user_id IS NULL` read query).
-function notify(userId, type, title, message) {
-  run(
+async function notify(userId, type, title, message) {
+  await run(
     'INSERT INTO notifications (user_id, type, title, message, read) VALUES (?,?,?,?,0)',
     [userId, type, title, message]
   );

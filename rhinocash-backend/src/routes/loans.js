@@ -13,14 +13,14 @@ function addMonths(dateStr, n) {
   return d.toISOString().slice(0, 10);
 }
 
-function buildSchedule(loanId, principal, ratePct, term, startDate) {
+async function buildSchedule(loanId, principal, ratePct, term, startDate) {
   const totalInterest = principal * (ratePct / 100) * term;
   const totalDue = principal + totalInterest;
   const perPeriod = totalDue / term;
   const principalPerPeriod = principal / term;
   const interestPerPeriod = totalInterest / term;
   for (let i = 1; i <= term; i++) {
-    run(
+    await run(
       `INSERT INTO loan_schedule (loan_id, period, due_date, principal_due, interest_due, total_due, paid_amount, status)
        VALUES (?,?,?,?,?,?,0,'Pending')`,
       [loanId, i, addMonths(startDate, i), principalPerPeriod, interestPerPeriod, perPeriod]
@@ -30,7 +30,7 @@ function buildSchedule(loanId, principal, ratePct, term, startDate) {
 
 // The workflow sequence is DATA (approval_workflow_steps), read fresh on
 // every call — an Admin could reorder/reconfigure it without a code change.
-function workflowSteps() {
+async function workflowSteps() {
   return all('SELECT * FROM approval_workflow_steps ORDER BY step_order');
 }
 
@@ -39,8 +39,8 @@ function workflowSteps() {
 // manual disburse route below AND by the B2C success callback, so a B2C
 // disbursement and a manual one always produce identical accounting —
 // never a second, parallel disbursement engine.
-function completeDisbursement({ loanId, channel, actorUserId, notify: notifyFn, logActionFn, req }) {
-  const loan = get('SELECT * FROM loans WHERE id = ?', [loanId]);
+async function completeDisbursement({ loanId, channel, actorUserId, notify: notifyFn, logActionFn, req }) {
+  const loan = await get('SELECT * FROM loans WHERE id = ?', [loanId]);
   if (!loan) throw Object.assign(new Error('Loan not found'), { status: 404 });
   if (loan.status === 'Active') throw Object.assign(new Error('Loan is already disbursed'), { status: 409 });
   if (!['Approved for Disbursement', 'Disbursement Pending'].includes(loan.status)) {
@@ -54,29 +54,29 @@ function completeDisbursement({ loanId, channel, actorUserId, notify: notifyFn, 
   // build, and both journal entries must commit together or none of them
   // do; shared by both the manual and M-Pesa B2C disbursement paths since
   // both call this one function.
-  transaction(() => {
-    run('UPDATE loans SET status = ?, disbursed_at = ? WHERE id = ?', ['Active', today, loan.id]);
-    buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today);
-    run(
+  await transaction(async () => {
+    await run('UPDATE loans SET status = ?, disbursed_at = ? WHERE id = ?', ['Active', today, loan.id]);
+    await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today);
+    await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
        VALUES ('loans_receivable', ?, 0, ?, 'loan', ?, ?, ?)`,
       [loan.principal, `Disbursement — ${loan.id}`, loan.id, loan.branch_id, actorUserId]
     );
-    run(
+    await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
        VALUES (?, 0, ?, ?, 'loan', ?, ?, ?)`,
       [fundingAccount, loan.principal, `Disbursement — ${loan.id}`, loan.id, loan.branch_id, actorUserId]
     );
   });
-  if (logActionFn) logActionFn({ action: 'Disbursed loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, newValue: { principal: loan.principal, channel } });
-  if (notifyFn) notifyFn(loan.officer_id, 'loan', 'Loan disbursed', `${loan.principal} disbursed for loan ${loan.id}.`);
-  return { loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]), schedule: all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]) };
+  if (logActionFn) await logActionFn({ action: 'Disbursed loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, newValue: { principal: loan.principal, channel } });
+  if (notifyFn) await notifyFn(loan.officer_id, 'loan', 'Loan disbursed', `${loan.principal} disbursed for loan ${loan.id}.`);
+  return { loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]), schedule: await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]) };
 }
 
 function register(router) {
   // ==================== Loan Exceptions & Escalations — real-time computed from existing conditions (inherently idempotent — no stored, duplicable records), monitoring-only since no exception-workflow table exists ====================
-  router.get('/api/loans/exceptions', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/exceptions', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
@@ -89,10 +89,10 @@ function register(router) {
     // labeled "Aging" not "SLA Breach").
     const waitingStatuses = ['Waiting for Manager', 'Waiting for Regional Manager', 'Waiting for Operational Manager', 'Waiting for Accountant', 'Returned for Correction'];
     const wPh = waitingStatuses.map(() => '?').join(',');
-    const pendingLoans = all(`SELECT * FROM loans WHERE ${clause} AND status IN (${wPh})`, [...params, ...waitingStatuses]);
+    const pendingLoans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN (${wPh})`, [...params, ...waitingStatuses]);
     const pendingIds = pendingLoans.map(l => l.id);
     let lastApprovalByLoan = {};
-    if (pendingIds.length) { const idPh = pendingIds.map(() => '?').join(','); all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, pendingIds).forEach(a => { if (!lastApprovalByLoan[a.loan_id]) lastApprovalByLoan[a.loan_id] = a; }); }
+    if (pendingIds.length) { const idPh = pendingIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, pendingIds)).forEach(a => { if (!lastApprovalByLoan[a.loan_id]) lastApprovalByLoan[a.loan_id] = a; }); }
     pendingLoans.forEach(l => {
       const stageEnteredAt = lastApprovalByLoan[l.id] ? lastApprovalByLoan[l.id].created_at : l.created_at;
       const ageDays = Math.floor((today - new Date(stageEnteredAt)) / 86400000);
@@ -100,10 +100,10 @@ function register(router) {
     });
 
     // B. Disbursement exceptions — real loans approved for disbursement but not yet disbursed beyond a neutral aging window.
-    const approvedNotDisbursed = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Approved for Disbursement','Disbursement Pending') AND disbursed_at IS NULL`, params);
+    const approvedNotDisbursed = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Approved for Disbursement','Disbursement Pending') AND disbursed_at IS NULL`, params);
     const approvedIds2 = approvedNotDisbursed.map(l => l.id);
     let lastApprovalByLoan2 = {};
-    if (approvedIds2.length) { const idPh2 = approvedIds2.map(() => '?').join(','); all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh2}) ORDER BY created_at DESC`, approvedIds2).forEach(a => { if (!lastApprovalByLoan2[a.loan_id]) lastApprovalByLoan2[a.loan_id] = a; }); }
+    if (approvedIds2.length) { const idPh2 = approvedIds2.map(() => '?').join(','); (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh2}) ORDER BY created_at DESC`, approvedIds2)).forEach(a => { if (!lastApprovalByLoan2[a.loan_id]) lastApprovalByLoan2[a.loan_id] = a; }); }
     approvedNotDisbursed.forEach(l => {
       const approvedAt = lastApprovalByLoan2[l.id] ? lastApprovalByLoan2[l.id].created_at : l.created_at;
       const ageDays = Math.floor((today - new Date(approvedAt)) / 86400000);
@@ -111,10 +111,10 @@ function register(router) {
     });
 
     // C. Payment exceptions — real failed/reversed payment transactions, sourced from the real payments table (never fabricated).
-    const activeLoanIds = all(`SELECT id FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params).map(l => l.id);
+    const activeLoanIds = (await all(`SELECT id FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params)).map(l => l.id);
     if (activeLoanIds.length) {
       const idPh3 = activeLoanIds.map(() => '?').join(',');
-      const badPayments = all(`SELECT p.*, l.branch_id AS l_branch_id, l.officer_id AS l_officer_id, l.client_id AS l_client_id FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.loan_id IN (${idPh3}) AND p.status IN ('Failed','Reversed') ORDER BY p.created_at DESC LIMIT 200`, activeLoanIds);
+      const badPayments = await all(`SELECT p.*, l.branch_id AS l_branch_id, l.officer_id AS l_officer_id, l.client_id AS l_client_id FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.loan_id IN (${idPh3}) AND p.status IN ('Failed','Reversed') ORDER BY p.created_at DESC LIMIT 200`, activeLoanIds);
       badPayments.forEach(p => { exceptions.push({ exceptionKey: `payment-${p.status.toLowerCase()}:${p.id}`, category: 'Payment', type: `${p.status} payment`, source: 'Payment', loanId: p.loan_id, clientId: p.l_client_id, branchId: p.l_branch_id, officerId: p.l_officer_id, amount: p.amount, ageDays: Math.floor((today - new Date(p.created_at)) / 86400000), detail: `${p.status} payment of real amount ${p.amount} on ${p.created_at.slice(0, 10)}` }); });
     }
 
@@ -122,8 +122,8 @@ function register(router) {
     if (activeLoanIds.length) {
       const idPh4 = activeLoanIds.map(() => '?').join(',');
       const schedByLoan = {};
-      all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh4})`, activeLoanIds).forEach(r => { if (!schedByLoan[r.loan_id]) schedByLoan[r.loan_id] = []; schedByLoan[r.loan_id].push(r); });
-      const loansById = {}; all(`SELECT * FROM loans WHERE id IN (${idPh4})`, activeLoanIds).forEach(l => { loansById[l.id] = l; });
+      (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh4})`, activeLoanIds)).forEach(r => { if (!schedByLoan[r.loan_id]) schedByLoan[r.loan_id] = []; schedByLoan[r.loan_id].push(r); });
+      const loansById = {}; (await all(`SELECT * FROM loans WHERE id IN (${idPh4})`, activeLoanIds)).forEach(l => { loansById[l.id] = l; });
       Object.entries(schedByLoan).forEach(([loanId, sched]) => {
         const overdue = sched.filter(r => r.paid_amount < r.total_due - 0.01 && r.due_date < todayStr);
         if (!overdue.length) return;
@@ -136,8 +136,8 @@ function register(router) {
     if (activeLoanIds.length) {
       const idPh5 = activeLoanIds.map(() => '?').join(',');
       const schedByLoan2 = {};
-      all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh5}) ORDER BY period ASC`, activeLoanIds).forEach(r => { if (!schedByLoan2[r.loan_id]) schedByLoan2[r.loan_id] = []; schedByLoan2[r.loan_id].push(r); });
-      const loansById2 = {}; all(`SELECT * FROM loans WHERE id IN (${idPh5})`, activeLoanIds).forEach(l => { loansById2[l.id] = l; });
+      (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh5}) ORDER BY period ASC`, activeLoanIds)).forEach(r => { if (!schedByLoan2[r.loan_id]) schedByLoan2[r.loan_id] = []; schedByLoan2[r.loan_id].push(r); });
+      const loansById2 = {}; (await all(`SELECT * FROM loans WHERE id IN (${idPh5})`, activeLoanIds)).forEach(l => { loansById2[l.id] = l; });
       Object.entries(schedByLoan2).forEach(([loanId, sched]) => {
         if (!sched.length) return;
         const finalDue = sched[sched.length - 1].due_date;
@@ -147,7 +147,7 @@ function register(router) {
     }
 
     // F. Data-quality exceptions — real missing branch/officer assignment, never fabricated.
-    const dataIssues = all(`SELECT * FROM loans WHERE ${clause} AND (branch_id IS NULL OR officer_id IS NULL)`, params);
+    const dataIssues = await all(`SELECT * FROM loans WHERE ${clause} AND (branch_id IS NULL OR officer_id IS NULL)`, params);
     dataIssues.forEach(l => { exceptions.push({ exceptionKey: `data-missing-assignment:${l.id}`, category: 'Data', type: !l.branch_id ? 'Missing branch assignment' : 'Missing officer assignment', source: 'Data Validation', loanId: l.id, clientId: l.client_id, branchId: l.branch_id, officerId: l.officer_id, amount: l.principal, ageDays: Math.floor((today - new Date(l.created_at)) / 86400000), detail: 'Real data-quality condition detected directly from the loan record' }); });
 
     let filtered = exceptions;
@@ -155,7 +155,7 @@ function register(router) {
 
     // Real bulk client-name enrichment.
     const clientById = {};
-    { const cIds = [...new Set(filtered.map(e => e.clientId).filter(Boolean))]; if (cIds.length) { const cPh = cIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, cIds).forEach(c => { clientById[c.id] = c; }); } }
+    { const cIds = [...new Set(filtered.map(e => e.clientId).filter(Boolean))]; if (cIds.length) { const cPh = cIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, cIds)).forEach(c => { clientById[c.id] = c; }); } }
     filtered = filtered.map(e => ({ ...e, clientName: e.clientId && clientById[e.clientId] ? clientById[e.clientId].name : 'Unknown' }));
     if (req.query.q) { const q = req.query.q.toLowerCase(); filtered = filtered.filter(e => e.clientName.toLowerCase().includes(q) || (e.loanId || '').toLowerCase().includes(q)); }
     filtered.sort((a, b) => b.ageDays - a.ageDays);
@@ -191,8 +191,8 @@ function register(router) {
   });
 
   // ==================== Operational Loan Portfolio — genuinely distinct from Branch/Regional Portfolio (stock+composition) and Portfolio Quality (credit risk): this page's real focus is FLOW vs STOCK, loan-size/cycle bands, operational workload, and concentration ====================
-  router.get('/api/loans/operational-portfolio', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/operational-portfolio', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
@@ -201,15 +201,15 @@ function register(router) {
     const to = req.query.to || new Date().toISOString().slice(0, 10);
 
     // Real full portfolio (all statuses) — the real STOCK view.
-    const loans = all(`SELECT * FROM loans WHERE ${clause}`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause}`, params);
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     let cycleByLoan = {};
-    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
 
     const today = new Date().toISOString().slice(0, 10);
     const rows = loans.map(l => {
@@ -240,7 +240,7 @@ function register(router) {
     const newLoansInPeriod = filteredRows.filter(r => r.createdAt.slice(0, 10) >= from && r.createdAt.slice(0, 10) <= to);
     const disbursedInPeriod = filteredRows.filter(r => r.disbursedAt && r.disbursedAt.slice(0, 10) >= from && r.disbursedAt.slice(0, 10) <= to);
     let repaymentVolumeInPeriod = 0;
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); const row = get(`SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' AND date(created_at) BETWEEN date(?) AND date(?)`, [...loanIds, from, to]); repaymentVolumeInPeriod = row ? row.v : 0; }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); const row = await get(`SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' AND (created_at)::date BETWEEN (?)::date AND (?)::date`, [...loanIds, from, to]); repaymentVolumeInPeriod = row ? row.v : 0; }
 
     const branchesWithActivePortfolio = new Set(activeRows.map(r => r.branchId)).size;
     const activeLoanOfficers = new Set(activeRows.map(r => r.officerId)).size;
@@ -319,7 +319,7 @@ function register(router) {
         const dayStr = cursor.toISOString().slice(0, 10);
         const dayDisbursed = filteredRows.filter(r => r.disbursedAt && r.disbursedAt.slice(0, 10) === dayStr).reduce((s, r) => s + r.principal, 0);
         let dayRepaid = 0;
-        if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); const row = get(`SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' AND date(created_at) = date(?)`, [...loanIds, dayStr]); dayRepaid = row ? row.v : 0; }
+        if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); const row = await get(`SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE loan_id IN (${idPh}) AND status != 'Reversed' AND (created_at)::date = (?)::date`, [...loanIds, dayStr]); dayRepaid = row ? row.v : 0; }
         trend.push({ date: dayStr, disbursed: dayDisbursed, repaid: dayRepaid });
         cursor.setDate(cursor.getDate() + 1);
       }
@@ -360,8 +360,8 @@ function register(router) {
   // turnaround time — how long the real approval chain actually took —
   // reused from the same real loan_approvals records already used in
   // Loan Approval Monitoring, never a fabricated timestamp.
-  router.get('/api/loans/approved-loans', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/approved-loans', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
@@ -371,7 +371,7 @@ function register(router) {
     }
     const approvedStatuses = ['Approved for Disbursement', 'Disbursement Pending', 'Active', 'Disbursed', 'Completed'];
     const placeholders = approvedStatuses.map(() => '?').join(',');
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...approvedStatuses]);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...approvedStatuses]);
 
     // Real bulk pre-fetch — clients, the full real approval chain per loan, cycle numbers.
     const loanIds = loans.map(l => l.id);
@@ -380,9 +380,9 @@ function register(router) {
       const idPh = loanIds.map(() => '?').join(',');
       const clientIds = [...new Set(loans.map(l => l.client_id))];
       const cPh = clientIds.map(() => '?').join(',');
-      all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; });
-      all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at ASC`, loanIds).forEach(a => { if (!approvalsByLoan[a.loan_id]) approvalsByLoan[a.loan_id] = []; approvalsByLoan[a.loan_id].push(a); });
-      const allClientLoans = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
+      (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; });
+      (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at ASC`, loanIds)).forEach(a => { if (!approvalsByLoan[a.loan_id]) approvalsByLoan[a.loan_id] = []; approvalsByLoan[a.loan_id].push(a); });
+      const allClientLoans = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
       const seen = {}; allClientLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
     }
 
@@ -446,23 +446,23 @@ function register(router) {
   });
 
   // ==================== Loan Maturity Pipeline — real maturity date (final schedule installment's real due date), real Overdue bucket (never silently dropped), branch/officer/product breakdown ====================
-  router.get('/api/loans/maturity-pipeline', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/maturity-pipeline', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
 
     // Real bulk pre-fetch — every real schedule row per loan (the real
     // maturity date is the LAST installment's real due date, not an
     // estimate), clients, no N+1.
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period ASC`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period ASC`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
 
     const today = new Date();
     let rows = loans.map(l => {
@@ -528,7 +528,7 @@ function register(router) {
     // maturity, real arrears/DPD, and real last-payment-date for
     // operational follow-up, matching this document's exact requirement.
     const lastPaymentByLoan = {};
-    if (loanIds.length) { const idPh2 = loanIds.map(() => '?').join(','); all(`SELECT * FROM payments WHERE loan_id IN (${idPh2}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; }); }
+    if (loanIds.length) { const idPh2 = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh2}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds)).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; }); }
     const maturedOutstanding = overdueRows.map(r => ({ loanId: r.loanId, clientName: r.clientName, branchId: r.branchId, officerId: r.officerId, maturityDate: r.maturityDate, daysSinceMaturity: -r.daysToMaturity, outstanding: r.outstanding, arrears: r.arrears, dpd: r.dpd, status: r.status, lastPaymentDate: lastPaymentByLoan[r.loanId] ? lastPaymentByLoan[r.loanId].created_at : null })).sort((a, b) => b.outstanding - a.outstanding);
 
     // Real per-branch maturity breakdown — genuinely new, meaningful
@@ -580,8 +580,8 @@ function register(router) {
   // days-pending computed from the real last approval action (or
   // application date if none yet), real branch/officer/product/aging
   // breakdowns, and real approval-stage bottleneck analysis.
-  router.get('/api/loans/approval-monitoring', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/approval-monitoring', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
@@ -592,7 +592,7 @@ function register(router) {
 
     const waitingStatuses = ['Waiting for Manager', 'Waiting for Regional Manager', 'Waiting for Operational Manager', 'Waiting for Accountant', 'Returned for Correction'];
     const placeholders = waitingStatuses.map(() => '?').join(',');
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...waitingStatuses]);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...waitingStatuses]);
     const today = new Date();
 
     // Real bulk pre-fetch — clients, last approval action per loan, cycle numbers.
@@ -602,11 +602,11 @@ function register(router) {
       const idPh = loanIds.map(() => '?').join(',');
       const clientIds = [...new Set(loans.map(l => l.client_id))];
       const cPh = clientIds.map(() => '?').join(',');
-      all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; });
-      const allApprovals = all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, loanIds);
+      (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; });
+      const allApprovals = await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, loanIds);
       allApprovals.forEach(a => { if (!lastApprovalByLoan[a.loan_id]) lastApprovalByLoan[a.loan_id] = a; });
       const cPh2 = clientIds.map(() => '?').join(',');
-      const allClientLoans = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds);
+      const allClientLoans = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds);
       const seen = {}; allClientLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
     }
 
@@ -664,7 +664,7 @@ function register(router) {
     const to = req.query.to || new Date().toISOString().slice(0, 10);
     let outcomeClause = scope.clause; const outcomeParams = [...scope.params];
     if (req.query.branch_id) { outcomeClause += ' AND branch_id = ?'; outcomeParams.push(req.query.branch_id); }
-    const allLoansInPeriod = all(`SELECT * FROM loans WHERE ${outcomeClause} AND date(created_at) BETWEEN date(?) AND date(?)`, [...outcomeParams, from, to]);
+    const allLoansInPeriod = await all(`SELECT * FROM loans WHERE ${outcomeClause} AND (created_at)::date BETWEEN (?)::date AND (?)::date`, [...outcomeParams, from, to]);
     const approvedStatuses = ['Approved for Disbursement', 'Disbursement Pending', 'Active', 'Disbursed', 'Completed'];
     const outcomeApproved = allLoansInPeriod.filter(l => approvedStatuses.includes(l.status));
     const outcomeRejected = allLoansInPeriod.filter(l => l.status === 'Rejected');
@@ -690,10 +690,10 @@ function register(router) {
     if (rejectedIds.length || returnedIds.length) {
       const allIds = [...rejectedIds, ...returnedIds];
       const idPh3 = allIds.map(() => '?').join(',');
-      all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh3}) AND decision IN ('Rejected','Returned') ORDER BY created_at DESC`, allIds).forEach(a => { if (!rejectReasonByLoan[a.loan_id]) rejectReasonByLoan[a.loan_id] = a; });
+      (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh3}) AND decision IN ('Rejected','Returned') ORDER BY created_at DESC`, allIds)).forEach(a => { if (!rejectReasonByLoan[a.loan_id]) rejectReasonByLoan[a.loan_id] = a; });
     }
     const clientByIdOutcome = {};
-    { const outcomeClientIds = [...new Set(allLoansInPeriod.map(l => l.client_id))]; if (outcomeClientIds.length) { const cPh3 = outcomeClientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh3})`, outcomeClientIds).forEach(c => { clientByIdOutcome[c.id] = c; }); } }
+    { const outcomeClientIds = [...new Set(allLoansInPeriod.map(l => l.client_id))]; if (outcomeClientIds.length) { const cPh3 = outcomeClientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh3})`, outcomeClientIds)).forEach(c => { clientByIdOutcome[c.id] = c; }); } }
     const rejectedApplications = outcomeRejected.map(l => { const a = rejectReasonByLoan[l.id]; const client = clientByIdOutcome[l.client_id] || { name: 'Unknown' }; return { loanId: l.id, clientName: client.name, branchId: l.branch_id, officerId: l.officer_id, productId: l.product_id, amount: l.principal, rejectionDate: a ? a.created_at : null, rejectionStage: a ? a.role_id : null, rejectionReason: l.reject_reason || (a ? a.comments : null) }; });
     const returnedApplications = outcomeReturned.map(l => { const a = rejectReasonByLoan[l.id]; const client = clientByIdOutcome[l.client_id] || { name: 'Unknown' }; const daysSinceReturn = a ? Math.floor((today - new Date(a.created_at)) / 86400000) : null; return { loanId: l.id, clientName: client.name, branchId: l.branch_id, officerId: l.officer_id, amount: l.principal, returnDate: a ? a.created_at : null, currentStage: l.status, returnReason: a ? a.comments : null, daysSinceReturn }; });
 
@@ -705,7 +705,7 @@ function register(router) {
     if (approvedIds.length) {
       const idPh4 = approvedIds.map(() => '?').join(',');
       const chains = {};
-      all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh4}) ORDER BY created_at ASC`, approvedIds).forEach(a => { if (!chains[a.loan_id]) chains[a.loan_id] = []; chains[a.loan_id].push(a); });
+      (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh4}) ORDER BY created_at ASC`, approvedIds)).forEach(a => { if (!chains[a.loan_id]) chains[a.loan_id] = []; chains[a.loan_id].push(a); });
       outcomeApproved.forEach(l => { const chain = chains[l.id] || []; if (chain.length) { const days = Math.floor((new Date(chain[chain.length - 1].created_at) - new Date(l.created_at)) / 86400000); turnaroundDays.push(days); } });
     }
     const turnaround = {
@@ -716,7 +716,7 @@ function register(router) {
     // Real SLA status — honest, never fabricated: no configured
     // approval SLA exists in Rhinocash at this time, so this section
     // states that plainly rather than inventing a threshold.
-    const slaConfig = get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'approval_sla_days'`);
+    const slaConfig = await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'approval_sla_days'`);
     const sla = slaConfig ? { configured: true, slaDays: slaConfig.threshold_value, withinSla: rows.filter(r => r.daysPending <= slaConfig.threshold_value).length, beyondSla: rows.filter(r => r.daysPending > slaConfig.threshold_value).length } : { configured: false, message: 'Approval SLA is not configured.' };
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -729,20 +729,20 @@ function register(router) {
   });
 
   // ==================== Loan Portfolio Quality — real Quality Rating (PAR-30 driven, configurable thresholds), delinquency buckets, risk distribution, branch/officer/product quality comparison ====================
-  router.get('/api/loans/portfolio-quality-branch', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/portfolio-quality-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Written Off')`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Written Off')`, params);
 
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
 
     const today = new Date().toISOString().slice(0, 10);
     let rows = loans.map(l => {
@@ -774,10 +774,10 @@ function register(router) {
     // Real, configurable Quality Rating — driven by PAR-30 against the
     // same real thresholds used everywhere in this system, never a
     // second, invented scale.
-    const watchThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_watch_par30_pct'`) || { threshold_value: 5 }).threshold_value;
-    const atRiskThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_atrisk_par30_pct'`) || { threshold_value: 10 }).threshold_value;
-    const criticalThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_critical_par30_pct'`) || { threshold_value: 20 }).threshold_value;
-    const defaultThreshold = (get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_default_par30_pct'`) || { threshold_value: 40 }).threshold_value;
+    const watchThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_watch_par30_pct'`)) || { threshold_value: 5 }).threshold_value;
+    const atRiskThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_atrisk_par30_pct'`)) || { threshold_value: 10 }).threshold_value;
+    const criticalThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_critical_par30_pct'`)) || { threshold_value: 20 }).threshold_value;
+    const defaultThreshold = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_default_par30_pct'`)) || { threshold_value: 40 }).threshold_value;
     const classifyQuality = par30 => par30 >= defaultThreshold ? 'Default' : par30 >= criticalThreshold ? 'Critical' : par30 >= atRiskThreshold ? 'At Risk' : par30 >= watchThreshold ? 'Watch' : 'Current';
     const qualityRating = classifyQuality(par.par30);
 
@@ -864,24 +864,24 @@ function register(router) {
   });
 
   // ==================== Branch/Regional Loan Portfolio — covers ALL loan statuses, real composition, real PAR, branch/officer/product analysis, real trend ====================
-  router.get('/api/loans/branch-portfolio', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/branch-portfolio', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
-    const loans = all(`SELECT * FROM loans WHERE ${clause}`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause}`, params);
 
     // Real bulk pre-fetch.
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     let cycleByLoan = {};
-    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
 
     const today = new Date().toISOString().slice(0, 10);
     const bucketOf = (l) => {
@@ -981,8 +981,8 @@ function register(router) {
   });
 
   // ==================== View Loans — Current/Completed/All categories, real risk status, real PAR, branch/officer breakdown ====================
-  router.get('/api/loans/view', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/view', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -995,19 +995,19 @@ function register(router) {
     else if (category === 'Completed Loans') statusFilter = ['Completed'];
     else statusFilter = ['Active', 'Disbursed', 'Completed', 'Written Off'];
     const placeholders = statusFilter.map(() => '?').join(',');
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...statusFilter]);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...statusFilter]);
 
     // Real bulk pre-fetch — schedule, clients, cycle numbers, no N+1.
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     let cycleByLoan = {};
-    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
     const lastPaymentByLoan = {};
-    if (loanIds.length) { const idPh2 = loanIds.map(() => '?').join(','); all(`SELECT * FROM payments WHERE loan_id IN (${idPh2}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; }); }
+    if (loanIds.length) { const idPh2 = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh2}) AND status != 'Reversed' ORDER BY created_at DESC`, loanIds)).forEach(p => { if (!lastPaymentByLoan[p.loan_id]) lastPaymentByLoan[p.loan_id] = p; }); }
 
     const today = new Date().toISOString().slice(0, 10);
     let rows = loans.map(l => {
@@ -1130,8 +1130,8 @@ function register(router) {
   });
 
   // ==================== Loan Arrears — real industry PAR methodology (full outstanding balance of loans past DPD threshold), branch/officer/product breakdown, real trend ====================
-  router.get('/api/loans/arrears-branch', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/arrears-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
@@ -1139,18 +1139,18 @@ function register(router) {
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
     const asOf = req.query.as_of || new Date().toISOString().slice(0, 10);
     // Active-portfolio loans as of the as-of date: disbursed on/before it, not yet written off before it.
-    let loanClause = clause + " AND disbursed_at IS NOT NULL AND date(disbursed_at) <= date(?) AND status != 'Rejected'";
-    const loans = all(`SELECT * FROM loans WHERE ${loanClause}`, [...params, asOf]);
+    let loanClause = clause + " AND disbursed_at IS NOT NULL AND (disbursed_at)::date <= (?)::date AND status != 'Rejected'";
+    const loans = await all(`SELECT * FROM loans WHERE ${loanClause}`, [...params, asOf]);
 
     // Real bulk pre-fetch — every real schedule row and real payment per loan, no N+1.
     const loanIds = loans.map(l => l.id);
     const scheduleByLoan = {};
-    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period ASC`, loanIds).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period ASC`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const clientById = {};
     const clientIds = [...new Set(loans.map(l => l.client_id))];
-    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; }); }
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
     let cycleByLoan = {};
-    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
+    if (clientIds.length) { const cPh2 = clientIds.map(() => '?').join(','); const sortedByDate = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh2}) ORDER BY created_at ASC`, clientIds); const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; }); }
 
     const today0 = asOf;
     const rows = [];
@@ -1243,8 +1243,8 @@ function register(router) {
   });
 
   // ==================== Disbursements — pipeline, pending aging, branch/officer/product/method analysis, real trend ====================
-  router.get('/api/loans/disbursements-overview', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/disbursements-overview', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
@@ -1253,8 +1253,8 @@ function register(router) {
     const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
     const to = req.query.to || new Date().toISOString().slice(0, 10);
 
-    const disbursed = all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND date(disbursed_at) BETWEEN date(?) AND date(?)`, [...params, from, to]);
-    const pending = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Approved for Disbursement','Disbursement Pending')`, params);
+    const disbursed = await all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`, [...params, from, to]);
+    const pending = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Approved for Disbursement','Disbursement Pending')`, params);
     const totalAmt = disbursed.reduce((s, l) => s + l.principal, 0) || 1;
 
     // Real bulk pre-fetch — clients, cycle numbers.
@@ -1263,8 +1263,8 @@ function register(router) {
     const clientById = {}; let cycleByLoan = {};
     if (clientIds.length) {
       const cPh = clientIds.map(() => '?').join(',');
-      all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds).forEach(c => { clientById[c.id] = c; });
-      const sortedByDate = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
+      (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; });
+      const sortedByDate = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
       const seen = {}; sortedByDate.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
     }
 
@@ -1293,13 +1293,13 @@ function register(router) {
     // the funding account itself is derived from the channel at
     // disbursement time, not stored redundantly on the loan.
     const methodGroups = {};
-    disbursed.forEach(l => {
-      const auditRow = get(`SELECT new_value FROM audit_logs WHERE record_type = 'Loan' AND record_id = ? AND action = 'Disbursed loan' ORDER BY id DESC LIMIT 1`, [l.id]);
+    for (const l of disbursed) {
+      const auditRow = await get(`SELECT new_value FROM audit_logs WHERE record_type = 'Loan' AND record_id = ? AND action = 'Disbursed loan' ORDER BY id DESC LIMIT 1`, [l.id]);
       let method = 'Unknown';
       if (auditRow && auditRow.new_value) { try { const parsed = JSON.parse(auditRow.new_value); method = parsed.channel || 'Unknown'; } catch (e) { /* leave as Unknown */ } }
       if (!methodGroups[method]) methodGroups[method] = { count: 0, amount: 0 };
       methodGroups[method].count++; methodGroups[method].amount += l.principal;
-    });
+    }
     const byMethod = Object.entries(methodGroups).map(([method, g]) => ({ method, count: g.count, amount: g.amount }));
 
     // Real officer breakdown.
@@ -1312,13 +1312,13 @@ function register(router) {
 
     // Real pending-disbursement aging.
     const todayDate = new Date();
-    const pendingRows = pending.map(l => {
-      const approval = get(`SELECT created_at FROM loan_approvals WHERE loan_id = ? ORDER BY created_at DESC LIMIT 1`, [l.id]);
+    const pendingRows = (await Promise.all(pending.map(async l => {
+      const approval = await get(`SELECT created_at FROM loan_approvals WHERE loan_id = ? ORDER BY created_at DESC LIMIT 1`, [l.id]);
       const approvedAt = approval ? approval.created_at : l.created_at;
       const daysSince = Math.floor((todayDate - new Date(approvedAt)) / 86400000);
       const client = clientById[l.client_id] || { name: 'Unknown' };
       return { loanId: l.id, clientId: l.client_id, clientName: client.name, officerId: l.officer_id, branchId: l.branch_id, principal: l.principal, approvedAt, daysSince, status: l.status };
-    }).sort((a, b) => b.daysSince - a.daysSince);
+    }))).sort((a, b) => b.daysSince - a.daysSince);
     const agingDefs = [['0-1 days', r => r.daysSince <= 1], ['2-3 days', r => r.daysSince >= 2 && r.daysSince <= 3], ['4-7 days', r => r.daysSince >= 4 && r.daysSince <= 7], ['8+ days', r => r.daysSince > 7]];
     const pendingAging = agingDefs.map(([bucket, test]) => { const brows = pendingRows.filter(test); return { bucket, count: brows.length, amount: brows.reduce((s, r) => s + r.principal, 0) }; });
 
@@ -1330,7 +1330,7 @@ function register(router) {
     const rangeDays = Math.floor((new Date(to) - new Date(from)) / 86400000) + 1;
     const prevFrom = new Date(new Date(from).getTime() - rangeDays * 86400000).toISOString().slice(0, 10);
     const prevTo = new Date(new Date(from).getTime() - 86400000).toISOString().slice(0, 10);
-    const prevDisbursed = all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND date(disbursed_at) BETWEEN date(?) AND date(?)`, [...params, prevFrom, prevTo]);
+    const prevDisbursed = await all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`, [...params, prevFrom, prevTo]);
     const prevTotal = prevDisbursed.reduce((s, l) => s + l.principal, 0);
     const previousPeriod = { from: prevFrom, to: prevTo, total: prevTotal, count: prevDisbursed.length, growthPct: prevTotal > 0 ? ((totalAmt - 1 - prevTotal) / prevTotal * 100) : null };
 
@@ -1349,21 +1349,21 @@ function register(router) {
   });
 
   // ==================== Loan Applications Overview — full lifecycle, shared across Loan Officer/Manager/Regional Manager/Operational Manager ====================
-  router.get('/api/loans/applications-overview', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/applications-overview', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
-    const loans = all(`SELECT * FROM loans WHERE ${clause}`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause}`, params);
 
     const loanIds = loans.map(l => l.id);
     let lastActionByLoan = {};
     if (loanIds.length) {
       const idPh = loanIds.map(() => '?').join(',');
-      all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, loanIds).forEach(a => { if (!lastActionByLoan[a.loan_id]) lastActionByLoan[a.loan_id] = a; });
+      (await all(`SELECT * FROM loan_approvals WHERE loan_id IN (${idPh}) ORDER BY created_at DESC`, loanIds)).forEach(a => { if (!lastActionByLoan[a.loan_id]) lastActionByLoan[a.loan_id] = a; });
     }
     // Real per-client cycle numbers and real "has other arrears" flag —
     // computed once in bulk rather than per-row, to avoid N+1 queries.
@@ -1371,14 +1371,19 @@ function register(router) {
     let cycleByLoan = {}; let arrearsClientIds = new Set();
     if (clientIds.length) {
       const cPh = clientIds.map(() => '?').join(',');
-      const allClientLoans = all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
+      const allClientLoans = await all(`SELECT id, client_id, created_at FROM loans WHERE client_id IN (${cPh}) ORDER BY created_at ASC`, clientIds);
       const seen = {}; allClientLoans.forEach(cl => { seen[cl.client_id] = (seen[cl.client_id] || 0) + 1; cycleByLoan[cl.id] = seen[cl.client_id]; });
       const today0 = new Date().toISOString().slice(0, 10);
-      all(`SELECT DISTINCT l.client_id FROM loans l JOIN loan_schedule s ON s.loan_id = l.id WHERE l.client_id IN (${cPh}) AND s.paid_amount < s.total_due - 0.01 AND s.due_date < ?`, [...clientIds, today0]).forEach(r => arrearsClientIds.add(r.client_id));
+      (await all(`SELECT DISTINCT l.client_id FROM loans l JOIN loan_schedule s ON s.loan_id = l.id WHERE l.client_id IN (${cPh}) AND s.paid_amount < s.total_due - 0.01 AND s.due_date < ?`, [...clientIds, today0])).forEach(r => arrearsClientIds.add(r.client_id));
     }
+    // Real bulk product pre-fetch — avoids issuing one loan_products
+    // lookup per loan (a real N+1 the original build had).
+    const productIds = [...new Set(loans.map(l => l.product_id))];
+    const productById = {};
+    if (productIds.length) { const pPh = productIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_products WHERE id IN (${pPh})`, productIds)).forEach(p => { productById[p.id] = p; }); }
     const today = new Date();
     let rows = loans.map(l => {
-      const product = get('SELECT * FROM loan_products WHERE id = ?', [l.product_id]) || { rate_pct: 0, fee_pct: 0 };
+      const product = productById[l.product_id] || { rate_pct: 0, fee_pct: 0 };
       const interest = l.principal * (product.rate_pct || 0) / 100 * (l.term_months || 1);
       const fees = l.principal * (product.fee_pct || 0) / 100;
       const lastAction = lastActionByLoan[l.id];
@@ -1393,8 +1398,9 @@ function register(router) {
     });
     if (req.query.q) {
       const q = req.query.q.toLowerCase();
-      const client = (cid) => get('SELECT name FROM clients WHERE id = ?', [cid]) || { name: '' };
-      rows = rows.filter(r => client(r.clientId).name.toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q));
+      const clientNameById = {};
+      { const cIds = [...new Set(rows.map(r => r.clientId))]; if (cIds.length) { const cPh = cIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, cIds)).forEach(c => { clientNameById[c.id] = c.name; }); } }
+      rows = rows.filter(r => (clientNameById[r.clientId] || '').toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q));
     }
     rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -1481,36 +1487,39 @@ function register(router) {
   });
 
   // ---- Products ----
-  router.get('/api/loan-products', requireAuth, (req, res) => {
-    res.json({ products: all('SELECT * FROM loan_products WHERE active = 1') });
+  router.get('/api/loan-products', requireAuth, async (req, res) => {
+    res.json({ products: await all('SELECT * FROM loan_products WHERE active = 1') });
   });
-  router.post('/api/loan-products', requireAuth, requirePermission('manage_system_settings'), (req, res, next) => {
+  router.post('/api/loan-products', requireAuth, requirePermission('manage_system_settings'), async (req, res, next) => {
     const b = req.body;
     if (!b.name || !b.rate_pct) return next({ status: 400, message: 'name and rate_pct are required' });
     const id = 'pr_' + crypto.randomUUID();
-    run(
+    await run(
       `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0, b.min_term_months || 1, b.max_term_months || 12, b.fee_pct || 0]
     );
-    logAction(req, { action: 'Added loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: id, newValue: b.name });
-    res.status(201).json({ product: get('SELECT * FROM loan_products WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Added loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: id, newValue: b.name });
+    res.status(201).json({ product: await get('SELECT * FROM loan_products WHERE id = ?', [id]) });
   });
 
   // ---- Applications ----
-  router.get('/api/loans', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
     // Loan Officers only ever see their own portfolio, even within their branch.
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
-    const rows = all(`SELECT * FROM loans WHERE ${clause} ORDER BY created_at DESC`, params);
+    const rows = await all(`SELECT * FROM loans WHERE ${clause} ORDER BY created_at DESC`, params);
     // Each loan's repayment schedule is included here too (not just on the
     // single-loan detail route) — real balance/arrears/PAR figures need the
     // per-period breakdown, and computing them without it would silently
     // fall back to "outstanding = full principal" for every loan in any
     // list view, which is wrong the moment a client has made a payment.
-    rows.forEach(loan => { loan.schedule = all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]); });
+    const loanIds = rows.map(loan => loan.id);
+    const scheduleByLoan = {};
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
+    rows.forEach(loan => { loan.schedule = scheduleByLoan[loan.id] || []; });
     res.json({ loans: rows });
   });
 
@@ -1520,18 +1529,21 @@ function register(router) {
   // Real ageing buckets, computed once here and reused by every role's
   // view — the frontend previously recomputed a *different*, unscoped
   // version of this client-side instead of calling this real endpoint.
-  router.get('/api/loans/arrears', requireAuth, requireModule('loanbook'), (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/loans/arrears', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
-    const loans = all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
     const today = new Date();
     const bucketFor = (days) => days <= 0 ? 'Current' : days <= 7 ? '1-7 days' : days <= 30 ? '8-30 days' : days <= 60 ? '31-60 days' : days <= 90 ? '61-90 days' : '90+ days';
+    const loanIds = loans.map(loan => loan.id);
+    const scheduleByLoan = {};
+    if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY due_date`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     const result = [];
     loans.forEach(loan => {
-      const rows = all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY due_date', [loan.id]);
+      const rows = scheduleByLoan[loan.id] || [];
       const overdue = rows.filter(r => r.status !== 'Paid' && new Date(r.due_date) < today);
       if (overdue.length === 0) return;
       const oldest = overdue.reduce((a, b2) => new Date(a.due_date) < new Date(b2.due_date) ? a : b2);
@@ -1548,54 +1560,54 @@ function register(router) {
     res.json({ arrears: pageRows, buckets, totalOverdueLoans: result.length, totalOverdueAmount: result.reduce((s, r) => s + r.balance, 0), pagination: { page, limit, total: result.length, totalPages: Math.max(1, Math.ceil(result.length / limit)) } });
   });
 
-  router.get('/api/loans/:id', requireAuth, requireModule('loanbook'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.get('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
       return next({ status: 403, message: 'This loan is not part of your portfolio' });
     }
-    const schedule = all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]);
-    const approvals = all('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY created_at', [loan.id]);
-    res.json({ loan, schedule, approvals, workflow: workflowSteps() });
+    const schedule = await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]);
+    const approvals = await all('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY created_at', [loan.id]);
+    res.json({ loan, schedule, approvals, workflow: await workflowSteps() });
   });
 
-  router.post('/api/loans', requireAuth, requireModule('loanbook'), (req, res, next) => {
+  router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.product_id || !b.principal || !b.term_months) {
       return next({ status: 400, message: 'client_id, product_id, principal and term_months are required' });
     }
-    const client = get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
+    const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
     if (!client) return next({ status: 400, message: 'Unknown client' });
-    assertRecordInScope(req.user, client.branch_id, 'client'); // can't write a loan against a client outside your scope
-    const product = get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
+    await assertRecordInScope(req.user, client.branch_id, 'client'); // can't write a loan against a client outside your scope
+    const product = await get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
     if (!product) return next({ status: 400, message: 'Unknown loan product' });
     if (b.principal < product.min_amount || b.principal > product.max_amount) {
       return next({ status: 400, message: `Principal must be between ${product.min_amount} and ${product.max_amount} for this product` });
     }
-    const branchId = resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
+    const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
     // for an officer who genuinely belongs to the resolved branch (never
     // trust an arbitrary officer_id from the frontend).
     let officerId = req.user.id;
     if (b.officer_id && req.user.role_id !== 'loan_officer') {
-      const targetOfficer = get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
+      const targetOfficer = await get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
       if (!targetOfficer || targetOfficer.branch_id !== branchId) {
         return next({ status: 400, message: 'officer_id must belong to the selected branch' });
       }
       officerId = b.officer_id;
     }
-    const steps = workflowSteps();
+    const steps = await workflowSteps();
     const id = 'ln_' + crypto.randomUUID();
-    run(
+    await run(
       `INSERT INTO loans (id, client_id, product_id, principal, term_months, rate_pct, purpose, guarantor, guarantor_contact, loan_securities, loan_category, officer_id, branch_id, status, current_step)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
       [id, b.client_id, b.product_id, b.principal, b.term_months, product.rate_pct, b.purpose || null, b.guarantor || null,
         b.guarantor_contact || null, b.loan_securities || null, b.loan_category || null,
         officerId, branchId, steps[0] ? steps[0].status_label : 'Waiting for Manager']
     );
-    logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
-    res.status(201).json({ loan: get('SELECT * FROM loans WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
+    res.status(201).json({ loan: await get('SELECT * FROM loans WHERE id = ?', [id]) });
   });
 
   // ---- Sequential approval workflow ----
@@ -1604,8 +1616,8 @@ function register(router) {
   // duplicate approval — current_step only ever advances forward), the
   // approver must have that loan's branch/region in scope, and nobody may
   // approve, reject, or return a loan they personally submitted.
-  function assertCanActOnLoan(req, loan, steps) {
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+  async function assertCanActOnLoan(req, loan, steps) {
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (loan.officer_id === req.user.id) {
       const err = new Error('You cannot approve, reject, or return a loan you submitted yourself'); err.status = 403; throw err;
     }
@@ -1621,80 +1633,80 @@ function register(router) {
 // the next required role, restricted to the ones with that loan's branch
 // in scope, so a Kisumu Manager doesn't get pinged about a Nairobi loan
 // that isn't theirs to approve anyway.
-function notifyNextApprovers(loan, nextStep) {
+async function notifyNextApprovers(loan, nextStep) {
   if (!nextStep) return;
   const { branchIdsInScope } = require('./../rbac');
-  const candidates = all('SELECT * FROM users WHERE role_id = ? AND status = ?', [nextStep.role_id, 'Active']);
-  candidates.forEach(u => {
-    const scope = branchIdsInScope(u);
+  const candidates = await all('SELECT * FROM users WHERE role_id = ? AND status = ?', [nextStep.role_id, 'Active']);
+  for (const u of candidates) {
+    const scope = await branchIdsInScope(u);
     if (scope === null || scope.includes(loan.branch_id)) {
-      notify(u.id, 'loan', 'Loan awaiting your approval', `Loan ${loan.id} is now waiting for you (${nextStep.status_label}).`);
+      await notify(u.id, 'loan', 'Loan awaiting your approval', `Loan ${loan.id} is now waiting for you (${nextStep.status_label}).`);
     }
-  });
+  }
 }
 
-  router.post('/api/loans/:id/approve', requireAuth, requirePermission('approve_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/approve', requireAuth, requirePermission('approve_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    const steps = workflowSteps();
-    assertCanActOnLoan(req, loan, steps);
+    const steps = await workflowSteps();
+    await assertCanActOnLoan(req, loan, steps);
     const nextStep = steps.find(s => s.step_order === loan.current_step + 1);
     const newStatus = nextStep ? nextStep.status_label : 'Approved for Disbursement';
     const newStepOrder = nextStep ? nextStep.step_order : loan.current_step; // stays put once fully approved
 
-    run('UPDATE loans SET status = ?, current_step = ? WHERE id = ?', [newStatus, newStepOrder, loan.id]);
-    run(
+    await run('UPDATE loans SET status = ?, current_step = ? WHERE id = ?', [newStatus, newStepOrder, loan.id]);
+    await run(
       `INSERT INTO loan_approvals (loan_id, step_order, approver_id, role_id, decision, comments, previous_status, new_status)
        VALUES (?,?,?,?,?,?,?,?)`,
       [loan.id, loan.current_step, req.user.id, req.user.role_id, 'Approved', req.body.comments || null, loan.status, newStatus]
     );
-    logAction(req, { action: 'Approved loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: loan.status, newValue: newStatus });
-    notify(loan.officer_id, 'loan', 'Loan approval progressed', `Loan ${loan.id} moved to "${newStatus}".`);
-    notifyNextApprovers(loan, nextStep);
-    res.json({ loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+    await logAction(req, { action: 'Approved loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: loan.status, newValue: newStatus });
+    await notify(loan.officer_id, 'loan', 'Loan approval progressed', `Loan ${loan.id} moved to "${newStatus}".`);
+    await notifyNextApprovers(loan, nextStep);
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
-  router.post('/api/loans/:id/reject', requireAuth, requirePermission('approve_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/reject', requireAuth, requirePermission('approve_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    const steps = workflowSteps();
-    assertCanActOnLoan(req, loan, steps);
-    run('UPDATE loans SET status = ?, reject_reason = ? WHERE id = ?', ['Rejected', req.body.reason || null, loan.id]);
-    run(
+    const steps = await workflowSteps();
+    await assertCanActOnLoan(req, loan, steps);
+    await run('UPDATE loans SET status = ?, reject_reason = ? WHERE id = ?', ['Rejected', req.body.reason || null, loan.id]);
+    await run(
       `INSERT INTO loan_approvals (loan_id, step_order, approver_id, role_id, decision, comments, previous_status, new_status)
        VALUES (?,?,?,?,'Rejected',?,?,?)`,
       [loan.id, loan.current_step, req.user.id, req.user.role_id, req.body.reason || null, loan.status, 'Rejected']
     );
-    logAction(req, { action: 'Rejected loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason });
-    notify(loan.officer_id, 'loan', 'Loan rejected', `Loan ${loan.id} was rejected${req.body.reason ? ': ' + req.body.reason : '.'}`);
-    res.json({ loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+    await logAction(req, { action: 'Rejected loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason });
+    await notify(loan.officer_id, 'loan', 'Loan rejected', `Loan ${loan.id} was rejected${req.body.reason ? ': ' + req.body.reason : '.'}`);
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
-  router.post('/api/loans/:id/return', requireAuth, requirePermission('approve_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/return', requireAuth, requirePermission('approve_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    const steps = workflowSteps();
-    assertCanActOnLoan(req, loan, steps);
-    run('UPDATE loans SET status = ?, current_step = 1 WHERE id = ?', ['Returned for Correction', loan.id]);
-    run(
+    const steps = await workflowSteps();
+    await assertCanActOnLoan(req, loan, steps);
+    await run('UPDATE loans SET status = ?, current_step = 1 WHERE id = ?', ['Returned for Correction', loan.id]);
+    await run(
       `INSERT INTO loan_approvals (loan_id, step_order, approver_id, role_id, decision, comments, previous_status, new_status)
        VALUES (?,?,?,?,'Returned',?,?,'Returned for Correction')`,
       [loan.id, loan.current_step, req.user.id, req.user.role_id, req.body.comments || null, loan.status]
     );
-    logAction(req, { action: 'Returned loan for correction', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.comments });
-    notify(loan.officer_id, 'loan', 'Loan returned for correction', `Loan ${loan.id} was returned${req.body.comments ? ': ' + req.body.comments : '.'}`);
-    res.json({ loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+    await logAction(req, { action: 'Returned loan for correction', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.comments });
+    await notify(loan.officer_id, 'loan', 'Loan returned for correction', `Loan ${loan.id} was returned${req.body.comments ? ': ' + req.body.comments : '.'}`);
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
-  router.post('/api/loans/:id/disburse', requireAuth, requirePermission('disburse_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/disburse', requireAuth, requirePermission('disburse_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (loan.status !== 'Approved for Disbursement') return next({ status: 409, message: 'Loan is not approved for disbursement yet' });
     const { assertPeriodOpen } = require('./accounting');
-    assertPeriodOpen();
     try {
-      const result = completeDisbursement({
+      await assertPeriodOpen();
+      const result = await completeDisbursement({
         loanId: loan.id, channel: req.body.channel, actorUserId: req.user.id,
         notify: notify, logActionFn: (entry) => logAction(req, entry),
       });
@@ -1709,31 +1721,31 @@ function notifyNextApprovers(loan, nextStep) {
   // only becomes genuinely Active once mpesa.processB2cResult() confirms
   // success via the real ResultURL callback (see server.js).
   router.post('/api/loans/:id/disburse/mpesa-b2c', requireAuth, requirePermission('disburse_loans'), async (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (loan.status !== 'Approved for Disbursement') return next({ status: 409, message: 'Loan is not approved for disbursement yet' });
     if (!req.body.phone) return next({ status: 400, message: 'phone is required' });
     const { assertPeriodOpen } = require('./accounting');
-    assertPeriodOpen();
     const mpesa = require('./../integrations/mpesa');
     try {
+      await assertPeriodOpen();
       const result = await mpesa.initiateB2C({ loanId: loan.id, phone: req.body.phone, amount: loan.principal, initiatedBy: req.user.id });
       if (result.status === 'PENDING') {
-        run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loan.id]);
-        logAction(req, { action: 'Initiated M-Pesa B2C disbursement', module: 'mpesa', recordType: 'Loan', recordId: loan.id, newValue: { amount: loan.principal, phone: req.body.phone } });
+        await run(`UPDATE loans SET status = 'Disbursement Pending' WHERE id = ?`, [loan.id]);
+        await logAction(req, { action: 'Initiated M-Pesa B2C disbursement', module: 'mpesa', recordType: 'Loan', recordId: loan.id, newValue: { amount: loan.principal, phone: req.body.phone } });
       }
-      res.json({ ...result, loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+      res.json({ ...result, loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
     } catch (e) { next(e); }
   });
 
-  router.post('/api/loans/:id/write-off', requireAuth, requirePermission('write_off_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/write-off', requireAuth, requirePermission('write_off_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
-    run('UPDATE loans SET status = ?, written_off_at = ? WHERE id = ?', ['Written Off', nowIso(), loan.id]);
-    logAction(req, { action: 'Wrote off loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason });
-    res.json({ loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await run('UPDATE loans SET status = ?, written_off_at = ? WHERE id = ?', ['Written Off', nowIso(), loan.id]);
+    await logAction(req, { action: 'Wrote off loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason });
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
   // ---- Restructuring (instruction #19) ----
@@ -1742,22 +1754,22 @@ function notifyNextApprovers(loan, nextStep) {
   // the new principal amortized at the loan's original rate. This is a
   // legitimate simplified approach, not a hidden balance rewrite — the
   // before/after outstanding amount is logged for audit.
-  router.post('/api/loans/:id/restructure', requireAuth, requirePermission('approve_loans'), (req, res, next) => {
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+  router.post('/api/loans/:id/restructure', requireAuth, requirePermission('approve_loans'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (!['Active', 'Disbursed'].includes(loan.status)) return next({ status: 409, message: 'Only active loans can be restructured' });
     const newTerm = req.body.new_term_months;
     if (!newTerm || newTerm < 1) return next({ status: 400, message: 'new_term_months is required' });
-    const outstanding = get('SELECT COALESCE(SUM(total_due - paid_amount),0) as bal FROM loan_schedule WHERE loan_id = ?', [loan.id]).bal;
+    const outstanding = (await get('SELECT COALESCE(SUM(total_due - paid_amount),0) as bal FROM loan_schedule WHERE loan_id = ?', [loan.id])).bal;
     if (outstanding <= 0) return next({ status: 409, message: 'Loan has no outstanding balance to restructure' });
     // Solve for the new principal P such that P + P*(rate/100)*newTerm = outstanding.
     const newPrincipal = outstanding / (1 + (loan.rate_pct / 100) * newTerm);
-    run(`DELETE FROM loan_schedule WHERE loan_id = ? AND status != 'Paid'`, [loan.id]);
-    buildSchedule(loan.id, newPrincipal, loan.rate_pct, newTerm, new Date().toISOString().slice(0, 10));
-    run('UPDATE loans SET status = ?, term_months = ? WHERE id = ?', ['Restructured', newTerm, loan.id]);
-    logAction(req, { action: 'Restructured loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason, previousValue: { outstanding }, newValue: { newTerm, newPrincipal } });
-    res.json({ loan: get('SELECT * FROM loans WHERE id = ?', [loan.id]), schedule: all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]) });
+    await run(`DELETE FROM loan_schedule WHERE loan_id = ? AND status != 'Paid'`, [loan.id]);
+    await buildSchedule(loan.id, newPrincipal, loan.rate_pct, newTerm, new Date().toISOString().slice(0, 10));
+    await run('UPDATE loans SET status = ?, term_months = ? WHERE id = ?', ['Restructured', newTerm, loan.id]);
+    await logAction(req, { action: 'Restructured loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason, previousValue: { outstanding }, newValue: { newTerm, newPrincipal } });
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]), schedule: await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]) });
   });
 }
 

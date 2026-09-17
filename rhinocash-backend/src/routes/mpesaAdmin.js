@@ -6,7 +6,7 @@
 'use strict';
 const { requireAuth, requirePermission, requireModule } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { branchScopeSQL } = require('./../rbac');
+const { branchScopeSQL, hasModuleAccess } = require('./../rbac');
 const { all } = require('./../db');
 const mpesa = require('./../integrations/mpesa');
 
@@ -21,9 +21,8 @@ function requireAdminRole(req, res, next) {
 // Manager (payments) and a CEO (accounting, no payments module) both have
 // a legitimate real reason to see this, distinct from who can touch
 // credentials (Admin-only, see requireAdminRole above).
-const { hasModuleAccess } = require('./../rbac');
-function requireMpesaViewAuth(req, res, next) {
-  if (hasModuleAccess(req.user, 'payments') || hasModuleAccess(req.user, 'accounting')) return next();
+async function requireMpesaViewAuth(req, res, next) {
+  if ((await hasModuleAccess(req.user, 'payments')) || (await hasModuleAccess(req.user, 'accounting'))) return next();
   return next({ status: 403, message: 'Your role does not have M-Pesa operational visibility' });
 }
 
@@ -42,25 +41,25 @@ function register(router) {
   // authenticated staff user with real accounting/payments module access
   // can see THIS; only the Master System Administrator can reach the
   // config routes below.
-  router.get('/api/mpesa/status', requireAuth, requireMpesaViewAuth, (req, res) => {
-    const activeEnv = mpesa.getActiveEnvironment();
-    const activeConfig = activeEnv ? mpesa.getMaskedConfig(activeEnv) : null;
+  router.get('/api/mpesa/status', requireAuth, requireMpesaViewAuth, async (req, res) => {
+    const activeEnv = await mpesa.getActiveEnvironment();
+    const activeConfig = activeEnv ? await mpesa.getMaskedConfig(activeEnv) : null;
     res.json({
       activeEnvironment: activeEnv,
-      configured: mpesa.isConfigured(),
-      sandboxStatus: mpesa.statusFor('sandbox'),
-      productionStatus: mpesa.statusFor('production'),
+      configured: await mpesa.isConfigured(),
+      sandboxStatus: await mpesa.statusFor('sandbox'),
+      productionStatus: await mpesa.statusFor('production'),
       b2cConfigured: activeConfig ? activeConfig.b2cConfigured : false,
       // No secrets, no masked-key material — just real, safe operational facts.
     });
   });
 
   // Real B2C requests list, branch-scoped via the real loan each request belongs to.
-  router.get('/api/mpesa/b2c/requests', requireAuth, requireMpesaViewAuth, (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/mpesa/b2c/requests', requireAuth, requireMpesaViewAuth, async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     let clause = '1=1'; const params = [];
     if (req.query.status) { clause += ' AND b.status = ?'; params.push(req.query.status); }
-    const rows = all(
+    const rows = await all(
       `SELECT b.* FROM mpesa_b2c_requests b JOIN loans l ON l.id = b.loan_id
        WHERE ${clause} AND l.id IN (SELECT id FROM loans WHERE ${scope.clause})
        ORDER BY b.created_at DESC LIMIT 200`,
@@ -69,8 +68,8 @@ function register(router) {
     res.json({ requests: rows });
   });
 
-  router.get('/api/mpesa/transactions', requireAuth, requireMpesaViewAuth, (req, res) => {
-    const scope = branchScopeSQL(req.user);
+  router.get('/api/mpesa/transactions', requireAuth, requireMpesaViewAuth, async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
     // Real transactions are the real callbacks — joined against real loans
     // for branch scope, since the callback row itself carries no branch.
     let clause = '1=1'; const params = [];
@@ -79,7 +78,7 @@ function register(router) {
       else if (req.query.status === 'Failed') { clause += " AND CAST(c.result_code AS REAL) != 0"; }
       else if (req.query.status === 'Unprocessed') { clause += ' AND c.processed = 0'; }
     }
-    const rows = all(
+    const rows = await all(
       `SELECT c.*, 'STK' as source FROM mpesa_callbacks c LEFT JOIN loans l ON l.id = c.loan_id
        WHERE ${clause} AND (c.loan_id IS NULL OR l.id IN (SELECT id FROM loans WHERE ${scope.clause}))
        ORDER BY c.created_at DESC LIMIT 200`,
@@ -92,15 +91,15 @@ function register(router) {
   // (if any), the callback, the real payment it became (if any), the real
   // balanced journal entry for that payment. Every field here is a real
   // lookup — nothing inferred or fabricated.
-  router.get('/api/mpesa/transactions/:id', requireAuth, requireMpesaViewAuth, (req, res, next) => {
+  router.get('/api/mpesa/transactions/:id', requireAuth, requireMpesaViewAuth, async (req, res, next) => {
     const { get } = require('./../db');
-    const cb = get('SELECT * FROM mpesa_callbacks WHERE id = ?', [req.params.id]);
+    const cb = await get('SELECT * FROM mpesa_callbacks WHERE id = ?', [req.params.id]);
     if (!cb) return next({ status: 404, message: 'Transaction not found' });
-    const stkRequest = get('SELECT * FROM mpesa_stk_requests WHERE checkout_request_id = ?', [cb.checkout_request_id]);
-    const payment = cb.payment_id ? get('SELECT * FROM payments WHERE id = ?', [cb.payment_id]) : null;
-    const journal = cb.payment_id ? all(`SELECT * FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [cb.payment_id]) : [];
-    const loan = cb.loan_id ? get('SELECT * FROM loans WHERE id = ?', [cb.loan_id]) : null;
-    const client = loan ? get('SELECT id, name, phone FROM clients WHERE id = ?', [loan.client_id]) : null;
+    const stkRequest = await get('SELECT * FROM mpesa_stk_requests WHERE checkout_request_id = ?', [cb.checkout_request_id]);
+    const payment = cb.payment_id ? await get('SELECT * FROM payments WHERE id = ?', [cb.payment_id]) : null;
+    const journal = cb.payment_id ? await all(`SELECT * FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?`, [cb.payment_id]) : [];
+    const loan = cb.loan_id ? await get('SELECT * FROM loans WHERE id = ?', [cb.loan_id]) : null;
+    const client = loan ? await get('SELECT id, name, phone FROM clients WHERE id = ?', [loan.client_id]) : null;
     res.json({ callback: cb, stkRequest, payment, journal, loan, client });
   });
 
@@ -111,13 +110,13 @@ function register(router) {
   // let a second row for the same real Safaricom id exist in the first
   // place — reported honestly rather than inventing a count for a
   // category that structurally cannot occur.
-  router.get('/api/mpesa/reconciliation/summary', requireAuth, requireMpesaViewAuth, (req, res) => {
+  router.get('/api/mpesa/reconciliation/summary', requireAuth, requireMpesaViewAuth, async (req, res) => {
     const { get } = require('./../db');
-    const stkMatched = get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_callbacks WHERE processed = 1 AND payment_id IS NOT NULL`);
-    const stkException = get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) != 0`);
-    const stkUnmatched = get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) = 0 AND (loan_id IS NULL OR processed = 0) AND payment_id IS NULL`);
-    const c2bMatched = get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_c2b_transactions WHERE processed = 1 AND payment_id IS NOT NULL`);
-    const c2bUnmatched = get(`SELECT COUNT(*) as c FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
+    const stkMatched = await get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_callbacks WHERE processed = 1 AND payment_id IS NOT NULL`);
+    const stkException = await get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) != 0`);
+    const stkUnmatched = await get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) = 0 AND (loan_id IS NULL OR processed = 0) AND payment_id IS NULL`);
+    const c2bMatched = await get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_c2b_transactions WHERE processed = 1 AND payment_id IS NOT NULL`);
+    const c2bUnmatched = await get(`SELECT COUNT(*) as c FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
     res.json({
       matched: { count: stkMatched.c + c2bMatched.c, amount: stkMatched.amt + c2bMatched.amt },
       unmatched: { count: stkUnmatched.c + c2bUnmatched.c },
@@ -127,32 +126,32 @@ function register(router) {
     });
   });
 
-  router.post('/api/mpesa/callbacks/:id/process', requireAuth, requirePermission('post_accounting_entries'), (req, res, next) => {
-    const result = mpesa.processCallback(req.params.id, req.user.id);
+  router.post('/api/mpesa/callbacks/:id/process', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+    const result = await mpesa.processCallback(req.params.id, req.user.id);
     if (!result.ok) return next({ status: 409, message: result.message });
-    logAction(req, { action: 'Manually processed M-Pesa callback', module: 'mpesa', recordType: 'MpesaCallback', recordId: req.params.id, newValue: { created: result.created, paymentId: result.paymentId } });
+    await logAction(req, { action: 'Manually processed M-Pesa callback', module: 'mpesa', recordType: 'MpesaCallback', recordId: req.params.id, newValue: { created: result.created, paymentId: result.paymentId } });
     res.json(result);
   });
 
   // ==================== C2B / Paybill — staff-facing review ====================
-  router.get('/api/mpesa/c2b/unmatched', requireAuth, requirePermission('post_accounting_entries'), (req, res) => {
-    res.json({ transactions: mpesa.unmatchedC2bTransactions() });
+  router.get('/api/mpesa/c2b/unmatched', requireAuth, requirePermission('post_accounting_entries'), async (req, res) => {
+    res.json({ transactions: await mpesa.unmatchedC2bTransactions() });
   });
 
   // Manual match + post — an Accountant/Admin resolving a real unmatched
   // Paybill payment by pointing it at the correct real loan, then posting
   // it through the exact same real bridge as an automatic match.
-  router.post('/api/mpesa/c2b/:id/match', requireAuth, requirePermission('post_accounting_entries'), (req, res, next) => {
+  router.post('/api/mpesa/c2b/:id/match', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
     const { get, run } = require('./../db');
-    const tx = get('SELECT * FROM mpesa_c2b_transactions WHERE id = ?', [req.params.id]);
+    const tx = await get('SELECT * FROM mpesa_c2b_transactions WHERE id = ?', [req.params.id]);
     if (!tx) return next({ status: 404, message: 'Transaction not found' });
     if (tx.processed) return next({ status: 409, message: 'Already processed' });
     if (!req.body.loan_id) return next({ status: 400, message: 'loan_id is required' });
-    const loan = get('SELECT * FROM loans WHERE id = ?', [req.body.loan_id]);
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.body.loan_id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    run(`UPDATE mpesa_c2b_transactions SET matched_loan_id = ?, match_method = 'manual' WHERE id = ?`, [loan.id, tx.id]);
-    logAction(req, { action: 'Manually matched M-Pesa C2B transaction', module: 'mpesa', recordType: 'MpesaC2b', recordId: tx.id, newValue: { loanId: loan.id } });
-    const result = mpesa.processC2bTransaction(tx.id, req.user.id);
+    await run(`UPDATE mpesa_c2b_transactions SET matched_loan_id = ?, match_method = 'manual' WHERE id = ?`, [loan.id, tx.id]);
+    await logAction(req, { action: 'Manually matched M-Pesa C2B transaction', module: 'mpesa', recordType: 'MpesaC2b', recordId: tx.id, newValue: { loanId: loan.id } });
+    const result = await mpesa.processC2bTransaction(tx.id, req.user.id);
     if (!result.ok) return next({ status: 409, message: result.message });
     res.json(result);
   });
@@ -160,13 +159,13 @@ function register(router) {
 
   // Full picture for the admin screen: both environments, masked, plus
   // which one (if any) is currently active.
-  router.get('/api/admin/mpesa/config', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, (req, res) => {
+  router.get('/api/admin/mpesa/config', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, async (req, res) => {
     res.json({
-      sandbox: mpesa.getMaskedConfig('sandbox'),
-      production: mpesa.getMaskedConfig('production'),
-      activeEnvironment: mpesa.getActiveEnvironment(),
-      sandboxStatus: mpesa.statusFor('sandbox'),
-      productionStatus: mpesa.statusFor('production'),
+      sandbox: await mpesa.getMaskedConfig('sandbox'),
+      production: await mpesa.getMaskedConfig('production'),
+      activeEnvironment: await mpesa.getActiveEnvironment(),
+      sandboxStatus: await mpesa.statusFor('sandbox'),
+      productionStatus: await mpesa.statusFor('production'),
     });
   });
 
@@ -186,25 +185,25 @@ function register(router) {
     });
   });
 
-  router.put('/api/admin/mpesa/config/:environment', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, validEnv, (req, res, next) => {
+  router.put('/api/admin/mpesa/config/:environment', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, validEnv, async (req, res, next) => {
     const { environment } = req.params;
     const { consumerKey, consumerSecret, shortcode, passkey, callbackUrl, initiatorName, securityCredential, b2cShortcode } = req.body;
-    const result = mpesa.saveConfig(environment, { consumerKey, consumerSecret, shortcode, passkey, callbackUrl, initiatorName, securityCredential, b2cShortcode }, req.user.id);
+    const result = await mpesa.saveConfig(environment, { consumerKey, consumerSecret, shortcode, passkey, callbackUrl, initiatorName, securityCredential, b2cShortcode }, req.user.id);
     // Audit the CHANGE, never the VALUE — field names only.
-    logAction(req, {
+    await logAction(req, {
       action: 'Updated M-Pesa configuration', module: 'mpesa', recordType: 'MpesaConfig', recordId: environment,
       newValue: { fieldsChanged: result.changedFields, nowConfigured: result.configured, nowB2cConfigured: result.b2cConfigured },
     });
-    res.json({ ok: true, config: mpesa.getMaskedConfig(environment) });
+    res.json({ ok: true, config: await mpesa.getMaskedConfig(environment) });
   });
 
-  router.delete('/api/admin/mpesa/config/:environment', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, validEnv, (req, res) => {
-    mpesa.clearConfig(req.params.environment);
-    logAction(req, { action: 'Cleared M-Pesa configuration', module: 'mpesa', recordType: 'MpesaConfig', recordId: req.params.environment });
+  router.delete('/api/admin/mpesa/config/:environment', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, validEnv, async (req, res) => {
+    await mpesa.clearConfig(req.params.environment);
+    await logAction(req, { action: 'Cleared M-Pesa configuration', module: 'mpesa', recordType: 'MpesaConfig', recordId: req.params.environment });
     res.json({ ok: true });
   });
 
-  router.post('/api/admin/mpesa/set-active', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, (req, res, next) => {
+  router.post('/api/admin/mpesa/set-active', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, async (req, res, next) => {
     const { environment } = req.body;
     if (!VALID_ENVIRONMENTS.includes(environment)) return next({ status: 400, message: 'environment must be "sandbox" or "production"' });
     // Real, deliberate confirmation required to switch TO production —
@@ -212,19 +211,22 @@ function register(router) {
     // Checked only once we know it's genuinely configured (an unconfigured
     // environment is rejected on its own real terms below, not masked by
     // a confirmation prompt for something that can't be activated anyway).
-    if (environment === 'production' && !mpesa.statusFor('production').includes('Not Configured') && req.body.confirmProduction !== true) {
+    const prodStatus = await mpesa.statusFor('production');
+    if (environment === 'production' && !prodStatus.includes('Not Configured') && req.body.confirmProduction !== true) {
       return next({ status: 400, message: 'Switching to Production enables real M-Pesa transactions. Resubmit with confirmProduction: true to proceed.', code: 'PRODUCTION_CONFIRMATION_REQUIRED' });
     }
-    const before = mpesa.getActiveEnvironment();
-    mpesa.setActiveEnvironment(environment);
-    logAction(req, { action: 'Switched active M-Pesa environment', module: 'mpesa', recordType: 'MpesaConfig', recordId: environment, previousValue: before, newValue: environment });
+    const before = await mpesa.getActiveEnvironment();
+    try {
+      await mpesa.setActiveEnvironment(environment);
+    } catch (e) { return next(e); }
+    await logAction(req, { action: 'Switched active M-Pesa environment', module: 'mpesa', recordType: 'MpesaConfig', recordId: environment, previousValue: before, newValue: environment });
     res.json({ ok: true, activeEnvironment: environment });
   });
 
   router.post('/api/admin/mpesa/test-connection/:environment', requireAuth, requirePermission('manage_system_settings'), requireAdminRole, validEnv, async (req, res, next) => {
     try {
       const result = await mpesa.testConnection(req.params.environment, req.user.id);
-      logAction(req, { action: 'Tested M-Pesa connection', module: 'mpesa', recordType: 'MpesaConfig', recordId: req.params.environment, newValue: result.status });
+      await logAction(req, { action: 'Tested M-Pesa connection', module: 'mpesa', recordType: 'MpesaConfig', recordId: req.params.environment, newValue: result.status });
       res.json(result);
     } catch (e) { next(e); }
   });

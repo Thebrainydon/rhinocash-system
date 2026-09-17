@@ -29,7 +29,7 @@ function canSetTargets(roleId) {
 // targeting a Loan Officer outside their own branch, or a Regional
 // Manager targeting a Manager outside their region, is rejected here
 // regardless of what the request body claims.
-function assertTargetScope(actor, recipientUser, branchId) {
+async function assertTargetScope(actor, recipientUser, branchId) {
   if (['admin', 'ceo', 'director', 'operational_manager'].includes(actor.role_id)) return; // org-wide authority
   const targetBranch = recipientUser ? recipientUser.branch_id : branchId;
   if (actor.role_id === 'manager') {
@@ -39,7 +39,7 @@ function assertTargetScope(actor, recipientUser, branchId) {
     return;
   }
   if (actor.role_id === 'regional_manager') {
-    const scope = branchIdsInScope(actor);
+    const scope = await branchIdsInScope(actor);
     if (!scope || !targetBranch || !scope.includes(targetBranch)) {
       const err = new Error('You can only set targets for staff/branches within your own region'); err.status = 403; throw err;
     }
@@ -85,22 +85,22 @@ function periodDateRange(period, periodType) {
 // specifically — the same scope concept used everywhere else in this app
 // (rbac.branchIdsInScope), just driven by the target's own recipient
 // instead of the currently-authenticated user.
-function resolveTargetScope(target) {
+async function resolveTargetScope(target) {
   if (target.recipient_user_id) {
-    const u = get('SELECT * FROM users WHERE id = ?', [target.recipient_user_id]);
+    const u = await get('SELECT * FROM users WHERE id = ?', [target.recipient_user_id]);
     if (!u) return { branchIds: [], officerId: null };
     if (u.role_id === 'loan_officer') return { branchIds: u.branch_id ? [u.branch_id] : [], officerId: u.id };
     if (u.role_id === 'manager') return { branchIds: u.branch_id ? [u.branch_id] : [], officerId: null };
     if (u.role_id === 'regional_manager') {
-      const ids = all('SELECT id FROM branches WHERE region_id = ?', [u.region_id]).map(b => b.id);
-      return { branchIds: ids, officerId: null };
+      const rows = await all('SELECT id FROM branches WHERE region_id = ?', [u.region_id]);
+      return { branchIds: rows.map(b => b.id), officerId: null };
     }
     return { branchIds: null, officerId: null }; // operational_manager/ceo/director/admin — company-wide
   }
   if (target.branch_id) return { branchIds: [target.branch_id], officerId: null };
   if (target.region_id) {
-    const ids = all('SELECT id FROM branches WHERE region_id = ?', [target.region_id]).map(b => b.id);
-    return { branchIds: ids, officerId: null };
+    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [target.region_id]);
+    return { branchIds: rows.map(b => b.id), officerId: null };
   }
   return { branchIds: null, officerId: null };
 }
@@ -111,37 +111,37 @@ function branchInClause(branchIds) {
   return { clause: `branch_id IN (${branchIds.map(() => '?').join(',')})`, params: [...branchIds] };
 }
 
-function computeAchievement(target) {
-  const { branchIds, officerId } = resolveTargetScope(target);
+async function computeAchievement(target) {
+  const { branchIds, officerId } = await resolveTargetScope(target);
   const { start, end } = periodDateRange(target.period, target.period_type);
   let achieved = 0;
 
   if (target.metric === 'disbursement') {
     const scope = branchInClause(branchIds);
-    let sql = `SELECT COALESCE(SUM(principal),0) as v FROM loans WHERE ${scope.clause} AND disbursed_at IS NOT NULL AND date(disbursed_at) BETWEEN date(?) AND date(?)`;
+    let sql = `SELECT COALESCE(SUM(principal),0) as v FROM loans WHERE ${scope.clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`;
     const params = [...scope.params, start, end];
     if (officerId) { sql += ' AND officer_id = ?'; params.push(officerId); }
-    achieved = get(sql, params).v;
+    achieved = (await get(sql, params)).v;
   } else if (target.metric === 'new_loans') {
     const scope = branchInClause(branchIds);
-    let sql = `SELECT COUNT(*) as v FROM loans WHERE ${scope.clause} AND disbursed_at IS NOT NULL AND date(disbursed_at) BETWEEN date(?) AND date(?)`;
+    let sql = `SELECT COUNT(*) as v FROM loans WHERE ${scope.clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`;
     const params = [...scope.params, start, end];
     if (officerId) { sql += ' AND officer_id = ?'; params.push(officerId); }
-    achieved = get(sql, params).v;
+    achieved = (await get(sql, params)).v;
   } else if (target.metric === 'new_clients') {
     const scope = branchInClause(branchIds);
-    let sql = `SELECT COUNT(*) as v FROM clients WHERE ${scope.clause} AND date(created_at) BETWEEN date(?) AND date(?)`;
+    let sql = `SELECT COUNT(*) as v FROM clients WHERE ${scope.clause} AND (created_at)::date BETWEEN (?)::date AND (?)::date`;
     const params = [...scope.params, start, end];
     if (officerId) { sql += ' AND created_by = ?'; params.push(officerId); }
-    achieved = get(sql, params).v;
+    achieved = (await get(sql, params)).v;
   } else if (target.metric === 'collection') {
     // payments has no branch_id/officer_id of its own — scoped through the loan it's against.
     const loanScope = branchIds === null ? '1=1' : (branchIds.length ? `l.branch_id IN (${branchIds.map(() => '?').join(',')})` : '1=0');
     let sql = `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id
-               WHERE ${loanScope} AND p.status != 'Unposted' AND date(p.created_at) BETWEEN date(?) AND date(?)`;
+               WHERE ${loanScope} AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`;
     const params = [...(branchIds || []), start, end];
     if (officerId) { sql += ' AND l.officer_id = ?'; params.push(officerId); }
-    achieved = get(sql, params).v;
+    achieved = (await get(sql, params)).v;
   } else if (target.metric === 'collection_rate') {
     // A rate metric: achieved IS the percentage itself (collected / due in
     // the period), not compared against target_value as a currency amount
@@ -150,13 +150,13 @@ function computeAchievement(target) {
     // average of individual schedule-row rates.
     const loanScope = branchIds === null ? '1=1' : (branchIds.length ? `l.branch_id IN (${branchIds.map(() => '?').join(',')})` : '1=0');
     const dueParams = [...(branchIds || []), start, end];
-    let dueSql = `SELECT COALESCE(SUM(s.total_due),0) as v FROM loan_schedule s JOIN loans l ON l.id = s.loan_id WHERE ${loanScope} AND date(s.due_date) BETWEEN date(?) AND date(?)`;
+    let dueSql = `SELECT COALESCE(SUM(s.total_due),0) as v FROM loan_schedule s JOIN loans l ON l.id = s.loan_id WHERE ${loanScope} AND (s.due_date)::date BETWEEN (?)::date AND (?)::date`;
     if (officerId) { dueSql += ' AND l.officer_id = ?'; dueParams.push(officerId); }
-    const due = get(dueSql, dueParams).v;
-    let collectedSql = `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope} AND p.status != 'Unposted' AND date(p.created_at) BETWEEN date(?) AND date(?)`;
+    const due = (await get(dueSql, dueParams)).v;
+    let collectedSql = `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope} AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`;
     const collectedParams = [...(branchIds || []), start, end];
     if (officerId) { collectedSql += ' AND l.officer_id = ?'; collectedParams.push(officerId); }
-    const collected = get(collectedSql, collectedParams).v;
+    const collected = (await get(collectedSql, collectedParams)).v;
     achieved = due > 0 ? (collected / due * 100) : 0;
   } else if (target.metric === 'portfolio') {
     // Not period-bound — a snapshot of current outstanding balance, same
@@ -168,7 +168,8 @@ function computeAchievement(target) {
                WHERE ${loanScope} AND l.status IN ('Active','Disbursed')`;
     if (officerId) { sql += ' AND l.officer_id = ?'; params.push(officerId); }
     sql += ' GROUP BY l.id';
-    achieved = all(sql, params).reduce((sum, row) => sum + Math.max(0, row.bal), 0);
+    const rows = await all(sql, params);
+    achieved = rows.reduce((sum, row) => sum + Math.max(0, row.bal), 0);
   }
 
   const remaining = Math.max(0, target.target_value - achieved);
@@ -177,7 +178,7 @@ function computeAchievement(target) {
 }
 
 function register(router) {
-  router.post('/api/targets', requireAuth, requireModule('staff'), (req, res, next) => {
+  router.post('/api/targets', requireAuth, requireModule('staff'), async (req, res, next) => {
     const actor = req.user;
     if (!canSetTargets(actor.role_id)) return next({ status: 403, message: 'Your role is not authorized to set targets' });
     const b = req.body;
@@ -188,7 +189,7 @@ function register(router) {
 
     let recipientUser = null;
     if (b.recipient_user_id) {
-      recipientUser = get('SELECT * FROM users WHERE id = ?', [b.recipient_user_id]);
+      recipientUser = await get('SELECT * FROM users WHERE id = ?', [b.recipient_user_id]);
       if (!recipientUser) return next({ status: 404, message: 'Recipient user not found' });
       const allowedRoles = ALLOWED_RECIPIENT_ROLES[actor.role_id] || [];
       if (!allowedRoles.includes(recipientUser.role_id)) {
@@ -197,24 +198,26 @@ function register(router) {
     } else if (!b.branch_id && !b.region_id) {
       return next({ status: 400, message: 'Provide recipient_user_id, branch_id, or region_id' });
     }
-    assertTargetScope(actor, recipientUser, b.branch_id || (recipientUser ? recipientUser.branch_id : null));
+    try {
+      await assertTargetScope(actor, recipientUser, b.branch_id || (recipientUser ? recipientUser.branch_id : null));
+    } catch (e) { return next(e); }
 
     const id = 'tgt_' + crypto.randomUUID();
-    run(
+    await run(
       `INSERT INTO targets (id, metric, recipient_user_id, branch_id, region_id, set_by, target_value, period, period_type, notes)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [id, b.metric, b.recipient_user_id || null, b.branch_id || null, b.region_id || null, actor.id,
         b.target_value, b.period, b.period_type || 'monthly', b.notes || null]
     );
-    logAction(req, {
+    await logAction(req, {
       action: 'Set target', module: 'targets', recordType: 'Target', recordId: id,
       newValue: { metric: b.metric, recipient: b.recipient_user_id, value: b.target_value, period: b.period },
     });
     if (recipientUser) {
-      notify(recipientUser.id, 'target', 'New target set', `Your ${b.metric.replace('_', ' ')} target for ${b.period} is ${b.target_value}.`);
+      await notify(recipientUser.id, 'target', 'New target set', `Your ${b.metric.replace('_', ' ')} target for ${b.period} is ${b.target_value}.`);
     }
-    const created = get('SELECT * FROM targets WHERE id = ?', [id]);
-    res.status(201).json({ target: { ...created, ...computeAchievement(created) } });
+    const created = await get('SELECT * FROM targets WHERE id = ?', [id]);
+    res.status(201).json({ target: { ...created, ...(await computeAchievement(created)) } });
   });
 
   // Scoped list: recipients see their own; setters see what they set;
@@ -226,11 +229,12 @@ function register(router) {
   // real security boundary is the scope filtering inside each handler
   // (own targets, or targets you set, or your real downward scope) — not
   // the module gate, which is about staff MANAGEMENT, a different concept.
-  router.get('/api/targets', requireAuth, (req, res) => {
+  router.get('/api/targets', requireAuth, async (req, res) => {
     const actor = req.user;
     if (req.query.mine === '1') {
-      const rows = all(`SELECT * FROM targets WHERE recipient_user_id = ? AND status = 'Active' ORDER BY period DESC`, [actor.id]);
-      return res.json({ targets: rows.map(t => ({ ...t, ...computeAchievement(t) })) });
+      const rows = await all(`SELECT * FROM targets WHERE recipient_user_id = ? AND status = 'Active' ORDER BY period DESC`, [actor.id]);
+      const withAchievement = await Promise.all(rows.map(async t => ({ ...t, ...(await computeAchievement(t)) })));
+      return res.json({ targets: withAchievement });
     }
     let clause = '1=0'; const params = [];
     const clauses = [];
@@ -241,12 +245,12 @@ function register(router) {
     } else if (actor.role_id === 'manager') {
       clauses.push('branch_id = ?'); params.push(actor.branch_id);
     } else if (actor.role_id === 'regional_manager') {
-      const scope = branchIdsInScope(actor) || [];
+      const scope = (await branchIdsInScope(actor)) || [];
       if (scope.length) { clauses.push(`branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
     }
     clause = clauses.join(' OR ');
     const statusFilter = req.query.history === '1' ? "status IN ('Active','Cancelled')" : "status = 'Active'";
-    let rows = all(`SELECT * FROM targets WHERE (${clause}) AND ${statusFilter} ORDER BY created_at DESC`, params);
+    let rows = await all(`SELECT * FROM targets WHERE (${clause}) AND ${statusFilter} ORDER BY created_at DESC`, params);
     if (req.query.period) rows = rows.filter(t => t.period === req.query.period);
     if (req.query.recipient_user_id) rows = rows.filter(t => t.recipient_user_id === req.query.recipient_user_id);
     // Real achievement, computed fresh on every read — never a stored/stale
@@ -254,38 +258,38 @@ function register(router) {
     // the Loan Officer's own performance table, and every level above them
     // all trustworthy: they're reading the same live computation, just at
     // different scopes.
-    rows = rows.map(t => ({ ...t, ...computeAchievement(t) }));
-    res.json({ targets: rows });
+    const withAchievement = await Promise.all(rows.map(async t => ({ ...t, ...(await computeAchievement(t)) })));
+    res.json({ targets: withAchievement });
   });
 
   // Must be registered BEFORE GET /api/targets/:id — same routing-order
   // lesson as loans.js's /arrears route: the router matches in
   // registration order, so ':id' would otherwise swallow this literal path.
-  router.get('/api/targets/eligible-recipients', requireAuth, requireModule('staff'), (req, res, next) => {
+  router.get('/api/targets/eligible-recipients', requireAuth, requireModule('staff'), async (req, res, next) => {
     const actor = req.user;
     if (!canSetTargets(actor.role_id)) return next({ status: 403, message: 'Your role is not authorized to set targets' });
     const allowedRoles = ALLOWED_RECIPIENT_ROLES[actor.role_id] || [];
     if (!allowedRoles.length) return res.json({ users: [] });
-    let rows = all(`SELECT id, name, role_id, branch_id FROM users WHERE role_id IN (${allowedRoles.map(() => '?').join(',')}) AND status = 'Active'`, allowedRoles);
+    let rows = await all(`SELECT id, name, role_id, branch_id FROM users WHERE role_id IN (${allowedRoles.map(() => '?').join(',')}) AND status = 'Active'`, allowedRoles);
     if (actor.role_id === 'manager') rows = rows.filter(u => u.branch_id === actor.branch_id);
-    else if (actor.role_id === 'regional_manager') { const scope = branchIdsInScope(actor) || []; rows = rows.filter(u => scope.includes(u.branch_id)); }
+    else if (actor.role_id === 'regional_manager') { const scope = (await branchIdsInScope(actor)) || []; rows = rows.filter(u => scope.includes(u.branch_id)); }
     res.json({ users: rows });
   });
 
-  router.get('/api/targets/:id', requireAuth, (req, res, next) => {
-    const t = get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+  router.get('/api/targets/:id', requireAuth, async (req, res, next) => {
+    const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
     const actor = req.user;
     const isVisible = t.recipient_user_id === actor.id || t.set_by === actor.id ||
       ['admin', 'ceo', 'director', 'operational_manager'].includes(actor.role_id) ||
       (actor.role_id === 'manager' && t.branch_id === actor.branch_id) ||
-      (actor.role_id === 'regional_manager' && (branchIdsInScope(actor) || []).includes(t.branch_id));
+      (actor.role_id === 'regional_manager' && ((await branchIdsInScope(actor)) || []).includes(t.branch_id));
     if (!isVisible) return next({ status: 403, message: 'You do not have access to this target' });
-    res.json({ target: { ...t, ...computeAchievement(t) } });
+    res.json({ target: { ...t, ...(await computeAchievement(t)) } });
   });
 
-  router.patch('/api/targets/:id', requireAuth, requireModule('staff'), (req, res, next) => {
-    const t = get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+  router.patch('/api/targets/:id', requireAuth, requireModule('staff'), async (req, res, next) => {
+    const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
     const actor = req.user;
     if (t.set_by !== actor.id && actor.role_id !== 'admin') {
@@ -299,23 +303,23 @@ function register(router) {
     }
     if (b.notes !== undefined) { sets.push('notes = ?'); params.push(b.notes); }
     if (!sets.length) return next({ status: 400, message: 'Nothing to update' });
-    sets.push("updated_at = datetime('now')");
+    sets.push("updated_at = iso_now()");
     params.push(req.params.id);
-    run(`UPDATE targets SET ${sets.join(', ')} WHERE id = ?`, params);
-    logAction(req, { action: 'Updated target', module: 'targets', recordType: 'Target', recordId: req.params.id, previousValue: { target_value: t.target_value }, newValue: b });
-    const updated = get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
-    res.json({ target: { ...updated, ...computeAchievement(updated) } });
+    await run(`UPDATE targets SET ${sets.join(', ')} WHERE id = ?`, params);
+    await logAction(req, { action: 'Updated target', module: 'targets', recordType: 'Target', recordId: req.params.id, previousValue: { target_value: t.target_value }, newValue: b });
+    const updated = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+    res.json({ target: { ...updated, ...(await computeAchievement(updated)) } });
   });
 
-  router.post('/api/targets/:id/cancel', requireAuth, requireModule('staff'), (req, res, next) => {
-    const t = get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+  router.post('/api/targets/:id/cancel', requireAuth, requireModule('staff'), async (req, res, next) => {
+    const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
     const actor = req.user;
     if (t.set_by !== actor.id && actor.role_id !== 'admin') {
       return next({ status: 403, message: 'Only the person who set this target (or an Admin) can cancel it' });
     }
-    run("UPDATE targets SET status = 'Cancelled', updated_at = datetime('now') WHERE id = ?", [req.params.id]);
-    logAction(req, { action: 'Cancelled target', module: 'targets', recordType: 'Target', recordId: req.params.id, reason: req.body.reason });
+    await run("UPDATE targets SET status = 'Cancelled', updated_at = iso_now() WHERE id = ?", [req.params.id]);
+    await logAction(req, { action: 'Cancelled target', module: 'targets', recordType: 'Target', recordId: req.params.id, reason: req.body.reason });
     res.json({ ok: true });
   });
 }
