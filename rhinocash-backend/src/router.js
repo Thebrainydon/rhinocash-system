@@ -3,8 +3,10 @@
 // (app.get/post/patch/delete, req.params, req.body, res.json/.status) that
 // the route files below read like ordinary Express routes.
 'use strict';
+const zlib = require('node:zlib');
 
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024; // 2MB — plenty for any form this app submits; uploads use their own separate binary path with a 5MB cap.
+const GZIP_MIN_BYTES = 1024; // below this, gzip's own overhead isn't worth it
 
 class Router {
   constructor() { this.routes = []; this.middlewares = []; }
@@ -26,9 +28,21 @@ class Router {
     req.query = Object.fromEntries(url.searchParams.entries());
     res.status = (code) => { res.statusCode = code; return res; };
     res.json = (obj) => {
-      const body = JSON.stringify(obj);
+      const body = Buffer.from(JSON.stringify(obj));
       res.setHeader('Content-Type', 'application/json');
-      res.end(body);
+      // The bulk dashboard/loanbook endpoints return large JSON arrays that
+      // compress extremely well; on a slow client connection this is the
+      // single biggest lever over actual response latency. Gated on the
+      // client advertising support and a minimum size so we don't spend
+      // CPU compressing tiny responses.
+      const acceptEncoding = req.headers['accept-encoding'] || '';
+      if (body.length >= GZIP_MIN_BYTES && acceptEncoding.includes('gzip')) {
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        res.end(zlib.gzipSync(body));
+      } else {
+        res.end(body);
+      }
     };
 
     // Only consume the request stream here for JSON-ish bodies. Routes like

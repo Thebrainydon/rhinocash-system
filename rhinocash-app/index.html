@@ -835,7 +835,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1725,16 +1725,16 @@ function renderLogin(){
             <div class="login-field">
               <div class="login-field-row">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
-                <input name="username" placeholder="Email address" autocomplete="username" required ${session.loggingIn?'disabled':''}>
+                <input name="username" placeholder="Email address" autocomplete="username" required ${(session.loggingIn||session.loginSuccess)?'disabled':''}>
               </div>
             </div>
             <div class="login-field">
               <div class="login-field-row">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
+                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${(session.loggingIn||session.loginSuccess)?'disabled':''}>
               </div>
             </div>
-            <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn? 'Signing in…' : '▸ Login'}</button>
+            <button class="login-btn" type="submit" ${(session.loggingIn||session.loginSuccess)?'disabled':''}>${session.loginSuccess ? '✓ Login successful… redirecting' : session.loggingIn ? '⟳ Processing… please wait' : '▸ Login'}</button>
           </form>
           <div class="login-forgot"><a onclick="toast('Contact your System Administrator for a password reset')">Forgot Password?</a></div>
           <div class="hint" style="margin-top:16px; color:#C7CBDA; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
@@ -1802,7 +1802,7 @@ function renderSessionExpiryWarningModal(){
 }
 async function doLogin(ev){
   ev.preventDefault();
-  if(session.loggingIn) return false; // duplicate-submit guard
+  if(session.loggingIn || session.loginSuccess) return false; // duplicate-submit guard
   const f = Object.fromEntries(new FormData(ev.target));
   if(!f.username || !f.password){ loginError = "Please enter your email and password."; renderApp(); return false; }
   loginError = "";
@@ -1831,19 +1831,29 @@ async function doLogin(ev){
       session.investorId = null;
       session.mustChangePassword = !!result.mustChangePassword;
     }
-    session.loggedIn = true;
-    session.loggingIn = false;
     session.section = "dashboard";
     session.sidebarExpanded = {};
     session.sessionExpiresAt = result.expiresAt || null;
     session.sessionWarningMinutes = result.sessionWarningMinutes || 5;
     scheduleSessionExpiryWarning();
-    DB = null; // show the "loading your data" screen while loadCoreData runs
+    // Credentials are verified and the session is real at this point — say
+    // so immediately instead of leaving the user staring at a static
+    // screen while loadCoreData() (which can take a few seconds on a slow
+    // connection) runs. loadCoreData() populates DB itself, so it's safe to
+    // kick it off in the background while still showing the login panel;
+    // this also skips the separate full-page "Loading your data…" screen
+    // that used to appear right after this one, since this message already
+    // covers that wait.
+    session.loggingIn = false;
+    session.loginSuccess = true;
     renderApp();
     await loadCoreData();
+    session.loggedIn = true;
+    session.loginSuccess = false;
     renderApp();
   }catch(e){
     session.loggingIn = false;
+    session.loginSuccess = false;
     loginError = (e && e.message) || "Invalid credentials.";
     renderApp();
   }
