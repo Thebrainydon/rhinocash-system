@@ -71,6 +71,23 @@ separate migration command to run. See `rhinocash-backend/README.md` →
 `rhinocash-backend/docs/POSTGRESQL.md` for the schema design decisions,
 transaction handling, and SQL translation notes.
 
+## Running with Docker
+
+`docker-compose.yml` at the repo root runs PostgreSQL and the backend
+together — the frontend is a static file, served separately (see
+"Structure" above):
+
+```bash
+docker compose up -d
+docker compose exec api node seed.js --demo
+```
+
+Then open `rhinocash-app/index.html` in a browser, or serve it with any
+static host. Set `window.RHINOCASH_API_BASE` if the API isn't reachable
+at `http://localhost:4000`. See `Dockerfile` and `docker-compose.yml` for
+the exact configuration, and `.env.example` for what to change for a real
+deployment (`SESSION_SECRET`, `CORS_ORIGIN`, `MPESA_ENCRYPTION_KEY`).
+
 ## Running the test suite
 
 Backend suites need a dedicated PostgreSQL test database (never the same

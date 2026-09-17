@@ -1,0 +1,54 @@
+# Local/self-hosted deployment: PostgreSQL + the backend API together.
+# The frontend (rhinocash-app/index.html) is a single static file — serve
+# it with any static host (nginx, a CDN, `python3 -m http.server`, your
+# platform's static-site hosting) and point it at wherever the "api"
+# service below is reachable, via window.RHINOCASH_API_BASE.
+#
+# Usage:
+#   cp rhinocash-backend/.env.example rhinocash-backend/.env
+#   # edit rhinocash-backend/.env — at minimum leave DATABASE_URL as-is
+#   # below (it's wired to the postgres service already) and set
+#   # SESSION_SECRET/MPESA_ENCRYPTION_KEY for anything beyond local testing
+#   docker compose up -d
+#   docker compose exec api node seed.js --demo
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rhinocash
+      POSTGRES_PASSWORD: rhinocash_dev_password
+      POSTGRES_DB: rhinocash
+    volumes:
+      - rhinocash_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rhinocash"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./rhinocash-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://rhinocash:rhinocash_dev_password@postgres:5432/rhinocash
+      PORT: 4000
+      NODE_ENV: production
+      # Override these in a real deployment — see rhinocash-backend/.env.example.
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      MPESA_ENCRYPTION_KEY: ${MPESA_ENCRYPTION_KEY:-}
+    ports:
+      - "4000:4000"
+    volumes:
+      - rhinocash_uploads:/app/data/uploads
+
+volumes:
+  rhinocash_pgdata:
+  rhinocash_uploads:
