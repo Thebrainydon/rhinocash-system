@@ -320,30 +320,80 @@ function register(router) {
       const q = req.query.q.toLowerCase();
       rows = rows.filter(u => (u.provider || '').toLowerCase().includes(q) || (u.account_reference || '').toLowerCase().includes(q) || (u.utility_type || '').toLowerCase().includes(q));
     }
-    res.json({ utilityPayments: rows });
+    const payIds = rows.map(r => r.id);
+    let itemsByPay = {};
+    if (payIds.length) {
+      const ph = payIds.map(() => '?').join(',');
+      (await all(`SELECT * FROM utility_payment_items WHERE utility_payment_id IN (${ph})`, payIds)).forEach(it => {
+        if (!itemsByPay[it.utility_payment_id]) itemsByPay[it.utility_payment_id] = [];
+        itemsByPay[it.utility_payment_id].push(it);
+      });
+    }
+    res.json({ utilityPayments: rows.map(r => ({ ...r, items: itemsByPay[r.id] || [] })) });
   });
 
+  // Real "Vendor Payment Form": Payment Method + Recipient Mpesa Number &
+  // Name, one or more {description, expense_account_id, cost} line items
+  // (one M-Pesa/bank disbursement can span several differently-allocated
+  // expense lines), OTP-confirmed the same way as Requisitions and the
+  // Bulk Upload path (the same generic requisition_otps confirmation code
+  // — it was never actually requisition-specific).
   router.post('/api/utility-payments', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
     const b = req.body;
-    if (!b.utility_type || !b.amount || b.amount <= 0) return next({ status: 400, message: 'utility_type and a positive amount are required' });
+    const items = Array.isArray(b.items) ? b.items : [];
+    if (!items.length) return next({ status: 400, message: 'At least one item is required' });
+    for (const it of items) {
+      if (!it.description || !(Number(it.cost) > 0)) return next({ status: 400, message: 'Each item needs a description and a positive cost' });
+    }
+    if (!b.payment_method) return next({ status: 400, message: 'payment_method is required' });
+    if (b.payment_method === 'Mpesa B2C' && (!b.recipient_mpesa_number || !b.recipient_name)) {
+      return next({ status: 400, message: "A Mpesa B2C payment needs the recipient's Mpesa number and name" });
+    }
+    if (!b.otp_code) return next({ status: 400, message: 'otp_code is required' });
+    const otp = await get(
+      `SELECT * FROM requisition_otps WHERE user_id = ? AND code_hash = ? AND used = 0 AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id, tokenHash(String(b.otp_code))]
+    );
+    if (!otp) return next({ status: 400, message: 'Invalid or expired OTP code', code: 'INVALID_OTP' });
     try { await assertPeriodOpen(); } catch (e) { return next(e); }
-    const scopeIsCompanyWide = (await branchIdsInScope(req.user)) === null;
-    const branchId = b.branch_id && (scopeIsCompanyWide || (await isBranchAllowed(req.user, b.branch_id))) ? b.branch_id : req.user.branch_id;
-    const fundingAccount = (b.account_id && (await get('SELECT id FROM gl_accounts WHERE id = ?', [b.account_id]))) ? b.account_id : 'bank';
+
+    const resolvedItems = [];
+    for (const it of items) {
+      let expenseAccountId = null;
+      if (it.expense_account_id) {
+        const acct = await get(`SELECT id FROM gl_accounts WHERE id = ? AND account_type = 'Expense'`, [it.expense_account_id]);
+        if (!acct) return next({ status: 400, message: `"${it.expense_account_id}" is not a real Expense account` });
+        expenseAccountId = acct.id;
+      }
+      resolvedItems.push({ description: it.description, cost: Number(it.cost), expense_account_id: expenseAccountId });
+    }
+    const amount = resolvedItems.reduce((s, it) => s + it.cost, 0);
+    const branchId = req.user.branch_id;
+    const combinedDescription = resolvedItems.map(it => it.description).join('; ');
     const expId = 'exp_' + crypto.randomUUID();
     const id = 'util_' + crypto.randomUUID();
     await transaction(async () => {
+      await run('UPDATE requisition_otps SET used = 1 WHERE id = ?', [otp.id]);
       await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
-        [expId, 'Utility — ' + b.utility_type, b.amount, `${b.provider || ''} ${b.account_reference || ''}`.trim(), branchId, 'Paid', req.user.id, req.user.id, req.user.id]);
-      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('operating_expense', ?, 0, ?, 'utility', ?, ?, ?)`,
-        [b.amount, `${b.utility_type} — ${b.provider || ''}`, expId, branchId, req.user.id]);
-      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, 0, ?, ?, 'utility', ?, ?, ?)`,
-        [fundingAccount, b.amount, `${b.utility_type} — ${b.provider || ''}`, expId, branchId, req.user.id]);
-      await run('INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, expense_id, paid_by) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        [id, b.utility_type, b.provider || null, b.account_reference || null, b.amount, branchId, b.payment_method || fundingAccount, 'Paid', expId, req.user.id]);
+        [expId, 'Vendor Payment', amount, `${b.recipient_name || ''} ${b.recipient_mpesa_number || ''}`.trim(), branchId, 'Paid', req.user.id, req.user.id, req.user.id]);
+      for (const it of resolvedItems) {
+        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'utility', ?, ?, ?)`,
+          [it.expense_account_id || 'operating_expense', it.cost, it.description, expId, branchId, req.user.id]);
+      }
+      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('bank', 0, ?, ?, 'utility', ?, ?, ?)`,
+        [amount, combinedDescription, expId, branchId, req.user.id]);
+      await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, expense_id, paid_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, 'Vendor Payment', b.recipient_name || null, b.recipient_mpesa_number || null, amount, branchId, b.payment_method, 'Paid', expId, req.user.id, combinedDescription, b.recipient_mpesa_number || null, b.recipient_name || null, resolvedItems.length === 1 ? resolvedItems[0].expense_account_id : null]);
+      for (const it of resolvedItems) {
+        await run('INSERT INTO utility_payment_items (id, utility_payment_id, description, expense_account_id, cost) VALUES (?,?,?,?,?)',
+          ['upi_' + crypto.randomUUID(), id, it.description, it.expense_account_id, it.cost]);
+      }
     });
-    await logAction(req, { action: 'Paid utility bill', module: 'accounting', recordType: 'UtilityPayment', recordId: id, newValue: { utility_type: b.utility_type, amount: b.amount } });
-    res.status(201).json({ utilityPayment: await get('SELECT * FROM utility_payments WHERE id = ?', [id]) });
+    await logAction(req, { action: 'Paid vendor via Utility Payments', module: 'accounting', recordType: 'UtilityPayment', recordId: id, newValue: { amount, itemCount: resolvedItems.length } });
+    const created = await get('SELECT * FROM utility_payments WHERE id = ?', [id]);
+    const createdItems = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [id]);
+    res.status(201).json({ utilityPayment: { ...created, items: createdItems } });
   });
 
   // Bulk import — a real Excel/CSV template (Branch/Item description/Cost/

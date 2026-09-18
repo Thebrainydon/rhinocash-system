@@ -1129,11 +1129,18 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const paidReq = DB.acctPages.req.requisitions.find(r=>r.id===newReq.id);
     __assert(paidReq.status === 'Paid' && paidReq.expense_id, "real payRequisition() through the actual UI function pays it and links a real expense");
 
-    // Utility Payments: real submit, immediately paid.
-    const utilForm = new Map([['utility_type','Electricity'],['provider','Kenya Power'],['account_reference','ACC-555'],['amount','3200']]);
-    global.FormData = class { constructor(){ return utilForm; } };
+    // Utility Payments (Vendor Payment Form): real multi-item submit through the actual UI flow, OTP included.
+    openCreateUtilityPaymentForm();
+    DB.utilPaymentForm.payment_method = 'Mpesa B2C';
+    DB.utilPaymentForm.recipient_mpesa_number = '0722000555';
+    DB.utilPaymentForm.recipient_name = 'Kenya Power';
+    updateUtilItemField(0, 'description', 'Electricity — Kenya Power');
+    updateUtilItemField(0, 'cost', '3200');
+    await requestUtilPaymentOtp();
+    __assert(DB.utilPaymentForm.otpRequested && DB.utilPaymentForm.otpForTesting, "requestUtilPaymentOtp() through the real UI function genuinely requested a real OTP and surfaced the test code (SMS not configured in this environment)");
+    DB.utilPaymentForm.otp_code = DB.utilPaymentForm.otpForTesting;
     await submitUtilityPayment({ preventDefault(){}, target:{} });
-    __assert(DB.acctPages.util.utilityPayments.some(u=>u.account_reference==='ACC-555'), "a real utility payment was submitted via the actual form handler and appears in the real list");
+    __assert(DB.acctPages.util.utilityPayments.some(u=>u.recipient_mpesa_number==='0722000555'), "a real vendor payment was submitted via the actual Vendor Payment Form UI flow and appears in the real list");
 
     // Bulk Upload (Import Utility Payments): real CSV parse + OTP + real batch create, through the actual UI functions.
     openBulkUploadModal();

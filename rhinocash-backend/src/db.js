@@ -570,14 +570,26 @@ CREATE TABLE IF NOT EXISTS utility_payments (
   status TEXT NOT NULL DEFAULT 'Paid',
   expense_id TEXT REFERENCES expenses(id),
   paid_by TEXT REFERENCES users(id),
-  -- Populated only by the bulk-upload path (see POST
-  -- /api/utility-payments/bulk): a real vendor mpesa payment can name any
-  -- recipient/item, not just the single form's fixed utility_type list.
+  -- A real vendor mpesa payment can name any recipient/item, and can span
+  -- several items against different GL accounts (see utility_payment_items)
+  -- — the single form's old fixed utility_type list couldn't express that.
   item_description TEXT,
   recipient_mpesa_number TEXT,
   mpesa_name TEXT,
   expense_account_id TEXT REFERENCES gl_accounts(id),
   created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
+-- Real line items for a vendor payment (Item/Service description | Journal
+-- Account | Cost) — one M-Pesa/bank disbursement can cover several
+-- differently-allocated expense lines; utility_payments.amount stays the
+-- authoritative total (SUM of item costs at creation time).
+CREATE TABLE IF NOT EXISTS utility_payment_items (
+  id TEXT PRIMARY KEY,
+  utility_payment_id TEXT NOT NULL REFERENCES utility_payments(id),
+  description TEXT NOT NULL,
+  expense_account_id TEXT REFERENCES gl_accounts(id),
+  cost NUMERIC(14,2) NOT NULL
 );
 
 -- ===================== Staff HR =====================
