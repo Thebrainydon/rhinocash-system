@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  828 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 628 passed, 0 failed  (drives the real UI functions in
+Frontend: 634 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,456 passed, 0 failed
+Total:    1,462 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -81,7 +81,10 @@ Loan Status Browser (topbar calendar-check icon) filtering a user's
 real, role-scoped loan applications by outcome category (All templates/
 Disbursed/Undisbursed/Pended/Declined) and by month/day, reusing the
 same `/api/loans/applications-overview` endpoint and scoping as the
-existing Applications Overview page.
+existing Applications Overview page · a Pending Payments browser (topbar
+copy/duplicate icon) over the existing, real Unposted-payments status,
+reusing `/api/payments` and its own existing search/scoping exactly as-is
+— no backend changes needed for this one.
 
 ## What is explicitly NOT verified, stated plainly
 

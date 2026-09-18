@@ -871,7 +871,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null, loanStatusState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null, loanStatusState:null, pendingPaymentsState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1071,7 +1071,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    chatConversations:null, chatContacts:null, chatMessages:{}, loanStatusBrowser:null };
+    chatConversations:null, chatContacts:null, chatMessages:{}, loanStatusBrowser:null, pendingPaymentsBrowser:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1765,6 +1765,7 @@ function renderApp(){
           <div class="topbar-right">
             ${session.role!=="Investor" ? `<div class="bell" onclick="openChatPanel()" title="Chat">💬${unreadChat>0?`<span class="bell-dot">${unreadChat}</span>`:""}</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
+            ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
@@ -9590,8 +9591,9 @@ function renderModal(){
   else if(modal.type === "session-expiry-warning") body = renderSessionExpiryWarningModal();
   else if(modal.type === "chat") body = renderChatModal();
   else if(modal.type === "loan-status") body = renderLoanStatusModal();
+  else if(modal.type === "pending-payments") body = renderPendingPaymentsModal();
   else return "";
-  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}${modal.type==='loan-status'?' modal-wide':''}">${body}</div></div>`;
+  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}${modal.type==='loan-status'||modal.type==='pending-payments'?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
   return `
@@ -9906,6 +9908,58 @@ function renderLoanStatusModal(){
       </tr>`).join("") || `<tr><td colspan="9" class="empty">No loans match the selected filters.</td></tr>`}
     </table></div>
     ${totalRows>pageSize ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.loanStatusState.page=${page-1}; DB.loanStatusBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${totalRows})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.loanStatusState.page=${page+1}; DB.loanStatusBrowser=null; renderApp();">Next →</button></div>` : ""}
+  `;
+}
+
+// ==================== Pending Payments — real Unposted-payments browser, reusing /api/payments ====================
+let pendingPaymentsReqSeq = 0;
+async function loadPendingPaymentsBrowser(){
+  const st = session.pendingPaymentsState;
+  const seq = ++pendingPaymentsReqSeq;
+  return withRequest('load-pending-payments:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ status: 'Unposted', page: st.page||1, limit: 20 });
+    if(st.q) params.set('q', st.q);
+    const result = await api.get('/api/payments?'+params.toString());
+    if(seq !== pendingPaymentsReqSeq) return; // a newer request has since superseded this one
+    result.stateKey = JSON.stringify(st);
+    DB.pendingPaymentsBrowser = result;
+  });
+}
+function openPendingPaymentsPanel(){
+  if(!session.pendingPaymentsState) session.pendingPaymentsState = { q:'', page:1 };
+  openModal('pending-payments');
+}
+function renderPendingPaymentsModal(){
+  const st = session.pendingPaymentsState;
+  if(!DB.pendingPaymentsBrowser || DB.pendingPaymentsBrowser.stateKey !== JSON.stringify(st)){
+    loadPendingPaymentsBrowser();
+    return `<div class="modal-head"><h3>Pending Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+  }
+  const d = DB.pendingPaymentsBrowser;
+  const { page, totalPages } = d.pagination;
+  const totalRows = d.pagination.total;
+  return `
+    <div class="modal-head"><h3>Pending Payments (${totalRows})</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="pill-row" style="margin-bottom:10px;">
+      <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.pendingPaymentsState.q=this.value; session.pendingPaymentsState.page=1; DB.pendingPaymentsBrowser=null; renderApp();">
+    </div>
+    <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
+      <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Payment</th><th>Transaction</th><th>Amount</th><th>Creator</th><th>Date</th></tr>
+      ${d.payments.map(p=>{
+        const client = DB.clients.find(c=>c.id===p.client_id);
+        return `<tr class="clickable" onclick="closeModal(); openLoan('${p.loan_id}')">
+          <td>${escapeHtml(client?client.name:'—')}</td>
+          <td>${escapeHtml(client?client.phone||'—':'—')}</td>
+          <td>${escapeHtml(p.channel)}</td>
+          <td>${p.id.slice(-8).toUpperCase()}</td>
+          <td>${escapeHtml(p.reference||'—')}</td>
+          <td>${fmt(p.amount)}</td>
+          <td>${escapeHtml(DB.me && p.recorded_by===DB.me.id ? session.userName : staffName(p.recorded_by))}</td>
+          <td>${new Date(p.created_at).toLocaleDateString()}</td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="8" class="empty">No pending payments match the selected filters.</td></tr>`}
+    </table></div>
+    ${totalRows>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.pendingPaymentsState.page=${page-1}; DB.pendingPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${totalRows})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.pendingPaymentsState.page=${page+1}; DB.pendingPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
   `;
 }
 

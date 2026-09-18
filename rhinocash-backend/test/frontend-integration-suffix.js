@@ -3890,6 +3890,68 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     DB.loanStatusBrowser = null;
   }
 
+  // ---- 19. The real Pending Payments browser (topbar copy/duplicate icon) ----
+  {
+    let of132 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const cForm132 = new Map([['name','[TEST] Pending Payments Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)]]);
+    global.FormData = class { constructor(){ return cForm132; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const ppClient = DB.clients.find(c=>c.name==='[TEST] Pending Payments Client');
+    const ppLoan = await createLoanApplication({ clientId: ppClient.id, productId: 'pr_starter', principal: 10000, term: 4 });
+
+    let mgrf132 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.id);
+    let regf132 = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regf132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.id);
+    let opsf132 = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsf132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.id);
+    let acf132 = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acf132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.id);
+    let admf132 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admf132; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await api.post(`/api/loans/${ppLoan.id}/disburse`, { channel: 'Bank' });
+
+    let of133 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of133; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const unpostedPayment = await recordPayment(ppLoan.id, 2500, 'M-Pesa', false);
+    __assert(!!unpostedPayment && unpostedPayment.status === 'Unposted', "real setup: a real Unposted payment is genuinely recorded, not posted immediately");
+
+    openPendingPaymentsPanel();
+    __assert(modal && modal.type === 'pending-payments', "the real copy/duplicate icon genuinely opens the real Pending Payments panel");
+    session.pendingPaymentsState.q = '[TEST] Pending Payments Client';
+    session.pendingPaymentsState.page = 1;
+    DB.pendingPaymentsBrowser = null;
+    for(let i=0; i<100 && (!DB.pendingPaymentsBrowser || DB.pendingPaymentsBrowser.stateKey!==JSON.stringify(session.pendingPaymentsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    const ppRow = DB.pendingPaymentsBrowser.payments.find(p=>p.id===unpostedPayment.id);
+    __assert(!!ppRow && ppRow.channel==='M-Pesa' && Number(ppRow.amount)===2500, "the real Pending Payments browser genuinely shows the real unposted payment with its real channel and amount");
+    let ppHtml = renderModal();
+    __assert(ppHtml.includes('[TEST] Pending Payments Client') && ppHtml.includes('M-Pesa'), "the real rendered table genuinely shows the real client name and channel, not placeholders");
+
+    session.pendingPaymentsState.q = '[TEST] Nonexistent Payments Client Name';
+    session.pendingPaymentsState.page = 1;
+    DB.pendingPaymentsBrowser = null;
+    for(let i=0; i<100 && (!DB.pendingPaymentsBrowser || DB.pendingPaymentsBrowser.stateKey!==JSON.stringify(session.pendingPaymentsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.pendingPaymentsBrowser.payments.length === 0, "the real search filter genuinely excludes payments that don't match, rather than always showing everything");
+
+    closeModal();
+    openLoan(ppLoan.id);
+    __assert(session.selectedLoanId === ppLoan.id && session.section === 'loanbook', "clicking a real pending-payment row's underlying openLoan() genuinely navigates to that real loan");
+    session.pendingPaymentsState = null;
+    DB.pendingPaymentsBrowser = null;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();
