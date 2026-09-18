@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  862 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 658 passed, 0 failed  (drives the real UI functions in
+Frontend: 657 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,520 passed, 0 failed
+Total:    1,519 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -148,7 +148,18 @@ always-present Client Idno/Location/Client Location — all real
 `client_leads` columns now, and every one with a same-named column on
 `clients` (national_id/address/next_of_kin/next_of_kin_phone/
 business_type) carries over onto the real client record the moment the
-lead converts, instead of being re-entered from scratch.
+lead converts, instead of being re-entered from scratch · Add Client
+was pared down further (Email, Gender, Client Type, Branch and Loan
+Officer fields removed — a Loan Officer creates clients under their own
+identity, so those were redundant) and the Save action now shows a real
+1%-to-100% progress overlay followed by a "Client Added Successful!"
+confirmation before returning to the client list; the underlying
+create-client and document-upload calls are unchanged. Fixing this
+uncovered a real, if narrow, bug in the Manager's Collection Sheet:
+`renderSheetBranchPage()`'s cache-invalidation key included
+`expandedOfficers` (which officer groups are expanded), a pure
+client-side UI toggle, so expanding a group invalidated the cached data
+and briefly reloaded it — now excluded from the key.
 
 ## What is explicitly NOT verified, stated plainly
 

@@ -3903,17 +3903,27 @@ function renderAddClientForm(){
         <div class="field"><label>Id Photo Front</label><input name="idPhotoFront" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></div>
         <div class="field"><label>Id Photo Back</label><input name="idPhotoBack" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></div>
         <div class="hint" style="margin:4px 0 14px;">Photos/ID scans are optional — uploaded to real server-side storage and attached as real client documents once you save.</div>
-        <div class="field"><label>Email</label><input name="email" type="email"></div>
-        <div class="field"><label>Gender</label><select name="gender"><option>Female</option><option>Male</option></select></div>
-        <div class="field"><label>Client Type</label><select name="type"><option>Individual</option><option>SME</option><option>Group</option></select></div>
-        <div class="field"><label>Branch</label><select name="branch">${DB.branches.map(b=>`<option value="${b.id}">${b.name}</option>`).join("")}</select></div>
-        <div class="field"><label>Loan Officer</label><select name="officerId"><option value="">— Default to me, if I'm a Loan Officer —</option>${DB.staff.filter(s=>s.role==='Loan Officer' && s.status==='Active').map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></div>
         <div style="text-align:right; margin-top:16px;">
           <button class="btn btn-green" type="submit">Save</button>
         </div>
       </form>
     </div>
   `;
+}
+// A dedicated DOM node outside the normal render tree — updated by direct
+// writes, never via renderApp() — so the save's progress animation can
+// run without ever wiping the form's typed values or chosen files (a
+// file input's chosen file is lost the instant its element is replaced;
+// there is no browser workaround for that, so the render tree must
+// simply never touch this form while a save is in flight).
+function ensureAddClientProgressOverlay(){
+  let el = document.getElementById('add-client-progress-overlay');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'add-client-progress-overlay';
+    document.body.appendChild(el);
+  }
+  return el;
 }
 async function submitAddClient(ev){
   ev.preventDefault();
@@ -3924,7 +3934,21 @@ async function submitAddClient(ev){
     { input: 'idPhotoFront', docType: 'ID Photo Front' },
     { input: 'idPhotoBack', docType: 'ID Photo Back' },
   ];
-  return withRequest('add-client', async ()=>{
+  const overlay = ensureAddClientProgressOverlay();
+  const paintProgress = (pct) => { overlay.innerHTML = `
+    <div style="position:fixed; inset:0; background:rgba(255,255,255,0.94); z-index:200; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+      <div style="font-size:15px; color:var(--navy); font-weight:700; margin-bottom:14px;">Saving Client…</div>
+      <div style="font-size:36px; font-weight:800; color:var(--green); margin-bottom:14px;">${pct}%</div>
+      <div style="width:200px; background:#EFEDE7; border-radius:20px; height:8px; overflow:hidden;">
+        <div style="background:var(--green); height:100%; width:${pct}%;"></div>
+      </div>
+    </div>`; };
+  // Creeps toward, but never reaches, 100% on its own — only the real
+  // save below (success or failure) decides when this actually ends.
+  let pct = 1;
+  paintProgress(pct);
+  const timer = setInterval(() => { if(pct < 90){ pct = Math.min(90, pct + 1 + Math.floor(Math.random()*6)); paintProgress(pct); } }, 100);
+  await withRequest('add-client', async ()=>{
     const c = await addClient(f);
     // Real uploads, attached as real client_documents rows — only for
     // fields the user actually chose a file for.
@@ -3935,9 +3959,29 @@ async function submitAddClient(ev){
       const uploaded = await uploadFile(file);
       await api.post(`/api/clients/${c.id}/documents`, { name:file.name, doc_type:ff.docType, file_path:uploaded.path });
     }
-    toast(`${c.name} added`);
-    goTo("clients","All Clients");
+    clearInterval(timer);
+    paintProgress(100);
+    // Every delay here is awaited in-line, never a detached setTimeout —
+    // this function's promise only resolves once the popup has actually
+    // shown and closed, so nothing can fire later against whatever the
+    // app has moved on to by then.
+    await new Promise(r=>setTimeout(r, 350));
+    overlay.innerHTML = "";
+    openModal('client-added-success');
+    await new Promise(r=>setTimeout(r, 1600));
+    if(modal && modal.type==='client-added-success'){ closeModal(); goTo("clients","All Clients"); }
   });
+  clearInterval(timer);
+  overlay.innerHTML = ""; // no-op if the success path above already cleared it
+  return false;
+}
+function renderClientAddedSuccessModal(){
+  return `
+    <div style="text-align:center; padding:8px 0;">
+      <div style="font-size:44px; margin-bottom:10px;">✅</div>
+      <h3 style="color:var(--green); margin:0;">Client Added Successful!</h3>
+    </div>
+  `;
 }
 function renderClientGroups(){
   const rows = DB.groups.map(g=>`<tr><td><strong>${escapeHtml(g.name)}</strong></td><td>${g.meetingDay}</td><td>${g.memberIds.length}</td>
@@ -6491,9 +6535,21 @@ function renderApplicationsOverviewPage(){
     ${totalRows>d.pagination.pageSize ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.mgrAppOverviewState.page=${page-1}; DB.applicationsOverview=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${totalRows} applications)</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.mgrAppOverviewState.page=${page+1}; DB.applicationsOverview=null; renderApp();">Next →</button></div>` : ""}
   </div>`;
 }
+function sheetBranchFilterKey(st){
+  // expandedOfficers is a pure client-side UI toggle (which officer groups
+  // are expanded), not a data filter — it must never be part of the key
+  // that decides whether cached collection-sheet data needs reloading.
+  const { expandedOfficers, ...filters } = st;
+  return JSON.stringify(filters);
+}
 async function loadSheetBranch(){
   const st = session.mgrSheetState;
-  return withRequest('load-sheet-branch', async ()=>{
+  // Keyed by state, not a bare string — a fixed key would let withRequest's
+  // duplicate-call guard silently drop a fresh request for a NEW filter
+  // state just because an older, now-superseded request (different date/
+  // officer/etc.) was still in flight, leaving DB.sheetBranch stuck on
+  // stale data until that old call finally resolved.
+  return withRequest('load-sheet-branch:'+sheetBranchFilterKey(st), async ()=>{
     const params = new URLSearchParams();
     if(st.date) params.set('date', st.date);
     if(st.branchId) params.set('branch_id', st.branchId);
@@ -6502,12 +6558,12 @@ async function loadSheetBranch(){
     if(st.status) params.set('status', st.status);
     if(st.q) params.set('q', st.q);
     DB.sheetBranch = await api.get('/api/collections/sheet-branch?'+params.toString());
-    DB.sheetBranch.stateKey = JSON.stringify(st);
+    DB.sheetBranch.stateKey = sheetBranchFilterKey(st);
   });
 }
 function renderSheetBranchPage(){
   const st = session.mgrSheetState || (session.mgrSheetState = { date: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'', status:'', q:'', expandedOfficers:{} });
-  if(!DB.sheetBranch || DB.sheetBranch.stateKey !== JSON.stringify(st)){ loadSheetBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.sheetBranch || DB.sheetBranch.stateKey !== sheetBranchFilterKey(st)){ loadSheetBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   const d = DB.sheetBranch;
   const k = d.kpis;
   const isRegional = session.role === 'Regional Manager';
@@ -10093,6 +10149,7 @@ function renderModal(){
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
   else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
   else if(modal.type === "create-lead") body = renderCreateLeadModal();
+  else if(modal.type === "client-added-success") body = renderClientAddedSuccessModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
