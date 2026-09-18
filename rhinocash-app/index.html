@@ -7238,7 +7238,7 @@ function renderAccounting(){
   const tabs = accountingTabsForRole(session.role);
   const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
-  if(active==="Requisitions") return tabsHtml + renderRequisitionsPage();
+  if(active==="Requisitions") return renderRequisitionsPage();
   if(active==="Utility Payments") return tabsHtml + renderUtilityPaymentsPage();
   if(active==="General Ledger") return tabsHtml + renderGeneralLedgerPage();
   if(active==="Chart of Accounts") return tabsHtml + renderChartOfAccountsPage();
