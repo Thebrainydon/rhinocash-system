@@ -860,7 +860,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1060,7 +1060,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -7246,7 +7246,7 @@ function renderAccounting(){
   if(active==="Trial Balance") return tabsHtml + renderTrialBalancePage();
   if(active==="Profit & Loss") return tabsHtml + renderProfitLossPage();
   if(active==="Balance Sheet") return tabsHtml + renderBalanceSheetPage();
-  if(active==="Cashflow") return tabsHtml + renderCashflowPage();
+  if(active==="Cashflow") return session.role==='Loan Officer' ? renderExpectedCashflowPage() : tabsHtml + renderCashflowPage();
   if(active==="Accounting Periods") return tabsHtml + renderAccountingPeriodsPage();
   if(active==="Adjustments") return tabsHtml + renderAdjustmentsPage();
   if(active==="Portfolio at Risk") return tabsHtml + renderPARPage();
@@ -7842,6 +7842,107 @@ function renderBalanceSheetPage(){
     </div>
     <div class="hint" style="margin-top:10px;">Assets = Liabilities + Equity: ${Math.abs(state.totalAssets-(state.totalLiabilities+state.equity))<0.01 ? '<span style="color:var(--green);">balances correctly</span>' : '<span style="color:var(--red);">DOES NOT BALANCE</span>'}</div>
   </div>`;
+}
+
+// ==================== Expected Cashflow (Loan Officer) — real, month/week/day-scoped ====================
+// Reuses the same "outstanding" definition (loan_schedule rows not yet
+// Paid) as arrears elsewhere — a genuine projection of what's still due,
+// never a fabricated forecast number.
+function expectedCfMonthOptions(){
+  const opts = []; const now = new Date();
+  for(let i=-2;i<=12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+    opts.push(d.toISOString().slice(0,7));
+  }
+  return opts;
+}
+function expectedCfMonthLabel(ym){
+  const [y,m] = ym.split('-').map(Number);
+  return new Date(y, m-1, 1).toLocaleString('en-KE', {month:'short', year:'numeric'});
+}
+function expectedCfWeeksInMonth(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const weeks = []; let day = 1;
+  while(day <= daysInMonth){ const end = Math.min(day+6, daysInMonth); weeks.push({start:day, end}); day = end+1; }
+  return weeks;
+}
+let expectedCfReqSeq = 0;
+function loadExpectedCashflow(){
+  const st = session.expectedCashflowState;
+  const seq = ++expectedCfReqSeq;
+  return withRequest('load-expected-cf:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams();
+    if(st.day) params.set('day', st.day);
+    else if(st.week!==''){
+      const wk = expectedCfWeeksInMonth(st.month)[Number(st.week)];
+      params.set('week_start', `${st.month}-${String(wk.start).padStart(2,'0')}`);
+      params.set('week_end', `${st.month}-${String(wk.end).padStart(2,'0')}`);
+    } else params.set('month', st.month);
+    const res = await api.get('/api/collections/expected-cashflow?'+params.toString());
+    if(seq !== expectedCfReqSeq) return; // a newer request has since superseded this one
+    res.stateKey = JSON.stringify(st);
+    DB.expectedCashflowData = res;
+  });
+}
+// Each handler only updates the filter state and re-renders — the render
+// function itself detects the stateKey mismatch and (re)loads, exactly
+// once, the same pattern the Loan Status Browser uses. Calling
+// loadExpectedCashflow() again here too would race the load the render
+// pass is about to trigger anyway (withRequest's duplicate-call guard
+// would silently drop whichever call loses that race).
+function changeExpectedCfMonth(value){
+  session.expectedCashflowState = { month:value, week:'', day:'' };
+  renderApp();
+}
+function changeExpectedCfWeek(value){
+  session.expectedCashflowState.week = value; session.expectedCashflowState.day = '';
+  renderApp();
+}
+function changeExpectedCfDay(value){
+  session.expectedCashflowState.day = value;
+  renderApp();
+}
+function renderExpectedCashflowPage(){
+  if(!session.expectedCashflowState){
+    session.expectedCashflowState = { month: new Date().toISOString().slice(0,7), week:'', day:'' };
+  }
+  const st = session.expectedCashflowState;
+  if(!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(st)){ loadExpectedCashflow(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const data = DB.expectedCashflowData;
+  const weeks = expectedCfWeeksInMonth(st.month);
+  const [y,m] = st.month.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monthAbbrev = expectedCfMonthLabel(st.month).split(' ')[0];
+  return `
+    <div class="card">
+      <h3 style="color:var(--navy); margin-bottom:12px;">${expectedCfMonthLabel(st.month)} Expected Cashflow</h3>
+      <div style="border-bottom:1px solid var(--line); margin-bottom:16px;"></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <select style="flex:1; min-width:130px;" onchange="changeExpectedCfMonth(this.value)">
+          ${expectedCfMonthOptions().map(ym=>`<option value="${ym}" ${st.month===ym?'selected':''}>${expectedCfMonthLabel(ym)}</option>`).join("")}
+        </select>
+        <select style="flex:1; min-width:150px;" onchange="changeExpectedCfWeek(this.value)">
+          <option value="">-- Select week --</option>
+          ${weeks.map((w,idx)=>`<option value="${idx}" ${st.week===String(idx)?'selected':''}>Week ${idx+1} (${monthAbbrev} ${w.start}–${w.end})</option>`).join("")}
+        </select>
+      </div>
+      <select style="width:160px; margin-bottom:24px;" onchange="changeExpectedCfDay(this.value)">
+        <option value="">-- Day --</option>
+        ${Array.from({length:daysInMonth}, (_,i)=>i+1).map(d=>{
+          const dateStr = `${st.month}-${String(d).padStart(2,'0')}`;
+          return `<option value="${dateStr}" ${st.day===dateStr?'selected':''}>${d}</option>`;
+        }).join("")}
+      </select>
+      <div class="card-title" style="color:var(--blue);">Loan Summary</div>
+      <table>
+        <tr style="background:#F5F4F1;"><td>Total Loans</td><td style="text-align:right;"><strong>${data.totalLoans}</strong></td></tr>
+        <tr><td>Loan Principal</td><td style="text-align:right;"><strong>${fmtNum(data.principal)}</strong> KES</td></tr>
+        <tr style="background:#F5F4F1;"><td>Loan Interest</td><td style="text-align:right;"><strong>${fmtNum(data.interest)}</strong> KES</td></tr>
+      </table>
+      <div style="text-align:right; padding-top:10px; border-top:1px solid var(--line); margin-top:6px; color:var(--blue); font-weight:700; font-size:15px;">${fmtNum(data.total)} KES</div>
+    </div>
+  `;
 }
 
 function loadCashflow(filters){

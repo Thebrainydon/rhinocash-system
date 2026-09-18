@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  826 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 642 passed, 0 failed  (drives the real UI functions in
+Backend:  857 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 651 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,468 passed, 0 failed
+Total:    1,508 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -121,7 +121,24 @@ unreachable — the same honest-disclosure convention already used
 elsewhere. `POST /api/requisitions/:id/pay` was also fixed to debit the
 real expense account the officer chose at submission, instead of
 always hardcoding the generic Operating Expenses account regardless of
-what the requisition was actually for.
+what the requisition was actually for · Vendor/Utility Payments was
+rebuilt from a single fixed-utility_type form into a real, OTP-confirmed
+Vendor Payment Form (Mpesa B2C/Paybill B2B/BuyGoods, one or more real
+line items each postable to any real GL account — not restricted to
+Expense-type, since a vendor payment can legitimately settle a
+liability too), plus a real Bulk Upload/CSV-import path sharing the
+same OTP confirmation and per-row validation, never silently dropping a
+bad row nor letting one bad row block the rows that were valid ·
+a Loan Officer's own "Cashflow" submenu is now a real Expected Cashflow
+projection — month/week/day-scoped totals (loan count, principal,
+interest due) computed from real, still-outstanding `loan_schedule`
+rows (`GET /api/collections/expected-cashflow`, reusing the exact same
+branch/officer scoping and "outstanding" definition — `status != 'Paid'`
+— every other collections endpoint already uses), independently
+recomputed and matched exactly in its test. Every other role keeps the
+existing ledger-based Cashflow (opening/closing balance) report
+unchanged, since that is a genuinely different, still-valid concept for
+those roles.
 
 ## What is explicitly NOT verified, stated plainly
 

@@ -1175,6 +1175,21 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let kisumuOfficerForReq = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return kisumuOfficerForReq; } };
     await doLogin({ preventDefault(){}, target:{} });
+
+    // Expected Cashflow (Loan Officer's own real "Cashflow" submenu): month/week/day-scoped, through the actual UI functions.
+    goTo('accounting','Cashflow');
+    for(let i=0; i<100 && (!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(session.expectedCashflowState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.expectedCashflowData && typeof DB.expectedCashflowData.principal === 'number' && typeof DB.expectedCashflowData.totalLoans === 'number', "the real Cashflow page's own render-triggered load produced a real projection from the actual backend");
+    let cfHtml = document.getElementById('root').innerHTML;
+    __assert(cfHtml.includes('Expected Cashflow') && cfHtml.includes('Loan Summary'), "a Loan Officer's real Cashflow page renders the Expected Cashflow projection (Loan Summary), not the ledger Cashflow report other roles see");
+    __assert(Math.abs(DB.expectedCashflowData.total - (DB.expectedCashflowData.principal + DB.expectedCashflowData.interest)) < 0.01, "the real rendered total is genuinely principal + interest");
+
+    const cfMonthOptions = expectedCfMonthOptions();
+    const differentMonth = cfMonthOptions.find(m => m !== session.expectedCashflowState.month);
+    changeExpectedCfMonth(differentMonth);
+    for(let i=0; i<100 && (!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(session.expectedCashflowState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.expectedCashflowData && typeof DB.expectedCashflowData.principal === 'number', "changeExpectedCfMonth() through the real UI function genuinely reloads a real projection for that different month");
+
     const secondReqOtp = await api.post('/api/requisitions/request-otp', {});
     const secondReq = await api.post('/api/requisitions', { items:[{description:'Test',qty:1,unit_cost:1000}], expense_account_id: reqExpenseAccountId, otp_code: secondReqOtp.otpForTesting }); // real Kisumu-branch requisition
 

@@ -829,6 +829,42 @@ function register(router) {
     res.json({ officers: result });
   });
 
+  // ==================== Expected Cashflow — real, month/week/day-scoped ====================
+  // What's still due to be collected in a period (real loan_schedule rows,
+  // status != 'Paid' — the same "outstanding" definition used by arrears
+  // above), not a fabricated projection. A Loan Officer sees only their
+  // own portfolio (loanScopeClause already does that); other roles get
+  // their own real branch/region/company-wide scope the same way every
+  // other collections endpoint does.
+  router.get('/api/collections/expected-cashflow', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await loanScopeClause(req);
+    const loanIds = (await all(`SELECT id FROM loans WHERE ${scope.clause} AND status IN ('Active','Disbursed')`, scope.params)).map(l => l.id);
+
+    const now = new Date();
+    let from, to;
+    if (req.query.day) {
+      from = req.query.day; to = req.query.day;
+    } else if (req.query.week_start && req.query.week_end) {
+      from = req.query.week_start; to = req.query.week_end;
+    } else if (req.query.month) {
+      const [y, m] = req.query.month.split('-').map(Number);
+      from = `${req.query.month}-01`;
+      to = `${req.query.month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    } else {
+      from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+    }
+
+    if (!loanIds.length) return res.json({ from, to, totalLoans: 0, principal: 0, interest: 0, total: 0 });
+    const row = await get(
+      `SELECT COUNT(DISTINCT loan_id) as loans, COALESCE(SUM(principal_due),0) as principal, COALESCE(SUM(interest_due),0) as interest
+       FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',')}) AND status != 'Paid' AND (due_date)::date BETWEEN ? AND ?`,
+      [...loanIds, from, to]
+    );
+    const principal = Number(row.principal), interest = Number(row.interest);
+    res.json({ from, to, totalLoans: Number(row.loans), principal, interest, total: principal + interest });
+  });
+
 }
 
 module.exports = { register, collectionTotals };

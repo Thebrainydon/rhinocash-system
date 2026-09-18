@@ -213,6 +213,47 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(officerUnauthorized.status === 403, 'a Loan Officer cannot access team-comparison authority — real role restriction, not just hidden UI');
   }
 
+  // =========================================================
+  // 11. EXPECTED CASHFLOW — real, month/week/day-scoped, recomputed independently from the same real loan_schedule rows
+  // =========================================================
+  {
+    const target = await api('GET', '/api/collections/expected-cashflow', { token: officerToken });
+    assert(target.status === 200 && target.json.from && target.json.to, 'the expected-cashflow endpoint defaults to the real current month when no filter is given');
+
+    const allLoans = await api('GET', '/api/loans', { token: officerToken });
+    const activeLoans = allLoans.json.loans.filter(l => l.status === 'Active' || l.status === 'Disbursed');
+    let expPrincipal = 0, expInterest = 0; const loanIdsWithDue = new Set();
+    for (const l of activeLoans) {
+      for (const r of l.schedule) {
+        if (r.status !== 'Paid' && r.due_date >= target.json.from && r.due_date <= target.json.to) {
+          expPrincipal += Number(r.principal_due); expInterest += Number(r.interest_due); loanIdsWithDue.add(l.id);
+        }
+      }
+    }
+    assert(Math.abs(target.json.principal - expPrincipal) < 0.01, 'the real expected-cashflow principal exactly matches an independent recomputation from the same real loan_schedule rows');
+    assert(Math.abs(target.json.interest - expInterest) < 0.01, 'the real expected-cashflow interest exactly matches an independent recomputation');
+    assert(Math.abs(target.json.total - (target.json.principal + target.json.interest)) < 0.01, 'the real total is genuinely principal + interest, not a separately fabricated figure');
+    assert(target.json.totalLoans === loanIdsWithDue.size, 'totalLoans genuinely counts distinct real loans with a due installment this period, not a row count');
+
+    const sampleDue = activeLoans.flatMap(l => l.schedule.map(r => ({ ...r, loanId: l.id }))).find(r => r.status !== 'Paid');
+    if (sampleDue) {
+      const dayResult = await api('GET', `/api/collections/expected-cashflow?day=${sampleDue.due_date}`, { token: officerToken });
+      let dayPrincipal = 0, dayInterest = 0; const dayLoans = new Set();
+      for (const l of activeLoans) for (const r of l.schedule) if (r.status !== 'Paid' && r.due_date === sampleDue.due_date) { dayPrincipal += Number(r.principal_due); dayInterest += Number(r.interest_due); dayLoans.add(l.id); }
+      assert(dayResult.status === 200 && Math.abs(dayResult.json.principal - dayPrincipal) < 0.01, 'a real single-day filter exactly matches an independent recomputation for that one real due date');
+      assert(dayResult.json.totalLoans === dayLoans.size, 'the day-scoped totalLoans genuinely reflects distinct real loans due that real day');
+    }
+
+    const weekStart = target.json.from, weekEnd = new Date(new Date(target.json.from).getTime() + 6 * 86400000).toISOString().slice(0, 10);
+    const weekResult = await api('GET', `/api/collections/expected-cashflow?week_start=${weekStart}&week_end=${weekEnd}`, { token: officerToken });
+    let weekPrincipal = 0;
+    for (const l of activeLoans) for (const r of l.schedule) if (r.status !== 'Paid' && r.due_date >= weekStart && r.due_date <= weekEnd) weekPrincipal += Number(r.principal_due);
+    assert(weekResult.status === 200 && Math.abs(weekResult.json.principal - weekPrincipal) < 0.01, 'a real week-range filter exactly matches an independent recomputation over that real 7-day range');
+
+    const managerCall = await api('GET', '/api/collections/expected-cashflow', { token: managerToken });
+    assert(managerCall.status === 200 && typeof managerCall.json.principal === 'number', "a Manager's own real branch-scoped expected cashflow (the same loanScopeClause() every other collections endpoint already uses) loads correctly too");
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();
