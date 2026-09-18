@@ -145,6 +145,38 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(richConvert.json.client.national_id === '12345678' && richConvert.json.client.address === 'Kisumu CBD' && richConvert.json.client.next_of_kin === 'Jane Kin' && richConvert.json.client.next_of_kin_phone === '0711222333' && richConvert.json.client.business_type === 'Boda boda', 'every real field with a matching client column genuinely carried over onto the real new client record, not re-entered from scratch');
     const carriedClient = await api('GET', `/api/clients/${richConvert.json.client.id}`, { token: officerToken });
     assert(carriedClient.status === 200 && carriedClient.json.client.national_id === '12345678', 'the carried-over fields genuinely persisted server-side, confirmed via a fresh direct fetch of the real client record');
+
+    // AG. Client Leads page (Unboarded/Onboarded browser) — /api/leads with real filters and joins.
+    {
+      const listUnboarded = await api('GET', '/api/leads?status=Unboarded', { token: officerToken });
+      assert(listUnboarded.status === 200 && !listUnboarded.json.leads.some(l => l.id === lead.json.lead.id), 'AG: a real already-converted lead is genuinely excluded from the "Unboarded" browser');
+
+      const freshLeadPhone = '07' + Math.floor(Math.random() * 90000000 + 10000000);
+      const freshLead = await api('POST', '/api/leads', { token: officerToken, body: { name: 'Fresh Unboarded Lead', phone: freshLeadPhone, notes: 'Met at the market' } });
+      const listUnboarded2 = await api('GET', '/api/leads?status=Unboarded', { token: officerToken });
+      const freshRow = listUnboarded2.json.leads.find(l => l.id === freshLead.json.lead.id);
+      assert(!!freshRow, 'AG: a genuinely unconverted real lead appears in the real "Unboarded" browser');
+      assert(!!freshRow.branch_name && !!freshRow.creator_name, 'AG: the real branch and creator names are genuinely joined in, not left as bare ids');
+      assert(Number(freshRow.interactions_count) === 0, 'AG: a not-yet-converted lead genuinely has zero interactions — no real client to log against yet');
+
+      const listOnboarded = await api('GET', '/api/leads?status=Onboarded', { token: officerToken });
+      assert(listOnboarded.status === 200 && listOnboarded.json.leads.some(l => l.id === lead.json.lead.id) && !listOnboarded.json.leads.some(l => l.id === freshLead.json.lead.id), 'AG: the real "Onboarded" browser genuinely shows only converted leads');
+
+      await api('POST', `/api/clients/${converted.json.client.id}/interactions`, { token: officerToken, body: { type: 'Call', note: 'Follow-up call' } });
+      const listOnboarded2 = await api('GET', '/api/leads?status=Onboarded', { token: officerToken });
+      const convertedRow = listOnboarded2.json.leads.find(l => l.id === lead.json.lead.id);
+      assert(!!convertedRow && Number(convertedRow.interactions_count) === 1, 'AG: a real interaction logged against the converted client genuinely counts on the originating lead');
+
+      const searched = await api('GET', `/api/leads?q=${encodeURIComponent('Fresh Unboarded')}`, { token: officerToken });
+      assert(searched.status === 200 && searched.json.leads.some(l => l.id === freshLead.json.lead.id), 'AG: searching by name genuinely filters the real leads list');
+
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const futureOnly = await api('GET', `/api/leads?from=${tomorrow}`, { token: officerToken });
+      assert(futureOnly.status === 200 && !futureOnly.json.leads.some(l => l.id === freshLead.json.lead.id), 'AG: a real "from" date after today genuinely excludes today\'s lead — the date filter is not a silent no-op');
+
+      const nairobiList = await api('GET', '/api/leads?status=Unboarded', { token: nairobiManagerToken });
+      assert(nairobiList.status === 200 && !nairobiList.json.leads.some(l => l.id === freshLead.json.lead.id), 'AG: a Nairobi Manager genuinely cannot see a Kisumu-branch lead — branch scope holds');
+    }
   }
 
   // AB/AC. Interactions.

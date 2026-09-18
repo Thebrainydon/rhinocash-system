@@ -1534,6 +1534,28 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.leads.some(l=>l.name==='Frontend Lead Test'), "a real lead was created via the actual Create Client Lead modal flow and appears in the real in-memory list");
     __assert(!modal, "submitCreateLead() genuinely closes the real modal on success");
 
+    // Client Leads submenu page (Unboarded/Onboarded browser): real filters, joins, and conversion action — through the actual UI functions.
+    {
+      const frontendLead = DB.leads.find(l=>l.name==='Frontend Lead Test');
+      goTo('clients','Client Leads');
+      for(let i=0; i<100 && (!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(session.leadsBrowserState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+      __assert(DB.leadsBrowser && DB.leadsBrowser.rows.some(l=>l.id===frontendLead.id), "the real Unboarded Leads page's own render-triggered load genuinely includes the just-created real lead");
+      let leadsHtml = document.getElementById('root').innerHTML;
+      __assert(leadsHtml.includes('Unboarded Leads') && leadsHtml.includes('Frontend Lead Test') && leadsHtml.includes('Behind the bank') && leadsHtml.includes('Peter Kin'), "the real rendered page shows the real lead's name, client location, and Other Info fields — not placeholders");
+      const row = DB.leadsBrowser.rows.find(l=>l.id===frontendLead.id);
+      __assert(!!row.branch_name && !!row.creator_name, "the real branch and creator names are genuinely joined in, not left as bare ids");
+      __assert(Number(row.interactions_count) === 0, "a not-yet-converted real lead genuinely has zero interactions");
+
+      // Convert through the real browser page's own action — it should genuinely disappear from Unboarded and reappear under Onboarded, with no manual refresh.
+      await convertLeadFromBrowser(frontendLead.id);
+      for(let i=0; i<100 && (!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(session.leadsBrowserState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+      __assert(DB.leadsBrowser && !DB.leadsBrowser.rows.some(l=>l.id===frontendLead.id), "the real just-converted lead genuinely disappears from the real Unboarded browser without a manual refresh");
+
+      session.leadsBrowserState.category = 'Onboarded'; DB.leadsBrowser = null; renderApp();
+      for(let i=0; i<100 && (!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(session.leadsBrowserState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+      __assert(DB.leadsBrowser && DB.leadsBrowser.rows.some(l=>l.id===frontendLead.id), "the real converted lead genuinely appears in the real Onboarded browser");
+    }
+
     // Real file upload — the standard apiRequest() can't do this; uploadFile() must.
     const fakeFile = { arrayBuffer: async ()=> new TextEncoder().encode('fake png bytes').buffer, type: 'image/png', name: 'client-photo.png' };
     const uploaded = await uploadFile(fakeFile);

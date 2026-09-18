@@ -221,10 +221,30 @@ function register(router) {
     // real branch's leads, a Regional Manager their real region, CEO/
     // Admin the real company-wide set. Previously this had no scoping
     // at all, meaning every role saw every lead regardless of branch.
-    const scope = await branchScopeSQL(req.user);
+    const scope = await branchScopeSQL(req.user, 'cl.branch_id');
     const clauses = [scope.clause]; const params = [...scope.params];
-    if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
-    const rows = await all(`SELECT * FROM client_leads WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`, params);
+    // "Unboarded"/"Onboarded" are the real browser categories the Client
+    // Leads page filters by (not yet converted vs. already converted to a
+    // real client) — plain status values (New/Contacted/Converted) still
+    // work too, for any other caller.
+    if (req.query.status === 'Unboarded') { clauses.push(`cl.status != 'Converted'`); }
+    else if (req.query.status === 'Onboarded') { clauses.push(`cl.status = 'Converted'`); }
+    else if (req.query.status) { clauses.push('cl.status = ?'); params.push(req.query.status); }
+    if (req.query.from) { clauses.push('(cl.created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(cl.created_at)::date <= ?'); params.push(req.query.to); }
+    if (req.query.q) {
+      clauses.push('(cl.name LIKE ? OR cl.phone LIKE ? OR cl.national_id LIKE ?)');
+      const like = `%${req.query.q}%`; params.push(like, like, like);
+    }
+    const rows = await all(
+      `SELECT cl.*, b.name as branch_name, u.name as creator_name,
+              (SELECT COUNT(*) FROM client_interactions ci WHERE ci.client_id = cl.converted_client_id) as interactions_count
+       FROM client_leads cl
+       LEFT JOIN branches b ON b.id = cl.branch_id
+       LEFT JOIN users u ON u.id = cl.created_by
+       WHERE ${clauses.join(' AND ')} ORDER BY cl.created_at DESC`,
+      params
+    );
     res.json({ leads: rows });
   });
   router.post('/api/leads', requireAuth, requireModule('clients'), async (req, res, next) => {

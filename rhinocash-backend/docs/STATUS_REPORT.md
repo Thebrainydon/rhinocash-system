@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  870 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 662 passed, 0 failed  (drives the real UI functions in
+Backend:  879 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 668 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,532 passed, 0 failed
+Total:    1,547 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -167,7 +167,15 @@ caller can see, joined to the client's name/phone/status and both the
 client's assigned Loan Officer and the staff member who actually
 logged the interaction (`GET /api/clients/interactions`, scoped by the
 same branch/officer rules every other Clients/Collections endpoint
-already uses).
+already uses) · the Clients menu's "Client Leads" submenu is now a real
+"Unboarded Leads"/"Onboarded Leads" browser (date-range- and
+name/phone/national-ID-searchable), showing each lead's branch,
+creator, every real optional field the Create Client Lead form can
+capture, and a real interactions count (the number of real
+`client_interactions` logged against the client the lead converted
+into, zero for a lead that hasn't converted yet) — converting a lead
+straight from this page immediately moves it from "Unboarded" to
+"Onboarded", with no manual refresh.
 
 ## What is explicitly NOT verified, stated plainly
 

@@ -865,7 +865,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -3838,7 +3838,7 @@ function renderClients(){
 
   if(active==="Add Client") return renderAddClientForm();
   if(active==="Client Groups") return tabsHtml + renderClientGroups();
-  if(active==="Client Leads") return tabsHtml + renderClientLeads();
+  if(active==="Client Leads") return renderClientLeads();
   if(active==="Interactions") return renderClientInteractionsPage();
 
   return tabsHtml + renderClientDirectoryPage();
@@ -4086,18 +4086,82 @@ function submitAddGroup(ev){
   renderApp();
   return false;
 }
+function defaultLeadsBrowserState(){
+  return { category:'Unboarded', from:'2023-01-01', to: new Date().toISOString().slice(0,10), q:'' };
+}
+async function loadLeadsBrowser(){
+  const st = session.leadsBrowserState || (session.leadsBrowserState = defaultLeadsBrowserState());
+  return withRequest('load-leads-browser:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ status: st.category });
+    if(st.from) params.set('from', st.from);
+    if(st.to) params.set('to', st.to);
+    if(st.q) params.set('q', st.q);
+    const res = await api.get('/api/leads?'+params.toString());
+    DB.leadsBrowser = { rows: res.leads, stateKey: JSON.stringify(st) };
+  });
+}
+async function convertLeadFromBrowser(leadId){
+  await convertLead(leadId);
+  DB.leadsBrowser = null;
+}
+// "Other Info" surfaces every real optional field the Create Client Lead
+// form can capture that has no dedicated column of its own on this page
+// (notes/Next of Kin/Business Type) — combined, never silently dropped.
+function formatLeadOtherInfo(l){
+  const parts = [];
+  if(l.notes) parts.push(l.notes);
+  if(l.next_of_kin) parts.push('Next of Kin: '+l.next_of_kin+(l.next_of_kin_phone?' ('+l.next_of_kin_phone+')':''));
+  if(l.business_type) parts.push('Business: '+l.business_type);
+  return parts.join(' · ');
+}
 function renderClientLeads(){
-  const rows = DB.leads.map(l=>`<tr><td>${escapeHtml(l.name)}</td><td>${escapeHtml(l.phone)}</td><td>${l.source}</td>
-    <td><span class="badge ${l.status==='Converted'?'green':(l.status==='Contacted'?'blue':'grey')}">${l.status}</span></td>
-    <td>${l.status!=="Converted"? `<button class="btn btn-sm btn-outline" onclick="withRequest('convert-lead-${l.id}', ()=>convertLead('${l.id}'))">Convert to Client</button>`:"—"}</td></tr>`).join("");
+  const st = session.leadsBrowserState || (session.leadsBrowserState = defaultLeadsBrowserState());
+  const header = (count) => `
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('clients','All Clients')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
+        <h3 style="color:var(--navy); margin:0;">${st.category==='Onboarded'?'Onboarded':'Unboarded'} Leads (${count})</h3>
+      </div>
+      <span class="btn btn-primary btn-sm" onclick="openCreateLeadModal()">+ Create</span>
+    </div>`;
+  if(!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(st)){
+    loadLeadsBrowser();
+    return `<div class="card">${header(0)}<div class="empty">Loading…</div></div>`;
+  }
+  const rows = DB.leadsBrowser.rows;
+  const tableRows = rows.map(l=>`<tr ${l.status==='Converted'?`class="clickable" onclick="openClient('${l.converted_client_id}')"`:''}>
+    <td>${escapeHtml(l.name)}</td>
+    <td>${escapeHtml(l.national_id||'—')}</td>
+    <td>${escapeHtml(l.phone||'—')}</td>
+    <td>${escapeHtml(l.branch_name||'—')}</td>
+    <td>${escapeHtml(l.client_location||'—')}</td>
+    <td>${escapeHtml(formatLeadOtherInfo(l)||'—')}</td>
+    <td>${escapeHtml(l.creator_name||'—')}</td>
+    <td>${new Date(l.created_at).toLocaleDateString()}</td>
+    <td>${l.interactions_count}</td>
+    <td><span class="badge ${l.status==='Converted'?'green':(l.status==='Contacted'?'blue':'grey')}">${l.status}</span>
+      ${l.status!=='Converted' ? `<button class="btn btn-sm btn-outline" style="margin-left:6px;" onclick="event.stopPropagation(); withRequest('convert-lead-${l.id}', ()=>convertLeadFromBrowser('${l.id}'))">Convert</button>` : ""}
+    </td>
+  </tr>`).join("");
   return `
     <div class="card">
-      <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
-        <span>Client Leads <small>prospects not yet onboarded</small></span>
-        <span class="btn btn-primary btn-sm" onclick="openCreateLeadModal()">+ Create</span>
+      ${header(rows.length)}
+      <div class="pill-row" style="align-items:center;">
+        <select onchange="session.leadsBrowserState.category=this.value; DB.leadsBrowser=null; renderApp();">
+          <option value="Unboarded" ${st.category==='Unboarded'?'selected':''}>Unboarded Leads</option>
+          <option value="Onboarded" ${st.category==='Onboarded'?'selected':''}>Onboarded Leads</option>
+        </select>
+        <input class="search" placeholder="Search" value="${escapeHtml(st.q||'')}" style="margin-left:auto;" oninput="session.leadsBrowserState.q=this.value; DB.leadsBrowser=null; renderApp();">
       </div>
-      <div class="table-wrap"><table><tr><th>Name</th><th>Phone</th><th>Source</th><th>Status</th><th></th></tr>
-      ${rows || `<tr><td colspan="5" class="empty">No leads yet.</td></tr>`}</table></div>
+      <div class="pill-row" style="align-items:center;">
+        <input type="date" value="${escapeHtml(st.from)}" onchange="session.leadsBrowserState.from=this.value; DB.leadsBrowser=null; renderApp();">
+        <span class="hint">~</span>
+        <input type="date" value="${escapeHtml(st.to)}" onchange="session.leadsBrowserState.to=this.value; DB.leadsBrowser=null; renderApp();">
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Name</th><th>Idno</th><th>Contact</th><th>Branch</th><th>Client Location</th><th>Other Info</th><th>Creator</th><th>Date Created</th><th>Interactions</th><th>Status</th></tr>
+        ${tableRows || `<tr><td colspan="10" class="empty">No leads match these filters.</td></tr>`}
+      </table></div>
     </div>
   `;
 }
