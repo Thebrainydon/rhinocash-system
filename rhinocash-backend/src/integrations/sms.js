@@ -20,6 +20,7 @@ const TEMPLATES = {
   payment_confirmation: (ctx) => `Rhinocash: We've received your payment of KES ${ctx.amount} for loan ${ctx.loanId}. Ref: ${ctx.reference}.`,
   arrears_reminder: (ctx) => `Rhinocash: Your loan ${ctx.loanId} has an overdue payment of KES ${ctx.amount}. Please settle it to avoid further action.`,
   password_reset: (ctx) => `Rhinocash: Your temporary password is ${ctx.tempPassword}. You will be asked to change it on login.`,
+  requisition_otp: (ctx) => `Rhinocash: Your requisition confirmation code is ${ctx.code}. It expires in 5 minutes. Do not share this code.`,
   system_notification: (ctx) => ctx.body,
 };
 

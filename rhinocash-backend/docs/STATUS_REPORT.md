@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  816 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 640 passed, 0 failed  (drives the real UI functions in
+Backend:  826 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 642 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,456 passed, 0 failed
+Total:    1,468 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -99,7 +99,29 @@ manual-match bridge. Real, deliberate RBAC extension made here: Managers
 can now assign/match an unmatched payment to a loan themselves (a
 narrow addition scoped to exactly that action, not the broader
 `post_accounting_entries` permission it previously required — a
-Manager's other accounting authority is unchanged).
+Manager's other accounting authority is unchanged) · the Accounting
+page's tab bar is now derived per-role instead of one hardcoded 14-tab
+bar shown to everyone (`accountingTabsForRole()`): a role sees exactly
+the accounting pages its own sidebar actually links to (e.g. a Loan
+Officer sees only Requisitions/Utility Payments/Cashflow, not all 14),
+while Admin/Accountant (who hold `post_accounting_entries`) keep full
+access, including the pages with no sidebar entry yet · Requisitions
+were rebuilt into a real multi-line-item workflow: a submission is now
+one or more `{description, category, qty, unit_cost}` rows (the
+requisition's amount is the genuine sum, not a single manually-typed
+figure), charged against a real, granular Expense account chosen from
+the chart of accounts (~30 seeded categories — Audit Fees, Bank
+Charges, Rent, Salary & Wages, etc.), and gated by a real short-lived
+OTP sent to the submitting officer's own phone (`POST
+/api/requisitions/request-otp` → `POST /api/requisitions` with
+`otp_code`; each code is single-use and expires in 5 minutes). Where
+SMS delivery is NOT_CONFIGURED (this environment), the real generated
+code is returned directly in the response instead of being silently
+unreachable — the same honest-disclosure convention already used
+elsewhere. `POST /api/requisitions/:id/pay` was also fixed to debit the
+real expense account the officer chose at submission, instead of
+always hardcoding the generic Operating Expenses account regardless of
+what the requisition was actually for.
 
 ## What is explicitly NOT verified, stated plainly
 

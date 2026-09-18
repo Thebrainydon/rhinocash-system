@@ -139,6 +139,41 @@ async function seedChartOfAccounts() {
     ['fee_income', '4010', 'Fee Income', 'Revenue'],
     ['operating_expense', '5000', 'Operating Expenses', 'Expense'],
     ['overpayment_suspense', '2100', 'Overpayment Suspense (client credit balances)', 'Liability'],
+    // Granular expense accounts a requisition can actually be charged
+    // to — previously every requisition landed on the one generic
+    // "Operating Expenses" account regardless of what it was really for.
+    ['exp_audit_fees', '5001', 'Audit Fees', 'Expense'],
+    ['exp_bank_charges', '5002', 'Bank Charges', 'Expense'],
+    ['exp_bulk_sms', '5003', 'Bulk SMS', 'Expense'],
+    ['exp_collection_recovery', '5004', 'Collection & Recovery fees', 'Expense'],
+    ['exp_commission', '5005', 'Commission Expenses', 'Expense'],
+    ['exp_directors_emolument', '5006', 'Directors Emolument', 'Expense'],
+    ['exp_electricity', '5007', 'Electricity', 'Expense'],
+    ['exp_hired_labor', '5008', 'Hired Labor', 'Expense'],
+    ['exp_interest_investor', '5009', 'Interest On Investor Fund', 'Expense'],
+    ['exp_interest_longterm', '5010', 'Interest On Long-term Loans', 'Expense'],
+    ['exp_interest_shortterm', '5011', 'Interest On Short Term Loans', 'Expense'],
+    ['exp_internet', '5012', 'Internet Fees', 'Expense'],
+    ['exp_legal_consultancy', '5013', 'Legal Consultancy Fee', 'Expense'],
+    ['exp_licenses_permits', '5014', 'Licenses & Permits', 'Expense'],
+    ['exp_local_travel', '5015', 'Local Travel', 'Expense'],
+    ['exp_marketing', '5016', 'Marketing expenses', 'Expense'],
+    ['exp_meals_refreshment', '5017', 'Meals & Refreshment', 'Expense'],
+    ['exp_mpesa_bulk_charges', '5018', 'Mpesa bulk charges', 'Expense'],
+    ['exp_office_repair', '5019', 'Office repair & Maintenance', 'Expense'],
+    ['exp_operations_consultancy', '5020', 'Operations & consultancy fees', 'Expense'],
+    ['exp_parcel_postage', '5021', 'Parcel and Postage', 'Expense'],
+    ['exp_printing_stationary', '5022', 'Printing And Stationary', 'Expense'],
+    ['exp_rent', '5023', 'Rent expense', 'Expense'],
+    ['exp_salary_wages', '5024', 'Salary & Wages', 'Expense'],
+    ['exp_server_charges', '5025', 'Server charges', 'Expense'],
+    ['exp_staff_airtime', '5026', 'Staff Airtime', 'Expense'],
+    ['exp_staff_training', '5027', 'Staff Training', 'Expense'],
+    ['exp_staff_uniforms', '5028', 'Staff Uniforms', 'Expense'],
+    ['exp_staff_bonus_gratuity', '5029', 'Staffs Bonus, awards & Gratuity', 'Expense'],
+    ['exp_system_dev_maintenance', '5030', 'System Development & Maintenance', 'Expense'],
+    ['exp_telephone', '5031', 'Telephone expenses', 'Expense'],
+    ['exp_water', '5032', 'Water', 'Expense'],
   ];
   for (const [id, code, name, type] of accounts) {
     await run('INSERT INTO gl_accounts (id, code, name, account_type) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, code, name, type]);
@@ -223,29 +258,29 @@ async function seedDemoData() {
   }
 
   const demoStaff = [
-    ['usr_opsmgr', 'Esther Wanjiku', 'opsmanager@rhinocash.co.ke', 'operational_manager', 'br_nairobi', 'rg_central', 'usr_ceo'],
-    ['usr_regional', 'Daniel Kiptoo', 'regional@rhinocash.co.ke', 'regional_manager', 'br_kisumu', 'rg_coastwest', 'usr_opsmgr'],
-    ['usr_manager', 'David Kariuki', 'manager@rhinocash.co.ke', 'manager', 'br_nairobi', 'rg_central', 'usr_opsmgr'],
-    ['usr_manager_kisumu', 'Faith Njeri', 'manager.kisumu@rhinocash.co.ke', 'manager', 'br_kisumu', 'rg_coastwest', 'usr_regional'],
-    ['usr_accountant', 'Grace Achieng', 'accountant@rhinocash.co.ke', 'accountant', 'br_nairobi', 'rg_central', 'usr_ceo'],
-    ['usr_officer', 'Peter Otieno', 'officer@rhinocash.co.ke', 'loan_officer', 'br_kisumu', 'rg_coastwest', 'usr_manager_kisumu'],
-    ['usr_ceo', 'James Mwangi', 'ceo@rhinocash.co.ke', 'ceo', 'br_nairobi', 'rg_central', null],
-    ['usr_director', 'Naomi Kilonzo', 'director@rhinocash.co.ke', 'director', 'br_nairobi', 'rg_central', null],
+    ['usr_opsmgr', 'Esther Wanjiku', 'opsmanager@rhinocash.co.ke', '0711000001', 'operational_manager', 'br_nairobi', 'rg_central', 'usr_ceo'],
+    ['usr_regional', 'Daniel Kiptoo', 'regional@rhinocash.co.ke', '0711000002', 'regional_manager', 'br_kisumu', 'rg_coastwest', 'usr_opsmgr'],
+    ['usr_manager', 'David Kariuki', 'manager@rhinocash.co.ke', '0711000003', 'manager', 'br_nairobi', 'rg_central', 'usr_opsmgr'],
+    ['usr_manager_kisumu', 'Faith Njeri', 'manager.kisumu@rhinocash.co.ke', '0711000004', 'manager', 'br_kisumu', 'rg_coastwest', 'usr_regional'],
+    ['usr_accountant', 'Grace Achieng', 'accountant@rhinocash.co.ke', '0711000005', 'accountant', 'br_nairobi', 'rg_central', 'usr_ceo'],
+    ['usr_officer', 'Peter Otieno', 'officer@rhinocash.co.ke', '0711000006', 'loan_officer', 'br_kisumu', 'rg_coastwest', 'usr_manager_kisumu'],
+    ['usr_ceo', 'James Mwangi', 'ceo@rhinocash.co.ke', '0711000007', 'ceo', 'br_nairobi', 'rg_central', null],
+    ['usr_director', 'Naomi Kilonzo', 'director@rhinocash.co.ke', '0711000008', 'director', 'br_nairobi', 'rg_central', null],
   ];
   console.log('================================================================');
   console.log('  DEMO / TEST ACCOUNTS  (development only — not for production)');
   console.log('================================================================');
-  for (const [id, name, email, role, branch, region] of demoStaff) {
+  for (const [id, name, email, phone, role, branch, region] of demoStaff) {
     const existing = await get('SELECT id FROM users WHERE email = ?', [email]);
     if (existing) continue;
     const password = generateTempPassword();
     const { hash, salt } = hashPassword(password);
     const role_row = await get('SELECT * FROM roles WHERE id = ?', [role]);
     await run(
-      `INSERT INTO users (id, staff_code, name, email, password_hash, password_salt, must_change_password,
+      `INSERT INTO users (id, staff_code, name, email, phone, password_hash, password_salt, must_change_password,
         role_id, access_level, job_title, branch_id, region_id, reporting_manager_id, employment_status, status, monthly_disbursement_target, monthly_new_loan_target, leave_days_balance)
-       VALUES (?,?,?,?,?,?,0,?,?,?,?,?,NULL, 'Full-time','Active',?,?,?)`,
-      [id, 'RC-' + String(Math.floor(Math.random() * 9000) + 1000), name, email, hash, salt,
+       VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,NULL, 'Full-time','Active',?,?,?)`,
+      [id, 'RC-' + String(Math.floor(Math.random() * 9000) + 1000), name, email, phone, hash, salt,
         role, role_row.default_access_level, role_row.name, branch, region,
         role === 'loan_officer' ? 800000 : 0, role === 'loan_officer' ? 10 : 0, 10]
     );
@@ -255,7 +290,7 @@ async function seedDemoData() {
   // array above isn't in manager-before-report order, so doing this inline
   // in the first pass would hit a foreign-key violation on rows whose
   // manager hasn't been inserted yet).
-  for (const [id, , , , , , reportingManagerId] of demoStaff) {
+  for (const [id, , , , , , , reportingManagerId] of demoStaff) {
     if (reportingManagerId) await run('UPDATE users SET reporting_manager_id = ? WHERE id = ? AND reporting_manager_id IS NULL', [reportingManagerId, id]);
   }
   console.log('================================================================\n');

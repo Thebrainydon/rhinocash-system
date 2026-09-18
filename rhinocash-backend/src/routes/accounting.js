@@ -3,6 +3,7 @@ const { all, get, run, transaction } = require('./../db');
 const { requireAuth, requireModule, requirePermission } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchIdsInScope, assertRecordInScope, isBranchAllowed } = require('./../rbac');
+const { tokenHash } = require('./../crypto');
 const crypto = require('node:crypto');
 
 // The one place the debit/credit sign convention is interpreted when
@@ -174,18 +175,78 @@ function register(router) {
       else { clauses.push(`branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
     }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
+    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
     const rows = await all(`SELECT * FROM requisitions WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
-    res.json({ requisitions: rows });
+    const reqIds = rows.map(r => r.id);
+    let itemsByReq = {};
+    if (reqIds.length) {
+      const ph = reqIds.map(() => '?').join(',');
+      (await all(`SELECT * FROM requisition_items WHERE requisition_id IN (${ph})`, reqIds)).forEach(it => {
+        if (!itemsByReq[it.requisition_id]) itemsByReq[it.requisition_id] = [];
+        itemsByReq[it.requisition_id].push(it);
+      });
+    }
+    res.json({ requisitions: rows.map(r => ({ ...r, items: itemsByReq[r.id] || [] })) });
+  });
+
+  // Real, short-lived OTP requirement before a requisition can be created —
+  // the submitting staff member must confirm the request via a code sent
+  // to their own real phone number (see integrations/sms.js). SMS delivery
+  // honestly reports NOT_CONFIGURED where no real provider is set up — in
+  // that case (and only that case) the real generated code is returned
+  // directly in this response instead of being silently unreachable, since
+  // there is no other channel to deliver it through in that state.
+  router.post('/api/requisitions/request-otp', requireAuth, requireModule('accounting'), async (req, res, next) => {
+    if (!req.user.phone) return next({ status: 400, message: 'Your account has no phone number on file to send an OTP to' });
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const id = 'rotp_' + crypto.randomUUID();
+    await run(`INSERT INTO requisition_otps (id, user_id, code_hash, expires_at) VALUES (?,?,?, iso_offset(interval '5 minutes'))`,
+      [id, req.user.id, tokenHash(code)]);
+    const sms = require('./../integrations/sms');
+    let result;
+    try { result = await sms.send('requisition_otp', req.user.phone, { code }); }
+    catch (e) { result = { status: 'FAILED' }; }
+    res.json({
+      status: result.status,
+      ...(result.status === 'NOT_CONFIGURED' ? { otpForTesting: code, note: 'SMS is not configured in this environment — the real code is returned here instead of being silently unreachable.' } : {}),
+    });
   });
 
   router.post('/api/requisitions', requireAuth, requireModule('accounting'), async (req, res, next) => {
     const b = req.body;
-    if (!b.category || !b.amount || b.amount <= 0) return next({ status: 400, message: 'category and a positive amount are required' });
+    const items = Array.isArray(b.items) ? b.items : [];
+    if (!items.length) return next({ status: 400, message: 'At least one item is required' });
+    for (const it of items) {
+      if (!it.description || !it.qty || it.qty <= 0 || !it.unit_cost || it.unit_cost <= 0) {
+        return next({ status: 400, message: 'Each item needs a description, a positive qty, and a positive unit_cost' });
+      }
+    }
+    if (!b.expense_account_id) return next({ status: 400, message: 'expense_account_id is required' });
+    const account = await get(`SELECT id FROM gl_accounts WHERE id = ? AND account_type = 'Expense'`, [b.expense_account_id]);
+    if (!account) return next({ status: 400, message: 'expense_account_id must be a real Expense account' });
+    if (!b.otp_code) return next({ status: 400, message: 'otp_code is required' });
+    const otp = await get(
+      `SELECT * FROM requisition_otps WHERE user_id = ? AND code_hash = ? AND used = 0 AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id, tokenHash(String(b.otp_code))]
+    );
+    if (!otp) return next({ status: 400, message: 'Invalid or expired OTP code', code: 'INVALID_OTP' });
+
+    const amount = items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0);
     const id = 'req_' + crypto.randomUUID();
-    await run('INSERT INTO requisitions (id, category, amount, description, branch_id, status, submitted_by) VALUES (?,?,?,?,?,?,?)',
-      [id, b.category, b.amount, b.description || null, req.user.branch_id || null, 'Pending', req.user.id]);
-    await logAction(req, { action: 'Submitted requisition', module: 'accounting', recordType: 'Requisition', recordId: id, newValue: { category: b.category, amount: b.amount } });
-    res.status(201).json({ requisition: await get('SELECT * FROM requisitions WHERE id = ?', [id]) });
+    await transaction(async () => {
+      await run('UPDATE requisition_otps SET used = 1 WHERE id = ?', [otp.id]);
+      await run('INSERT INTO requisitions (id, category, amount, description, branch_id, status, submitted_by, expense_account_id) VALUES (?,?,?,?,?,?,?,?)',
+        [id, items[0].category || account.id, amount, b.description || null, req.user.branch_id || null, 'Pending', req.user.id, b.expense_account_id]);
+      for (const it of items) {
+        await run('INSERT INTO requisition_items (id, requisition_id, description, category, qty, unit_cost) VALUES (?,?,?,?,?,?)',
+          ['reqi_' + crypto.randomUUID(), id, it.description, it.category || null, it.qty, it.unit_cost]);
+      }
+    });
+    await logAction(req, { action: 'Submitted requisition', module: 'accounting', recordType: 'Requisition', recordId: id, newValue: { amount, itemCount: items.length } });
+    const created = await get('SELECT * FROM requisitions WHERE id = ?', [id]);
+    const createdItems = await all('SELECT * FROM requisition_items WHERE requisition_id = ?', [id]);
+    res.status(201).json({ requisition: { ...created, items: createdItems } });
   });
 
   // Manager approves within their own branch (and Regional/Operational/
@@ -220,8 +281,11 @@ function register(router) {
     await transaction(async () => {
       await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
         [expId, reqn.category, reqn.amount, `Requisition ${reqn.id}: ${reqn.description || ''}`, reqn.branch_id, 'Paid', reqn.submitted_by, reqn.approved_by, req.user.id]);
-      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('operating_expense', ?, 0, ?, 'requisition', ?, ?, ?)`,
-        [reqn.amount, `${reqn.category} (requisition) — ${reqn.description || ''}`, reqn.id, reqn.branch_id, req.user.id]);
+      // Charged to the real expense account the requester actually chose
+      // (see POST /api/requisitions) — falls back to the generic Operating
+      // Expenses account only for requisitions created before this existed.
+      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'requisition', ?, ?, ?)`,
+        [reqn.expense_account_id || 'operating_expense', reqn.amount, `${reqn.category} (requisition) — ${reqn.description || ''}`, reqn.id, reqn.branch_id, req.user.id]);
       await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, 0, ?, ?, 'requisition', ?, ?, ?)`,
         [fundingAccount, reqn.amount, `${reqn.category} (requisition) — ${reqn.description || ''}`, reqn.id, reqn.branch_id, req.user.id]);
       await run('UPDATE requisitions SET status = ?, expense_id = ? WHERE id = ?', ['Paid', expId, reqn.id]);

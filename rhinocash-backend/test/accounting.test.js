@@ -91,11 +91,42 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
-  // 3. REQUISITIONS — real Submit -> Manager approval -> Accountant pays
+  // 3. REQUISITIONS — real multi-item Submit (OTP-confirmed) -> Manager approval -> Accountant pays
   // =========================================================
   {
-    const submitted = await api('POST', '/api/requisitions', { token: officerToken, body: { category: 'Field Equipment', amount: 8000, description: 'New POS device' } });
-    assert(submitted.status === 201 && submitted.json.requisition.status === 'Pending', 'a Loan Officer can submit a real requisition, starting Pending');
+    const expenseAccounts = await api('GET', '/api/accounts?account_type=Expense&status=Active', { token: officerToken });
+    const expenseAccountId = expenseAccounts.json.accounts[0].id;
+    assert(expenseAccountId, 'a real, granular Expense account exists in the chart of accounts for requisitions to charge');
+
+    async function otpFor(token) {
+      const r = await api('POST', '/api/requisitions/request-otp', { token, body: {} });
+      return r.json.otpForTesting;
+    }
+
+    const noOtpAttempt = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [{ description: 'POS device', qty: 1, unit_cost: 8000 }], expense_account_id: expenseAccountId } });
+    assert(noOtpAttempt.status === 400, 'submitting a requisition without an OTP code is genuinely rejected');
+
+    const wrongOtpAttempt = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [{ description: 'POS device', qty: 1, unit_cost: 8000 }], expense_account_id: expenseAccountId, otp_code: '000000' } });
+    assert(wrongOtpAttempt.status === 400 && wrongOtpAttempt.json.code === 'INVALID_OTP', 'a wrong/unrequested OTP code is genuinely rejected, not silently accepted');
+
+    const noItemsAttempt = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [], expense_account_id: expenseAccountId, otp_code: await otpFor(officerToken) } });
+    assert(noItemsAttempt.status === 400, 'a requisition with no line items is genuinely rejected');
+
+    const badAccountAttempt = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [{ description: 'POS device', qty: 1, unit_cost: 8000 }], expense_account_id: 'not-a-real-account', otp_code: await otpFor(officerToken) } });
+    assert(badAccountAttempt.status === 400, 'a requisition against a non-existent expense account is genuinely rejected');
+
+    const validOtp = await otpFor(officerToken);
+    const submitted = await api('POST', '/api/requisitions', { token: officerToken, body: {
+      items: [{ description: 'POS device', qty: 1, unit_cost: 8000 }, { description: 'Receipt rolls', qty: 5, unit_cost: 400 }],
+      expense_account_id: expenseAccountId, description: 'New branch equipment', otp_code: validOtp,
+    } });
+    assert(submitted.status === 201 && submitted.json.requisition.status === 'Pending', 'a Loan Officer can submit a real multi-item requisition, starting Pending');
+    assert(submitted.json.requisition.amount === 10000, 'the requisition amount is genuinely computed as the sum of qty*unit_cost across all real line items (8000 + 5*400)');
+    assert(Array.isArray(submitted.json.requisition.items) && submitted.json.requisition.items.length === 2, 'the requisition genuinely persisted both real line items, not a flattened single row');
+    assert(submitted.json.requisition.expense_account_id === expenseAccountId, 'the requisition genuinely records the real expense account the officer chose');
+
+    const reuseOtp = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [{ description: 'Another item', qty: 1, unit_cost: 100 }], expense_account_id: expenseAccountId, otp_code: validOtp } });
+    assert(reuseOtp.status === 400 && reuseOtp.json.code === 'INVALID_OTP', 'an already-used OTP code cannot be reused for a second requisition');
 
     const wrongBranchDecide = await api('POST', `/api/requisitions/${submitted.json.requisition.id}/decide`, { token: nairobiManagerToken, body: { decision: 'Approved' } });
     assert(wrongBranchDecide.status === 403, 'a Nairobi Manager cannot decide on a Kisumu-branch requisition — real branch scope enforced');
@@ -115,9 +146,10 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
 
     const glCheck = await api('GET', `/api/journal-entries?ref_type=requisition&ref_id=${submitted.json.requisition.id}`, { token: adminToken });
     assert(glCheck.json.entries.length === 2, 'the requisition payment created a real balanced 2-line journal entry');
+    assert(glCheck.json.entries.some(e => e.account_id === expenseAccountId && Number(e.debit) === 10000), 'the payment genuinely debits the REAL expense account the officer chose at submission, not a hardcoded generic one');
 
     // Cancellation and duplicate-decision protection.
-    const another = await api('POST', '/api/requisitions', { token: officerToken, body: { category: 'Supplies', amount: 1500 } });
+    const another = await api('POST', '/api/requisitions', { token: officerToken, body: { items: [{ description: 'Supplies', qty: 1, unit_cost: 1500 }], expense_account_id: expenseAccountId, otp_code: await otpFor(officerToken) } });
     const cancelled = await api('POST', `/api/requisitions/${another.json.requisition.id}/cancel`, { token: officerToken, body: {} });
     assert(cancelled.status === 200, 'the original submitter can cancel their own Pending requisition');
     const decideCancelled = await api('POST', `/api/requisitions/${another.json.requisition.id}/decide`, { token: managerToken, body: { decision: 'Approved' } });

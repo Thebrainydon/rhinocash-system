@@ -4112,7 +4112,7 @@ function submitDocument(ev,clientId){
 function statusBadge(status){
   const map = {
     Pending:"amber", Approved:"blue", Active:"green", Disbursed:"green", Closed:"grey", Completed:"grey",
-    Rejected:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue",
+    Rejected:"red", Declined:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue",
     "Waiting for Manager":"amber", "Waiting for Regional Manager":"amber", "Waiting for Operational Manager":"amber", "Waiting for Accountant":"amber",
     "Approved for Disbursement":"blue", "Disbursement Pending":"amber", "Returned for Correction":"red",
     Posted:"green", Unposted:"amber", Overpayment:"blue", Reversed:"grey",
@@ -7217,9 +7217,26 @@ function submitStkPush(ev){
 
 /* ---------- 5. Accounting ---------- */
 /* ---------- 5. Accounting ---------- */
+// Accounting tabs are derived per-role from the role's own sidebar, instead
+// of one hardcoded 14-tab bar shown to everyone: a role only sees the tabs
+// its sidebar actually promises it (e.g. Loan Officer's Accounting section
+// lists only Requisitions/Utility Payments/Cashflow). Roles with the
+// "Post Accounting Entries" permission (Admin, Accountant) keep full access
+// to every accounting page, including the ones with no sidebar entry yet.
+const ALL_ACCOUNTING_TABS = ["Expenses","Requisitions","Utility Payments","General Ledger","Chart of Accounts","Trial Balance","Profit & Loss","Balance Sheet","Cashflow","Accounting Periods","Adjustments","Portfolio at Risk","Branch Profitability","Approval Aging"];
+function accountingTabsForRole(role){
+  if(CAN_POST_ACCOUNTING(role)) return ALL_ACCOUNTING_TABS;
+  const menu = SIDEBAR_MENUS[role] || [];
+  const reachable = new Set();
+  menu.forEach(sec => (sec.items||[]).forEach(label => {
+    const route = resolveRoute(label);
+    if(route && route.section === 'accounting' && route.subtab) reachable.add(route.subtab);
+  }));
+  return ALL_ACCOUNTING_TABS.filter(t => reachable.has(t));
+}
 function renderAccounting(){
-  const tabs = ["Expenses","Requisitions","Utility Payments","General Ledger","Chart of Accounts","Trial Balance","Profit & Loss","Balance Sheet","Cashflow","Accounting Periods","Adjustments","Portfolio at Risk","Branch Profitability","Approval Aging"];
-  const active = session.subtab || "Expenses";
+  const tabs = accountingTabsForRole(session.role);
+  const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
   if(active==="Requisitions") return tabsHtml + renderRequisitionsPage();
   if(active==="Utility Payments") return tabsHtml + renderUtilityPaymentsPage();
@@ -7310,7 +7327,11 @@ async function decideExpense(id, action, reason){
   await loadExpensesPage(DB.acctPages.exp?DB.acctPages.exp.filters:{}, DB.acctPages.exp?DB.acctPages.exp.page:1);
 }
 
-// ==================== Requisitions — real Submit -> Manager approval -> Accountant pays ====================
+// ==================== Requisitions — real Submit (multi-item + OTP) -> Manager approval -> Accountant pays ====================
+// Display status "Declined" is this app's own real "Rejected" status —
+// the reference UI's label, mapped onto the value the backend actually uses.
+const REQ_STATUS_DISPLAY = { Approved:"Approved", Pending:"Pending", Rejected:"Declined" };
+const REQ_STATUS_FROM_DISPLAY = { Approved:"Approved", Pending:"Pending", Declined:"Rejected" };
 async function loadRequisitions(filters){
   return withRequest('load-requisitions', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
@@ -7318,41 +7339,42 @@ async function loadRequisitions(filters){
     DB.acctPages.req = { requisitions: res.requisitions, filters: filters||{} };
   });
 }
+function submitReqFilter(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const filters = {};
+  if(f.status) filters.status = REQ_STATUS_FROM_DISPLAY[f.status] || f.status;
+  if(f.month){ const [y,m] = f.month.split('-'); const last = new Date(Number(y), Number(m), 0).getDate();
+    filters.from = `${f.month}-01`; filters.to = `${f.month}-${String(last).padStart(2,'0')}`; }
+  return loadRequisitions(filters);
+}
 function renderRequisitionsPage(){
   const state = DB.acctPages.req;
   if(!state){ loadRequisitions({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   const canPay = hasPermission(session.role, "Post Accounting Entries");
+  const f = state.filters;
   return `
-    <div class="card" style="max-width:640px;">
-      <div class="card-title">Submit Requisition</div>
-      <form onsubmit="return submitNewRequisition(event)">
-        <div class="form-grid">
-          <div class="field"><label>Category</label><input name="category" required placeholder="e.g. Field Equipment"></div>
-          <div class="field"><label>Amount (KES)</label><input name="amount" type="number" required min="1"></div>
-        </div>
-        <div class="field"><label>Description</label><input name="description"></div>
-        <button class="btn btn-primary btn-sm" type="submit">Submit</button>
-      </form>
-    </div>
     <div class="card">
-      <div class="card-title">Requisitions <small>${state.requisitions.length}</small></div>
+      <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
+        <span><span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="margin-right:8px;">←</span> Requisitions</span>
+        <span class="btn btn-primary btn-sm" onclick="openCreateRequisitionModal()">+ Create</span>
+      </div>
+      <form onsubmit="return submitReqFilter(event)" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
+        <select name="status">
+          <option value="">All statuses</option>
+          ${["Approved","Pending","Declined"].map(s=>`<option ${(REQ_STATUS_DISPLAY[f.status]||"")===s?'selected':''}>${s}</option>`).join("")}
+        </select>
+        <input name="month" type="month">
+        <button class="btn btn-sm btn-outline" type="submit">Apply</button>
+      </form>
       <div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
-      ${state.requisitions.map(r=>`<tr><td>${r.category}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(r.description||'—')}</td><td>${branchName(r.branch_id)}</td><td>${statusBadge(r.status)}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
+      ${state.requisitions.map(r=>`<tr><td>${r.category}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(r.description||'—')}</td><td>${branchName(r.branch_id)}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
         <td>${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
         ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
         ${r.status==='Pending' ? `<button class="btn btn-sm btn-outline" onclick="withRequest('req-cancel-${r.id}', ()=>cancelRequisition('${r.id}'))">Cancel</button>` : ""}
-        ${r.expense_id ? `<span class="hint">→ ${r.expense_id}</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No requisitions yet.</td></tr>`}</table></div>
+        ${r.expense_id ? `<span class="hint">→ ${r.expense_id}</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No requisitions match these filters.</td></tr>`}</table></div>
     </div>
   `;
-}
-function submitNewRequisition(ev){
-  ev.preventDefault();
-  const f = Object.fromEntries(new FormData(ev.target));
-  return withRequest('submit-requisition', async ()=>{
-    await api.post('/api/requisitions', { category:f.category, amount:Number(f.amount), description:f.description||null });
-    toast("Requisition submitted");
-    await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
-  });
 }
 async function decideRequisition(id, decision, reason){
   await api.post(`/api/requisitions/${id}/decide`, { decision, reason });
@@ -7368,6 +7390,97 @@ async function cancelRequisition(id){
   await api.post(`/api/requisitions/${id}/cancel`, {});
   toast("Requisition cancelled");
   await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
+}
+
+// ---- Create Requisition modal: line-item table + Expense Account + OTP ----
+function blankRequisitionItem(){ return { description:"", category:"", qty:1, unit_cost:"" }; }
+function openCreateRequisitionModal(){
+  DB.requisitionForm = { items:[blankRequisitionItem()], expense_account_id:"", description:"", otp_code:"", otpRequested:false, otpForTesting:null };
+  openModal('create-requisition');
+}
+function addRequisitionItemRow(){
+  DB.requisitionForm.items.push(blankRequisitionItem());
+  renderApp();
+}
+function removeRequisitionItemRow(idx){
+  DB.requisitionForm.items.splice(idx,1);
+  if(!DB.requisitionForm.items.length) DB.requisitionForm.items.push(blankRequisitionItem());
+  renderApp();
+}
+function updateRequisitionItemField(idx, field, value){
+  DB.requisitionForm.items[idx][field] = value;
+}
+function requestRequisitionOtp(){
+  return withRequest('req-otp', async ()=>{
+    const res = await api.post('/api/requisitions/request-otp', {});
+    DB.requisitionForm.otpRequested = true;
+    DB.requisitionForm.otpForTesting = res.otpForTesting || null;
+    toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
+  });
+}
+function renderCreateRequisitionModal(){
+  const f = DB.requisitionForm;
+  const items = f.items;
+  const total = items.reduce((s,it)=> s + (Number(it.qty)||0) * (Number(it.unit_cost)||0), 0);
+  const expenseAccounts = (DB.accounts||[]).filter(a=>a.account_type==='Expense' && a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <div class="modal-head"><h3>New Requisition</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <form onsubmit="return submitCreateRequisition(event)">
+      <div class="table-wrap"><table>
+        <tr><th>Item Description</th><th>Category</th><th>Qty</th><th>Unit Cost</th><th></th></tr>
+        ${items.map((it,idx)=>`<tr>
+          <td><input value="${escapeHtml(it.description)}" oninput="updateRequisitionItemField(${idx},'description',this.value)" placeholder="e.g. Field notebooks" required></td>
+          <td><input value="${escapeHtml(it.category)}" oninput="updateRequisitionItemField(${idx},'category',this.value)" placeholder="Optional"></td>
+          <td><input type="number" min="0.01" step="0.01" value="${it.qty}" style="width:70px;" oninput="updateRequisitionItemField(${idx},'qty',this.value)" required></td>
+          <td><input type="number" min="0.01" step="0.01" value="${it.unit_cost}" style="width:110px;" oninput="updateRequisitionItemField(${idx},'unit_cost',this.value)" required></td>
+          <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeRequisitionItemRow(${idx})">✕</span>`:""}</td>
+        </tr>`).join("")}
+      </table></div>
+      <span class="btn btn-outline btn-sm" type="button" onclick="addRequisitionItemRow()">+ Add Row</span>
+      <div class="hint" style="margin:10px 0;">Total: <strong>${fmt(total)}</strong></div>
+      <div class="field">
+        <label>Expense Account</label>
+        <select onchange="DB.requisitionForm.expense_account_id=this.value" required>
+          <option value="">Select expense account…</option>
+          ${expenseAccounts.map(a=>`<option value="${a.id}" ${f.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Description (optional)</label><input value="${escapeHtml(f.description)}" oninput="DB.requisitionForm.description=this.value"></div>
+      <div class="field">
+        <label>OTP Code${f.otpForTesting ? ` <span class="hint">(SMS not configured in this environment — test code: <strong>${f.otpForTesting}</strong>)</span>` : ""}</label>
+        <div class="pill-row">
+          <input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="Enter the code sent to your M-Pesa number" ${!f.otpRequested?'disabled':''}>
+          <span class="btn btn-outline btn-sm" onclick="requestRequisitionOtp()">${f.otpRequested?'Resend Code':'Request Code'}</span>
+        </div>
+      </div>
+      <div class="pill-row" style="margin-top:14px;">
+        <button class="btn btn-primary btn-sm" type="submit">Request</button>
+        <button class="btn btn-outline btn-sm" type="button" onclick="closeModal()">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+function submitCreateRequisition(ev){
+  ev.preventDefault();
+  const f = DB.requisitionForm;
+  const items = f.items.filter(it=>it.description);
+  if(!items.length){ toast("Add at least one item"); return false; }
+  for(const it of items){
+    if(!(Number(it.qty)>0) || !(Number(it.unit_cost)>0)){ toast("Each item needs a positive qty and unit cost"); return false; }
+  }
+  if(!f.expense_account_id){ toast("Select an expense account"); return false; }
+  if(!f.otp_code){ toast("Enter the OTP code sent to your M-Pesa number"); return false; }
+  return withRequest('submit-requisition', async ()=>{
+    await api.post('/api/requisitions', {
+      items: items.map(it=>({ description:it.description, category:it.category||null, qty:Number(it.qty), unit_cost:Number(it.unit_cost) })),
+      expense_account_id: f.expense_account_id,
+      description: f.description || null,
+      otp_code: f.otp_code,
+    });
+    toast("Requisition submitted successfully");
+    closeModal();
+    await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
+  });
 }
 
 // ==================== Utility Payments — real expense creation with utility-specific fields ====================
@@ -9599,8 +9712,9 @@ function renderModal(){
   else if(modal.type === "tickets") body = renderTicketsModal();
   else if(modal.type === "notifications") body = renderNotificationsModal();
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
+  else if(modal.type === "create-requisition") body = renderCreateRequisitionModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','create-requisition'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){

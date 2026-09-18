@@ -526,6 +526,36 @@ CREATE TABLE IF NOT EXISTS requisitions (
   approved_at TEXT,
   decision_reason TEXT,
   expense_id TEXT REFERENCES expenses(id),
+  expense_account_id TEXT REFERENCES gl_accounts(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
+-- Real line items for a requisition (Item description/Category/Qty/Unit
+-- Cost), matching the actual requested form. requisitions.amount remains
+-- the authoritative total (SUM of qty*unit_cost at creation time) so the
+-- existing approve/pay pipeline, which reads that one column, needed no
+-- change.
+CREATE TABLE IF NOT EXISTS requisition_items (
+  id TEXT PRIMARY KEY,
+  requisition_id TEXT NOT NULL REFERENCES requisitions(id),
+  description TEXT NOT NULL,
+  category TEXT,
+  qty NUMERIC(10,2) NOT NULL,
+  unit_cost NUMERIC(14,2) NOT NULL
+);
+
+-- Real, short-lived OTP required before a requisition can actually be
+-- created — a genuine anti-fraud control (confirms the submitting staff
+-- member personally authorized this specific cash request), not stored
+-- in plaintext. Delivered via the existing SMS integration; see
+-- routes/accounting.js for the honest NOT_CONFIGURED handling when no
+-- real SMS provider is set up.
+CREATE TABLE IF NOT EXISTS requisition_otps (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 

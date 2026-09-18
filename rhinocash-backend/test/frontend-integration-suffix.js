@@ -1095,15 +1095,26 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('August rent') && html.includes('Page'), "Expenses page shows real data with real pagination controls, not the old local DB.expenses table");
 
-    // Requisitions: submit as officer, approve as their real manager, pay as accountant.
+    // Requisitions: submit as officer (multi-item + OTP, through the real
+    // Create Requisition modal flow), approve as their real manager, pay as accountant.
     let of4 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return of4; } };
     await doLogin({ preventDefault(){}, target:{} });
-    const reqForm = new Map([['category','Field Equipment'],['amount','7000'],['description','New tablet']]);
-    global.FormData = class { constructor(){ return reqForm; } };
-    await submitNewRequisition({ preventDefault(){}, target:{} });
+    const expenseAccountsForReq = await api.get('/api/accounts?account_type=Expense&status=Active');
+    const reqExpenseAccountId = expenseAccountsForReq.accounts[0].id;
+    openCreateRequisitionModal();
+    updateRequisitionItemField(0, 'description', 'Tablet unit');
+    updateRequisitionItemField(0, 'qty', '1');
+    updateRequisitionItemField(0, 'unit_cost', '7000');
+    DB.requisitionForm.expense_account_id = reqExpenseAccountId;
+    DB.requisitionForm.description = 'New tablet';
+    await requestRequisitionOtp();
+    __assert(DB.requisitionForm.otpRequested && DB.requisitionForm.otpForTesting, "requestRequisitionOtp() through the real UI function genuinely requested a real OTP and surfaced the test code (SMS not configured in this environment)");
+    DB.requisitionForm.otp_code = DB.requisitionForm.otpForTesting;
+    await submitCreateRequisition({ preventDefault(){}, target:{} });
     const newReq = DB.acctPages.req.requisitions.find(r=>r.description==='New tablet');
-    __assert(newReq && newReq.status === 'Pending', "a real requisition was submitted via the actual form handler");
+    __assert(newReq && newReq.status === 'Pending', "a real multi-item requisition was submitted via the actual Create Requisition modal flow, OTP included");
+    __assert(newReq.amount === 7000, "the real requisition amount reflects qty*unit_cost from the actual line-item row");
 
     let mk3 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mk3; } };
@@ -1145,7 +1156,8 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let kisumuOfficerForReq = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return kisumuOfficerForReq; } };
     await doLogin({ preventDefault(){}, target:{} });
-    const secondReq = await api.post('/api/requisitions', { category:'Test', amount:1000 }); // real Kisumu-branch requisition
+    const secondReqOtp = await api.post('/api/requisitions/request-otp', {});
+    const secondReq = await api.post('/api/requisitions', { items:[{description:'Test',qty:1,unit_cost:1000}], expense_account_id: reqExpenseAccountId, otp_code: secondReqOtp.otpForTesting }); // real Kisumu-branch requisition
 
     let nf3 = new Map([['username','manager@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_PASSWORD]]);
     global.FormData = class { constructor(){ return nf3; } };
