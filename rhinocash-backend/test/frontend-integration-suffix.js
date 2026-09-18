@@ -3774,6 +3774,56 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(esc('"quoted"') === '"""quoted"""', "the real CSV export genuinely escapes embedded double-quotes correctly");
   }
 
+  // ---- 17. Redesigned topbar (no title text, no bell, no logout button — chat icon + avatar only) and the real internal Chat feature ----
+  {
+    let of129 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of129; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    goTo('dashboard');
+    let html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('topbar-title') && !html.includes('logout-btn'), "the real topbar no longer renders the old page-title text or a separate Logout button");
+    __assert(html.includes('Welcome, '), "the dashboard profile card genuinely shows a real 'Welcome, <name>' heading, matching the requested redesign");
+
+    // Logout is still real and still reachable — just moved to the sidebar, never removed.
+    __assert(html.includes('doLogout()'), "a real, working Logout control still exists in the sidebar even though the topbar button is gone");
+    // Notifications is still real and still reachable for a role (Loan Officer) that has no nested Notifications page of its own.
+    __assert(html.includes(">Notifications<"), "Loan Officer genuinely gets a real standalone Notifications entry now that the topbar bell is gone");
+    sidebarNavigate('Notifications');
+    __assert(session.section === 'notifications', "that real sidebar Notifications entry genuinely routes to the real Notifications page");
+    goTo('dashboard');
+
+    // ---- Real chat: open panel, start a conversation, send and see a real message ----
+    openModal('chat');
+    __assert(modal && modal.type === 'chat', "openChatPanel's modal state genuinely opens the real chat panel");
+    for(let i=0; i<100 && !DB.chatConversations; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let modalHtml = renderModal();
+    __assert(modalHtml.includes('Messages') && modalHtml.includes('New Message'), "the real chat panel's conversation-list view renders with a working New Message action");
+
+    chatShowNewMessage();
+    for(let i=0; i<100 && !DB.chatContacts; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    const managerContact = (DB.chatContacts||[]).find(c=>c.role_id==='manager');
+    __assert(!!managerContact, "the real contact picker genuinely lists a real colleague (a Manager) to start a conversation with");
+
+    await startChatWith(managerContact.id);
+    for(let i=0; i<100 && (!session.chatState || session.chatState.view!=='thread' || !DB.chatMessages[session.chatState.conversationId]); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(session.chatState.view === 'thread', "starting a real conversation genuinely opens its real thread view");
+    modalHtml = renderModal();
+    __assert(modalHtml.includes(escapeHtml(managerContact.name)), "the real open thread genuinely shows the real other participant's name as its header");
+
+    const chatForm = new Map([['body','Hello — can you review the new client file today?']]);
+    global.FormData = class { constructor(){ return chatForm; } };
+    await sendChatMessage({ preventDefault(){}, target:{} });
+    modalHtml = renderModal();
+    __assert(modalHtml.includes('Hello — can you review the new client file today?'), "a real message genuinely sent through the actual form handler appears in the real thread");
+
+    chatShowList();
+    const convInList = (DB.chatConversations||[]).find(c=>c.otherUserId===managerContact.id);
+    __assert(!!convInList && convInList.lastMessage.includes('review the new client file'), "the real conversation list's last-message preview reflects the real message that was just sent");
+
+    closeModal();
+    __assert(modal === null, "the chat panel genuinely closes like every other real modal in this app");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

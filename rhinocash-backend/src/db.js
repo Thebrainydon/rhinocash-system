@@ -916,6 +916,30 @@ CREATE TABLE IF NOT EXISTS faq_articles (
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- Internal staff-to-staff direct messaging. One conversation per unordered
+-- pair of users (enforced by always storing user_a < user_b and the UNIQUE
+-- constraint below), so starting a chat with the same colleague twice
+-- always returns the same conversation rather than creating duplicates.
+-- Deliberately never touches investors — the investor principal type stays
+-- structurally isolated from staff data, same as every other module.
+CREATE TABLE IF NOT EXISTS chat_conversations (
+  id TEXT PRIMARY KEY,
+  user_a TEXT NOT NULL REFERENCES users(id),
+  user_b TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  last_message_at TEXT,
+  UNIQUE(user_a, user_b)
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES chat_conversations(id),
+  sender_id TEXT NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  read_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS client_risk_config (
   id TEXT PRIMARY KEY,
   rule_name TEXT NOT NULL UNIQUE,

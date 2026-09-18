@@ -89,9 +89,6 @@ body{
   display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:5; gap:10px;
 }
 .topbar-left{display:flex; align-items:center; gap:10px; min-width:0;}
-.topbar-title-wrap{min-width:0;}
-.topbar-title{font-size:19px; font-weight:800; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.topbar-sub{font-size:12px; color:var(--ink-faint); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .topbar-right{display:flex; align-items:center; gap:10px; flex-shrink:0;}
 .role-select{
   border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 10px; font-size:12.5px;
@@ -122,6 +119,7 @@ body{
    stay readable on mobile. These tiles are short summary numbers meant to
    be scanned two-up, matching the existing dashboard layout convention. */
 .kpi-tile-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.profile-info-row{padding:7px 0; border-bottom:1px solid var(--line);}
 
 .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:16px;}
 .card-title{font-size:14.5px; font-weight:800; color:var(--navy); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;}
@@ -197,6 +195,22 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .detail-value{font-size:14px; color:var(--ink); font-weight:600; margin-top:2px; margin-bottom:12px;}
 .modal-overlay{position:fixed; inset:0; background:rgba(15,20,30,0.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:50; overflow-y:auto;}
 .modal{background:#fff; border-radius:14px; padding:24px 26px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,0.25);}
+.modal-chat{max-width:420px; padding:18px 18px 14px; display:flex; flex-direction:column; height:min(600px, 80vh);}
+.chat-list{flex:1; overflow-y:auto; margin:0 -18px; padding:0 18px;}
+.chat-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer;}
+.chat-row:last-child{border-bottom:none;}
+.chat-row-avatar{width:38px; height:38px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0;}
+.chat-row-body{flex:1; min-width:0;}
+.chat-row-name{font-weight:700; font-size:13.5px; color:var(--navy);}
+.chat-row-preview{font-size:12px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.chat-row-badge{background:var(--rust); color:#fff; font-size:10.5px; font-weight:800; border-radius:9px; padding:2px 7px; flex-shrink:0;}
+.chat-thread{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin:0 -18px; padding:8px 18px;}
+.chat-bubble{max-width:78%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.4;}
+.chat-bubble.mine{align-self:flex-end; background:var(--navy); color:#fff; border-bottom-right-radius:3px;}
+.chat-bubble.theirs{align-self:flex-start; background:var(--card-alt,#EEF1F6); color:var(--ink); border-bottom-left-radius:3px;}
+.chat-bubble-time{font-size:10px; opacity:0.7; margin-top:3px;}
+.chat-input-row{display:flex; gap:8px; padding-top:10px; border-top:1px solid var(--line); margin-top:8px;}
+.chat-input-row textarea{flex:1; resize:none; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; font-family:inherit;}
 .modal-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;}
 .modal-head h3{color:var(--navy); font-size:17px;}
 .close-x{cursor:pointer; font-size:20px; color:var(--ink-faint); line-height:1;}
@@ -268,8 +282,6 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
   .hamburger{ display:inline-flex; }
   .topbar{ padding:12px 14px; }
   .topbar-right .role-select{ display:none; }
-  .topbar-right .btn.logout-btn{ padding:7px 10px; font-size:0; }
-  .topbar-right .btn.logout-btn::after{ content:"⎋"; font-size:15px; }
   .content{ padding:16px 14px 50px; }
   .kpi-grid{ grid-template-columns:repeat(2,1fr); gap:10px; }
   .grid2, .grid3{ grid-template-columns:1fr; }
@@ -279,7 +291,6 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 }
 @media (max-width: 420px){
   .kpi-grid{ grid-template-columns:1fr 1fr; }
-  .topbar-title{ font-size:16px; }
 }
 </style>
 </head>
@@ -401,6 +412,15 @@ function isSectionAllowed(section){
   const base = NAV_PERMISSIONS[session.role] || [];
   if(!base.includes(section)) return false;
   if(session.role==="Investor") return true;
+  // "notifications" is deliberately not a real backend module (see
+  // seed.js's `modules` list and misc.js's /api/notifications route, which
+  // has no requireModule gate at all) — every authenticated user can see
+  // their own notifications regardless of any per-user module restriction
+  // an Admin has set. Real bug, found by an actual sidebar click-through
+  // test: without this, any user with a custom finalAccess.modules list
+  // (which never includes "notifications", since it isn't one of the 12
+  // real modules to begin with) got "Access denied" trying to view it.
+  if(section==="notifications") return true;
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
   // after any per-user Admin-set restriction. This is a UI hint only;
@@ -850,7 +870,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1049,7 +1069,8 @@ async function loadCoreData(){
   DB = { branches:[], regions:[], products:[], staff:[], clients:[], groups:[], leads:[], loans:[], payments:[],
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
-    permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{} };
+    permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
+    chatConversations:null, chatContacts:null, chatMessages:{} };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1118,6 +1139,10 @@ async function loadCoreData(){
       calls.push(api.get('/api/accounting/cash-position').then(r=>{ DB.cashPosition = r.balances; }).catch(()=>{}));
     }
     calls.push(api.get('/api/notifications').then(r=>{ DB.notifications = r.notifications.map(adaptNotification); }).catch(()=>{}));
+    // Loaded up front (not only when the chat panel is opened) purely so
+    // the topbar's unread badge is accurate the moment the app loads —
+    // same reason DB.notifications is loaded here rather than on demand.
+    calls.push(api.get('/api/chat/conversations').then(r=>{ DB.chatConversations = r.conversations; }).catch(()=>{}));
     // support-tickets are now loaded on-demand (paginated) by the
     // Support Center page itself, not bulk-fetched on every login.
     calls.push(api.get('/api/leave-requests').then(r=>{ DB.leaveRequests = r.leaveRequests; }).catch(()=>{}));
@@ -1679,7 +1704,14 @@ function renderApp(){
   if(!session.loggedIn){ root.innerHTML = renderLogin() + (modal ? renderModal() : ""); return; }
   if(!DB){ root.innerHTML = `<div class="loading-screen">Loading your Rhinocash data…</div>`; return; }
   const menu = SIDEBAR_MENUS[session.role] || [];
-  const standalone = SIDEBAR_STANDALONE[session.role] || [];
+  // Every role except Admin (which already has "Notifications" nested
+  // under System Operations) and Investor (which already has its own
+  // SIDEBAR_STANDALONE entry) needs a real, working way to reach
+  // Notifications now that the topbar bell is gone — added here rather
+  // than duplicated in SIDEBAR_MENUS for every role.
+  const standalone = SIDEBAR_STANDALONE[session.role] || (session.role === "Admin" ? [] : ["Notifications"]);
+  const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read).length;
+  const unreadChat = (DB.chatConversations||[]).reduce((s,c)=>s+(c.unreadCount||0), 0);
 
   const sectionsHtml = menu.map(sec=>{
     const isOpen = !!session.sidebarExpanded[sec.section];
@@ -1699,10 +1731,9 @@ function renderApp(){
   const standaloneHtml = standalone.map(item=>{
     const route = resolveRoute(item);
     const isActive = route && route.section===session.section;
-    return `<div class="nav-item ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')"><span class="side-section-icon">🔔</span><div>${item}</div></div>`;
+    const badge = (item==="Notifications" && unread>0) ? `<span class="chat-row-badge" style="margin-left:auto;">${unread}</span>` : "";
+    return `<div class="nav-item ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')" style="display:flex; align-items:center;"><span class="side-section-icon">🔔</span><div>${item}</div>${badge}</div>`;
   }).join("");
-
-  const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read).length;
 
   root.innerHTML = `
     <div class="app">
@@ -1729,15 +1760,10 @@ function renderApp(){
         <div class="topbar">
           <div class="topbar-left">
             <div class="hamburger" onclick="toggleSidebar()">☰</div>
-            <div class="topbar-title-wrap">
-              <div class="topbar-title">${sectionTitle()}</div>
-              <div class="topbar-sub">${sectionSub()}</div>
-            </div>
           </div>
           <div class="topbar-right">
-            <div class="bell" onclick="sidebarNavigate('Notifications')">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>
+            ${session.role!=="Investor" ? `<div class="bell" onclick="openChatPanel()" title="Chat">💬${unreadChat>0?`<span class="bell-dot">${unreadChat}</span>`:""}</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-            <button class="btn btn-outline btn-sm logout-btn" onclick="doLogout()">Logout</button>
           </div>
         </div>
         <div class="content">${renderSection()}</div>
@@ -1935,29 +1961,6 @@ async function confirmLogout(){
   setTimeout(()=>{ session.justLoggedOut = false; renderApp(); }, 4000);
 }
 function doLogout(){ promptLogout(); }
-
-function sectionTitle(){
-  if(session.section==="placeholder") return session.placeholderLabel || "";
-  const n = NAV.find(x=>x.id===session.section);
-  return n ? `${n.num}. ${n.label}` : "";
-}
-function sectionSub(){
-  if(session.section==="placeholder") return "Not yet built in this prototype";
-  const map = {
-    dashboard:`${session.role} view — business overview and KPIs`,
-    clients:"Registration, groups, leads, interactions and documents",
-    loanbook:"Applications, approvals, collections and portfolio monitoring",
-    payments:"Payment posting, reconciliation and M-Pesa collections",
-    accounting:"Income, expenses, transactions and financial reporting",
-    reports:"Operational, portfolio and financial reports",
-    notifications: session.role==="Investor" ? "Updates about your investment" : "System, loan and payment alerts",
-    audit:"Full activity trail across the system",
-    staff:"Roles, branch assignment and performance",
-    support:"Raise and track internal support requests",
-    account:"Your profile and session settings",
-  };
-  return map[session.section]||"";
-}
 function goTo(section, subtab){
   if(!isSectionAllowed(section)){
     toast("Access denied — you don't have permission to view this section.");
@@ -2230,7 +2233,7 @@ function kpiTiles(st){
   `;
 }
 function statGrid(st){
-  return `<div class="grid3" style="margin-bottom:0;">
+  return `<div class="kpi-tile-grid" style="margin-bottom:0;">
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.totalClients}</div><div class="kpi-label" style="margin-top:2px;">Total Clients</div></div><div style="font-size:22px;">👥</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.activeClients}</div><div class="kpi-label" style="margin-top:2px;">Active Clients</div></div><div style="font-size:22px;">🧑‍💼</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.dormantClients}</div><div class="kpi-label" style="margin-top:2px;">Dormant Clients</div></div><div style="font-size:22px;">💤</div></div></div>
@@ -2244,7 +2247,7 @@ function arrearsBanner(st){
   </div>`;
 }
 function orgCounts(){
-  return `<div class="grid2" style="margin-bottom:16px;">
+  return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.branches.length}</div><div class="kpi-label" style="margin-top:2px;">Active Branches</div></div><div style="font-size:22px;">🏢</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.staff.filter(s=>s.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Staff</div></div><div style="font-size:22px;">🪪</div></div></div>
   </div>`;
@@ -2321,11 +2324,11 @@ function renderOfficerDashboard(){
       <div style="display:flex; gap:14px; align-items:flex-start;">
         <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
         <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 ${me.role}</div>
-            <div>🏢 ${branchName(me.branch)}</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Portfolio Access</div>
+          <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft);">
+            <div class="profile-info-row">💼 ${me.role}</div>
+            <div class="profile-info-row">🏢 ${branchName(me.branch)}</div>
+            <div class="profile-info-row">🏖️ ${me.leaveDays} Leave Days</div>
+            <div class="profile-info-row" style="border-bottom:none;">👁️ Portfolio Access</div>
           </div>
           <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
@@ -9583,8 +9586,9 @@ function renderModal(){
   else if(modal.type === "confirm-logout") body = renderConfirmLogoutModal();
   else if(modal.type === "session-expired") body = renderSessionExpiredModal();
   else if(modal.type === "session-expiry-warning") body = renderSessionExpiryWarningModal();
+  else if(modal.type === "chat") body = renderChatModal();
   else return "";
-  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal">${body}</div></div>`;
+  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
   return `
@@ -9688,6 +9692,143 @@ function submitRequestAdvance(ev){
     toast("Advance request submitted");
     closeModal();
   });
+}
+
+// ==================== Internal Chat — real staff-to-staff messaging ====================
+// Staff only (never rendered for an Investor session — see the topbar and
+// sidebar code that calls openChatPanel). session.chatState drives which
+// of the three views (conversation list / new-message contact picker /
+// an open thread) the modal currently shows; DB.chatConversations and
+// DB.chatContacts are loaded lazily the first time they're needed and then
+// reused, same pattern as every other DB.* cache in this app.
+function chatInitials(name){ return (name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(); }
+
+async function loadChatConversations(){
+  return withRequest('load-chat-conversations', async ()=>{
+    const r = await api.get('/api/chat/conversations');
+    DB.chatConversations = r.conversations;
+  });
+}
+async function loadChatContacts(){
+  return withRequest('load-chat-contacts', async ()=>{
+    const r = await api.get('/api/chat/contacts');
+    DB.chatContacts = r.contacts;
+  });
+}
+async function loadChatMessages(conversationId){
+  return withRequest('load-chat-messages:'+conversationId, async ()=>{
+    const r = await api.get(`/api/chat/conversations/${conversationId}/messages`);
+    DB.chatMessages[conversationId] = r.messages;
+    // Marking read is a real, separate write — never assumed client-side —
+    // then the conversation list is refreshed so its unread badge (and the
+    // topbar's) reflects the real, now-updated server state.
+    await api.post(`/api/chat/conversations/${conversationId}/read`, {});
+    await loadChatConversations();
+  });
+}
+
+function openChatPanel(){
+  if(!session.chatState) session.chatState = { view:'list', conversationId:null };
+  openModal('chat');
+}
+function chatShowList(){ session.chatState = { view:'list', conversationId:null }; renderApp(); }
+function chatShowNewMessage(){ session.chatState = { view:'newChat', conversationId:null }; renderApp(); }
+function openChatThread(conversationId){
+  session.chatState = { view:'thread', conversationId };
+  if(!DB.chatMessages[conversationId]) loadChatMessages(conversationId);
+  else { api.post(`/api/chat/conversations/${conversationId}/read`, {}).then(loadChatConversations).catch(()=>{}); }
+  renderApp();
+}
+function startChatWith(userId){
+  return withRequest('start-chat', async ()=>{
+    const res = await api.post('/api/chat/conversations', { userId });
+    await loadChatConversations();
+    openChatThread(res.conversation.id);
+  });
+}
+function sendChatMessage(ev){
+  ev.preventDefault();
+  const conversationId = session.chatState.conversationId;
+  const f = Object.fromEntries(new FormData(ev.target));
+  const body = (f.body||'').trim();
+  if(!body) return false;
+  return withRequest('send-chat-message', async ()=>{
+    const res = await api.post(`/api/chat/conversations/${conversationId}/messages`, { body });
+    DB.chatMessages[conversationId] = [...(DB.chatMessages[conversationId]||[]), res.message];
+    await loadChatConversations();
+    // No manual textarea-clearing needed: the re-render below draws the
+    // thread view fresh from DB.chatMessages, and its <textarea> always
+    // starts empty on a new render — same as every other form in this app.
+  });
+}
+
+function renderChatModal(){
+  const st = session.chatState || { view:'list', conversationId:null };
+  if(st.view === 'newChat') return renderChatNewMessageView();
+  if(st.view === 'thread') return renderChatThreadView(st.conversationId);
+  return renderChatListView();
+}
+function renderChatListView(){
+  if(!DB.chatConversations) loadChatConversations();
+  const rows = DB.chatConversations || [];
+  return `
+    <div class="modal-head"><h3>Messages</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="pill-row" style="margin-bottom:10px;"><button class="btn btn-primary btn-sm" onclick="chatShowNewMessage()">+ New Message</button></div>
+    <div class="chat-list">
+      ${rows.length ? rows.map(c=>`
+        <div class="chat-row" onclick="openChatThread('${c.id}')">
+          <div class="chat-row-avatar">${chatInitials(c.otherUserName)}</div>
+          <div class="chat-row-body">
+            <div class="chat-row-name">${escapeHtml(c.otherUserName||'Unknown')}</div>
+            <div class="chat-row-preview">${escapeHtml(c.lastMessage || 'No messages yet')}</div>
+          </div>
+          ${c.unreadCount>0 ? `<span class="chat-row-badge">${c.unreadCount}</span>` : ""}
+        </div>
+      `).join("") : `<div class="empty">No conversations yet — start one with "New Message".</div>`}
+    </div>
+  `;
+}
+function renderChatNewMessageView(){
+  if(!DB.chatContacts) loadChatContacts();
+  const contacts = DB.chatContacts || [];
+  return `
+    <div class="modal-head"><h3>New Message</h3><span class="btn btn-outline btn-sm" onclick="chatShowList()">✕</span></div>
+    <div class="chat-list">
+      ${contacts.length ? contacts.map(c=>`
+        <div class="chat-row" onclick="startChatWith('${c.id}')">
+          <div class="chat-row-avatar">${chatInitials(c.name)}</div>
+          <div class="chat-row-body">
+            <div class="chat-row-name">${escapeHtml(c.name)}</div>
+            <div class="chat-row-preview">${escapeHtml(ROLE_ID_TO_DISPLAY[c.role_id] || c.role_id)}${c.branch_id ? ' · '+escapeHtml(branchName(c.branch_id)) : ''}</div>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">Loading colleagues…</div>`}
+    </div>
+  `;
+}
+function renderChatThreadView(conversationId){
+  const conv = (DB.chatConversations||[]).find(c=>c.id===conversationId);
+  const messages = DB.chatMessages[conversationId];
+  const myId = DB.me && DB.me.id;
+  return `
+    <div class="modal-head">
+      <h3><span class="btn btn-outline btn-sm" onclick="chatShowList()" style="margin-right:8px;">←</span>${escapeHtml(conv ? conv.otherUserName : 'Conversation')}</h3>
+      <span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span>
+    </div>
+    <div class="chat-thread">
+      ${!messages ? `<div class="empty">Loading messages…</div>` :
+        (messages.length ? messages.map(m=>`
+          <div class="chat-bubble ${m.sender_id===myId?'mine':'theirs'}">
+            ${escapeHtml(m.body)}
+            <div class="chat-bubble-time">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+          </div>
+        `).join("") : `<div class="empty">No messages yet — say hello.</div>`)}
+    </div>
+    <form class="chat-input-row" onsubmit="return sendChatMessage(event)">
+      <textarea name="body" rows="1" placeholder="Type a message…" maxlength="4000" required></textarea>
+      <button class="btn btn-primary btn-sm" type="submit">Send</button>
+    </form>
+  `;
 }
 
 /* ---------------- Init ---------------- */

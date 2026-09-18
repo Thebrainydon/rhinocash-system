@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  776 passed, 0 failed  (25 suites — see test/run-all.sh)
-Frontend: 609 passed, 0 failed  (drives the real UI functions in
+Backend:  811 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 622 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,385 passed, 0 failed
+Total:    1,433 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -73,7 +73,10 @@ sessions, maintenance mode, backup) · full audit logging · real database
 transactions around every multi-step financial write (payment,
 disbursement, investor payout, expense/requisition/utility payment,
 adjustment — so a crash mid-write can never leave a payment recorded
-with no matching journal entry, or vice versa).
+with no matching journal entry, or vice versa) · internal staff-to-staff
+Chat (real direct messages, one conversation per colleague pair, real
+unread counts and read receipts — never reachable by the investor
+principal type, same isolation as every other staff-only feature).
 
 ## What is explicitly NOT verified, stated plainly
 
