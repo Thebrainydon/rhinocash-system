@@ -1102,7 +1102,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await doLogin({ preventDefault(){}, target:{} });
     const expenseAccountsForReq = await api.get('/api/accounts?account_type=Expense&status=Active');
     const reqExpenseAccountId = expenseAccountsForReq.accounts[0].id;
-    openCreateRequisitionModal();
+    openCreateRequisitionForm();
     updateRequisitionItemField(0, 'description', 'Tablet unit');
     updateRequisitionItemField(0, 'qty', '1');
     updateRequisitionItemField(0, 'unit_cost', '7000');
@@ -1113,7 +1113,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     DB.requisitionForm.otp_code = DB.requisitionForm.otpForTesting;
     await submitCreateRequisition({ preventDefault(){}, target:{} });
     const newReq = DB.acctPages.req.requisitions.find(r=>r.description==='New tablet');
-    __assert(newReq && newReq.status === 'Pending', "a real multi-item requisition was submitted via the actual Create Requisition modal flow, OTP included");
+    __assert(newReq && newReq.status === 'Pending', "a real multi-item requisition was submitted via the actual Internal Requisition Form page flow, OTP included");
     __assert(newReq.amount === 7000, "the real requisition amount reflects qty*unit_cost from the actual line-item row");
 
     let mk3 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);

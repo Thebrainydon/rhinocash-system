@@ -1059,7 +1059,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0 };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -7238,7 +7238,7 @@ function renderAccounting(){
   const tabs = accountingTabsForRole(session.role);
   const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
-  if(active==="Requisitions") return renderRequisitionsPage();
+  if(active==="Requisitions") return DB.requisitionForm ? renderCreateRequisitionPage() : renderRequisitionsPage();
   if(active==="Utility Payments") return tabsHtml + renderUtilityPaymentsPage();
   if(active==="General Ledger") return tabsHtml + renderGeneralLedgerPage();
   if(active==="Chart of Accounts") return tabsHtml + renderChartOfAccountsPage();
@@ -7357,7 +7357,7 @@ function renderRequisitionsPage(){
     <div class="card">
       <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
         <span><span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="margin-right:8px;">←</span> Requisitions</span>
-        <span class="btn btn-primary btn-sm" onclick="openCreateRequisitionModal()">+ Create</span>
+        <span class="btn btn-primary btn-sm" onclick="openCreateRequisitionForm()">+ Create</span>
       </div>
       <form onsubmit="return submitReqFilter(event)" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
         <select name="status">
@@ -7392,11 +7392,18 @@ async function cancelRequisition(id){
   await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
 }
 
-// ---- Create Requisition modal: line-item table + Expense Account + OTP ----
-function blankRequisitionItem(){ return { description:"", category:"", qty:1, unit_cost:"" }; }
-function openCreateRequisitionModal(){
+// ---- Internal Requisition Form: its own standalone page (not a modal),
+// matching the reference — reached via Requisitions' "+ Create", left via
+// its own back arrow, exactly like the Requisitions list page itself. ----
+const REQUISITION_ITEM_CATEGORIES = ["Cash Item","Non-Cash Item"];
+function blankRequisitionItem(){ return { description:"", category:REQUISITION_ITEM_CATEGORIES[0], qty:1, unit_cost:"" }; }
+function openCreateRequisitionForm(){
   DB.requisitionForm = { items:[blankRequisitionItem()], expense_account_id:"", description:"", otp_code:"", otpRequested:false, otpForTesting:null };
-  openModal('create-requisition');
+  renderApp();
+}
+function closeCreateRequisitionForm(){
+  DB.requisitionForm = null;
+  renderApp();
 }
 function addRequisitionItemRow(){
   DB.requisitionForm.items.push(blankRequisitionItem());
@@ -7418,46 +7425,44 @@ function requestRequisitionOtp(){
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
   });
 }
-function renderCreateRequisitionModal(){
+function renderCreateRequisitionPage(){
   const f = DB.requisitionForm;
   const items = f.items;
-  const total = items.reduce((s,it)=> s + (Number(it.qty)||0) * (Number(it.unit_cost)||0), 0);
   const expenseAccounts = (DB.accounts||[]).filter(a=>a.account_type==='Expense' && a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
   return `
-    <div class="modal-head"><h3>New Requisition</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
-    <form onsubmit="return submitCreateRequisition(event)">
-      <div class="table-wrap"><table>
-        <tr><th>Item Description</th><th>Category</th><th>Qty</th><th>Unit Cost</th><th></th></tr>
-        ${items.map((it,idx)=>`<tr>
-          <td><input value="${escapeHtml(it.description)}" oninput="updateRequisitionItemField(${idx},'description',this.value)" placeholder="e.g. Field notebooks" required></td>
-          <td><input value="${escapeHtml(it.category)}" oninput="updateRequisitionItemField(${idx},'category',this.value)" placeholder="Optional"></td>
-          <td><input type="number" min="0.01" step="0.01" value="${it.qty}" style="width:70px;" oninput="updateRequisitionItemField(${idx},'qty',this.value)" required></td>
-          <td><input type="number" min="0.01" step="0.01" value="${it.unit_cost}" style="width:110px;" oninput="updateRequisitionItemField(${idx},'unit_cost',this.value)" required></td>
-          <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeRequisitionItemRow(${idx})">✕</span>`:""}</td>
-        </tr>`).join("")}
-      </table></div>
-      <span class="btn btn-outline btn-sm" type="button" onclick="addRequisitionItemRow()">+ Add Row</span>
-      <div class="hint" style="margin:10px 0;">Total: <strong>${fmt(total)}</strong></div>
-      <div class="field">
-        <label>Expense Account</label>
-        <select onchange="DB.requisitionForm.expense_account_id=this.value" required>
-          <option value="">Select expense account…</option>
-          ${expenseAccounts.map(a=>`<option value="${a.id}" ${f.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
-        </select>
+    <div class="card">
+      <div style="display:flex; align-items:center; margin-bottom:18px;">
+        <span class="btn btn-outline btn-sm" onclick="closeCreateRequisitionForm()" style="border-radius:50%; width:34px; height:34px; padding:0; justify-content:center;">←</span>
+        <h3 style="flex:1; text-align:center; margin:0 34px 0 0; text-decoration:underline; color:var(--navy);">Internal Requisition Form</h3>
       </div>
-      <div class="field"><label>Description (optional)</label><input value="${escapeHtml(f.description)}" oninput="DB.requisitionForm.description=this.value"></div>
-      <div class="field">
-        <label>OTP Code${f.otpForTesting ? ` <span class="hint">(SMS not configured in this environment — test code: <strong>${f.otpForTesting}</strong>)</span>` : ""}</label>
-        <div class="pill-row">
-          <input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="Enter the code sent to your M-Pesa number" ${!f.otpRequested?'disabled':''}>
-          <span class="btn btn-outline btn-sm" onclick="requestRequisitionOtp()">${f.otpRequested?'Resend Code':'Request Code'}</span>
+      <form onsubmit="return submitCreateRequisition(event)">
+        <div class="table-wrap"><table>
+          <tr><th>Item description</th><th>Category</th><th>Qty</th><th>Unit Cost</th><th></th></tr>
+          ${items.map((it,idx)=>`<tr>
+            <td><input value="${escapeHtml(it.description)}" oninput="updateRequisitionItemField(${idx},'description',this.value)" placeholder="e.g. Field notebooks" required></td>
+            <td><select onchange="updateRequisitionItemField(${idx},'category',this.value)">${REQUISITION_ITEM_CATEGORIES.map(c=>`<option ${it.category===c?'selected':''}>${c}</option>`).join("")}</select></td>
+            <td><input type="number" min="0.01" step="0.01" value="${it.qty}" style="width:70px;" oninput="updateRequisitionItemField(${idx},'qty',this.value)" required></td>
+            <td><input type="number" min="0.01" step="0.01" value="${it.unit_cost}" style="width:110px;" oninput="updateRequisitionItemField(${idx},'unit_cost',this.value)" required></td>
+            <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeRequisitionItemRow(${idx})">✕</span>`:""}</td>
+          </tr>`).join("")}
+        </table></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:12px 0;">
+          <select onchange="DB.requisitionForm.expense_account_id=this.value" required style="max-width:280px;">
+            <option value="">-- Expense Account --</option>
+            ${expenseAccounts.map(a=>`<option value="${a.id}" ${f.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
+          </select>
+          <span style="color:var(--blue); font-weight:700; cursor:pointer;" onclick="addRequisitionItemRow()">+ Add Row</span>
         </div>
-      </div>
-      <div class="pill-row" style="margin-top:14px;">
-        <button class="btn btn-primary btn-sm" type="submit">Request</button>
-        <button class="btn btn-outline btn-sm" type="button" onclick="closeModal()">Cancel</button>
-      </div>
-    </form>
+        ${f.otpForTesting ? `<div class="hint" style="margin-bottom:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+        <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
+            <input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px;" ${!f.otpRequested?'disabled':''}>
+            <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestRequisitionOtp()">↻ Request</span>
+          </div>
+          <button class="btn btn-green" type="submit">🎁 Request</button>
+        </div>
+      </form>
+    </div>
   `;
 }
 function submitCreateRequisition(ev){
@@ -7478,7 +7483,7 @@ function submitCreateRequisition(ev){
       otp_code: f.otp_code,
     });
     toast("Requisition submitted successfully");
-    closeModal();
+    closeCreateRequisitionForm();
     await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
   });
 }
@@ -9712,9 +9717,8 @@ function renderModal(){
   else if(modal.type === "tickets") body = renderTicketsModal();
   else if(modal.type === "notifications") body = renderNotificationsModal();
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
-  else if(modal.type === "create-requisition") body = renderCreateRequisitionModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','create-requisition'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
