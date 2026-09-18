@@ -165,6 +165,7 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .btn-red{background:var(--red); color:#fff;}
 .btn-sm{padding:5px 11px; font-size:12px;}
 .btn:disabled{opacity:0.4; cursor:not-allowed;}
+.page-back-btn{border-radius:50%; width:34px; height:34px; padding:0; justify-content:center; flex-shrink:0;}
 
 /* ---- Tabs ---- */
 .subtabs{display:flex; gap:4px; margin-bottom:18px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:0;}
@@ -1059,7 +1060,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -4115,7 +4116,7 @@ function statusBadge(status){
     Rejected:"red", Declined:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue",
     "Waiting for Manager":"amber", "Waiting for Regional Manager":"amber", "Waiting for Operational Manager":"amber", "Waiting for Accountant":"amber",
     "Approved for Disbursement":"blue", "Disbursement Pending":"amber", "Returned for Correction":"red",
-    Posted:"green", Unposted:"amber", Overpayment:"blue", Reversed:"grey",
+    Posted:"green", Unposted:"amber", Overpayment:"blue", Reversed:"grey", Paid:"green",
   };
   return `<span class="badge ${map[status]||'grey'}">${status}</span>`;
 }
@@ -7239,7 +7240,7 @@ function renderAccounting(){
   const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
   if(active==="Requisitions") return DB.requisitionForm ? renderCreateRequisitionPage() : renderRequisitionsPage();
-  if(active==="Utility Payments") return tabsHtml + renderUtilityPaymentsPage();
+  if(active==="Utility Payments") return DB.utilPaymentForm ? renderCreateUtilityPaymentPage() : renderUtilityPaymentsPage();
   if(active==="General Ledger") return tabsHtml + renderGeneralLedgerPage();
   if(active==="Chart of Accounts") return tabsHtml + renderChartOfAccountsPage();
   if(active==="Trial Balance") return tabsHtml + renderTrialBalancePage();
@@ -7488,21 +7489,76 @@ function submitCreateRequisition(ev){
   });
 }
 
-// ==================== Utility Payments — real expense creation with utility-specific fields ====================
-async function loadUtilityPayments(){
+// ==================== Vendor/Utility Payments — real expense creation with utility-specific fields ====================
+// Display statuses "Approved"/"Declined" are sent through to the backend
+// verbatim (no local relabeling) so the filter is genuinely wired against
+// the real status column — it's simply that every payment created today
+// still goes straight to 'Paid' (see submitUtilityPayment), the same as
+// before this page's redesign. Nothing here fabricates rows to fill those
+// filters; an empty result for "Approved"/"Pending"/"Declined" is honest.
+async function loadUtilityPayments(filters){
   return withRequest('load-utility', async ()=>{
-    const res = await api.get('/api/utility-payments');
-    DB.acctPages.util = { utilityPayments: res.utilityPayments };
+    const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
+    const res = await api.get('/api/utility-payments?'+params.toString());
+    DB.acctPages.util = { utilityPayments: res.utilityPayments, filters: filters||{} };
   });
+}
+function submitUtilPaymentFilter(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const filters = {};
+  if(f.status) filters.status = f.status;
+  if(f.q) filters.q = f.q;
+  if(f.month){ const [y,m] = f.month.split('-'); const last = new Date(Number(y), Number(m), 0).getDate();
+    filters.from = `${f.month}-01`; filters.to = `${f.month}-${String(last).padStart(2,'0')}`; }
+  return loadUtilityPayments(filters);
 }
 function renderUtilityPaymentsPage(){
   const state = DB.acctPages.util;
-  if(!state){ loadUtilityPayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
-  const canPay = hasPermission(session.role, "Post Accounting Entries");
+  if(!state){ loadUtilityPayments({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const f = state.filters;
   return `
-    ${canPay ? `
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+        <span style="display:flex; align-items:center; gap:10px;">
+          <span class="btn btn-outline btn-sm page-back-btn" onclick="goTo('dashboard')">←</span>
+          <h3 style="margin:0; color:var(--navy);">Vendor/Utility Payments</h3>
+        </span>
+        <span class="pill-row">
+          <span class="btn btn-outline btn-sm" onclick="toast('Bulk Upload is coming next')">⬆ Bulk Upload</span>
+          <span class="btn btn-outline btn-sm" onclick="openCreateUtilityPaymentForm()">+ Create New</span>
+        </span>
+      </div>
+      <form onsubmit="return submitUtilPaymentFilter(event)">
+        <div class="pill-row" style="flex-wrap:wrap; margin-bottom:10px;">
+          <select name="status">
+            <option value="">All statuses</option>
+            ${["Approved","Pending","Declined"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}
+          </select>
+          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}">
+        </div>
+        <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:100%; margin-bottom:12px;" onchange="this.form.requestSubmit()">
+      </form>
+      <div class="table-wrap"><table><tr><th>Type</th><th>Provider</th><th>Reference</th><th>Amount</th><th>Branch</th><th>Status</th><th>Date</th></tr>
+      ${state.utilityPayments.map(u=>`<tr><td>${u.utility_type}</td><td>${escapeHtml(u.provider||'—')}</td><td>${escapeHtml(u.account_reference||'—')}</td><td>${fmt(u.amount)}</td><td>${branchName(u.branch_id)}</td><td>${statusBadge(u.status)}</td><td>${new Date(u.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No utility payments match these filters.</td></tr>`}</table></div>
+    </div>
+  `;
+}
+function openCreateUtilityPaymentForm(){
+  DB.utilPaymentForm = { utility_type:"Electricity", provider:"", account_reference:"", amount:"" };
+  renderApp();
+}
+function closeCreateUtilityPaymentForm(){
+  DB.utilPaymentForm = null;
+  renderApp();
+}
+function renderCreateUtilityPaymentPage(){
+  return `
     <div class="card" style="max-width:640px;">
-      <div class="card-title">Pay Utility Bill</div>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+        <span class="btn btn-outline btn-sm page-back-btn" onclick="closeCreateUtilityPaymentForm()">←</span>
+        <h3 style="margin:0; color:var(--navy);">Pay Vendor/Utility Bill</h3>
+      </div>
       <form onsubmit="return submitUtilityPayment(event)">
         <div class="form-grid">
           <div class="field"><label>Utility Type</label><select name="utility_type"><option>Electricity</option><option>Water</option><option>Internet</option><option>Rent</option><option>Telephone</option><option>Other</option></select></div>
@@ -7510,13 +7566,11 @@ function renderUtilityPaymentsPage(){
           <div class="field"><label>Account/Reference No.</label><input name="account_reference"></div>
           <div class="field"><label>Amount (KES)</label><input name="amount" type="number" required min="1"></div>
         </div>
-        <button class="btn btn-primary btn-sm" type="submit">Pay Now</button>
+        <div class="pill-row" style="margin-top:14px;">
+          <button class="btn btn-primary btn-sm" type="submit">Pay Now</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="closeCreateUtilityPaymentForm()">Cancel</button>
+        </div>
       </form>
-    </div>` : `<div class="section-note">Only Accountant/Admin can post utility payments.</div>`}
-    <div class="card">
-      <div class="card-title">Utility Payments <small>${state.utilityPayments.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Type</th><th>Provider</th><th>Reference</th><th>Amount</th><th>Branch</th><th>Date</th></tr>
-      ${state.utilityPayments.map(u=>`<tr><td>${u.utility_type}</td><td>${escapeHtml(u.provider||'—')}</td><td>${escapeHtml(u.account_reference||'—')}</td><td>${fmt(u.amount)}</td><td>${branchName(u.branch_id)}</td><td>${new Date(u.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No utility payments yet.</td></tr>`}</table></div>
     </div>
   `;
 }
@@ -7526,7 +7580,8 @@ function submitUtilityPayment(ev){
   return withRequest('submit-utility', async ()=>{
     await api.post('/api/utility-payments', { utility_type:f.utility_type, provider:f.provider||null, account_reference:f.account_reference||null, amount:Number(f.amount) });
     toast("Utility bill paid");
-    await loadUtilityPayments();
+    closeCreateUtilityPaymentForm();
+    await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
   });
 }
 

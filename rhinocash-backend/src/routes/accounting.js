@@ -312,7 +312,14 @@ function register(router) {
       if (scope.length === 0) clauses.push('1=0');
       else { clauses.push(`branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
     }
-    const rows = await all(`SELECT * FROM utility_payments WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
+    if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
+    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
+    let rows = await all(`SELECT * FROM utility_payments WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
+    if (req.query.q) {
+      const q = req.query.q.toLowerCase();
+      rows = rows.filter(u => (u.provider || '').toLowerCase().includes(q) || (u.account_reference || '').toLowerCase().includes(q) || (u.utility_type || '').toLowerCase().includes(q));
+    }
     res.json({ utilityPayments: rows });
   });
 
