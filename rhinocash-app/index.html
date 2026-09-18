@@ -7530,14 +7530,16 @@ function renderUtilityPaymentsPage(){
         </span>
       </div>
       <form onsubmit="return submitUtilPaymentFilter(event)">
-        <div class="pill-row" style="flex-wrap:wrap; margin-bottom:10px;">
-          <select name="status">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <select name="status" style="width:150px;">
             <option value="">All statuses</option>
             ${["Approved","Pending","Declined"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}
           </select>
-          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}">
+          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}" style="width:140px;">
         </div>
-        <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:100%; margin-bottom:12px;" onchange="this.form.requestSubmit()">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+          <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:200px;" onchange="this.form.requestSubmit()">
+        </div>
       </form>
       <div class="table-wrap"><table><tr><th>Type</th><th>Provider</th><th>Reference</th><th>Amount</th><th>Branch</th><th>Status</th><th>Date</th></tr>
       ${state.utilityPayments.map(u=>`<tr><td>${u.utility_type}</td><td>${escapeHtml(u.provider||'—')}</td><td>${escapeHtml(u.account_reference||'—')}</td><td>${fmt(u.amount)}</td><td>${branchName(u.branch_id)}</td><td>${statusBadge(u.status)}</td><td>${new Date(u.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No utility payments match these filters.</td></tr>`}</table></div>
@@ -7589,14 +7591,14 @@ function renderCreateUtilityPaymentPage(){
         <h3 style="flex:1; text-align:center; margin:0 34px 0 0; text-decoration:underline; color:var(--navy);">Vendor Payment Form</h3>
       </div>
       <form onsubmit="return submitUtilityPayment(event)">
-        <div class="form-grid">
-          <div class="field">
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div class="field" style="flex:0 0 140px;">
             <label>Payment Method</label>
             <select onchange="DB.utilPaymentForm.payment_method=this.value">
               ${UTIL_PAYMENT_METHODS.map(m=>`<option ${f.payment_method===m?'selected':''}>${m}</option>`).join("")}
             </select>
           </div>
-          <div class="field">
+          <div class="field" style="flex:1; min-width:160px;">
             <label>Recipient Mpesa Number &amp; Name</label>
             <input value="${escapeHtml(f.recipient_mpesa_number)}" oninput="DB.utilPaymentForm.recipient_mpesa_number=this.value" placeholder="Number" style="margin-bottom:8px;">
             <input value="${escapeHtml(f.recipient_name)}" oninput="DB.utilPaymentForm.recipient_name=this.value" placeholder="Name">
@@ -7620,7 +7622,7 @@ function renderCreateUtilityPaymentPage(){
         ${f.otpForTesting ? `<div class="hint" style="margin-bottom:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
         <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
           <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
-            <input value="${escapeHtml(f.otp_code)}" oninput="DB.utilPaymentForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px;" ${!f.otpRequested?'disabled':''}>
+            <input value="${escapeHtml(f.otp_code)}" oninput="DB.utilPaymentForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px; width:100px;" ${!f.otpRequested?'disabled':''}>
             <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestUtilPaymentOtp()">↻ Request</span>
           </div>
           <button class="btn btn-green" type="submit">🎁 Request</button>
@@ -7730,13 +7732,13 @@ function renderBulkUploadModal(){
     </table></div>
     <div class="field" style="margin-top:16px;">
       <label>Select Your Filled Excel File</label>
-      <input type="file" accept=".csv,.xlsx,.xls" onchange="handleBulkUploadFileChange(event)">
+      <input type="file" accept=".csv,.xlsx,.xls" onchange="handleBulkUploadFileChange(event)" style="max-width:220px;">
       ${f.fileName ? `<div class="hint" style="margin-top:6px;">Selected: ${escapeHtml(f.fileName)}${f.rows?` — ${f.rows.length} row(s) parsed`:''}</div>` : ""}
       ${f.parseError ? `<div class="hint" style="margin-top:6px; color:var(--red);">${escapeHtml(f.parseError)}</div>` : ""}
     </div>
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px;">
       <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
-        <input value="${escapeHtml(f.otp_code)}" oninput="DB.bulkUploadForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px;" ${!f.otpRequested?'disabled':''}>
+        <input value="${escapeHtml(f.otp_code)}" oninput="DB.bulkUploadForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px; width:100px;" ${!f.otpRequested?'disabled':''}>
         <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestBulkUploadOtp()">↻ Request</span>
       </div>
       <button class="btn btn-green" type="button" onclick="submitBulkUpload()">⬆ Upload</button>
