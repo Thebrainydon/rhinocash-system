@@ -346,6 +346,66 @@ function register(router) {
     res.status(201).json({ utilityPayment: await get('SELECT * FROM utility_payments WHERE id = ?', [id]) });
   });
 
+  // Bulk import — a real Excel/CSV template (Branch/Item description/Cost/
+  // Recipient mpesa number/Mpesa name/Journal account), OTP-confirmed the
+  // same way a single requisition is (reusing the same generic
+  // requisition_otps confirmation code — it isn't actually specific to
+  // requisitions, just "prove you have your own phone" for any accounting
+  // submission). Each row becomes its own real utility_payment + balanced
+  // journal entry; a bad row is skipped and reported, not silently dropped
+  // and not allowed to abort rows that were valid.
+  router.post('/api/utility-payments/bulk', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+    const b = req.body;
+    const rows = Array.isArray(b.rows) ? b.rows : [];
+    if (!rows.length) return next({ status: 400, message: 'No rows to import' });
+    if (!b.otp_code) return next({ status: 400, message: 'otp_code is required' });
+    const otp = await get(
+      `SELECT * FROM requisition_otps WHERE user_id = ? AND code_hash = ? AND used = 0 AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id, tokenHash(String(b.otp_code))]
+    );
+    if (!otp) return next({ status: 400, message: 'Invalid or expired OTP code', code: 'INVALID_OTP' });
+    try { await assertPeriodOpen(); } catch (e) { return next(e); }
+
+    const scopeIsCompanyWide = (await branchIdsInScope(req.user)) === null;
+    const created = [];
+    const errors = [];
+    await transaction(async () => {
+      await run('UPDATE requisition_otps SET used = 1 WHERE id = ?', [otp.id]);
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i] || {};
+        const rowNum = i + 2; // spreadsheet row 1 is the header
+        if (!r.item_description || !(Number(r.cost) > 0)) { errors.push({ row: rowNum, error: 'Item description and a positive cost are required' }); continue; }
+        let branchId = req.user.branch_id;
+        if (r.branch) {
+          const match = await get('SELECT id FROM branches WHERE LOWER(name) = LOWER(?)', [r.branch]);
+          if (!match || !(scopeIsCompanyWide || (await isBranchAllowed(req.user, match.id)))) { errors.push({ row: rowNum, error: `Branch "${r.branch}" was not found or is outside your scope` }); continue; }
+          branchId = match.id;
+        }
+        let expenseAccountId = null;
+        if (r.journal_account) {
+          const acct = await get(`SELECT id FROM gl_accounts WHERE account_type = 'Expense' AND (LOWER(name) = LOWER(?) OR LOWER(code) = LOWER(?))`, [r.journal_account, r.journal_account]);
+          if (!acct) { errors.push({ row: rowNum, error: `Expense account "${r.journal_account}" was not found` }); continue; }
+          expenseAccountId = acct.id;
+        }
+        const amount = Number(r.cost);
+        const expId = 'exp_' + crypto.randomUUID();
+        const id = 'util_' + crypto.randomUUID();
+        await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
+          [expId, 'Vendor Payment — ' + r.item_description, amount, r.mpesa_name || '', branchId, 'Paid', req.user.id, req.user.id, req.user.id]);
+        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'utility', ?, ?, ?)`,
+          [expenseAccountId || 'operating_expense', amount, r.item_description, expId, branchId, req.user.id]);
+        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('bank', 0, ?, ?, 'utility', ?, ?, ?)`,
+          [amount, r.item_description, expId, branchId, req.user.id]);
+        await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, expense_id, paid_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, 'Vendor Payment', r.mpesa_name || null, r.recipient_mpesa_number || null, amount, branchId, 'bank', 'Paid', expId, req.user.id, r.item_description, r.recipient_mpesa_number || null, r.mpesa_name || null, expenseAccountId]);
+        created.push(id);
+      }
+    });
+    await logAction(req, { action: 'Bulk-imported utility payments', module: 'accounting', recordType: 'UtilityPayment', recordId: null, newValue: { created: created.length, errors: errors.length } });
+    res.status(created.length ? 201 : 400).json({ created: created.length, errors });
+  });
+
   // ==================== Accounting Periods ====================
   router.get('/api/accounting/periods', requireAuth, requireModule('accounting'), async (req, res) => {
     const rows = await all('SELECT * FROM accounting_periods ORDER BY id DESC LIMIT 24');

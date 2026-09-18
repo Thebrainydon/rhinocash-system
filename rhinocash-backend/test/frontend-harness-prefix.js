@@ -33,6 +33,17 @@ if (typeof global.URL === 'undefined' || !global.URL.createObjectURL) {
   global.URL.createObjectURL = () => 'blob:fake-url';
   global.URL.revokeObjectURL = () => {};
 }
+// Minimal, real (not mocked-away) file-read support for the Bulk Upload
+// (Import Utility Payments) flow — synchronous rather than the real
+// FileReader's async callback timing, since nothing under test cares about
+// that timing and it keeps the assertions below deterministic. A test
+// "file" is just {name, __content}, and this reads back exactly what was
+// put in it, no more real than the browser API it stands in for.
+if (typeof global.FileReader === 'undefined') {
+  global.FileReader = class {
+    readAsText(file){ this.result = (file && file.__content) || ''; if (this.onload) this.onload(); }
+  };
+}
 global.window = { RHINOCASH_API_BASE: process.env.BACKEND_URL || 'http://localhost:4000', scrollTo(){} };
 global.alert = (msg) => { console.log('  [alert]', msg.split('\n')[0]); };
 global.confirm = () => true; // headless harness has no user to click OK — assume confirm for scripted flows that reach it

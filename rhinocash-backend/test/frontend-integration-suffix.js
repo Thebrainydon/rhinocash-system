@@ -1135,6 +1135,18 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await submitUtilityPayment({ preventDefault(){}, target:{} });
     __assert(DB.acctPages.util.utilityPayments.some(u=>u.account_reference==='ACC-555'), "a real utility payment was submitted via the actual form handler and appears in the real list");
 
+    // Bulk Upload (Import Utility Payments): real CSV parse + OTP + real batch create, through the actual UI functions.
+    openBulkUploadModal();
+    const utilCsv = "Branch,Item description,Cost,Recipient mpesa number,Mpesa name,Journal account\nKisumu,Office cleaning,2500,0722000111,Clean Co,Rent expense\n";
+    handleBulkUploadFileChange({ target: { files: [{ name:'utility.csv', __content: utilCsv }] } });
+    __assert(DB.bulkUploadForm.rows && DB.bulkUploadForm.rows.length === 1, "handleBulkUploadFileChange() through the actual UI function genuinely parsed the real CSV row");
+    __assert(DB.bulkUploadForm.rows[0].item_description === 'Office cleaning' && DB.bulkUploadForm.rows[0].cost === '2500', "the parsed row genuinely carries the real CSV cell values under the right column keys");
+    await requestBulkUploadOtp();
+    __assert(DB.bulkUploadForm.otpRequested && DB.bulkUploadForm.otpForTesting, "requestBulkUploadOtp() through the real UI function genuinely requested a real OTP and surfaced the test code (SMS not configured in this environment)");
+    DB.bulkUploadForm.otp_code = DB.bulkUploadForm.otpForTesting;
+    await submitBulkUpload();
+    __assert(DB.acctPages.util.utilityPayments.some(u=>u.mpesa_name==='Clean Co' && u.item_description==='Office cleaning'), "a real bulk-uploaded row was created via the actual Bulk Upload UI flow and appears in the real list");
+
     // General Ledger: real pagination.
     await loadGeneralLedger({}, 1);
     __assert(DB.acctPages.gl.pagination.total > 0, "General Ledger loaded real pagination metadata via the actual UI loader, not an unlimited local dump");

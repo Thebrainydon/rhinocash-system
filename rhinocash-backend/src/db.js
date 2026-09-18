@@ -570,6 +570,13 @@ CREATE TABLE IF NOT EXISTS utility_payments (
   status TEXT NOT NULL DEFAULT 'Paid',
   expense_id TEXT REFERENCES expenses(id),
   paid_by TEXT REFERENCES users(id),
+  -- Populated only by the bulk-upload path (see POST
+  -- /api/utility-payments/bulk): a real vendor mpesa payment can name any
+  -- recipient/item, not just the single form's fixed utility_type list.
+  item_description TEXT,
+  recipient_mpesa_number TEXT,
+  mpesa_name TEXT,
+  expense_account_id TEXT REFERENCES gl_accounts(id),
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 

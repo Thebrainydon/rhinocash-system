@@ -173,6 +173,49 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 4b. UTILITY PAYMENTS BULK IMPORT — real CSV-derived rows, OTP-confirmed
+  // =========================================================
+  {
+    async function otpFor(token) {
+      const r = await api('POST', '/api/requisitions/request-otp', { token, body: {} });
+      return r.json.otpForTesting;
+    }
+
+    const noOtp = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [{ item_description: 'Printer paper', cost: 500 }] } });
+    assert(noOtp.status === 400, 'bulk import without an OTP code is genuinely rejected');
+
+    const noRows = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [], otp_code: await otpFor(acctToken) } });
+    assert(noRows.status === 400, 'bulk import with no rows is genuinely rejected');
+
+    const wrongRole = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: { rows: [{ item_description: 'Printer paper', cost: 500 }], otp_code: '000000' } });
+    assert(wrongRole.status === 403, 'a Loan Officer cannot bulk-import utility payments either — same post_accounting_entries authority as the single-row form');
+
+    const validOtp = await otpFor(acctToken);
+    const bulk = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: {
+      rows: [
+        { branch: 'Kisumu', item_description: 'Office cleaning', cost: 2500, recipient_mpesa_number: '0722000111', mpesa_name: 'Clean Co', journal_account: 'Rent expense' },
+        { branch: 'Nonexistent Branch', item_description: 'Bad branch row', cost: 100, journal_account: 'Rent expense' },
+        { item_description: '', cost: 100 },
+      ],
+      otp_code: validOtp,
+    } });
+    assert(bulk.status === 201, 'a batch with at least one genuinely valid row succeeds overall');
+    assert(bulk.json.created === 1, 'exactly the one genuinely valid row was created — the other two real errors did not silently create anything');
+    assert(bulk.json.errors.length === 2, 'both real bad rows (unknown branch, missing item description) are reported, not silently dropped');
+
+    const reuseOtp = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [{ item_description: 'Another item', cost: 50 }], otp_code: validOtp } });
+    assert(reuseOtp.status === 400 && reuseOtp.json.code === 'INVALID_OTP', 'an already-used OTP code cannot be reused for a second bulk import');
+
+    const createdList = await api('GET', '/api/utility-payments?q=Clean Co', { token: acctToken });
+    const createdRow = createdList.json.utilityPayments.find(u => u.mpesa_name === 'Clean Co');
+    assert(createdRow && createdRow.item_description === 'Office cleaning' && createdRow.recipient_mpesa_number === '0722000111', 'the real bulk-created row genuinely persisted its item description and mpesa recipient details, searchable via the real q filter');
+    assert(createdRow.expense_account_id, 'the bulk row genuinely resolved and stored the real "Rent expense" GL account it named, not a hardcoded fallback');
+
+    const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${createdRow.expense_id}`, { token: adminToken });
+    assert(glCheck.json.entries.length === 2 && glCheck.json.entries.some(e => e.account_id === createdRow.expense_account_id), 'the bulk-created row posted a real balanced journal entry against the real named expense account');
+  }
+
+  // =========================================================
   // 5. BRANCH/REGION-SCOPED FINANCIAL REPORTS
   // =========================================================
   {

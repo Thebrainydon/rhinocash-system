@@ -1060,7 +1060,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -7525,7 +7525,7 @@ function renderUtilityPaymentsPage(){
           <h3 style="margin:0; color:var(--navy);">Vendor/Utility Payments</h3>
         </span>
         <span class="pill-row">
-          <span class="btn btn-outline btn-sm" onclick="toast('Bulk Upload is coming next')">⬆ Bulk Upload</span>
+          <span class="btn btn-outline btn-sm" onclick="openBulkUploadModal()">⬆ Bulk Upload</span>
           <span class="btn btn-outline btn-sm" onclick="openCreateUtilityPaymentForm()">+ Create New</span>
         </span>
       </div>
@@ -7583,6 +7583,96 @@ function submitUtilityPayment(ev){
     closeCreateUtilityPaymentForm();
     await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
   });
+}
+
+// ---- Bulk Upload (Import Utility Payments): a real CSV parse + the same
+// OTP confirmation code used elsewhere in Accounting, not a second scheme.
+// True binary .xlsx parsing needs a library this dependency-free backend
+// doesn't carry, so a non-CSV file is honestly rejected client-side rather
+// than pretending to read it — matching this app's NOT_CONFIGURED convention.
+const BULK_UPLOAD_COLUMNS = ["branch","item_description","cost","recipient_mpesa_number","mpesa_name","journal_account"];
+function openBulkUploadModal(){
+  DB.bulkUploadForm = { fileName:"", rows:null, parseError:null, otp_code:"", otpRequested:false, otpForTesting:null };
+  openModal('bulk-upload-utility');
+}
+function parseBulkUploadCsv(text){
+  const lines = text.split(/\r\n|\n|\r/).filter(l=>l.trim().length);
+  if(lines.length < 2) return { rows:[], error:"The file has no data rows below the header." };
+  const splitLine = l => l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+  const dataLines = lines.slice(1); // first line is the header row
+  const rows = dataLines.map(l=>{
+    const cells = splitLine(l);
+    const row = {};
+    BULK_UPLOAD_COLUMNS.forEach((key,i)=>{ row[key] = (cells[i]||'').trim(); });
+    return row;
+  }).filter(r=>r.item_description || r.cost);
+  return { rows, error:null };
+}
+function handleBulkUploadFileChange(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const f = DB.bulkUploadForm;
+  f.fileName = file.name;
+  f.rows = null; f.parseError = null;
+  if(!/\.csv$/i.test(file.name)){
+    f.parseError = "This build can only parse .csv files — export your filled Excel template as CSV (File → Save As → CSV) and select that file instead.";
+    renderApp(); return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const { rows, error } = parseBulkUploadCsv(String(reader.result||''));
+    f.rows = rows; f.parseError = error;
+    renderApp();
+  };
+  reader.onerror = () => { f.parseError = "Could not read that file."; renderApp(); };
+  reader.readAsText(file);
+  renderApp();
+}
+function requestBulkUploadOtp(){
+  return withRequest('bulk-otp', async ()=>{
+    const res = await api.post('/api/requisitions/request-otp', {});
+    DB.bulkUploadForm.otpRequested = true;
+    DB.bulkUploadForm.otpForTesting = res.otpForTesting || null;
+    toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
+  });
+}
+function submitBulkUpload(){
+  const f = DB.bulkUploadForm;
+  if(!f.rows || !f.rows.length){ toast("Choose a filled CSV file first"); return; }
+  if(!f.otp_code){ toast("Enter the OTP code sent to your M-Pesa number"); return; }
+  return withRequest('bulk-upload', async ()=>{
+    const res = await api.post('/api/utility-payments/bulk', { rows:f.rows, otp_code:f.otp_code });
+    toast(res.errors && res.errors.length
+      ? `Imported ${res.created} of ${f.rows.length} row(s) — ${res.errors.length} failed (see console for details)`
+      : `Imported all ${res.created} row(s) successfully`);
+    if(res.errors && res.errors.length) console.error('Bulk upload row errors:', res.errors);
+    if(res.created > 0){ closeModal(); await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{}); }
+  });
+}
+function renderBulkUploadModal(){
+  const f = DB.bulkUploadForm;
+  return `
+    <div class="modal-head"><h3>Import Utility Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="hint" style="margin-bottom:14px;">Your Excel file <strong>MUST</strong> be formatted as below. <strong>Note:</strong> If your file has date, format it as <strong>${new Date().getDate().toString().padStart(2,'0')}-${(new Date().getMonth()+1).toString().padStart(2,'0')}-${new Date().getFullYear()}</strong>.</div>
+    <div class="table-wrap"><table>
+      <tr><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+      <tr><td><strong>Branch</strong></td><td><strong>Item description</strong></td><td><strong>Cost</strong></td><td><strong>Recipient mpesa number</strong></td><td><strong>Mpesa name</strong></td><td><strong>Journal account</strong></td></tr>
+    </table></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Select Your Filled Excel File</label>
+      <input type="file" accept=".csv,.xlsx,.xls" onchange="handleBulkUploadFileChange(event)">
+      ${f.fileName ? `<div class="hint" style="margin-top:6px;">Selected: ${escapeHtml(f.fileName)}${f.rows?` — ${f.rows.length} row(s) parsed`:''}</div>` : ""}
+      ${f.parseError ? `<div class="hint" style="margin-top:6px; color:var(--red);">${escapeHtml(f.parseError)}</div>` : ""}
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px;">
+      <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
+        <input value="${escapeHtml(f.otp_code)}" oninput="DB.bulkUploadForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px;" ${!f.otpRequested?'disabled':''}>
+        <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestBulkUploadOtp()">↻ Request</span>
+      </div>
+      <button class="btn btn-green" type="button" onclick="submitBulkUpload()">⬆ Upload</button>
+    </div>
+    ${f.otpForTesting ? `<div class="hint" style="margin-top:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+  `;
 }
 
 // ==================== General Ledger — real server-side pagination + filtering ====================
@@ -9772,8 +9862,9 @@ function renderModal(){
   else if(modal.type === "tickets") body = renderTicketsModal();
   else if(modal.type === "notifications") body = renderNotificationsModal();
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
+  else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
