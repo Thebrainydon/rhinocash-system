@@ -196,6 +196,7 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .modal-overlay{position:fixed; inset:0; background:rgba(15,20,30,0.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:50; overflow-y:auto;}
 .modal{background:#fff; border-radius:14px; padding:24px 26px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,0.25);}
 .modal-chat{max-width:420px; padding:18px 18px 14px; display:flex; flex-direction:column; height:min(600px, 80vh);}
+.modal-wide{max-width:960px;}
 .chat-list{flex:1; overflow-y:auto; margin:0 -18px; padding:0 18px;}
 .chat-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer;}
 .chat-row:last-child{border-bottom:none;}
@@ -870,7 +871,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null, loanStatusState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1070,7 +1071,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    chatConversations:null, chatContacts:null, chatMessages:{} };
+    chatConversations:null, chatContacts:null, chatMessages:{}, loanStatusBrowser:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1763,6 +1764,7 @@ function renderApp(){
           </div>
           <div class="topbar-right">
             ${session.role!=="Investor" ? `<div class="bell" onclick="openChatPanel()" title="Chat">💬${unreadChat>0?`<span class="bell-dot">${unreadChat}</span>`:""}</div>` : ""}
+            ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
@@ -9587,8 +9589,9 @@ function renderModal(){
   else if(modal.type === "session-expired") body = renderSessionExpiredModal();
   else if(modal.type === "session-expiry-warning") body = renderSessionExpiryWarningModal();
   else if(modal.type === "chat") body = renderChatModal();
+  else if(modal.type === "loan-status") body = renderLoanStatusModal();
   else return "";
-  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}">${body}</div></div>`;
+  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}${modal.type==='loan-status'?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
   return `
@@ -9828,6 +9831,81 @@ function renderChatThreadView(conversationId){
       <textarea name="body" rows="1" placeholder="Type a message…" maxlength="4000" required></textarea>
       <button class="btn btn-primary btn-sm" type="submit">Send</button>
     </form>
+  `;
+}
+
+// ==================== Loan Status Browser — real, role-scoped filterable loan list, reusing /api/loans/applications-overview ====================
+function loanStatusMonthOptions(){
+  const opts = [];
+  const now = new Date();
+  for(let i=0; i<12; i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    opts.push({ value: d.toISOString().slice(0,7), label: d.toLocaleString('en-KE',{month:'short', year:'numeric'}) });
+  }
+  return opts;
+}
+const LOAN_STATUS_CATEGORIES = ['All templates','Disbursed loans','Undisbursed loans','Pended loans','Declined loans'];
+let loanStatusReqSeq = 0;
+async function loadLoanStatusBrowser(){
+  const st = session.loanStatusState;
+  const seq = ++loanStatusReqSeq;
+  return withRequest('load-loan-status:'+JSON.stringify(st), async ()=>{
+    const [year, mo] = st.month.split('-').map(Number);
+    const from = st.day ? `${st.month}-${String(st.day).padStart(2,'0')}` : `${st.month}-01`;
+    const to = st.day ? from : new Date(year, mo, 0).toISOString().slice(0,10);
+    const params = new URLSearchParams({ category: st.category, from, to, page: st.page||1, page_size: 20 });
+    if(st.q) params.set('q', st.q);
+    const result = await api.get('/api/loans/applications-overview?'+params.toString());
+    if(seq !== loanStatusReqSeq) return; // a newer request has since superseded this one
+    result.stateKey = JSON.stringify(st);
+    DB.loanStatusBrowser = result;
+  });
+}
+function openLoanStatusPanel(){
+  if(!session.loanStatusState){
+    session.loanStatusState = { category:'All templates', month: new Date().toISOString().slice(0,7), day:'', q:'', page:1 };
+  }
+  openModal('loan-status');
+}
+function renderLoanStatusModal(){
+  const st = session.loanStatusState;
+  if(!DB.loanStatusBrowser || DB.loanStatusBrowser.stateKey !== JSON.stringify(st)){
+    loadLoanStatusBrowser();
+    return `<div class="modal-head"><h3>Loan Status</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+  }
+  const d = DB.loanStatusBrowser;
+  const { page, totalPages, totalRows, pageSize } = d.pagination;
+  const monthOptions = loanStatusMonthOptions();
+  return `
+    <div class="modal-head"><h3>${escapeHtml(st.category)} (${totalRows})</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="pill-row" style="margin-bottom:10px; flex-wrap:wrap;">
+      <select onchange="session.loanStatusState.category=this.value; session.loanStatusState.page=1; DB.loanStatusBrowser=null; renderApp();">
+        ${LOAN_STATUS_CATEGORIES.map(c=>`<option ${c===st.category?'selected':''}>${c}</option>`).join("")}
+      </select>
+      <select onchange="session.loanStatusState.month=this.value; session.loanStatusState.page=1; DB.loanStatusBrowser=null; renderApp();">
+        ${monthOptions.map(m=>`<option value="${m.value}" ${m.value===st.month?'selected':''}>${m.label}</option>`).join("")}
+      </select>
+      <select onchange="session.loanStatusState.day=this.value; session.loanStatusState.page=1; DB.loanStatusBrowser=null; renderApp();">
+        <option value="">-- Day --</option>
+        ${Array.from({length:31},(_,i)=>i+1).map(dd=>`<option value="${dd}" ${String(dd)===String(st.day)?'selected':''}>${dd}</option>`).join("")}
+      </select>
+      <input placeholder="Search client, application" value="${escapeHtml(st.q)}" oninput="session.loanStatusState.q=this.value; session.loanStatusState.page=1; DB.loanStatusBrowser=null; renderApp();">
+    </div>
+    <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
+      <tr><th>Application</th><th>Client</th><th>Cycle</th><th>Product</th><th>Branch</th><th>Loan Officer</th><th>Amount</th><th>Loan Processing</th><th>Disbursement</th></tr>
+      ${d.rows.map(r=>`<tr class="clickable" onclick="closeModal(); openLoan('${r.loanId}')">
+        <td>${r.loanId.slice(-8).toUpperCase()}</td>
+        <td>${escapeHtml(clientName(r.clientId))}</td>
+        <td>${r.cycle}</td>
+        <td>${escapeHtml(productName(r.productId))}</td>
+        <td>${escapeHtml(branchName(r.branchId))}</td>
+        <td>${escapeHtml(session.role==='Loan Officer' ? session.userName : staffName(r.officerId))}</td>
+        <td>${fmt(r.principal)}</td>
+        <td>${escapeHtml(r.status)}</td>
+        <td>${r.disbursedAt ? new Date(r.disbursedAt).toLocaleDateString() : 'Not yet disbursed'}</td>
+      </tr>`).join("") || `<tr><td colspan="9" class="empty">No loans match the selected filters.</td></tr>`}
+    </table></div>
+    ${totalRows>pageSize ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.loanStatusState.page=${page-1}; DB.loanStatusBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${totalRows})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.loanStatusState.page=${page+1}; DB.loanStatusBrowser=null; renderApp();">Next →</button></div>` : ""}
   `;
 }
 

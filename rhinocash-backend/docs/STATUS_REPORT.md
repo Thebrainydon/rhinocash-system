@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  811 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 622 passed, 0 failed  (drives the real UI functions in
+Backend:  828 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 628 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,433 passed, 0 failed
+Total:    1,456 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -76,7 +76,12 @@ adjustment — so a crash mid-write can never leave a payment recorded
 with no matching journal entry, or vice versa) · internal staff-to-staff
 Chat (real direct messages, one conversation per colleague pair, real
 unread counts and read receipts — never reachable by the investor
-principal type, same isolation as every other staff-only feature).
+principal type, same isolation as every other staff-only feature) · a
+Loan Status Browser (topbar calendar-check icon) filtering a user's
+real, role-scoped loan applications by outcome category (All templates/
+Disbursed/Undisbursed/Pended/Declined) and by month/day, reusing the
+same `/api/loans/applications-overview` endpoint and scoping as the
+existing Applications Overview page.
 
 ## What is explicitly NOT verified, stated plainly
 

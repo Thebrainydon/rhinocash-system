@@ -1357,6 +1357,30 @@ function register(router) {
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
+    // "category" groups several real statuses under one filter — used by
+    // the topbar loan-status browser's dropdown (All templates/Disbursed/
+    // Undisbursed/Pended/Declined loans). Separate from the exact-match
+    // "status" param above (the existing Applications Overview page's own
+    // pipeline-stage filter), which still works unchanged.
+    if (req.query.category && req.query.category !== 'All templates') {
+      const categoryStatuses = {
+        'Disbursed loans': ['Active', 'Disbursed', 'Completed', 'Written Off', 'Restructured'],
+        'Undisbursed loans': ['Approved for Disbursement'],
+        'Pended loans': ['Pending', 'Waiting for Manager', 'Waiting for Regional Manager', 'Waiting for Operational Manager', 'Waiting for Accountant', 'Returned for Correction'],
+        'Declined loans': ['Rejected'],
+      };
+      const statuses = categoryStatuses[req.query.category];
+      if (statuses) { clause += ` AND status IN (${statuses.map(() => '?').join(',')})`; params.push(...statuses); }
+    }
+    // Real bug fix: the existing Applications Overview page's date-range
+    // and amount-range filter inputs have sent from/to/min_amount/
+    // max_amount for a while, but this route never read any of them —
+    // they were silent no-ops. (cycle can't be filtered in SQL — it's
+    // computed per-client below — so it's applied further down instead.)
+    if (req.query.from) { clause += ' AND (created_at)::date >= ?'; params.push(req.query.from); }
+    if (req.query.to) { clause += ' AND (created_at)::date <= ?'; params.push(req.query.to); }
+    if (req.query.min_amount) { clause += ' AND principal >= ?'; params.push(Number(req.query.min_amount)); }
+    if (req.query.max_amount) { clause += ' AND principal <= ?'; params.push(Number(req.query.max_amount)); }
     const loans = await all(`SELECT * FROM loans WHERE ${clause}`, params);
 
     const loanIds = loans.map(l => l.id);
@@ -1393,7 +1417,7 @@ function register(router) {
         loanId: l.id, clientId: l.client_id, officerId: l.officer_id, productId: l.product_id, branchId: l.branch_id,
         principal: l.principal, interest, fees, totalPayable: l.principal + interest + fees, cycle: cycleByLoan[l.id] || 1,
         repaymentFrequency: 'Monthly', hasOtherArrears: arrearsClientIds.has(l.client_id),
-        createdAt: l.created_at, lastActionAt, status: l.status, ageDays,
+        createdAt: l.created_at, lastActionAt, status: l.status, ageDays, disbursedAt: l.disbursed_at,
       };
     });
     if (req.query.q) {
@@ -1402,6 +1426,7 @@ function register(router) {
       { const cIds = [...new Set(rows.map(r => r.clientId))]; if (cIds.length) { const cPh = cIds.map(() => '?').join(','); (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, cIds)).forEach(c => { clientNameById[c.id] = c.name; }); } }
       rows = rows.filter(r => (clientNameById[r.clientId] || '').toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q));
     }
+    if (req.query.cycle) rows = rows.filter(r => String(r.cycle) === req.query.cycle || (req.query.cycle === '4+' && r.cycle >= 4));
     rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     const pendingStatuses = r => r.status.startsWith('Waiting') || r.status === 'Returned for Correction';

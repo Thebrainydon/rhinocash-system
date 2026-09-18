@@ -3824,6 +3824,72 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(modal === null, "the chat panel genuinely closes like every other real modal in this app");
   }
 
+  // ---- 18. The real Loan Status Browser (topbar calendar-check icon) ----
+  {
+    let of130 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const cForm130 = new Map([['name','[TEST] Loan Status Browser Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)]]);
+    global.FormData = class { constructor(){ return cForm130; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const lsbClient = DB.clients.find(c=>c.name==='[TEST] Loan Status Browser Client');
+    const lsbLoan = await createLoanApplication({ clientId: lsbClient.id, productId: 'pr_starter', principal: 15000, term: 4 });
+
+    let mgrf130 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lsbLoan.id);
+    let regf130 = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regf130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lsbLoan.id);
+    let opsf130 = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsf130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lsbLoan.id);
+    let acf130 = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acf130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lsbLoan.id);
+    let admf130 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admf130; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await api.post(`/api/loans/${lsbLoan.id}/disburse`, { channel: 'Bank' });
+
+    let of131 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of131; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    openLoanStatusPanel();
+    __assert(modal && modal.type === 'loan-status', "the real calendar-check icon genuinely opens the real Loan Status Browser panel");
+    session.loanStatusState.q = '[TEST] Loan Status Browser Client';
+    session.loanStatusState.page = 1;
+    DB.loanStatusBrowser = null;
+    for(let i=0; i<100 && (!DB.loanStatusBrowser || DB.loanStatusBrowser.stateKey!==JSON.stringify(session.loanStatusState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.loanStatusBrowser.rows.some(r=>r.loanId===lsbLoan.id), "'All templates' genuinely includes the real freshly-disbursed test loan");
+
+    session.loanStatusState.category = 'Disbursed loans';
+    session.loanStatusState.page = 1;
+    DB.loanStatusBrowser = null;
+    for(let i=0; i<100 && (!DB.loanStatusBrowser || DB.loanStatusBrowser.stateKey!==JSON.stringify(session.loanStatusState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let disbursedRow = DB.loanStatusBrowser.rows.find(r=>r.loanId===lsbLoan.id);
+    __assert(!!disbursedRow && !!disbursedRow.disbursedAt, "'Disbursed loans' genuinely includes the real loan with a real disbursedAt timestamp");
+    let modalHtml2 = renderModal();
+    __assert(modalHtml2.includes('Disbursed loans (1)'), "the real modal title genuinely reflects the selected category and the real result count");
+
+    session.loanStatusState.category = 'Declined loans';
+    session.loanStatusState.page = 1;
+    DB.loanStatusBrowser = null;
+    for(let i=0; i<100 && (!DB.loanStatusBrowser || DB.loanStatusBrowser.stateKey!==JSON.stringify(session.loanStatusState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(!DB.loanStatusBrowser.rows.some(r=>r.loanId===lsbLoan.id), "'Declined loans' genuinely excludes the real disbursed test loan");
+
+    closeModal();
+    openLoan(lsbLoan.id);
+    __assert(session.selectedLoanId === lsbLoan.id && session.section === 'loanbook', "clicking a real row's underlying openLoan() genuinely navigates to that real loan's detail page");
+    session.loanStatusState = null;
+    DB.loanStatusBrowser = null;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();
