@@ -155,6 +155,27 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(wrongBranchInteraction.status === 403, 'AC: a Nairobi Manager cannot log an interaction against a Kisumu client');
   }
 
+  // AF. Client Interactions list page — /api/clients/interactions.
+  {
+    const list = await api('GET', '/api/clients/interactions', { token: officerToken });
+    assert(list.status === 200, 'AF: the real Client Interactions list loads for a Loan Officer');
+    const row = list.json.interactions.find(i => i.note === 'Discussed repayment schedule');
+    assert(!!row, 'AF: the real just-logged interaction genuinely appears in the list');
+    assert(row.client_name === 'Test Client Alpha' && row.client_phone === clientPhone, 'AF: the real client name/phone are genuinely joined in, not left as a bare client_id');
+    assert(row.officer_name === officerMe.name && row.staff_name === officerMe.name, 'AF: the real assigned officer and the real staff who logged it are both genuinely resolved to names');
+    assert(row.client_status === 'Active', 'AF: the real client\'s current status is genuinely included');
+
+    const nairobiList = await api('GET', '/api/clients/interactions', { token: nairobiManagerToken });
+    assert(nairobiList.status === 200 && !nairobiList.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AF: a Nairobi Manager genuinely cannot see a Kisumu client\'s interaction — branch scope holds');
+
+    const searched = await api('GET', `/api/clients/interactions?q=${encodeURIComponent(clientPhone)}`, { token: officerToken });
+    assert(searched.status === 200 && searched.json.interactions.length > 0 && searched.json.interactions.every(i => i.client_phone === clientPhone), 'AF: searching by phone genuinely filters the real list down to that client only');
+
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const futureOnly = await api('GET', `/api/clients/interactions?from=${tomorrow}`, { token: officerToken });
+    assert(futureOnly.status === 200 && !futureOnly.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AF: a real "from" date after today genuinely excludes today\'s interaction — the date filter is not a silent no-op');
+  }
+
   // AD. Investor isolation.
   {
     const r1 = await api('GET', '/api/clients', { token: investorToken });

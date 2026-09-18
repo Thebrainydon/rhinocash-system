@@ -174,6 +174,40 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(blocked403, "a Nairobi manager's real API call for the Kisumu client is rejected with 403 — proven through the exact same api client the UI uses");
   }
 
+  // ---- 11a. Client Interactions submenu page: real cross-client join, search, date-range filter, branch scope — through the actual UI functions ----
+  {
+    const form = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return form; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    closeClient(); // leave the Alice Wanjiru detail view (still open from the previous block) before navigating to a different Clients subtab
+    goTo('clients','Interactions');
+    for(let i=0; i<100 && (!DB.clientInteractions || DB.clientInteractions.stateKey !== JSON.stringify(session.clientInteractionsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.clientInteractions && DB.clientInteractions.rows.some(r=>r.note==='Discussed loan eligibility'), "the real Client Interactions page's own render-triggered load genuinely includes the earlier real logged interaction, joined by client");
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client Interactions') && html.includes('Alice Wanjiru') && html.includes('Discussed loan eligibility'), "the real rendered page shows the real client name and comment, not placeholders");
+
+    // Search filters the real list, through the actual UI form handler.
+    let searchForm = new Map([['from', session.clientInteractionsState.from], ['to', session.clientInteractionsState.to], ['q','Wanjiru']]);
+    global.FormData = class { constructor(){ return searchForm; } };
+    await submitClientInteractionsFilter({ preventDefault(){}, target:{} });
+    __assert(DB.clientInteractions.rows.length > 0 && DB.clientInteractions.rows.every(r=>r.client_name.includes('Wanjiru')), "searching by name through the real UI handler genuinely filters the list down");
+
+    // A date range entirely before the interaction was logged genuinely excludes it — the filter is not a silent no-op.
+    let pastForm = new Map([['from','2000-01-01'], ['to','2000-01-02'], ['q','']]);
+    global.FormData = class { constructor(){ return pastForm; } };
+    await submitClientInteractionsFilter({ preventDefault(){}, target:{} });
+    __assert(!DB.clientInteractions.rows.some(r=>r.note==='Discussed loan eligibility'), "a real date range before the interaction was logged genuinely excludes it");
+
+    // A Nairobi manager (a different branch) genuinely does not see the Kisumu interaction — branch scope holds through the actual UI.
+    const nairobiForm = new Map([['username','manager@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_PASSWORD]]);
+    global.FormData = class { constructor(){ return nairobiForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    goTo('clients','Interactions');
+    for(let i=0; i<100 && (!DB.clientInteractions || DB.clientInteractions.stateKey !== JSON.stringify(session.clientInteractionsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.clientInteractions && !DB.clientInteractions.rows.some(r=>r.note==='Discussed loan eligibility'), "a Nairobi Manager's real Client Interactions page genuinely excludes the Kisumu client's interaction");
+  }
+
   // ---- 12. LOANS section: full real workflow through the actual frontend code ----
   {
     // Kisumu officer creates a client + submits a loan application via the real form handler.

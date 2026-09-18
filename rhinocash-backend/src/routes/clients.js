@@ -49,6 +49,39 @@ function register(router) {
     res.json({ clients: rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   });
 
+  // Registered before /api/clients/:id so "interactions" is never
+  // swallowed as a client id by that route's :id param.
+  router.get('/api/clients/interactions', requireAuth, requireModule('clients'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user, 'c.branch_id');
+    const clauses = [scope.clause]; const params = [...scope.params];
+    if (req.user.role_id === 'loan_officer') { clauses.push('c.officer_id = ?'); params.push(req.user.id); }
+    if (req.query.branch_id) { clauses.push('c.branch_id = ?'); params.push(req.query.branch_id); }
+    if (req.query.officer_id && req.user.role_id !== 'loan_officer') { clauses.push('c.officer_id = ?'); params.push(req.query.officer_id); }
+    if (req.query.from) { clauses.push('(ci.created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(ci.created_at)::date <= ?'); params.push(req.query.to); }
+    if (req.query.q) {
+      clauses.push('(c.name LIKE ? OR c.phone LIKE ?)');
+      const like = `%${req.query.q}%`; params.push(like, like);
+    }
+    const where = `WHERE ${clauses.join(' AND ')}`;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const baseQuery = `FROM client_interactions ci
+      JOIN clients c ON c.id = ci.client_id
+      LEFT JOIN users o ON o.id = c.officer_id
+      LEFT JOIN users s ON s.id = ci.staff_id
+      ${where}`;
+    const total = (await get(`SELECT COUNT(*) as c ${baseQuery}`, params)).c;
+    const rows = await all(
+      `SELECT ci.id, ci.type, ci.note, ci.created_at,
+              c.id as client_id, c.name as client_name, c.phone as client_phone, c.status as client_status,
+              c.officer_id, o.name as officer_name, s.name as staff_name
+       ${baseQuery} ORDER BY ci.created_at DESC, ci.id DESC LIMIT ? OFFSET ?`,
+      [...params, limit, (page - 1) * limit]
+    );
+    res.json({ interactions: rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+  });
+
   router.get('/api/clients/:id', requireAuth, requireModule('clients'), async (req, res, next) => {
     const c = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
     if (!c) return next({ status: 404, message: 'Client not found' });

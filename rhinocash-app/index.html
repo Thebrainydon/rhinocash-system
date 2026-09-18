@@ -575,6 +575,7 @@ const LABEL_ROUTES = {
   "View Client": {section:"clients", subtab:"All Clients"},
   "Client Leads": {section:"clients", subtab:"Client Leads"},
   "Create a Lead": {section:"clients", subtab:"Client Leads"},
+  "Interactions": {section:"clients", subtab:"Interactions"},
   "Client Status": {section:"clients", subtab:"All Clients"},
   "Dormant Clients": {section:"clients", subtab:"All Clients"},
   "Client Registration": {section:"clients", subtab:"Add Client"},
@@ -864,7 +865,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -3838,6 +3839,7 @@ function renderClients(){
   if(active==="Add Client") return renderAddClientForm();
   if(active==="Client Groups") return tabsHtml + renderClientGroups();
   if(active==="Client Leads") return tabsHtml + renderClientLeads();
+  if(active==="Interactions") return renderClientInteractionsPage();
 
   return tabsHtml + renderClientDirectoryPage();
 }
@@ -3884,6 +3886,75 @@ function renderClientDirectoryPage(){
         ${rows || `<tr><td colspan="8" class="empty">${state?'No clients match these filters.':'Loading…'}</td></tr>`}
       </table></div>
       ${state ? renderPaginationControls('clientdir','loadClientDirectory',state.filters) : ""}
+    </div>
+  `;
+}
+const CLIENT_STATUS_DOT = { Active:'#2F7D5C', Dormant:'#8B897F', Blacklisted:'#B3261E' };
+function defaultClientInteractionsState(){
+  return {
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10),
+    to: new Date().toISOString().slice(0,10),
+    q: '', page: 1,
+  };
+}
+async function loadClientInteractions(){
+  const st = session.clientInteractionsState || (session.clientInteractionsState = defaultClientInteractionsState());
+  return withRequest('load-client-interactions:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams();
+    if(st.from) params.set('from', st.from);
+    if(st.to) params.set('to', st.to);
+    if(st.q) params.set('q', st.q);
+    params.set('page', st.page || 1);
+    params.set('limit', 25);
+    const res = await api.get('/api/clients/interactions?'+params.toString());
+    DB.clientInteractions = { rows: res.interactions, pagination: res.pagination, stateKey: JSON.stringify(st) };
+  });
+}
+function submitClientInteractionsFilter(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  session.clientInteractionsState = { ...(session.clientInteractionsState||defaultClientInteractionsState()), from: f.from||'', to: f.to||'', q: f.q||'', page: 1 };
+  DB.clientInteractions = null;
+  return loadClientInteractions();
+}
+function renderClientInteractionsPage(){
+  const st = session.clientInteractionsState || (session.clientInteractionsState = defaultClientInteractionsState());
+  const header = `
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+      <span class="btn btn-outline btn-sm" onclick="goTo('clients','All Clients')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
+      <h3 style="color:var(--navy); margin:0;">Client Interactions</h3>
+    </div>`;
+  if(!DB.clientInteractions || DB.clientInteractions.stateKey !== JSON.stringify(st)){
+    loadClientInteractions();
+    return `<div class="card">${header}<div class="empty">Loading…</div></div>`;
+  }
+  const d = DB.clientInteractions;
+  const rows = d.rows.map((r,i)=>`<tr class="clickable" onclick="openClient('${r.client_id}')">
+    <td>${(st.page-1)*25+i+1}</td>
+    <td><span style="color:var(--blue); font-weight:700;">${escapeHtml(r.client_name)}</span><br><span class="hint">${escapeHtml(r.client_phone||'')}</span></td>
+    <td>${escapeHtml(r.officer_name||'—')}</td>
+    <td>${escapeHtml(r.note||'')}</td>
+    <td>${escapeHtml(r.staff_name||'—')}</td>
+    <td><span style="color:${CLIENT_STATUS_DOT[r.client_status]||'#8B897F'};">●</span> ${escapeHtml(r.client_status||'')}</td>
+  </tr>`).join("");
+  return `
+    <div class="card">
+      ${header}
+      <form onsubmit="return submitClientInteractionsFilter(event)" class="pill-row" style="align-items:center;">
+        <input type="date" name="from" value="${escapeHtml(st.from)}" onchange="this.form.requestSubmit()">
+        <span class="hint">~</span>
+        <input type="date" name="to" value="${escapeHtml(st.to)}" onchange="this.form.requestSubmit()">
+        <input class="search" name="q" placeholder="Search client" value="${escapeHtml(st.q||'')}" style="margin-left:auto;" onchange="this.form.requestSubmit()">
+      </form>
+      <div class="table-wrap"><table>
+        <tr><th></th><th>Client</th><th>Loan Officer</th><th>Comment</th><th>Source</th><th>Client Status</th></tr>
+        ${rows || `<tr><td colspan="6" class="empty">No interactions in this date range.</td></tr>`}
+      </table></div>
+      ${d.pagination.totalPages>1 ? `<div class="pill-row" style="margin-top:10px; align-items:center;">
+        <button class="btn btn-sm btn-outline" ${st.page<=1?'disabled':''} onclick="session.clientInteractionsState.page=${st.page-1}; DB.clientInteractions=null; renderApp();">← Prev</button>
+        <span class="hint">Page ${st.page} of ${d.pagination.totalPages}</span>
+        <button class="btn btn-sm btn-outline" ${st.page>=d.pagination.totalPages?'disabled':''} onclick="session.clientInteractionsState.page=${st.page+1}; DB.clientInteractions=null; renderApp();">Next →</button>
+      </div>` : ""}
     </div>
   `;
 }

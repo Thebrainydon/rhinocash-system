@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  862 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 657 passed, 0 failed  (drives the real UI functions in
+Backend:  870 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 662 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,519 passed, 0 failed
+Total:    1,532 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -159,7 +159,15 @@ uncovered a real, if narrow, bug in the Manager's Collection Sheet:
 `renderSheetBranchPage()`'s cache-invalidation key included
 `expandedOfficers` (which officer groups are expanded), a pure
 client-side UI toggle, so expanding a group invalidated the cached data
-and briefly reloaded it — now excluded from the key.
+and briefly reloaded it — now excluded from the key · the Clients
+menu's "Interactions" submenu is now a real page (previously
+unrouted, falling through to a generic placeholder): a date-range- and
+name/phone-searchable list of every logged client interaction the
+caller can see, joined to the client's name/phone/status and both the
+client's assigned Loan Officer and the staff member who actually
+logged the interaction (`GET /api/clients/interactions`, scoped by the
+same branch/officer rules every other Clients/Collections endpoint
+already uses).
 
 ## What is explicitly NOT verified, stated plainly
 
