@@ -3998,6 +3998,89 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     closeModal();
   }
 
+  // ---- 22. The real Payments (M-Pesa/Paybill) browser (topbar cash icon) — Loan Officer view + Manager assign ----
+  {
+    let of138 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of138; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const c2bClientForm = new Map([['name','[TEST] C2B Payments Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)]]);
+    global.FormData = class { constructor(){ return c2bClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const c2bClient = DB.clients.find(c=>c.name==='[TEST] C2B Payments Client');
+    const c2bLoan = await createLoanApplication({ clientId: c2bClient.id, productId: 'pr_starter', principal: 12000, term: 4 });
+
+    // matchC2bAccount() only matches a loan_id reference against a loan
+    // that is already Active/Disbursed (a real, correct business rule — you
+    // can't pay against a loan that was never disbursed), so this loan must
+    // be driven all the way through approval + disbursement first.
+    let mgrf137b = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf137b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(c2bLoan.id);
+    let regf137b = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regf137b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(c2bLoan.id);
+    let opsf137b = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsf137b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(c2bLoan.id);
+    let acf137b = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acf137b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(c2bLoan.id);
+    let admf137b = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admf137b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await api.post(`/api/loans/${c2bLoan.id}/disburse`, { channel: 'Bank' });
+
+    let of139 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of139; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    // Real, matched C2B transaction: the client pays using the correct real loan id as the account reference.
+    const matchedTransId = 'QFE' + Math.floor(Math.random()*90000000+10000000);
+    await api.post('/api/mpesa/c2b/confirmation/sandbox', { TransID: matchedTransId, TransAmount: '1200', MSISDN: '2547'+Math.floor(Math.random()*90000000+10000000), BillRefNumber: c2bLoan.id });
+    // Real, unmatched C2B transaction: the client typed the wrong account reference.
+    const unmatchedTransId = 'QFU' + Math.floor(Math.random()*90000000+10000000);
+    await api.post('/api/mpesa/c2b/confirmation/sandbox', { TransID: unmatchedTransId, TransAmount: '800', MSISDN: '2547'+Math.floor(Math.random()*90000000+10000000), BillRefNumber: '[TEST] wrong-id-'+Math.random().toString(36).slice(2,8) });
+
+    openC2bPaymentsPanel();
+    __assert(modal && modal.type === 'c2b-payments', "the real cash icon genuinely opens the real Payments panel");
+    session.c2bPaymentsState.period = 'all';
+    session.c2bPaymentsState.q = matchedTransId;
+    session.c2bPaymentsState.page = 1;
+    DB.c2bPaymentsBrowser = null;
+    for(let i=0; i<100 && (!DB.c2bPaymentsBrowser || DB.c2bPaymentsBrowser.stateKey!==JSON.stringify(session.c2bPaymentsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    const matchedRow = DB.c2bPaymentsBrowser.transactions.find(t=>t.transId===matchedTransId);
+    __assert(!!matchedRow && matchedRow.matched === true && matchedRow.clientName==='[TEST] C2B Payments Client', "the real Loan Officer genuinely sees the real matched payment with the real client name resolved");
+    let c2bHtml = renderModal();
+    __assert(!c2bHtml.includes('Assign to loan'), "a real Loan Officer (no accounting authority, not a Manager) genuinely sees no Assign control");
+
+    let mgrf138 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf138; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    openC2bPaymentsPanel();
+    session.c2bPaymentsState.period = 'all';
+    session.c2bPaymentsState.q = unmatchedTransId;
+    session.c2bPaymentsState.page = 1;
+    DB.c2bPaymentsBrowser = null;
+    for(let i=0; i<100 && (!DB.c2bPaymentsBrowser || DB.c2bPaymentsBrowser.stateKey!==JSON.stringify(session.c2bPaymentsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    const unmatchedRow = DB.c2bPaymentsBrowser.transactions.find(t=>t.transId===unmatchedTransId);
+    __assert(!!unmatchedRow && unmatchedRow.matched === false, "the real Manager genuinely sees the real unmatched payment (the 'wrong ID' case) rather than it being silently hidden");
+    c2bHtml = renderModal();
+    __assert(c2bHtml.includes('Assign to loan'), "a real Manager genuinely gets the real Assign control, as requested — previously restricted to Admin/Accountant only");
+
+    await assignC2bPayment(unmatchedRow.id, c2bLoan.id);
+    const afterAssign = (DB.c2bPaymentsBrowser.transactions||[]).find(t=>t.transId===unmatchedTransId);
+    __assert(!!afterAssign && afterAssign.matched === true, "the real Manager's Assign action genuinely posts the payment — the browser now shows it matched");
+
+    closeModal();
+    session.c2bPaymentsState = null;
+    DB.c2bPaymentsBrowser = null;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

@@ -115,6 +115,49 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(doubleMatch.status === 409, 'an already-processed C2B transaction cannot be matched/processed again');
   }
 
+  // =========================================================
+  // 6. GET /api/mpesa/c2b/transactions — the topbar Payments icon's real, broader-visibility list
+  // =========================================================
+  {
+    const transId = 'QVIEW' + Math.floor(Math.random() * 90000000 + 10000000);
+    const phone2547 = '254' + testPhone.slice(1);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '2500', MSISDN: phone2547, BillRefNumber: loanId } });
+
+    const asOfficer = await api('GET', '/api/mpesa/c2b/transactions', { token: officerToken });
+    assert(asOfficer.status === 200, 'a real Loan Officer (who holds the payments module) can genuinely view this list');
+    const row = asOfficer.json.transactions.find(t => t.transId === transId);
+    assert(!!row && row.matched === true && !!row.clientName, 'a real matched transaction genuinely shows as matched with its real client name resolved');
+    assert(typeof asOfficer.json.shortcode !== 'undefined', 'the real, non-secret configured paybill shortcode is genuinely included');
+    assert(typeof asOfficer.json.totals.unmatchedCount === 'number', 'a real, always-current unmatchedCount total is included for the topbar badge, independent of the date filter');
+
+    const searched = await api('GET', `/api/mpesa/c2b/transactions?q=${transId}`, { token: officerToken });
+    assert(searched.json.transactions.length === 1 && searched.json.transactions[0].transId === transId, 'the real search filter genuinely narrows the list by transaction reference');
+
+    const noModuleAccess = await api('GET', '/api/mpesa/c2b/transactions');
+    assert(noModuleAccess.status === 401, 'an unauthenticated request is genuinely rejected');
+  }
+
+  // =========================================================
+  // 7. Manager can now genuinely assign/match an unmatched C2B payment — a real, deliberate RBAC extension
+  // =========================================================
+  {
+    const transId = 'QMGR' + Math.floor(Math.random() * 90000000 + 10000000);
+    const unknownPhone = '254798' + Math.floor(Math.random() * 900000 + 100000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '1500', MSISDN: unknownPhone, BillRefNumber: 'another-unknown-ref' } });
+
+    const unmatchedList = await api('GET', '/api/mpesa/c2b/unmatched', { token: acctToken });
+    const found = unmatchedList.json.transactions.find(t => t.trans_id === transId);
+    assert(!!found, 'a second genuinely unmatched transaction is real and findable');
+
+    const managerMatches = await api('POST', `/api/mpesa/c2b/${found.id}/match`, { token: managerToken, body: { loan_id: loanId } });
+    assert(managerMatches.status === 200 && managerMatches.json.created, 'a real Manager can now genuinely assign/match this unmatched payment to a loan, as requested — previously restricted to Admin/Accountant only');
+
+    // The broader post_accounting_entries permission itself was never granted —
+    // this is a narrow, deliberate exception for exactly this one action.
+    const managerStillCannotPostAdjustments = await api('POST', '/api/adjustments', { token: managerToken, body: {} });
+    assert(managerStillCannotPostAdjustments.status === 403, "the Manager's real post_accounting_entries permission is unchanged — this fix did not accidentally widen it beyond assigning C2B payments");
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

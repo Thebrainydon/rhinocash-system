@@ -6,7 +6,7 @@
 'use strict';
 const { requireAuth, requirePermission, requireModule } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { branchScopeSQL, hasModuleAccess } = require('./../rbac');
+const { branchScopeSQL, hasModuleAccess, hasPermission } = require('./../rbac');
 const { all } = require('./../db');
 const mpesa = require('./../integrations/mpesa');
 
@@ -24,6 +24,19 @@ function requireAdminRole(req, res, next) {
 async function requireMpesaViewAuth(req, res, next) {
   if ((await hasModuleAccess(req.user, 'payments')) || (await hasModuleAccess(req.user, 'accounting'))) return next();
   return next({ status: 403, message: 'Your role does not have M-Pesa operational visibility' });
+}
+
+// Manually matching an unmatched C2B payment to a loan was Admin/Accountant
+// only (post_accounting_entries). A Manager resolving a mis-typed account
+// reference for their own branch's payment is a distinct, narrower real
+// need — deliberately checked here rather than granting Manager the
+// broader post_accounting_entries permission itself, which also gates
+// unrelated accounting actions (expenses, adjustments, journal entries)
+// a Manager should not gain as a side effect of this one real ask.
+async function requireCanAssignC2bPayment(req, res, next) {
+  if (req.user.role_id === 'manager') return next();
+  if (await hasPermission(req.user, 'post_accounting_entries')) return next();
+  return next({ status: 403, message: 'Your role cannot assign M-Pesa payments to a loan' });
 }
 
 const VALID_ENVIRONMENTS = ['sandbox', 'production'];
@@ -138,10 +151,70 @@ function register(router) {
     res.json({ transactions: await mpesa.unmatchedC2bTransactions() });
   });
 
-  // Manual match + post — an Accountant/Admin resolving a real unmatched
-  // Paybill payment by pointing it at the correct real loan, then posting
-  // it through the exact same real bridge as an automatic match.
-  router.post('/api/mpesa/c2b/:id/match', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+  // Real, broader-visibility list (matched AND unmatched together) for the
+  // topbar Payments icon — every C2B/Paybill transaction, searchable and
+  // date-filterable, is what lets a wrongly-referenced payment ("wrong ID
+  // used") actually be *seen* by whoever can then fix it, not just by the
+  // Admin/Accountant-only reconciliation screen above.
+  router.get('/api/mpesa/c2b/transactions', requireAuth, requireMpesaViewAuth, async (req, res) => {
+    const { get } = require('./../db');
+    const clauses = ['1=1']; const params = [];
+    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
+    if (req.query.q) {
+      clauses.push('(msisdn LIKE ? OR bill_ref_number LIKE ? OR trans_id LIKE ?)');
+      const like = `%${req.query.q}%`; params.push(like, like, like);
+    }
+    const where = clauses.join(' AND ');
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
+    const totalsRow = await get(`SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as amt FROM mpesa_c2b_transactions WHERE ${where}`, params);
+    const rows = await all(
+      `SELECT * FROM mpesa_c2b_transactions WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, (page - 1) * limit]
+    );
+
+    // Real client name, only for rows that are actually matched to a real loan.
+    const loanIds = [...new Set(rows.filter(r => r.matched_loan_id).map(r => r.matched_loan_id))];
+    const clientNameByLoanId = {};
+    if (loanIds.length) {
+      const lPh = loanIds.map(() => '?').join(',');
+      const loans = await all(`SELECT id, client_id FROM loans WHERE id IN (${lPh})`, loanIds);
+      const clientIds = [...new Set(loans.map(l => l.client_id))];
+      const clientNameById = {};
+      if (clientIds.length) {
+        const cPh = clientIds.map(() => '?').join(',');
+        (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientNameById[c.id] = c.name; });
+      }
+      loans.forEach(l => { clientNameByLoanId[l.id] = clientNameById[l.client_id]; });
+    }
+
+    const activeEnv = await mpesa.getActiveEnvironment();
+    const activeConfig = activeEnv ? await mpesa.getMaskedConfig(activeEnv) : null;
+    // Deliberately NOT scoped by the from/to filter above — this is what
+    // backs the topbar badge, which should always mean "needing attention
+    // right now", not "needing attention within whatever date range is
+    // currently selected in the panel".
+    const unmatchedRow = await get(`SELECT COUNT(*) as cnt FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
+
+    res.json({
+      transactions: rows.map(r => ({
+        id: r.id, transId: r.trans_id, amount: r.amount, phone: r.msisdn, accountRef: r.bill_ref_number,
+        matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id,
+        clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : null,
+        createdAt: r.created_at,
+      })),
+      shortcode: activeConfig ? activeConfig.shortcode : null,
+      pagination: { page, limit, total: totalsRow.cnt, totalPages: Math.max(1, Math.ceil(totalsRow.cnt / limit)) },
+      totals: { count: totalsRow.cnt, amount: totalsRow.amt, unmatchedCount: unmatchedRow.cnt },
+    });
+  });
+
+  // Manual match + post — resolving a real unmatched Paybill payment (most
+  // often one where the client typed the wrong account reference) by
+  // pointing it at the correct real loan, then posting it through the
+  // exact same real bridge as an automatic match.
+  router.post('/api/mpesa/c2b/:id/match', requireAuth, requireCanAssignC2bPayment, async (req, res, next) => {
     const { get, run } = require('./../db');
     const tx = await get('SELECT * FROM mpesa_c2b_transactions WHERE id = ?', [req.params.id]);
     if (!tx) return next({ status: 404, message: 'Transaction not found' });

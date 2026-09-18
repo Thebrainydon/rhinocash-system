@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  807 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 634 passed, 0 failed  (drives the real UI functions in
+Backend:  816 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 640 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,441 passed, 0 failed
+Total:    1,456 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -90,7 +90,16 @@ them) · a Notifications panel (topbar bell icon) over the existing
 previously-silent bug: `markRead()`/`markAllRead()` only ever flipped
 the local in-memory flag and never told the server, so a notification
 marked read came back unread on the next login. Both now genuinely
-persist server-side.
+persist server-side · a Payments panel (topbar cash icon) over the
+existing M-Pesa C2B/Paybill transaction data, showing both matched and
+unmatched payments together (so a payment recorded against a wrong/
+mistyped account reference is genuinely visible, not silently hidden in
+an Admin-only screen) — reused `mpesa_c2b_transactions` and the existing
+manual-match bridge. Real, deliberate RBAC extension made here: Managers
+can now assign/match an unmatched payment to a loan themselves (a
+narrow addition scoped to exactly that action, not the broader
+`post_accounting_entries` permission it previously required — a
+Manager's other accounting authority is unchanged).
 
 ## What is explicitly NOT verified, stated plainly
 

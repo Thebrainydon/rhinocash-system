@@ -859,7 +859,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1059,7 +1059,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0 };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1144,6 +1144,11 @@ async function loadCoreData(){
       // regardless of actual configuration, even though this real
       // status endpoint already existed for the M-Pesa Admin Config work.
       calls.push(api.get('/api/integrations/status').then(r=>{ DB.integrationsStatus = r; }).catch(()=>{}));
+    }
+    if(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')){
+      // Loaded up front purely so the topbar's unmatched-payment badge is
+      // accurate the moment the app loads, same reason DB.notifications is.
+      calls.push(api.get('/api/mpesa/c2b/transactions?limit=1').then(r=>{ DB.c2bUnmatchedCount = r.totals.unmatchedCount; }).catch(()=>{}));
     }
   }
   await Promise.all(calls);
@@ -1765,6 +1770,7 @@ function renderApp(){
             ${session.role!=="Investor" ? `<div class="bell" onclick="openNotificationsPanel()" title="Notifications">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
+            ${(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')) ? `<div class="bell" onclick="openC2bPaymentsPanel()" title="Payments">💵${DB.c2bUnmatchedCount>0?`<span class="bell-dot">${DB.c2bUnmatchedCount}</span>`:""}</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
@@ -9592,8 +9598,9 @@ function renderModal(){
   else if(modal.type === "pending-payments") body = renderPendingPaymentsModal();
   else if(modal.type === "tickets") body = renderTicketsModal();
   else if(modal.type === "notifications") body = renderNotificationsModal();
+  else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
@@ -9910,6 +9917,86 @@ function renderNotificationsModal(){
         </div>
       `).join("") : `<div class="notif-card"><div class="notif-card-head">${notifCardTimestamp(new Date())}</div><div class="notif-card-body">You have no notifications</div></div>`}
     </div>
+  `;
+}
+
+// ==================== Payments (M-Pesa/Paybill) — real, broader-visibility browser over /api/mpesa/c2b/transactions (topbar cash icon) ====================
+const C2B_PERIOD_OPTIONS = [
+  { value:'today', label:'Today' },
+  { value:'week', label:'This Week' },
+  { value:'month', label:'This Month' },
+  { value:'all', label:'All Time' },
+];
+function c2bPeriodRange(period){
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0,10);
+  if(period==='today') return { from: todayStr, to: todayStr };
+  if(period==='week'){ const d = new Date(now); d.setDate(d.getDate()-6); return { from: d.toISOString().slice(0,10), to: todayStr }; }
+  if(period==='month'){ const d = new Date(now.getFullYear(), now.getMonth(), 1); return { from: d.toISOString().slice(0,10), to: todayStr }; }
+  return { from:'', to:'' }; // all time
+}
+let c2bPaymentsReqSeq = 0;
+async function loadC2bPaymentsBrowser(){
+  const st = session.c2bPaymentsState;
+  const seq = ++c2bPaymentsReqSeq;
+  return withRequest('load-c2b-payments:'+JSON.stringify(st), async ()=>{
+    const { from, to } = c2bPeriodRange(st.period);
+    const params = new URLSearchParams({ page: st.page||1, limit: 20 });
+    if(from) params.set('from', from);
+    if(to) params.set('to', to);
+    if(st.q) params.set('q', st.q);
+    const result = await api.get('/api/mpesa/c2b/transactions?'+params.toString());
+    if(seq !== c2bPaymentsReqSeq) return; // a newer request has since superseded this one
+    result.stateKey = JSON.stringify(st);
+    DB.c2bPaymentsBrowser = result;
+    DB.c2bUnmatchedCount = result.totals.unmatchedCount;
+  });
+}
+function openC2bPaymentsPanel(){
+  if(!session.c2bPaymentsState) session.c2bPaymentsState = { period:'today', q:'', page:1 };
+  openModal('c2b-payments');
+}
+function assignC2bPayment(id, loanId){
+  if(!loanId) { toast("Select a loan first"); return; }
+  return withRequest('assign-c2b-'+id, async ()=>{
+    await api.post(`/api/mpesa/c2b/${id}/match`, { loan_id: loanId });
+    toast("Payment assigned and posted");
+    DB.c2bPaymentsBrowser = null;
+    await loadC2bPaymentsBrowser();
+  });
+}
+function renderC2bPaymentsModal(){
+  const st = session.c2bPaymentsState;
+  if(!DB.c2bPaymentsBrowser || DB.c2bPaymentsBrowser.stateKey !== JSON.stringify(st)){
+    loadC2bPaymentsBrowser();
+    return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+  }
+  const d = DB.c2bPaymentsBrowser;
+  const { page, totalPages, total } = d.pagination;
+  const canAssign = hasPermission(session.role,"Post Accounting Entries") || session.role==='Manager';
+  return `
+    <div class="modal-head"><h3>Payments (${fmt(d.totals.amount)})</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="pill-row" style="margin-bottom:10px; flex-wrap:wrap;">
+      <select onchange="session.c2bPaymentsState.period=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();">
+        ${C2B_PERIOD_OPTIONS.map(p=>`<option value="${p.value}" ${p.value===st.period?'selected':''}>${p.label}</option>`).join("")}
+      </select>
+      <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.c2bPaymentsState.q=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();">
+    </div>
+    <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
+      <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Account</th><th>Transaction</th><th>Amount</th><th>Date</th>${canAssign?'<th></th>':''}</tr>
+      ${d.transactions.map(t=>`<tr>
+        <td>${t.matched ? escapeHtml(t.clientName||'—') : `<span class="badge red">Unassigned</span>`}</td>
+        <td>${escapeHtml(t.phone||'—')}</td>
+        <td>${escapeHtml(d.shortcode||'—')}</td>
+        <td class="hint">${escapeHtml(t.accountRef||'—')}</td>
+        <td>${escapeHtml(t.transId)}</td>
+        <td>${fmt(t.amount)}</td>
+        <td>${new Date(t.createdAt).toLocaleDateString()}</td>
+        ${canAssign ? (t.matched ? '<td></td>' : `<td><select id="c2b-assign-${t.id}"><option value="">Assign to loan…</option>${activeLoans().map(l=>`<option value="${l.id}">${l.id} — ${clientName(l.clientId)}</option>`).join("")}</select>
+          <button class="btn btn-sm btn-primary" onclick="assignC2bPayment('${t.id}', document.getElementById('c2b-assign-${t.id}').value)">Assign</button></td>`) : ''}
+      </tr>`).join("") || `<tr><td colspan="${canAssign?8:7}" class="empty">No payments match the selected filters.</td></tr>`}
+    </table></div>
+    ${total>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.c2bPaymentsState.page=${page-1}; DB.c2bPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.c2bPaymentsState.page=${page+1}; DB.c2bPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
   `;
 }
 
