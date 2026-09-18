@@ -130,6 +130,21 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     const dupPhoneLead = await api('POST', '/api/leads', { token: officerToken, body: { name: 'Dup Phone Lead', phone: clientPhone } });
     const dupConvert = await api('POST', `/api/leads/${dupPhoneLead.json.lead.id}/convert`, { token: officerToken, body: {} });
     assert(dupConvert.status === 409, 'AA: converting a lead whose phone already belongs to a real client is rejected — no duplicate client');
+
+    // Create Client Lead form's optional fields (Client Idno/Location/Client Location/Kin Contact/Next of Kin/Business Type).
+    const richLeadPhone = '07' + Math.floor(Math.random() * 90000000 + 10000000);
+    const richLead = await api('POST', '/api/leads', { token: officerToken, body: {
+      name: 'Rich Field Lead', phone: richLeadPhone, national_id: '12345678', address: 'Kisumu CBD', client_location: 'Near the market gate',
+      next_of_kin: 'Jane Kin', next_of_kin_phone: '0711222333', business_type: 'Boda boda',
+    } });
+    assert(richLead.status === 201, 'a lead with every real optional field genuinely saves');
+    assert(richLead.json.lead.national_id === '12345678' && richLead.json.lead.client_location === 'Near the market gate' && richLead.json.lead.next_of_kin === 'Jane Kin' && richLead.json.lead.next_of_kin_phone === '0711222333' && richLead.json.lead.business_type === 'Boda boda', 'every real optional field genuinely persisted on the lead, not silently dropped');
+
+    const richConvert = await api('POST', `/api/leads/${richLead.json.lead.id}/convert`, { token: officerToken, body: {} });
+    assert(richConvert.status === 200, 'a lead with every optional field genuinely converts');
+    assert(richConvert.json.client.national_id === '12345678' && richConvert.json.client.address === 'Kisumu CBD' && richConvert.json.client.next_of_kin === 'Jane Kin' && richConvert.json.client.next_of_kin_phone === '0711222333' && richConvert.json.client.business_type === 'Boda boda', 'every real field with a matching client column genuinely carried over onto the real new client record, not re-entered from scratch');
+    const carriedClient = await api('GET', `/api/clients/${richConvert.json.client.id}`, { token: officerToken });
+    assert(carriedClient.status === 200 && carriedClient.json.client.national_id === '12345678', 'the carried-over fields genuinely persisted server-side, confirmed via a fresh direct fetch of the real client record');
   }
 
   // AB/AC. Interactions.

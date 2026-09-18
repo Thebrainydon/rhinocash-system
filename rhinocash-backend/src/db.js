@@ -372,7 +372,18 @@ CREATE TABLE IF NOT EXISTS client_leads (
   branch_id TEXT REFERENCES branches(id),
   converted_client_id TEXT REFERENCES clients(id),
   created_by TEXT REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT iso_now()
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  -- Real optional fields the Create Client Lead form can capture — the
+  -- ones with a same-named column on clients (national_id/address/
+  -- next_of_kin/next_of_kin_phone/business_type) carry over verbatim
+  -- when the lead converts; client_location has no client-side
+  -- equivalent yet, so it stays lead-only.
+  national_id TEXT,
+  address TEXT,
+  client_location TEXT,
+  next_of_kin TEXT,
+  next_of_kin_phone TEXT,
+  business_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS client_interactions (

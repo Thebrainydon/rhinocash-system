@@ -1477,6 +1477,29 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     try { await addClient({ name:'Dup', phone:newClient.phone }); } catch(e){ dupBlocked = (e.status === 409); }
     __assert(dupBlocked, "the real addClient() call is rejected (409) for a duplicate phone number, through the actual UI function");
 
+    // Create Client Lead modal: real dynamic "Add More Field" + real creation, through the actual UI functions.
+    openCreateLeadModal();
+    __assert(modal && modal.type === 'create-lead', "openCreateLeadModal() genuinely opens the real Create Client Lead modal");
+    __assert(DB.leadForm.addFieldKey === 'next_of_kin_phone', "the 'Add More Field' selector genuinely defaults to the first real not-yet-added field (Kin Contact)");
+    DB.leadForm.name = 'Frontend Lead Test';
+    DB.leadForm.phone = '0733900'+Math.floor(Math.random()*900+100);
+    DB.leadForm.national_id = '99988877';
+    DB.leadForm.address = 'Kisumu Town';
+    DB.leadForm.client_location = 'Behind the bank';
+    addLeadExtraField();
+    __assert('next_of_kin_phone' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'next_of_kin', "addLeadExtraField() through the real UI function genuinely added the real Kin Contact field and advanced to the next available one (Next of Kin)");
+    DB.leadForm.extra.next_of_kin_phone = '0700111222';
+    addLeadExtraField();
+    DB.leadForm.extra.next_of_kin = 'Peter Kin';
+    __assert('next_of_kin' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'business_type', "a second real call genuinely added Next of Kin and advanced to the last remaining real field (Business Type)");
+
+    const leadModalHtml = renderCreateLeadModal();
+    __assert(leadModalHtml.includes('Kin Contact') && leadModalHtml.includes('Next of Kin'), "the real rendered modal genuinely shows both real fields that were dynamically added");
+
+    await submitCreateLead({ preventDefault(){}, target:{} });
+    __assert(DB.leads.some(l=>l.name==='Frontend Lead Test'), "a real lead was created via the actual Create Client Lead modal flow and appears in the real in-memory list");
+    __assert(!modal, "submitCreateLead() genuinely closes the real modal on success");
+
     // Real file upload — the standard apiRequest() can't do this; uploadFile() must.
     const fakeFile = { arrayBuffer: async ()=> new TextEncoder().encode('fake png bytes').buffer, type: 'image/png', name: 'client-photo.png' };
     const uploaded = await uploadFile(fakeFile);

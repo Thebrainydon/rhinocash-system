@@ -853,6 +853,10 @@ function resolveRoute(itemLabel){
   return LABEL_ROUTES[itemLabel];
 }
 function sidebarNavigate(itemLabel){
+  // "Create a Lead" is a quick action reachable from anywhere, not a page
+  // — it opens the real Create Client Lead modal on top of whatever the
+  // user is currently looking at, same as "Create Loan Application" etc.
+  if(itemLabel === 'Create a Lead'){ session.sidebarOpen = false; openCreateLeadModal(); return; }
   const route = resolveRoute(itemLabel);
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
@@ -1060,7 +1064,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1293,7 +1297,11 @@ async function addDocument(clientId, name, type, filePath){
   return d;
 }
 async function addLead(data){
-  const res = await api.post('/api/leads', { name:data.name, phone:data.phone, source:data.source||null, notes:data.notes||null });
+  const res = await api.post('/api/leads', {
+    name:data.name, phone:data.phone, source:data.source||null, notes:data.notes||null,
+    national_id:data.national_id||null, address:data.address||null, client_location:data.client_location||null,
+    next_of_kin:data.next_of_kin||null, next_of_kin_phone:data.next_of_kin_phone||null, business_type:data.business_type||null,
+  });
   const l = { id:res.lead.id, name:res.lead.name, phone:res.lead.phone, source:res.lead.source, status:res.lead.status, notes:res.lead.notes, createdAt:res.lead.created_at };
   DB.leads.unshift(l);
   return l;
@@ -3969,29 +3977,79 @@ function renderClientLeads(){
     <td>${l.status!=="Converted"? `<button class="btn btn-sm btn-outline" onclick="withRequest('convert-lead-${l.id}', ()=>convertLead('${l.id}'))">Convert to Client</button>`:"—"}</td></tr>`).join("");
   return `
     <div class="card">
-      <div class="card-title">Client Leads <small>prospects not yet onboarded</small></div>
+      <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
+        <span>Client Leads <small>prospects not yet onboarded</small></span>
+        <span class="btn btn-primary btn-sm" onclick="openCreateLeadModal()">+ Create</span>
+      </div>
       <div class="table-wrap"><table><tr><th>Name</th><th>Phone</th><th>Source</th><th>Status</th><th></th></tr>
       ${rows || `<tr><td colspan="5" class="empty">No leads yet.</td></tr>`}</table></div>
     </div>
-    <div class="card" style="max-width:600px;">
-      <div class="card-title">Add Lead</div>
-      <form onsubmit="return submitAddLead(event)">
-        <div class="field"><label>Name</label><input name="name" required></div>
-        <div class="field"><label>Phone</label><input name="phone" required></div>
-        <div class="field"><label>Source</label><select name="source"><option>Referral</option><option>Walk-in</option><option>Social Media</option><option>Field Marketing</option></select></div>
-        <div class="field"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-        <button class="btn btn-primary" type="submit">Save Lead</button>
+  `;
+}
+// ---- Create Client Lead: a real modal, reachable from the sidebar's
+// "Create a Lead" quick action or this list's own "+ Create" button.
+// "Add More Field" lets the user optionally attach Kin Contact/Next of
+// Kin/Business Type — real client_leads columns, not thrown away, and
+// carried over onto the real client record when the lead converts. ----
+const LEAD_EXTRA_FIELD_DEFS = [
+  { key:'next_of_kin_phone', label:'Kin Contact' },
+  { key:'next_of_kin', label:'Next of Kin' },
+  { key:'business_type', label:'Business Type' },
+];
+function openCreateLeadModal(){
+  DB.leadForm = { name:"", phone:"", national_id:"", address:"", client_location:"", extra:{}, addFieldKey: LEAD_EXTRA_FIELD_DEFS[0].key };
+  openModal('create-lead');
+}
+function addLeadExtraField(){
+  const f = DB.leadForm;
+  const def = LEAD_EXTRA_FIELD_DEFS.find(d=>d.key===f.addFieldKey);
+  if(!def || f.extra[def.key]!==undefined) return;
+  f.extra[def.key] = "";
+  const next = LEAD_EXTRA_FIELD_DEFS.find(d=>f.extra[d.key]===undefined);
+  f.addFieldKey = next ? next.key : "";
+  renderApp();
+}
+function renderCreateLeadModal(){
+  const f = DB.leadForm;
+  const remaining = LEAD_EXTRA_FIELD_DEFS.filter(d=>f.extra[d.key]===undefined);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Create Client Lead</h3>
+      <form onsubmit="return submitCreateLead(event)">
+        ${remaining.length ? `
+        <div class="field">
+          <label>Add More Field</label>
+          <div class="pill-row">
+            <select onchange="DB.leadForm.addFieldKey=this.value" style="flex:1;">
+              ${remaining.map(d=>`<option value="${d.key}" ${f.addFieldKey===d.key?'selected':''}>${d.label}</option>`).join("")}
+            </select>
+            <span class="btn btn-outline btn-sm" onclick="addLeadExtraField()">+ Add</span>
+          </div>
+        </div>` : ""}
+        <div class="field"><label>Name</label><input value="${escapeHtml(f.name)}" oninput="DB.leadForm.name=this.value" required></div>
+        <div class="field"><label>Contact</label><input value="${escapeHtml(f.phone)}" oninput="DB.leadForm.phone=this.value" required></div>
+        <div class="field"><label>Client Idno (Optional)</label><input value="${escapeHtml(f.national_id)}" oninput="DB.leadForm.national_id=this.value"></div>
+        <div class="field"><label>Location</label><input value="${escapeHtml(f.address)}" oninput="DB.leadForm.address=this.value"></div>
+        <div class="field"><label>Client Location</label><input value="${escapeHtml(f.client_location)}" oninput="DB.leadForm.client_location=this.value"></div>
+        ${Object.keys(f.extra).map(key=>{
+          const def = LEAD_EXTRA_FIELD_DEFS.find(d=>d.key===key);
+          return `<div class="field"><label>${def.label}</label><input value="${escapeHtml(f.extra[key])}" oninput="DB.leadForm.extra['${key}']=this.value"></div>`;
+        }).join("")}
+        <div style="text-align:right; margin-top:16px;">
+          <button class="btn btn-green" type="submit">Create</button>
+        </div>
       </form>
     </div>
   `;
 }
-function submitAddLead(ev){
+function submitCreateLead(ev){
   ev.preventDefault();
-  const f = new FormData(ev.target);
-  const data = Object.fromEntries(f);
-  return withRequest('add-lead', async ()=>{
-    await addLead(data);
-    toast("Lead added");
+  const f = DB.leadForm;
+  return withRequest('create-lead', async ()=>{
+    await addLead({ name:f.name, phone:f.phone, national_id:f.national_id||null, address:f.address||null, client_location:f.client_location||null, ...f.extra });
+    toast(`${f.name} added as a lead`);
+    closeModal();
   });
 }
 function openClient(id){
@@ -10034,6 +10092,7 @@ function renderModal(){
   else if(modal.type === "notifications") body = renderNotificationsModal();
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
   else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
+  else if(modal.type === "create-lead") body = renderCreateLeadModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  857 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 651 passed, 0 failed  (drives the real UI functions in
+Backend:  862 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 658 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,508 passed, 0 failed
+Total:    1,520 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -138,7 +138,17 @@ branch/officer scoping and "outstanding" definition — `status != 'Paid'`
 recomputed and matched exactly in its test. Every other role keeps the
 existing ledger-based Cashflow (opening/closing balance) report
 unchanged, since that is a genuinely different, still-valid concept for
-those roles.
+those roles · Add Client was redesigned to match the reference layout
+(single-column, its own field order) — purely presentational, the real
+client-creation and file-upload logic underneath was untouched · Create
+a Lead is now a real modal (reachable from the sidebar or the Client
+Leads list) with a dynamic "Add More Field" control for three genuinely
+optional fields (Kin Contact, Next of Kin, Business Type) alongside the
+always-present Client Idno/Location/Client Location — all real
+`client_leads` columns now, and every one with a same-named column on
+`clients` (national_id/address/next_of_kin/next_of_kin_phone/
+business_type) carries over onto the real client record the moment the
+lead converts, instead of being re-entered from scratch.
 
 ## What is explicitly NOT verified, stated plainly
 

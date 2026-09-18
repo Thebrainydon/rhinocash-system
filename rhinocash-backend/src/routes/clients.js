@@ -200,8 +200,10 @@ function register(router) {
     let branchId;
     try { branchId = await resolveWriteBranchId(req.user, b.branch_id); } catch (e) { return next(e); }
     const id = 'lead_' + crypto.randomUUID();
-    await run('INSERT INTO client_leads (id, name, phone, source, notes, branch_id, created_by) VALUES (?,?,?,?,?,?,?)',
-      [id, b.name, b.phone || null, b.source || null, b.notes || null, branchId, req.user.id]);
+    await run(`INSERT INTO client_leads (id, name, phone, source, notes, branch_id, created_by, national_id, address, client_location, next_of_kin, next_of_kin_phone, business_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, b.name, b.phone || null, b.source || null, b.notes || null, branchId, req.user.id,
+        b.national_id || null, b.address || null, b.client_location || null, b.next_of_kin || null, b.next_of_kin_phone || null, b.business_type || null]);
     await logAction(req, { action: 'Created lead', module: 'clients', recordType: 'Lead', recordId: id, newValue: { name: b.name } });
     res.status(201).json({ lead: await get('SELECT * FROM client_leads WHERE id = ?', [id]) });
   });
@@ -221,8 +223,13 @@ function register(router) {
     const clientId = 'cl_' + crypto.randomUUID();
     const code = generateClientCode();
     const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
-    await run('INSERT INTO clients (id, client_code, name, phone, branch_id, officer_id, created_by) VALUES (?,?,?,?,?,?,?)',
-      [clientId, code, lead.name, lead.phone, branchId, officerId, req.user.id]);
+    // Carry over every real field the lead form captured that the client
+    // record has a real matching column for — client_location has none
+    // yet, so it stays on the lead only, never silently fabricated onto
+    // the new client record.
+    await run(`INSERT INTO clients (id, client_code, name, phone, branch_id, officer_id, created_by, national_id, address, next_of_kin, next_of_kin_phone, business_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [clientId, code, lead.name, lead.phone, branchId, officerId, req.user.id, lead.national_id, lead.address, lead.next_of_kin, lead.next_of_kin_phone, lead.business_type]);
     await run('UPDATE client_leads SET status = ?, converted_client_id = ? WHERE id = ?', ['Converted', clientId, lead.id]);
     await logAction(req, { action: 'Converted lead to client', module: 'clients', recordType: 'Lead', recordId: lead.id, newValue: clientId });
     res.json({ client: await get('SELECT * FROM clients WHERE id = ?', [clientId]) });
