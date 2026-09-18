@@ -163,21 +163,25 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     async function otpFor(token) { const r = await api('POST', '/api/requisitions/request-otp', { token, body: {} }); return r.json.otpForTesting; }
 
     const cashBefore = await api('GET', '/api/accounting/cash-position?branch_id=br_nairobi', { token: adminToken });
+    const liabilityAccounts = await api('GET', '/api/accounts?account_type=Liability&status=Active', { token: acctToken });
+    const bankLoansAccount = liabilityAccounts.json.accounts.find(a => a.name === 'Bank loans payable');
+    assert(bankLoansAccount, 'a real non-Expense (Liability) GL account exists for a vendor payment\'s Journal Account to post against');
 
-    const noOtp = await api('POST', '/api/utility-payments', { token: acctToken, body: { payment_method: 'Bank Transfer', items: [{ description: 'Office cleaning', cost: 2500 }] } });
+    const validBody = () => ({ payment_method: 'Mpesa B2C', recipient_mpesa_number: '0722999888', recipient_name: 'Kenya Power', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }] });
+
+    const noOtp = await api('POST', '/api/utility-payments', { token: acctToken, body: validBody() });
     assert(noOtp.status === 400, 'a vendor payment without an OTP code is genuinely rejected');
 
-    const noItems = await api('POST', '/api/utility-payments', { token: acctToken, body: { payment_method: 'Bank Transfer', items: [], otp_code: await otpFor(acctToken) } });
+    const noItems = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), items: [], otp_code: await otpFor(acctToken) } });
     assert(noItems.status === 400, 'a vendor payment with no line items is genuinely rejected');
 
-    const missingRecipient = await api('POST', '/api/utility-payments', { token: acctToken, body: { payment_method: 'Mpesa B2C', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }], otp_code: await otpFor(acctToken) } });
-    assert(missingRecipient.status === 400, "a Mpesa B2C payment without the recipient's real mpesa number/name is genuinely rejected");
+    const missingRecipient = await api('POST', '/api/utility-payments', { token: acctToken, body: { payment_method: 'Paybill B2B', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }], otp_code: await otpFor(acctToken) } });
+    assert(missingRecipient.status === 400, "a vendor payment without the recipient's real mpesa number/name is genuinely rejected — every real payment_method is an mpesa channel");
 
-    const paid = await api('POST', '/api/utility-payments', { token: acctToken, body: {
-      payment_method: 'Mpesa B2C', recipient_mpesa_number: '0722999888', recipient_name: 'Kenya Power',
-      items: [{ description: 'Electricity — Kenya Power', cost: 4500 }],
-      otp_code: await otpFor(acctToken),
-    } });
+    const badAccount = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), items: [{ description: 'Bogus', cost: 100, expense_account_id: 'not-a-real-account' }], otp_code: await otpFor(acctToken) } });
+    assert(badAccount.status === 400, 'a vendor payment item naming a non-existent Journal Account is genuinely rejected');
+
+    const paid = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), otp_code: await otpFor(acctToken) } });
     assert(paid.status === 201 && paid.json.utilityPayment.status === 'Paid', 'a real vendor payment is created and immediately Paid, OTP-confirmed');
     assert(paid.json.utilityPayment.expense_id, 'the vendor payment is genuinely linked to a real expense record');
     assert(Number(paid.json.utilityPayment.amount) === 4500, 'the vendor payment amount is genuinely the sum of its real line items');
@@ -185,19 +189,24 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const cashAfter = await api('GET', '/api/accounting/cash-position?branch_id=br_nairobi', { token: adminToken });
     assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'the real vendor payment genuinely decreased the real branch cash position');
 
-    const wrongRole = await api('POST', '/api/utility-payments', { token: officerToken, body: { payment_method: 'Bank Transfer', items: [{ description: 'Water', cost: 1000 }], otp_code: '000000' } });
+    const wrongRole = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), otp_code: '000000' } });
     assert(wrongRole.status === 403, 'a Loan Officer cannot post a vendor payment — requires post_accounting_entries');
 
     const multiItem = await api('POST', '/api/utility-payments', { token: acctToken, body: {
-      payment_method: 'Cash',
-      items: [{ description: 'Stationery', cost: 300 }, { description: 'Cleaning supplies', cost: 200 }],
+      payment_method: 'BuyGoods (Till)', recipient_mpesa_number: '774411', recipient_name: 'Office Supplies Ltd',
+      items: [
+        { description: 'Stationery', cost: 300 },
+        { description: 'Loan portfolio bad debt top-up', cost: 200, expense_account_id: bankLoansAccount.id },
+      ],
       otp_code: await otpFor(acctToken),
     } });
     assert(multiItem.status === 201 && Number(multiItem.json.utilityPayment.amount) === 500, 'a multi-item vendor payment genuinely sums all its real line items (300 + 200)');
     assert(Array.isArray(multiItem.json.utilityPayment.items) && multiItem.json.utilityPayment.items.length === 2, 'the multi-item vendor payment genuinely persisted both real line items, not a flattened single row');
+    assert(multiItem.json.utilityPayment.items.some(it => it.expense_account_id === bankLoansAccount.id), 'the item that named the real non-Expense "Bank loans payable" account genuinely recorded it — the Journal Account selector is not restricted to Expense accounts');
 
     const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${multiItem.json.utilityPayment.expense_id}`, { token: adminToken });
     assert(glCheck.json.entries.length === 3, 'a 2-item vendor payment posts a real 3-line journal entry (one debit per item + one credit) — still real double-entry, just more than 2 lines');
+    assert(glCheck.json.entries.some(e => e.account_id === bankLoansAccount.id), 'one of the real journal lines genuinely debits the real "Bank loans payable" account the item named');
     assert(glCheck.json.entries.reduce((s, e) => s + Number(e.debit), 0) === glCheck.json.entries.reduce((s, e) => s + Number(e.credit), 0), 'the multi-item vendor payment journal entry is genuinely balanced');
   }
 

@@ -139,6 +139,15 @@ async function seedChartOfAccounts() {
     ['fee_income', '4010', 'Fee Income', 'Revenue'],
     ['operating_expense', '5000', 'Operating Expenses', 'Expense'],
     ['overpayment_suspense', '2100', 'Overpayment Suspense (client credit balances)', 'Liability'],
+    // Real non-Expense accounts a vendor payment's Journal Account can
+    // also post to — the Vendor Payment Form isn't restricted to Expense
+    // accounts the way a requisition is.
+    ['bad_debt_reserve', '2101', 'Bad Debt Reserve', 'Liability'],
+    ['bank_loans_payable', '2102', 'Bank loans payable', 'Liability'],
+    ['clients_wallet', '2103', 'Clients Wallet', 'Liability'],
+    ['deferred_income', '2104', 'Deffered income', 'Liability'],
+    ['income_taxes_payable', '2105', 'Income taxes payable', 'Liability'],
+    ['loan_overpayments', '2106', 'Loan overpayments', 'Liability'],
     // Granular expense accounts a requisition can actually be charged
     // to — previously every requisition landed on the one generic
     // "Operating Expenses" account regardless of what it was really for.

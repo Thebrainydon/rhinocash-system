@@ -7544,7 +7544,7 @@ function renderUtilityPaymentsPage(){
     </div>
   `;
 }
-const UTIL_PAYMENT_METHODS = ["Mpesa B2C","Bank Transfer","Cash"];
+const UTIL_PAYMENT_METHODS = ["Mpesa B2C","Paybill B2B","BuyGoods (Till)"];
 function blankUtilItem(){ return { description:"", expense_account_id:"", cost:"" }; }
 function openCreateUtilityPaymentForm(){
   DB.utilPaymentForm = { payment_method:UTIL_PAYMENT_METHODS[0], recipient_mpesa_number:"", recipient_name:"", items:[blankUtilItem()], otp_code:"", otpRequested:false, otpForTesting:null };
@@ -7577,7 +7577,11 @@ function requestUtilPaymentOtp(){
 function renderCreateUtilityPaymentPage(){
   const f = DB.utilPaymentForm;
   const items = f.items;
-  const expenseAccounts = (DB.accounts||[]).filter(a=>a.account_type==='Expense' && a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
+  // Unlike a requisition's Expense Account, a vendor payment's Journal
+  // Account isn't restricted to Expense-type accounts — it can post
+  // against a liability (e.g. a bank loan repayment, a client wallet
+  // top-up) just as legitimately as an expense.
+  const journalAccounts = (DB.accounts||[]).filter(a=>a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
   return `
     <div class="card">
       <div style="display:flex; align-items:center; margin-bottom:18px;">
@@ -7604,7 +7608,7 @@ function renderCreateUtilityPaymentPage(){
             <td><input value="${escapeHtml(it.description)}" oninput="updateUtilItemField(${idx},'description',this.value)" placeholder="e.g. Office cleaning" required></td>
             <td><select onchange="updateUtilItemField(${idx},'expense_account_id',this.value)">
               <option value="">-- Select Account --</option>
-              ${expenseAccounts.map(a=>`<option value="${a.id}" ${it.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
+              ${journalAccounts.map(a=>`<option value="${a.id}" ${it.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
             </select></td>
             <td><input type="number" min="0.01" step="0.01" value="${it.cost}" style="width:110px;" oninput="updateUtilItemField(${idx},'cost',this.value)" required></td>
             <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeUtilItemRow(${idx})">✕</span>`:""}</td>
@@ -7633,8 +7637,8 @@ function submitUtilityPayment(ev){
   for(const it of items){
     if(!(Number(it.cost)>0)){ toast("Each item needs a positive cost"); return false; }
   }
-  if(f.payment_method === 'Mpesa B2C' && (!f.recipient_mpesa_number || !f.recipient_name)){
-    toast("A Mpesa B2C payment needs the recipient's Mpesa number and name"); return false;
+  if(!f.recipient_mpesa_number || !f.recipient_name){
+    toast("Enter the recipient's Mpesa number and name"); return false;
   }
   if(!f.otp_code){ toast("Enter the OTP code sent to your M-Pesa number"); return false; }
   return withRequest('submit-utility', async ()=>{

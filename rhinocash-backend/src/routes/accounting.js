@@ -346,8 +346,10 @@ function register(router) {
       if (!it.description || !(Number(it.cost) > 0)) return next({ status: 400, message: 'Each item needs a description and a positive cost' });
     }
     if (!b.payment_method) return next({ status: 400, message: 'payment_method is required' });
-    if (b.payment_method === 'Mpesa B2C' && (!b.recipient_mpesa_number || !b.recipient_name)) {
-      return next({ status: 400, message: "A Mpesa B2C payment needs the recipient's Mpesa number and name" });
+    // Every real payment_method option (Mpesa B2C/Paybill B2B/BuyGoods) is
+    // an M-Pesa disbursement channel, so a real recipient is always needed.
+    if (!b.recipient_mpesa_number || !b.recipient_name) {
+      return next({ status: 400, message: "Enter the recipient's Mpesa number and name" });
     }
     if (!b.otp_code) return next({ status: 400, message: 'otp_code is required' });
     const otp = await get(
@@ -361,8 +363,11 @@ function register(router) {
     for (const it of items) {
       let expenseAccountId = null;
       if (it.expense_account_id) {
-        const acct = await get(`SELECT id FROM gl_accounts WHERE id = ? AND account_type = 'Expense'`, [it.expense_account_id]);
-        if (!acct) return next({ status: 400, message: `"${it.expense_account_id}" is not a real Expense account` });
+        // Not restricted to Expense-type accounts — a vendor payment's
+        // Journal Account can legitimately be a liability too (e.g. a bank
+        // loan repayment, a client wallet top-up).
+        const acct = await get(`SELECT id FROM gl_accounts WHERE id = ?`, [it.expense_account_id]);
+        if (!acct) return next({ status: 400, message: `"${it.expense_account_id}" is not a real account` });
         expenseAccountId = acct.id;
       }
       resolvedItems.push({ description: it.description, cost: Number(it.cost), expense_account_id: expenseAccountId });
@@ -433,8 +438,10 @@ function register(router) {
         }
         let expenseAccountId = null;
         if (r.journal_account) {
-          const acct = await get(`SELECT id FROM gl_accounts WHERE account_type = 'Expense' AND (LOWER(name) = LOWER(?) OR LOWER(code) = LOWER(?))`, [r.journal_account, r.journal_account]);
-          if (!acct) { errors.push({ row: rowNum, error: `Expense account "${r.journal_account}" was not found` }); continue; }
+          // Not restricted to Expense-type accounts — see the same note
+          // on the single Vendor Payment Form route above.
+          const acct = await get(`SELECT id FROM gl_accounts WHERE LOWER(name) = LOWER(?) OR LOWER(code) = LOWER(?)`, [r.journal_account, r.journal_account]);
+          if (!acct) { errors.push({ row: rowNum, error: `Account "${r.journal_account}" was not found` }); continue; }
           expenseAccountId = acct.id;
         }
         const amount = Number(r.cost);
