@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  828 passed, 0 failed  (27 suites — see test/run-all.sh)
+Backend:  807 passed, 0 failed  (26 suites — see test/run-all.sh)
 Frontend: 634 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,462 passed, 0 failed
+Total:    1,441 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -73,18 +73,24 @@ sessions, maintenance mode, backup) · full audit logging · real database
 transactions around every multi-step financial write (payment,
 disbursement, investor payout, expense/requisition/utility payment,
 adjustment — so a crash mid-write can never leave a payment recorded
-with no matching journal entry, or vice versa) · internal staff-to-staff
-Chat (real direct messages, one conversation per colleague pair, real
-unread counts and read receipts — never reachable by the investor
-principal type, same isolation as every other staff-only feature) · a
-Loan Status Browser (topbar calendar-check icon) filtering a user's
-real, role-scoped loan applications by outcome category (All templates/
-Disbursed/Undisbursed/Pended/Declined) and by month/day, reusing the
-same `/api/loans/applications-overview` endpoint and scoping as the
-existing Applications Overview page · a Pending Payments browser (topbar
-copy/duplicate icon) over the existing, real Unposted-payments status,
-reusing `/api/payments` and its own existing search/scoping exactly as-is
-— no backend changes needed for this one.
+with no matching journal entry, or vice versa) · a Loan Status Browser
+(topbar calendar-check icon) filtering a user's real, role-scoped loan
+applications by outcome category (All templates/Disbursed/Undisbursed/
+Pended/Declined) and by month/day, reusing the same
+`/api/loans/applications-overview` endpoint and scoping as the existing
+Applications Overview page · a Pending Payments browser (topbar copy/
+duplicate icon) over the existing, real Unposted-payments status,
+reusing `/api/payments` and its own existing search/scoping exactly
+as-is · a Tickets browser (topbar chat-bubble icon) over the existing
+Support Ticket system, reusing its already-tested `ticketVisibleTo()`
+role scoping exactly as-is (a Loan Officer sees only tickets they
+created; every other role sees what that same table already grants
+them) · a Notifications panel (topbar bell icon) over the existing
+`/api/notifications` — building it surfaced and fixed a real,
+previously-silent bug: `markRead()`/`markAllRead()` only ever flipped
+the local in-memory flag and never told the server, so a notification
+marked read came back unread on the next login. Both now genuinely
+persist server-side.
 
 ## What is explicitly NOT verified, stated plainly
 

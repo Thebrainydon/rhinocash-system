@@ -195,23 +195,11 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .detail-value{font-size:14px; color:var(--ink); font-weight:600; margin-top:2px; margin-bottom:12px;}
 .modal-overlay{position:fixed; inset:0; background:rgba(15,20,30,0.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:50; overflow-y:auto;}
 .modal{background:#fff; border-radius:14px; padding:24px 26px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,0.25);}
-.modal-chat{max-width:420px; padding:18px 18px 14px; display:flex; flex-direction:column; height:min(600px, 80vh);}
 .modal-wide{max-width:960px;}
-.chat-list{flex:1; overflow-y:auto; margin:0 -18px; padding:0 18px;}
-.chat-row{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer;}
-.chat-row:last-child{border-bottom:none;}
-.chat-row-avatar{width:38px; height:38px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0;}
-.chat-row-body{flex:1; min-width:0;}
-.chat-row-name{font-weight:700; font-size:13.5px; color:var(--navy);}
-.chat-row-preview{font-size:12px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.chat-row-badge{background:var(--rust); color:#fff; font-size:10.5px; font-weight:800; border-radius:9px; padding:2px 7px; flex-shrink:0;}
-.chat-thread{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin:0 -18px; padding:8px 18px;}
-.chat-bubble{max-width:78%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.4;}
-.chat-bubble.mine{align-self:flex-end; background:var(--navy); color:#fff; border-bottom-right-radius:3px;}
-.chat-bubble.theirs{align-self:flex-start; background:var(--card-alt,#EEF1F6); color:var(--ink); border-bottom-left-radius:3px;}
-.chat-bubble-time{font-size:10px; opacity:0.7; margin-top:3px;}
-.chat-input-row{display:flex; gap:8px; padding-top:10px; border-top:1px solid var(--line); margin-top:8px;}
-.chat-input-row textarea{flex:1; resize:none; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; font-family:inherit;}
+.count-badge{background:var(--rust); color:#fff; font-size:10.5px; font-weight:800; border-radius:9px; padding:2px 7px; flex-shrink:0;}
+.notif-card{border-radius:8px; overflow:hidden; margin-bottom:10px;}
+.notif-card-head{background:var(--blue-bg); color:var(--navy); padding:9px 14px; font-weight:700; font-size:12.5px;}
+.notif-card-body{background:var(--bg-soft,#F4F4F4); padding:10px 14px; font-size:13px; color:var(--ink);}
 .modal-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;}
 .modal-head h3{color:var(--navy); font-size:17px;}
 .close-x{cursor:pointer; font-size:20px; color:var(--ink-faint); line-height:1;}
@@ -871,7 +859,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, chatState:null, loanStatusState:null, pendingPaymentsState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1071,7 +1059,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    chatConversations:null, chatContacts:null, chatMessages:{}, loanStatusBrowser:null, pendingPaymentsBrowser:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1140,10 +1128,6 @@ async function loadCoreData(){
       calls.push(api.get('/api/accounting/cash-position').then(r=>{ DB.cashPosition = r.balances; }).catch(()=>{}));
     }
     calls.push(api.get('/api/notifications').then(r=>{ DB.notifications = r.notifications.map(adaptNotification); }).catch(()=>{}));
-    // Loaded up front (not only when the chat panel is opened) purely so
-    // the topbar's unread badge is accurate the moment the app loads —
-    // same reason DB.notifications is loaded here rather than on demand.
-    calls.push(api.get('/api/chat/conversations').then(r=>{ DB.chatConversations = r.conversations; }).catch(()=>{}));
     // support-tickets are now loaded on-demand (paginated) by the
     // Support Center page itself, not bulk-fetched on every login.
     calls.push(api.get('/api/leave-requests').then(r=>{ DB.leaveRequests = r.leaveRequests; }).catch(()=>{}));
@@ -1647,8 +1631,23 @@ function parAtThreshold(days){
   return overdue/outstanding*100;
 }
 
-function markAllRead(){ DB.notifications.forEach(n=>n.read=true); save(); }
-function markRead(id){ const n=DB.notifications.find(x=>x.id===id); if(n){n.read=true; save();} }
+// Real bug fix: these previously only flipped the local DB.notifications
+// flag and called save() (a re-render) — never actually told the server,
+// so a "read" notification came back unread on the next login/reload.
+function markAllRead(){
+  return withRequest('mark-all-notifs-read', async ()=>{
+    const unread = DB.notifications.filter(n=>!n.read);
+    await Promise.all(unread.map(n=>api.post(`/api/notifications/${n.id}/read`, {}).catch(()=>{})));
+    DB.notifications.forEach(n=>n.read=true);
+  });
+}
+function markRead(id){
+  return withRequest('mark-notif-read-'+id, async ()=>{
+    await api.post(`/api/notifications/${id}/read`, {});
+    const n = DB.notifications.find(x=>x.id===id);
+    if(n) n.read = true;
+  });
+}
 function investorNotifications(investorId){
   // Same bug family as the dashboard: DB.investors (plural, staff-only) is
   // never populated for a real Investor session. The real record is DB.me.
@@ -1712,7 +1711,6 @@ function renderApp(){
   // than duplicated in SIDEBAR_MENUS for every role.
   const standalone = SIDEBAR_STANDALONE[session.role] || (session.role === "Admin" ? [] : ["Notifications"]);
   const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read).length;
-  const unreadChat = (DB.chatConversations||[]).reduce((s,c)=>s+(c.unreadCount||0), 0);
 
   const sectionsHtml = menu.map(sec=>{
     const isOpen = !!session.sidebarExpanded[sec.section];
@@ -1732,7 +1730,7 @@ function renderApp(){
   const standaloneHtml = standalone.map(item=>{
     const route = resolveRoute(item);
     const isActive = route && route.section===session.section;
-    const badge = (item==="Notifications" && unread>0) ? `<span class="chat-row-badge" style="margin-left:auto;">${unread}</span>` : "";
+    const badge = (item==="Notifications" && unread>0) ? `<span class="count-badge" style="margin-left:auto;">${unread}</span>` : "";
     return `<div class="nav-item ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')" style="display:flex; align-items:center;"><span class="side-section-icon">🔔</span><div>${item}</div>${badge}</div>`;
   }).join("");
 
@@ -1763,7 +1761,8 @@ function renderApp(){
             <div class="hamburger" onclick="toggleSidebar()">☰</div>
           </div>
           <div class="topbar-right">
-            ${session.role!=="Investor" ? `<div class="bell" onclick="openChatPanel()" title="Chat">💬${unreadChat>0?`<span class="bell-dot">${unreadChat}</span>`:""}</div>` : ""}
+            ${session.role!=="Investor" ? `<div class="bell" onclick="openTicketsPanel()" title="Tickets">💬</div>` : ""}
+            ${session.role!=="Investor" ? `<div class="bell" onclick="openNotificationsPanel()" title="Notifications">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
@@ -9589,11 +9588,13 @@ function renderModal(){
   else if(modal.type === "confirm-logout") body = renderConfirmLogoutModal();
   else if(modal.type === "session-expired") body = renderSessionExpiredModal();
   else if(modal.type === "session-expiry-warning") body = renderSessionExpiryWarningModal();
-  else if(modal.type === "chat") body = renderChatModal();
   else if(modal.type === "loan-status") body = renderLoanStatusModal();
   else if(modal.type === "pending-payments") body = renderPendingPaymentsModal();
+  else if(modal.type === "tickets") body = renderTicketsModal();
+  else if(modal.type === "notifications") body = renderNotificationsModal();
   else return "";
-  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${modal.type==='chat'?' modal-chat':''}${modal.type==='loan-status'||modal.type==='pending-payments'?' modal-wide':''}">${body}</div></div>`;
+  const wideTypes = ['loan-status','pending-payments','tickets'];
+  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
   return `
@@ -9697,143 +9698,6 @@ function submitRequestAdvance(ev){
     toast("Advance request submitted");
     closeModal();
   });
-}
-
-// ==================== Internal Chat — real staff-to-staff messaging ====================
-// Staff only (never rendered for an Investor session — see the topbar and
-// sidebar code that calls openChatPanel). session.chatState drives which
-// of the three views (conversation list / new-message contact picker /
-// an open thread) the modal currently shows; DB.chatConversations and
-// DB.chatContacts are loaded lazily the first time they're needed and then
-// reused, same pattern as every other DB.* cache in this app.
-function chatInitials(name){ return (name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(); }
-
-async function loadChatConversations(){
-  return withRequest('load-chat-conversations', async ()=>{
-    const r = await api.get('/api/chat/conversations');
-    DB.chatConversations = r.conversations;
-  });
-}
-async function loadChatContacts(){
-  return withRequest('load-chat-contacts', async ()=>{
-    const r = await api.get('/api/chat/contacts');
-    DB.chatContacts = r.contacts;
-  });
-}
-async function loadChatMessages(conversationId){
-  return withRequest('load-chat-messages:'+conversationId, async ()=>{
-    const r = await api.get(`/api/chat/conversations/${conversationId}/messages`);
-    DB.chatMessages[conversationId] = r.messages;
-    // Marking read is a real, separate write — never assumed client-side —
-    // then the conversation list is refreshed so its unread badge (and the
-    // topbar's) reflects the real, now-updated server state.
-    await api.post(`/api/chat/conversations/${conversationId}/read`, {});
-    await loadChatConversations();
-  });
-}
-
-function openChatPanel(){
-  if(!session.chatState) session.chatState = { view:'list', conversationId:null };
-  openModal('chat');
-}
-function chatShowList(){ session.chatState = { view:'list', conversationId:null }; renderApp(); }
-function chatShowNewMessage(){ session.chatState = { view:'newChat', conversationId:null }; renderApp(); }
-function openChatThread(conversationId){
-  session.chatState = { view:'thread', conversationId };
-  if(!DB.chatMessages[conversationId]) loadChatMessages(conversationId);
-  else { api.post(`/api/chat/conversations/${conversationId}/read`, {}).then(loadChatConversations).catch(()=>{}); }
-  renderApp();
-}
-function startChatWith(userId){
-  return withRequest('start-chat', async ()=>{
-    const res = await api.post('/api/chat/conversations', { userId });
-    await loadChatConversations();
-    openChatThread(res.conversation.id);
-  });
-}
-function sendChatMessage(ev){
-  ev.preventDefault();
-  const conversationId = session.chatState.conversationId;
-  const f = Object.fromEntries(new FormData(ev.target));
-  const body = (f.body||'').trim();
-  if(!body) return false;
-  return withRequest('send-chat-message', async ()=>{
-    const res = await api.post(`/api/chat/conversations/${conversationId}/messages`, { body });
-    DB.chatMessages[conversationId] = [...(DB.chatMessages[conversationId]||[]), res.message];
-    await loadChatConversations();
-    // No manual textarea-clearing needed: the re-render below draws the
-    // thread view fresh from DB.chatMessages, and its <textarea> always
-    // starts empty on a new render — same as every other form in this app.
-  });
-}
-
-function renderChatModal(){
-  const st = session.chatState || { view:'list', conversationId:null };
-  if(st.view === 'newChat') return renderChatNewMessageView();
-  if(st.view === 'thread') return renderChatThreadView(st.conversationId);
-  return renderChatListView();
-}
-function renderChatListView(){
-  if(!DB.chatConversations) loadChatConversations();
-  const rows = DB.chatConversations || [];
-  return `
-    <div class="modal-head"><h3>Messages</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
-    <div class="pill-row" style="margin-bottom:10px;"><button class="btn btn-primary btn-sm" onclick="chatShowNewMessage()">+ New Message</button></div>
-    <div class="chat-list">
-      ${rows.length ? rows.map(c=>`
-        <div class="chat-row" onclick="openChatThread('${c.id}')">
-          <div class="chat-row-avatar">${chatInitials(c.otherUserName)}</div>
-          <div class="chat-row-body">
-            <div class="chat-row-name">${escapeHtml(c.otherUserName||'Unknown')}</div>
-            <div class="chat-row-preview">${escapeHtml(c.lastMessage || 'No messages yet')}</div>
-          </div>
-          ${c.unreadCount>0 ? `<span class="chat-row-badge">${c.unreadCount}</span>` : ""}
-        </div>
-      `).join("") : `<div class="empty">No conversations yet — start one with "New Message".</div>`}
-    </div>
-  `;
-}
-function renderChatNewMessageView(){
-  if(!DB.chatContacts) loadChatContacts();
-  const contacts = DB.chatContacts || [];
-  return `
-    <div class="modal-head"><h3>New Message</h3><span class="btn btn-outline btn-sm" onclick="chatShowList()">✕</span></div>
-    <div class="chat-list">
-      ${contacts.length ? contacts.map(c=>`
-        <div class="chat-row" onclick="startChatWith('${c.id}')">
-          <div class="chat-row-avatar">${chatInitials(c.name)}</div>
-          <div class="chat-row-body">
-            <div class="chat-row-name">${escapeHtml(c.name)}</div>
-            <div class="chat-row-preview">${escapeHtml(ROLE_ID_TO_DISPLAY[c.role_id] || c.role_id)}${c.branch_id ? ' · '+escapeHtml(branchName(c.branch_id)) : ''}</div>
-          </div>
-        </div>
-      `).join("") : `<div class="empty">Loading colleagues…</div>`}
-    </div>
-  `;
-}
-function renderChatThreadView(conversationId){
-  const conv = (DB.chatConversations||[]).find(c=>c.id===conversationId);
-  const messages = DB.chatMessages[conversationId];
-  const myId = DB.me && DB.me.id;
-  return `
-    <div class="modal-head">
-      <h3><span class="btn btn-outline btn-sm" onclick="chatShowList()" style="margin-right:8px;">←</span>${escapeHtml(conv ? conv.otherUserName : 'Conversation')}</h3>
-      <span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span>
-    </div>
-    <div class="chat-thread">
-      ${!messages ? `<div class="empty">Loading messages…</div>` :
-        (messages.length ? messages.map(m=>`
-          <div class="chat-bubble ${m.sender_id===myId?'mine':'theirs'}">
-            ${escapeHtml(m.body)}
-            <div class="chat-bubble-time">${new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-          </div>
-        `).join("") : `<div class="empty">No messages yet — say hello.</div>`)}
-    </div>
-    <form class="chat-input-row" onsubmit="return sendChatMessage(event)">
-      <textarea name="body" rows="1" placeholder="Type a message…" maxlength="4000" required></textarea>
-      <button class="btn btn-primary btn-sm" type="submit">Send</button>
-    </form>
-  `;
 }
 
 // ==================== Loan Status Browser — real, role-scoped filterable loan list, reusing /api/loans/applications-overview ====================
@@ -9960,6 +9824,92 @@ function renderPendingPaymentsModal(){
       }).join("") || `<tr><td colspan="8" class="empty">No pending payments match the selected filters.</td></tr>`}
     </table></div>
     ${totalRows>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.pendingPaymentsState.page=${page-1}; DB.pendingPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${totalRows})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.pendingPaymentsState.page=${page+1}; DB.pendingPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
+  `;
+}
+
+// ==================== Tickets — real, role-scoped browser over /api/support-tickets (topbar chat-bubble icon) ====================
+// Visibility is enforced server-side by the existing ticketVisibleTo()
+// scoping (misc.js): a Loan Officer only ever gets their own created
+// tickets back; every other role gets what that same, already-tested
+// scoping table already grants them. Nothing new to build there.
+const TICKET_STATUS_FILTERS = ['All statuses','Open','In Progress','Resolved','Closed'];
+let ticketsReqSeq = 0;
+async function loadTicketsBrowser(){
+  const st = session.ticketsState;
+  const seq = ++ticketsReqSeq;
+  return withRequest('load-tickets-browser:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ page: st.page||1, limit: 20 });
+    if(st.q) params.set('q', st.q);
+    if(st.status && st.status!=='All statuses') params.set('status', st.status);
+    const result = await api.get('/api/support-tickets?'+params.toString());
+    if(seq !== ticketsReqSeq) return; // a newer request has since superseded this one
+    result.stateKey = JSON.stringify(st);
+    DB.ticketsBrowser = result;
+  });
+}
+function openTicketsPanel(){
+  if(!session.ticketsState) session.ticketsState = { q:'', status:'All statuses', page:1 };
+  openModal('tickets');
+}
+function renderTicketsModal(){
+  const st = session.ticketsState;
+  if(!DB.ticketsBrowser || DB.ticketsBrowser.stateKey !== JSON.stringify(st)){
+    loadTicketsBrowser();
+    return `<div class="modal-head"><h3>Tickets</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+  }
+  const d = DB.ticketsBrowser;
+  const { page, totalPages, total } = d.pagination;
+  return `
+    <div class="modal-head"><h3>Tickets (${total})</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="pill-row" style="margin-bottom:10px; flex-wrap:wrap;">
+      <select onchange="session.ticketsState.status=this.value; session.ticketsState.page=1; DB.ticketsBrowser=null; renderApp();">
+        ${TICKET_STATUS_FILTERS.map(s=>`<option ${s===st.status?'selected':''}>${s}</option>`).join("")}
+      </select>
+      <input placeholder="Search subject, message" value="${escapeHtml(st.q)}" oninput="session.ticketsState.q=this.value; session.ticketsState.page=1; DB.ticketsBrowser=null; renderApp();">
+    </div>
+    <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
+      <tr><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>SLA</th><th>Created</th></tr>
+      ${d.tickets.map(t=>`<tr class="clickable" onclick="closeModal(); goTo('support','Tickets'); openTicketDetail('${t.id}');">
+        <td>${escapeHtml(t.subject)}</td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(t.priority)}</td>
+        <td>${escapeHtml(t.status)}</td>
+        <td>${escapeHtml(t.sla.status)}</td>
+        <td>${new Date(t.created_at).toLocaleDateString()}</td>
+      </tr>`).join("") || `<tr><td colspan="6" class="empty">No tickets match the selected filters.</td></tr>`}
+    </table></div>
+    ${total>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.ticketsState.page=${page-1}; DB.ticketsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.ticketsState.page=${page+1}; DB.ticketsBrowser=null; renderApp();">Next →</button></div>` : ""}
+  `;
+}
+
+// ==================== Notifications panel — real, reuses /api/notifications and its existing mark-read routes (topbar bell icon) ====================
+async function loadNotificationsPanel(){
+  return withRequest('load-notifications-panel', async ()=>{
+    const r = await api.get('/api/notifications');
+    DB.notifications = r.notifications.map(adaptNotification);
+  });
+}
+function openNotificationsPanel(){
+  openModal('notifications');
+  loadNotificationsPanel();
+}
+function notifCardTimestamp(d){
+  const month = d.toLocaleString('en-KE',{month:'long'});
+  const time = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  return `${month} ${d.getDate()},${d.getFullYear()} - ${time}`;
+}
+function renderNotificationsModal(){
+  const list = (DB.notifications||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return `
+    <div class="modal-head"><h3>Previous Notifications</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div style="max-height:460px; overflow-y:auto;">
+      ${list.length ? list.map(n=>`
+        <div class="notif-card" ${!n.read?`onclick="markRead('${n.id}')" style="cursor:pointer;"`:''}>
+          <div class="notif-card-head">${notifCardTimestamp(new Date(n.date))}${!n.read?' 🔴':''}</div>
+          <div class="notif-card-body">${escapeHtml(n.message||n.title||'')}</div>
+        </div>
+      `).join("") : `<div class="notif-card"><div class="notif-card-head">${notifCardTimestamp(new Date())}</div><div class="notif-card-body">You have no notifications</div></div>`}
+    </div>
   `;
 }
 

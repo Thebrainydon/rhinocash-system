@@ -3774,7 +3774,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(esc('"quoted"') === '"""quoted"""', "the real CSV export genuinely escapes embedded double-quotes correctly");
   }
 
-  // ---- 17. Redesigned topbar (no title text, no bell, no logout button — chat icon + avatar only) and the real internal Chat feature ----
+  // ---- 17. Redesigned topbar (no title text, no logout button — real icons + avatar only) ----
   {
     let of129 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return of129; } };
@@ -3791,37 +3791,6 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     sidebarNavigate('Notifications');
     __assert(session.section === 'notifications', "that real sidebar Notifications entry genuinely routes to the real Notifications page");
     goTo('dashboard');
-
-    // ---- Real chat: open panel, start a conversation, send and see a real message ----
-    openModal('chat');
-    __assert(modal && modal.type === 'chat', "openChatPanel's modal state genuinely opens the real chat panel");
-    for(let i=0; i<100 && !DB.chatConversations; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
-    let modalHtml = renderModal();
-    __assert(modalHtml.includes('Messages') && modalHtml.includes('New Message'), "the real chat panel's conversation-list view renders with a working New Message action");
-
-    chatShowNewMessage();
-    for(let i=0; i<100 && !DB.chatContacts; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
-    const managerContact = (DB.chatContacts||[]).find(c=>c.role_id==='manager');
-    __assert(!!managerContact, "the real contact picker genuinely lists a real colleague (a Manager) to start a conversation with");
-
-    await startChatWith(managerContact.id);
-    for(let i=0; i<100 && (!session.chatState || session.chatState.view!=='thread' || !DB.chatMessages[session.chatState.conversationId]); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
-    __assert(session.chatState.view === 'thread', "starting a real conversation genuinely opens its real thread view");
-    modalHtml = renderModal();
-    __assert(modalHtml.includes(escapeHtml(managerContact.name)), "the real open thread genuinely shows the real other participant's name as its header");
-
-    const chatForm = new Map([['body','Hello — can you review the new client file today?']]);
-    global.FormData = class { constructor(){ return chatForm; } };
-    await sendChatMessage({ preventDefault(){}, target:{} });
-    modalHtml = renderModal();
-    __assert(modalHtml.includes('Hello — can you review the new client file today?'), "a real message genuinely sent through the actual form handler appears in the real thread");
-
-    chatShowList();
-    const convInList = (DB.chatConversations||[]).find(c=>c.otherUserId===managerContact.id);
-    __assert(!!convInList && convInList.lastMessage.includes('review the new client file'), "the real conversation list's last-message preview reflects the real message that was just sent");
-
-    closeModal();
-    __assert(modal === null, "the chat panel genuinely closes like every other real modal in this app");
   }
 
   // ---- 18. The real Loan Status Browser (topbar calendar-check icon) ----
@@ -3950,6 +3919,83 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(session.selectedLoanId === ppLoan.id && session.section === 'loanbook', "clicking a real pending-payment row's underlying openLoan() genuinely navigates to that real loan");
     session.pendingPaymentsState = null;
     DB.pendingPaymentsBrowser = null;
+  }
+
+  // ---- 20. The real Tickets browser (topbar chat-bubble icon) — role-scoped by the existing ticketVisibleTo() rules ----
+  {
+    let of134 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of134; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const myTicketForm = new Map([['subject','[TEST] Ticket Browser My Own Ticket'],['message','testing the topbar tickets icon'],['category','Technical'],['priority','Medium']]);
+    global.FormData = class { constructor(){ return myTicketForm; } };
+    await submitTicket({ preventDefault(){}, target:{} });
+
+    let mgrf134 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf134; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const otherTicketForm = new Map([['subject','[TEST] Ticket Browser Someone Elses Ticket'],['message','not the officer\'s ticket'],['category','Technical'],['priority','Low']]);
+    global.FormData = class { constructor(){ return otherTicketForm; } };
+    await submitTicket({ preventDefault(){}, target:{} });
+
+    let of135 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of135; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    openTicketsPanel();
+    __assert(modal && modal.type === 'tickets', "the real chat-bubble icon genuinely opens the real Tickets panel");
+    session.ticketsState.q = '[TEST] Ticket Browser';
+    session.ticketsState.page = 1;
+    DB.ticketsBrowser = null;
+    for(let i=0; i<100 && (!DB.ticketsBrowser || DB.ticketsBrowser.stateKey!==JSON.stringify(session.ticketsState)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    __assert(DB.ticketsBrowser.tickets.some(t=>t.subject==='[TEST] Ticket Browser My Own Ticket'), "the real Tickets panel genuinely shows a ticket the Loan Officer created themselves");
+    __assert(!DB.ticketsBrowser.tickets.some(t=>t.subject==='[TEST] Ticket Browser Someone Elses Ticket'), "the real Tickets panel genuinely does NOT show a colleague's ticket — a Loan Officer only ever sees their own, per the existing ticketVisibleTo() rule");
+
+    const myTicket = DB.ticketsBrowser.tickets.find(t=>t.subject==='[TEST] Ticket Browser My Own Ticket');
+    closeModal();
+    goTo('support','Tickets');
+    openTicketDetail(myTicket.id);
+    __assert(session.selectedTicketId === myTicket.id && session.section === 'support', "clicking a real ticket row genuinely navigates to that real ticket's detail page");
+    session.ticketsState = null;
+    DB.ticketsBrowser = null;
+  }
+
+  // ---- 21. The real Notifications panel (topbar bell icon) — and the real markRead()/markAllRead() bug fix ----
+  {
+    let of136 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of136; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const notifClientForm = new Map([['name','[TEST] Notifications Panel Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)]]);
+    global.FormData = class { constructor(){ return notifClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const notifClient = DB.clients.find(c=>c.name==='[TEST] Notifications Panel Client');
+    const notifLoan = await createLoanApplication({ clientId: notifClient.id, productId: 'pr_starter', principal: 5000, term: 3 });
+
+    let mgrf136 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrf136; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    // Rejecting the loan fires a real notify() to the officer — a genuine
+    // notification this test can then observe and mark read, rather than
+    // relying on whatever notifications happen to already exist.
+    await api.post(`/api/loans/${notifLoan.id}/reject`, { reason: '[TEST] not viable' });
+
+    let of137 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of137; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    openNotificationsPanel();
+    __assert(modal && modal.type === 'notifications', "the real bell icon genuinely opens the real Notifications panel");
+    for(let i=0; i<100 && !(DB.notifications||[]).length; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let notifHtml = renderModal();
+    __assert(notifHtml.includes('Previous Notifications'), "the real Notifications panel genuinely renders with the requested title");
+    const realNotif = DB.notifications.find(n=>(n.message||'').includes(notifLoan.id));
+    __assert(!!realNotif && !realNotif.read, "the real rejection notification genuinely appears here, genuinely unread");
+
+    await markRead(realNotif.id);
+    const freshCheck = await api.get('/api/notifications');
+    const freshNotif = freshCheck.notifications.find(n=>n.id===realNotif.id);
+    __assert(!!freshNotif && !!freshNotif.read, "markRead() genuinely persists server-side now — a fresh GET /api/notifications confirms it, not just local optimistic state (previously a silent no-op)");
+
+    closeModal();
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);
