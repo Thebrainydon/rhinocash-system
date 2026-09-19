@@ -3847,7 +3847,12 @@ function renderClients(){
   return renderClientDirectoryPage();
 }
 async function loadClientDirectory(filters, page){
-  return withRequest('load-clientdir', async ()=>{
+  // Keyed by state, not a bare string — a fixed key would let withRequest's
+  // duplicate-call guard silently drop a fresh request for a NEW filter
+  // (e.g. switching the category dropdown before the previous load
+  // finished) just because an older, now-superseded request was still
+  // in flight, leaving the page — and its heading — stuck on stale data.
+  return withRequest('load-clientdir:'+JSON.stringify(filters||{})+':'+(page||1), async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); }); params.set('page',page||1); params.set('limit',25);
     const res = await api.get('/api/clients?'+params.toString());
     DB.acctPages.clientdir = { clients: res.clients.map(adaptClient), pagination: res.pagination, filters: filters||{}, page: res.pagination.page };
@@ -3880,13 +3885,13 @@ function renderClientDirectoryPage(){
   if(!state) loadClientDirectory({ category:'Active', status:'Active' }, 1);
   const category = state ? (state.filters.category || 'All') : 'Active';
   const header = `
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
-        <h3 style="color:var(--navy); margin:0;">${category} clients (${state?state.pagination.total:0})</h3>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:nowrap; gap:8px;">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${category} clients (${state?state.pagination.total:0})</h3>
       </div>
-      <form onsubmit="return submitClientDirFilter(event)">
-        <input class="search" name="q" placeholder="Search by Name, Phone or ID" value="${state?escapeHtml(state.filters.q||''):''}" onchange="this.form.requestSubmit()">
+      <form onsubmit="return submitClientDirFilter(event)" style="flex-shrink:0;">
+        <input class="search" name="q" placeholder="Search" value="${state?escapeHtml(state.filters.q||''):''}" onchange="this.form.requestSubmit()" style="width:130px;" title="Search by Name, Phone or ID">
       </form>
     </div>`;
   const rows = state ? state.clients.map(c=>{
@@ -3909,12 +3914,12 @@ function renderClientDirectoryPage(){
   return `
     <div class="card">
       ${header}
-      <div class="pill-row" style="align-items:center;">
-        <select onchange="setClientDirCategory(this.value)">
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; gap:8px; padding-bottom:2px;">
+        <select onchange="setClientDirCategory(this.value)" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${CLIENT_DIR_CATEGORIES.map(c=>`<option value="${c}" ${c===category?'selected':''}>${c} clients</option>`).join("")}
         </select>
-        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-          <select onchange="if(this.value) generateClientReport(this.value); this.value='';" style="min-width:130px;">
+        <div style="margin-left:auto; display:flex; gap:6px; align-items:center; flex-shrink:0;">
+          <select onchange="if(this.value) generateClientReport(this.value); this.value='';" class="btn btn-sm btn-outline" style="min-width:110px;">
             <option value="" selected>-- Generate --</option>
             <option value="pdf">PDF Printout</option>
             <option value="excel">Excel File</option>

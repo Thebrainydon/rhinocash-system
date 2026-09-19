@@ -220,7 +220,18 @@ rating, and the Loan/Repayment/Status row-level action links (Details,
 View, print, statement, Action) are left as explicit, honestly-labeled
 placeholders — this system doesn't track a distinct collection agent or
 credit rating separately from the loan officer yet, and the destination
-pages for those actions are still to be specified.
+pages for those actions are still to be specified · fixed a real bug in
+the View Client directory: `loadClientDirectory()` used a fixed
+`withRequest` key, so switching the status-category dropdown (or
+searching) while a previous load was still in flight could get silently
+dropped, leaving the page — and its "`<Category>` clients (`<count>`)"
+heading — stuck showing the wrong category (the exact same class of bug
+already fixed once this project in the Manager's Collection Sheet).
+Keyed by the real filters instead, same as everywhere else this pattern
+is used. Also tightened the directory's header and toolbar layout (the
+search box, and the Generate/Import/filter-fields button group) so they
+stay on one line and match the reference's button styling, instead of
+wrapping and rendering the Generate dropdown with a mismatched border.
 
 ## What is explicitly NOT verified, stated plainly
 
