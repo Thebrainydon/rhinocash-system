@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  901 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 713 passed, 0 failed  (drives the real UI functions in
+Backend:  903 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 718 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,614 passed, 0 failed
+Total:    1,621 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -265,7 +265,18 @@ never affect that existing flow. Transfer is left an explicit
 placeholder, pending its own reference design — a Loan Officer clicking
 it now genuinely gets "Access denied" (they have no real authority to
 move client funds between accounts); every other role still sees the
-placeholder until Transfer's own page is specified.
+placeholder until Transfer's own page is specified · the Loan History
+table's "Details" link now opens a real Loan Details modal — Loan
+Amount, Disbursement, Guarantor name/contact, and Loan securities all
+come straight from the existing loan record; "Posted By" and "Template
+Creation" are newly derived, not fabricated: "Posted By" is whoever
+posted the real disbursement journal entry (a real `journal_entries`
+row already created by `completeDisbursement()`), "Template Creation"
+is the real actor already recorded on the loan's original "Submitted
+loan application" audit log row — no new database columns were needed
+for either. Approvals lists every real `loan_approvals` decision.
+Clearance has no backing concept in this system yet, so it's shown
+honestly as "----" rather than invented.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

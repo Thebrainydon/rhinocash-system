@@ -1594,7 +1594,25 @@ function register(router) {
     }
     const schedule = await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]);
     const approvals = await all('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY created_at', [loan.id]);
-    res.json({ loan, schedule, approvals, workflow: await workflowSteps() });
+    // Real, derived from records that already exist as a side effect of
+    // the real actions that created/disbursed this loan — no new columns,
+    // no fabricated data. "Posted By" is whoever posted the real
+    // disbursement journal entry (completeDisbursement() above); "Template
+    // Creation" is the real actor recorded on the original "Submitted loan
+    // application" audit log row.
+    const disbursementEntry = await get(
+      `SELECT je.posted_by, je.entry_date, u.name as posted_by_name
+       FROM journal_entries je LEFT JOIN users u ON u.id = je.posted_by
+       WHERE je.ref_type = 'loan' AND je.ref_id = ? ORDER BY je.entry_date LIMIT 1`,
+      [loan.id]
+    );
+    const postedBy = disbursementEntry ? { name: disbursementEntry.posted_by_name || 'System', at: disbursementEntry.entry_date } : null;
+    const creationLog = await get(
+      `SELECT user_name, created_at FROM audit_logs WHERE record_type = 'Loan' AND record_id = ? AND action = 'Submitted loan application' ORDER BY created_at LIMIT 1`,
+      [loan.id]
+    );
+    const templateCreation = creationLog ? { name: creationLog.user_name, at: creationLog.created_at } : null;
+    res.json({ loan, schedule, approvals, workflow: await workflowSteps(), postedBy, templateCreation });
   });
 
   router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {

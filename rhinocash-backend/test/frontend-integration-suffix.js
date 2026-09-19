@@ -289,6 +289,17 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(updatedLoan.status === "Active", "real disburseLoan() moves the loan to Active");
     __assert(updatedLoan.schedule && updatedLoan.schedule.length === 4, "real repayment schedule (4 periods) came back from the backend");
 
+    // Loan Details modal: real Posted By / Template Creation / Approvals through the actual UI functions.
+    await openLoanDetailsModal(loan.id);
+    __assert(modal && modal.type === 'loan-details' && modal.loanId === loan.id, "openLoanDetailsModal() genuinely opens the real Loan Details modal for the real loan");
+    const loanWithDetails = DB.loans.find(l=>l.id===loan.id);
+    __assert(loanWithDetails.postedBy && !!loanWithDetails.postedBy.name && !!loanWithDetails.postedBy.at, "the real openLoanDetailsModal() call genuinely populated Posted By from the real disbursement journal entry");
+    __assert(loanWithDetails.templateCreation && !!loanWithDetails.templateCreation.name && !!loanWithDetails.templateCreation.at, "the real openLoanDetailsModal() call genuinely populated Template Creation from the real audit log");
+    __assert(loanWithDetails.approvals.length === 4, "the real Loan Details modal's approvals list genuinely has all 4 real approval decisions");
+    const detailsModalHtml = renderLoanDetailsModal();
+    __assert(detailsModalHtml.includes('Loan Details') && detailsModalHtml.includes('Guarantor name') && detailsModalHtml.includes(fmtNum(loan.principal)) && detailsModalHtml.includes(escapeHtml(loanWithDetails.postedBy.name)), "the real rendered Loan Details modal genuinely shows the real loan amount and Posted By name, not placeholders");
+    closeModal();
+
     // Duplicate disbursement is rejected.
     let dupDisburseBlocked = false;
     try { await disburseLoan(loan.id, "Bank"); } catch(e){ dupDisburseBlocked = (e.status === 409); }

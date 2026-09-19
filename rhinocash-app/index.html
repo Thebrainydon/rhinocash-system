@@ -1014,6 +1014,7 @@ function adaptScheduleRow(r){
 function adaptLoan(l){
   return { id:l.id, clientId:l.client_id, productId:l.product_id, productName: l.product_name || productName(l.product_id),
     principal:l.principal, term:l.term_months, rate:l.rate_pct, purpose:l.purpose, guarantor:l.guarantor,
+    guarantorContact:l.guarantor_contact, loanSecurities:l.loan_securities,
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
@@ -1358,6 +1359,7 @@ async function refreshLoan(loanId){
   res.loan.schedule = res.schedule; // GET /api/loans/:id returns schedule as a sibling field, not nested inside loan
   const loan = adaptLoan(res.loan);
   loan.approvals = res.approvals; loan.workflow = res.workflow;
+  loan.postedBy = res.postedBy; loan.templateCreation = res.templateCreation;
   const idx = DB.loans.findIndex(x=>x.id===loanId);
   if(idx>=0) DB.loans[idx] = loan; else DB.loans.unshift(loan);
   return loan;
@@ -4473,6 +4475,60 @@ function renderClientPhotoThumb(clientId, docType, label, size){
     : `<div style="width:${s}px; height:${s}px; border-radius:8px; background:#EFEDE7; display:flex; align-items:center; justify-content:center; color:var(--ink-faint); font-size:22px;">🖼️</div>`;
   return `<div style="text-align:center; cursor:pointer;" onclick="openImageViewer('${clientId}','${docType}','${escapeHtml(label).replace(/'/g,"&#39;")}')">${inner}<div class="hint" style="margin-top:4px;">${label}</div></div>`;
 }
+// ---- Loan Details modal: real disbursement/posting/approval history,
+// combining the loan record already in DB.loans with a fresh
+// GET /api/loans/:id (Posted By / Template Creation / Approvals, all
+// derived server-side from real journal_entries and audit_logs rows —
+// no new columns, no fabricated data). ----
+function fmtLoanDetailDate(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+}
+function fmtLoanDetailDateTime(iso){
+  if(!iso) return '—';
+  const timePart = new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true }).toLowerCase();
+  return `${fmtLoanDetailDate(iso)}, ${timePart}`;
+}
+function fmtDisbursementLine(iso, amount){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const min = String(d.getMinutes()).padStart(2,'0');
+  return `${fmtLoanDetailDate(iso)},${hh}:${min} - ${fmtNum(amount)}`;
+}
+function openLoanDetailsModal(loanId){
+  openModal('loan-details', { loanId });
+  return withRequest('loan-details-'+loanId, async ()=>{ await refreshLoan(loanId); });
+}
+function renderLoanDetailsModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  const maturity = loan.schedule && loan.schedule.length ? loan.schedule[loan.schedule.length-1].dueDate : null;
+  const approvalNames = (loan.approvals||[]).map(a=>staffName(a.approver_id));
+  const rows = [
+    ['Loan Amount', fmtNum(loan.principal)],
+    ['Disbursement', loan.disbursedAt ? `• ${fmtDisbursementLine(loan.postedBy?loan.postedBy.at:loan.disbursedAt, loan.principal)}` : 'Not yet disbursed'],
+    ['Posted By', loan.postedBy ? `${escapeHtml(loan.postedBy.name)}<br>${fmtLoanDetailDateTime(loan.postedBy.at)}` : '—'],
+    ['Template Creation', loan.templateCreation ? `${escapeHtml(loan.templateCreation.name)}<br>${fmtLoanDetailDateTime(loan.templateCreation.at)}` : '—'],
+    ['Approvals', approvalNames.length ? approvalNames.map(n=>`• ${escapeHtml(n)}`).join('<br>') : '—'],
+    ['Loan Maturity', maturity ? `${fmtLoanDetailDate(maturity)}, 12:00 am` : '—'],
+    ['Clearance', '----'],
+    ['Loan Officer', loan.officerId ? escapeHtml(staffName(loan.officerId)) : '—'],
+    ['Guarantor name', loan.guarantor ? escapeHtml(loan.guarantor) : '—'],
+    ['Guarantor contact', loan.guarantorContact ? escapeHtml(loan.guarantorContact) : '—'],
+    ['Loan securities', loan.loanSecurities ? escapeHtml(loan.loanSecurities) : '—'],
+  ];
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Loan Details</h3>
+      <table style="width:100%;">
+        ${rows.map(([label,value],i)=>`<tr style="${i%2===0?'background:#F5F4F1;':''}"><td style="padding:8px 10px; font-weight:700; color:var(--navy); width:38%; vertical-align:top;">${label}</td><td style="padding:8px 10px;">${value}</td></tr>`).join("")}
+      </table>
+    </div>
+  `;
+}
 function renderClientLoanHistoryTable(loans){
   const rows = loans.map(l=>{
     const bal = loanBalance(l);
@@ -4481,7 +4537,7 @@ function renderClientLoanHistoryTable(loans){
     const dotColor = LOAN_STATUS_DOT[l.status] || '#B4791F';
     return `<tr>
       <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString('en-KE',{month:'2-digit',year:'numeric'}) : '—'}<br><span class="badge grey" style="margin-top:4px;">Unrated</span></td>
-      <td>${fmt(l.principal).replace('KES ','')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">Details</span></td>
+      <td>${fmt(l.principal).replace('KES ','')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanDetailsModal('${l.id}')">Details</span></td>
       <td>${escapeHtml(l.productName||'')}</td>
       <td>None</td>
       <td>0</td>
@@ -10812,6 +10868,7 @@ function renderModal(){
   else if(modal.type === "image-viewer") body = renderImageViewerModal();
   else if(modal.type === "post-client-interaction") body = renderPostClientInteractionModal();
   else if(modal.type === "deposit-wallet") body = renderDepositModal();
+  else if(modal.type === "loan-details") body = renderLoanDetailsModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

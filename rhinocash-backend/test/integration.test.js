@@ -199,6 +199,14 @@ async function api(method, path, { token, body } = {}) {
     assert(disburse.status === 200 && disburse.json.loan.status === 'Active', 'disbursement activates the loan');
     assert(disburse.json.schedule.length === 6, 'disbursement generates a real 6-month repayment schedule');
 
+    // Loan Details: "Posted By" (real disbursement journal entry poster) and "Template Creation"
+    // (real audit log row for the original application) — both derived, not fabricated.
+    const officerMeForDetails = await api('GET', '/api/auth/me', { token: officerToken });
+    const adminMeForDetails = await api('GET', '/api/auth/me', { token: adminToken });
+    const detailAfterDisbursement = await api('GET', `/api/loans/${loanId}`, { token: adminToken });
+    assert(detailAfterDisbursement.json.postedBy && detailAfterDisbursement.json.postedBy.name === adminMeForDetails.json.user.name && !!detailAfterDisbursement.json.postedBy.at, 'the real "Posted By" genuinely identifies the real Admin who disbursed this loan, with a real timestamp');
+    assert(detailAfterDisbursement.json.templateCreation && detailAfterDisbursement.json.templateCreation.name === officerMeForDetails.json.user.name && !!detailAfterDisbursement.json.templateCreation.at, 'the real "Template Creation" genuinely identifies the real Loan Officer who submitted this application, with a real timestamp');
+
     // Record a payment, verify allocation + cash position moves
     const cashBefore = await api('GET', '/api/accounting/cash-position', { token: adminToken });
     const payment = await api('POST', '/api/payments', { token: officerToken, body: { loan_id: loanId, amount: 9500, channel: 'M-Pesa' } });
