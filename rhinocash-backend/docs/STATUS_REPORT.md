@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  892 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 702 passed, 0 failed  (drives the real UI functions in
+Backend:  901 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 711 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,594 passed, 0 failed
+Total:    1,612 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -252,12 +252,23 @@ new `DELETE /api/clients/:id/documents/:docId`, so no duplicate is left
 behind) and a trash button deletes the photo outright, alongside the
 existing real zoom and rotate. The thumbnails are always clickable now,
 even with no photo yet, showing a generic placeholder so a first photo
-can be uploaded straight from the viewer.
+can be uploaded straight from the viewer · a client's real wallet
+accounts (Transactional/Investment/Savings) are live: the ACC BALANCES
+"View" button opens a real account page — real balance, real generated
+account number, a real withdrawals total, and a real, date-filterable
+transaction ledger, all auto-provisioned (3 real `client_accounts` rows,
+starting at a real zero balance) the first time a client's accounts are
+requested. "Deposit" opens a real STK-push request against a genuinely
+separate M-Pesa code path (`mpesa.initiateWalletStkPush`, its own
+`client_account_stk_requests` table) from loan-repayment STK, so it can
+never affect that existing flow. Transfer is left an explicit
+placeholder, pending its own reference design.
 
-- **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code is real and
-  the failure/callback paths are tested; a genuine handshake with
-  Safaricom's sandbox or production servers has never happened in this
-  build/test environment, because it has no such network access.
+- **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
+  the new wallet-deposit STK path — is real and the failure/callback
+  paths are tested; a genuine handshake with Safaricom's sandbox or
+  production servers has never happened in this build/test environment,
+  because it has no such network access.
 - **Live SMS or Email delivery.** Same reasoning — the integration layer
   is real, honestly reports NOT_CONFIGURED, and has never been pointed
   at an actual provider.

@@ -206,6 +206,34 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(doubleDelete.status === 404, 'AI: deleting an already-deleted document is genuinely rejected, not silently accepted');
   }
 
+  // AJ. Client wallet accounts — GET /api/clients/:id/accounts, transactions, and deposit STK initiation.
+  {
+    const accounts = await api('GET', `/api/clients/${clientId}/accounts`, { token: officerToken });
+    assert(accounts.status === 200 && accounts.json.accounts.length === 3, 'AJ: the real client genuinely gets exactly 3 real wallet accounts (Transactional/Investment/Savings)');
+    const types = accounts.json.accounts.map(a => a.account_type).sort();
+    assert(JSON.stringify(types) === JSON.stringify(['Investment', 'Savings', 'Transactional']), 'AJ: all 3 real account types are genuinely present');
+    const txnAccount = accounts.json.accounts.find(a => a.account_type === 'Transactional');
+    assert(Number(txnAccount.balance) === 0 && Number(txnAccount.withdrawals_total) === 0 && !!txnAccount.account_number, 'AJ: a freshly-provisioned real account genuinely starts at zero balance/withdrawals with a real generated account number');
+
+    const accountsAgain = await api('GET', `/api/clients/${clientId}/accounts`, { token: officerToken });
+    assert(accountsAgain.json.accounts.find(a => a.account_type === 'Transactional').account_number === txnAccount.account_number, 'AJ: re-fetching genuinely reuses the same real account, not provisioning a fresh one each time');
+
+    const txns = await api('GET', `/api/clients/${clientId}/accounts/Transactional/transactions`, { token: officerToken });
+    assert(txns.status === 200 && Array.isArray(txns.json.transactions) && txns.json.transactions.length === 0, 'AJ: a freshly-provisioned real account genuinely has no transactions yet');
+
+    const wrongBranchAccounts = await api('GET', `/api/clients/${clientId}/accounts`, { token: nairobiManagerToken });
+    assert(wrongBranchAccounts.status === 403, 'AJ: a Nairobi Manager cannot see a Kisumu client\'s wallet accounts');
+
+    const badType = await api('GET', `/api/clients/${clientId}/accounts/Bogus/transactions`, { token: officerToken });
+    assert(badType.status === 400, 'AJ: an invalid account type is genuinely rejected');
+
+    const deposit = await api('POST', `/api/clients/${clientId}/accounts/Transactional/deposit`, { token: officerToken, body: { phone: clientPhone, amount: 500 } });
+    assert(deposit.status === 200 && deposit.json.status === 'NOT_CONFIGURED', 'AJ: the real deposit STK push honestly reports NOT_CONFIGURED — this test environment has no real M-Pesa credentials, exactly like every other real STK path in this system');
+
+    const badDeposit = await api('POST', `/api/clients/${clientId}/accounts/Transactional/deposit`, { token: officerToken, body: { phone: clientPhone, amount: -5 } });
+    assert(badDeposit.status === 400, 'AJ: a non-positive deposit amount is genuinely rejected');
+  }
+
   // AF. Client Interactions list page — /api/clients/interactions.
   {
     const list = await api('GET', '/api/clients/interactions', { token: officerToken });

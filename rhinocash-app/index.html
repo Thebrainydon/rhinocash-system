@@ -865,7 +865,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false, clientAccountOpen:false, clientAccountState:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -3841,7 +3841,11 @@ function renderClients(){
   const active = session.subtab || "All Clients";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('clients','${t}')">${t}</div>`).join("")}</div>`;
 
-  if(session.selectedClientId){ return session.clientNotesOpen ? renderClientNotesPage(session.selectedClientId) : renderClientDetail(session.selectedClientId); }
+  if(session.selectedClientId){
+    if(session.clientNotesOpen) return renderClientNotesPage(session.selectedClientId);
+    if(session.clientAccountOpen) return renderClientAccountPage(session.selectedClientId);
+    return renderClientDetail(session.selectedClientId);
+  }
 
   if(active==="Add Client") return renderAddClientForm();
   if(active==="Client Groups") return tabsHtml + renderClientGroups();
@@ -4427,7 +4431,7 @@ function submitCreateLead(ev){
   });
 }
 function openClient(id){
-  if(session.selectedClientId !== id){ session.clientHistoryTab = null; session.clientNotesOpen = false; }
+  if(session.selectedClientId !== id){ session.clientHistoryTab = null; session.clientNotesOpen = false; session.clientAccountOpen = false; DB.clientAccounts = null; DB.clientAccountTransactions = null; }
   session.selectedClientId = id;
   renderApp();
   return withRequest('open-client-'+id, async ()=>{
@@ -4541,7 +4545,7 @@ function renderClientDetail(id){
         <div style="font-size:11px; font-weight:700; letter-spacing:0.4px; opacity:0.85;">ACC BALANCES (KSH)</div>
         <div style="display:flex; align-items:center; justify-content:space-between; margin-top:6px;">
           <div style="font-size:22px; font-weight:800;">0</div>
-          <button class="btn btn-sm" style="background:#fff; color:var(--navy); border:none;" onclick="toast('Coming soon')">📤 View</button>
+          <button class="btn btn-sm" style="background:#fff; color:var(--navy); border:none;" onclick="openClientAccountPage()">📤 View</button>
         </div>
       </div>
       ${renderClientPhotoThumb(id, 'Client Photo', 'Client photo', 72)}
@@ -10645,6 +10649,139 @@ function renderPostClientInteractionModal(){
     </div>
   `;
 }
+// ---- Client wallet accounts (Transactional/Investment/Savings): real
+// balances and a real transaction ledger from the backend, plus a real
+// M-Pesa STK-push deposit request (a genuinely separate STK path from
+// loan repayment — see mpesa.initiateWalletStkPush's own notes). ----
+const CLIENT_ACCOUNT_TYPES = ['Transactional','Investment','Savings'];
+function defaultClientAccountState(){ return { type:'Transactional', from:todayISO(), to:todayISO() }; }
+function openClientAccountPage(){
+  session.clientAccountOpen = true;
+  if(!session.clientAccountState) session.clientAccountState = defaultClientAccountState();
+  renderApp();
+}
+function closeClientAccountPage(){ session.clientAccountOpen = false; renderApp(); }
+async function loadClientAccounts(clientId){
+  return withRequest('load-client-accounts:'+clientId, async ()=>{
+    const res = await api.get(`/api/clients/${clientId}/accounts`);
+    DB.clientAccounts = { clientId, accounts: res.accounts };
+  });
+}
+async function loadClientAccountTransactions(clientId, type, from, to){
+  return withRequest('load-client-account-txns:'+clientId+':'+type+':'+from+':'+to, async ()=>{
+    const params = new URLSearchParams();
+    if(from) params.set('from', from);
+    if(to) params.set('to', to);
+    const res = await api.get(`/api/clients/${clientId}/accounts/${type}/transactions?`+params.toString());
+    DB.clientAccountTransactions = { clientId, type, from, to, account: res.account, transactions: res.transactions };
+  });
+}
+function renderClientAccountPage(id){
+  const c = DB.clients.find(x=>x.id===id);
+  const st = session.clientAccountState || (session.clientAccountState = defaultClientAccountState());
+  if(!DB.clientAccounts || DB.clientAccounts.clientId !== id){
+    loadClientAccounts(id);
+    return `<div class="card"><div class="empty">Loading…</div></div>`;
+  }
+  const account = DB.clientAccounts.accounts.find(a=>a.account_type===st.type);
+  const txnsFresh = DB.clientAccountTransactions && DB.clientAccountTransactions.clientId===id && DB.clientAccountTransactions.type===st.type && DB.clientAccountTransactions.from===st.from && DB.clientAccountTransactions.to===st.to;
+  if(!txnsFresh) loadClientAccountTransactions(id, st.type, st.from, st.to);
+  const txns = txnsFresh ? DB.clientAccountTransactions.transactions : null;
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+        <span class="btn btn-outline btn-sm" onclick="closeClientAccountPage()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">${st.type} Account</h3>
+      </div>
+      <div style="background:#F0EFEC; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-weight:700; color:var(--ink);">👤 ${escapeHtml(c?c.name:'')}</div>
+      <select onchange="session.clientAccountState.type=this.value; renderApp();" style="width:100%; background:var(--blue-bg); color:var(--navy); font-weight:700; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:14px;">
+        ${CLIENT_ACCOUNT_TYPES.map(t=>`<option value="${t}" ${st.type===t?'selected':''}>${t} Account</option>`).join("")}
+      </select>
+
+      <div style="background:#3E77A8; color:#fff; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div style="display:flex; align-items:baseline; gap:6px;">
+            <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
+            <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.balance:0)}</span>
+          </div>
+          <button class="btn btn-sm btn-green" onclick="openDepositModal()" style="flex-shrink:0;">⊕ Deposit</button>
+        </div>
+        <div class="hint" style="color:#DCEBFA; margin-top:2px;">Available Balance</div>
+        <div style="border-top:1px solid rgba(255,255,255,0.3); margin-top:12px; padding-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <span style="font-size:12px; color:#BEE0FF;">AccNo: ${account?escapeHtml(account.account_number):''}</span>
+          <button class="btn btn-sm btn-green" onclick="toast('Coming soon')" style="flex-shrink:0;">⇄ Transfer</button>
+        </div>
+      </div>
+
+      <div style="background:#2C5F4F; color:#fff; border-radius:12px; padding:16px; margin-bottom:18px;">
+        <div style="display:flex; align-items:baseline; gap:6px;">
+          <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
+          <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.withdrawals_total:0)}</span>
+        </div>
+        <div class="hint" style="color:#CFE5DC; margin-top:2px;">Withdrawals</div>
+      </div>
+
+      <h3 style="color:var(--navy); margin-bottom:10px;">Transaction List</h3>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <input type="date" value="${st.from}" onchange="session.clientAccountState.from=this.value; renderApp();" style="flex-shrink:0;">
+        <span class="hint" style="flex-shrink:0;">~</span>
+        <input type="date" value="${st.to}" onchange="session.clientAccountState.to=this.value; renderApp();" style="flex-shrink:0;">
+      </div>
+      <div class="table-wrap"><table>
+        <tr>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">TID</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Details</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Approval</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Amount</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Bal After</th>
+        </tr>
+        ${txns===null ? `<tr><td colspan="6" class="empty">Loading…</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+          <td>${new Date(t.created_at).toLocaleDateString()}</td>
+          <td>${escapeHtml(t.tid||'—')}</td>
+          <td>${escapeHtml(t.details||t.type)}</td>
+          <td>${escapeHtml(t.approval_status)}</td>
+          <td>${fmtNum(t.amount)}</td>
+          <td>${fmtNum(t.balance_after)}</td>
+        </tr>`).join("") : `<tr><td colspan="6" class="empty">No Transactions Found</td></tr>`)}
+      </table></div>
+    </div>
+  `;
+}
+function openDepositModal(){ openModal('deposit-wallet'); }
+function submitDeposit(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.phone || !f.amount || !(Number(f.amount)>0)){ toast("Enter a valid phone number and amount"); return false; }
+  const st = session.clientAccountState || defaultClientAccountState();
+  const clientId = session.selectedClientId;
+  return withRequest('deposit-wallet', async ()=>{
+    const res = await api.post(`/api/clients/${clientId}/accounts/${st.type}/deposit`, { phone: f.phone, amount: Number(f.amount) });
+    if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
+    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
+    else { toast(res.message || "Could not initiate the deposit"); }
+  });
+}
+function renderDepositModal(){
+  const c = DB.clients.find(x=>x.id===session.selectedClientId);
+  const st = session.clientAccountState || defaultClientAccountState();
+  const account = DB.clientAccounts && DB.clientAccounts.accounts.find(a=>a.account_type===st.type);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Deposit to ${st.type} Wallet</h3>
+      <form onsubmit="return submitDeposit(event)">
+        <div class="field"><label>Select Deposit Method</label><select name="method"><option>Direct from MPESA</option></select></div>
+        <div class="hint" style="margin:8px 0 14px;">Automatic topup via M-Pesa using <strong>Account No: ${account?escapeHtml(account.account_number):''}</strong></div>
+        <div class="field"><label>MPESA Phone number</label><input name="phone" value="${escapeHtml(c?c.phone:'')}" required></div>
+        <div class="field"><label>Amount to Pay</label><input name="amount" type="number" min="1" required></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Request</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
 function openModal(type, props){ modal = { type, ...(props||{}) }; renderApp(); }
 function closeModal(){ modal = null; renderApp(); }
 function renderModal(){
@@ -10667,6 +10804,7 @@ function renderModal(){
   else if(modal.type === "filter-client-fields") body = renderFilterClientFieldsModal();
   else if(modal.type === "image-viewer") body = renderImageViewerModal();
   else if(modal.type === "post-client-interaction") body = renderPostClientInteractionModal();
+  else if(modal.type === "deposit-wallet") body = renderDepositModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

@@ -1629,6 +1629,35 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
       session.clientHistoryTab = 'Loan History';
     }
 
+    // Client wallet accounts (Transactional/Investment/Savings): a real page, real balances, and a real M-Pesa STK deposit request — through the actual UI functions.
+    {
+      openClientAccountPage();
+      __assert(session.clientAccountOpen === true, "openClientAccountPage() genuinely opens the real wallet account page");
+      __assert(session.clientAccountState.type === 'Transactional', "the real wallet page genuinely defaults to the Transactional account");
+
+      for(let i=0; i<100 && (!DB.clientAccounts || DB.clientAccounts.clientId !== newClient.id); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+      __assert(DB.clientAccounts && DB.clientAccounts.accounts.length === 3, "the real render-triggered load genuinely provisions all 3 real wallet accounts");
+      const txnAccount = DB.clientAccounts.accounts.find(a=>a.account_type==='Transactional');
+      __assert(Number(txnAccount.balance) === 0 && !!txnAccount.account_number, "the real Transactional account genuinely starts at a real zero balance with a real generated account number");
+
+      let accountHtml = renderClients();
+      __assert(accountHtml.includes('Transactional Account') && accountHtml.includes(txnAccount.account_number) && accountHtml.includes('Transaction List'), "the real rendered wallet page genuinely shows the real account number and heading");
+
+      openDepositModal();
+      __assert(modal && modal.type === 'deposit-wallet', "openDepositModal() genuinely opens the real Deposit modal");
+      const depositHtml = renderDepositModal();
+      __assert(depositHtml.includes('Deposit to Transactional Wallet') && depositHtml.includes(txnAccount.account_number) && depositHtml.includes(newClient.phone), "the real rendered Deposit modal genuinely shows the real account number and pre-fills the real client's phone number");
+
+      let depositForm = new Map([['method','Direct from MPESA'],['phone', newClient.phone],['amount','500']]);
+      global.FormData = class { constructor(){ return depositForm; } };
+      await submitDeposit({ preventDefault(){}, target:{} });
+      __assert(modal && modal.type === 'deposit-wallet', "submitDeposit() genuinely runs to completion without throwing — this test environment has no real M-Pesa credentials (NOT_CONFIGURED), so the modal honestly stays open rather than pretending a push was sent");
+      closeModal();
+
+      closeClientAccountPage();
+      __assert(session.clientAccountOpen === false, "closeClientAccountPage() genuinely returns to the real Client Account page");
+    }
+
     // Real KYC decision through the actual UI function.
     let mk7 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mk7; } };

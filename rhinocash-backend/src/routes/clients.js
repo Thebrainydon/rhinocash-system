@@ -275,6 +275,72 @@ function register(router) {
     res.json({ deleted: true });
   });
 
+  // ==================== Client wallet accounts (Transactional/Investment/Savings) ====================
+  const CLIENT_ACCOUNT_TYPES = ['Transactional', 'Investment', 'Savings'];
+  const CLIENT_ACCOUNT_TYPE_CODE = { Transactional: '1', Investment: '2', Savings: '3' };
+  // Auto-provisions the 3 real accounts a client is entitled to, the
+  // first time any of them is requested — never fabricated, just created
+  // once with a real generated account number and a real starting
+  // balance of 0.
+  async function ensureClientAccounts(clientId) {
+    for (const type of CLIENT_ACCOUNT_TYPES) {
+      const existing = await get('SELECT id FROM client_accounts WHERE client_id = ? AND account_type = ?', [clientId, type]);
+      if (!existing) {
+        const seq = (await get('SELECT COUNT(*) as n FROM client_accounts WHERE account_type = ?', [type])).n + 1;
+        const accountNumber = '00' + CLIENT_ACCOUNT_TYPE_CODE[type] + String(seq).padStart(8, '0');
+        await run('INSERT INTO client_accounts (id, client_id, account_type, account_number) VALUES (?,?,?,?)',
+          ['acc_' + crypto.randomUUID(), clientId, type, accountNumber]);
+      }
+    }
+    return all('SELECT * FROM client_accounts WHERE client_id = ? ORDER BY account_type', [clientId]);
+  }
+
+  router.get('/api/clients/:id/accounts', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const client = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
+    if (!client) return next({ status: 404, message: 'Client not found' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    const accounts = await ensureClientAccounts(client.id);
+    const withWithdrawals = await Promise.all(accounts.map(async a => {
+      const w = await get(`SELECT COALESCE(SUM(amount),0) as total FROM client_account_transactions WHERE account_id = ? AND type = 'Withdrawal' AND approval_status = 'Completed'`, [a.id]);
+      return { ...a, withdrawals_total: w.total };
+    }));
+    res.json({ accounts: withWithdrawals });
+  });
+
+  router.get('/api/clients/:id/accounts/:type/transactions', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const client = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
+    if (!client) return next({ status: 404, message: 'Client not found' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    if (!CLIENT_ACCOUNT_TYPES.includes(req.params.type)) return next({ status: 400, message: 'Invalid account type' });
+    const accounts = await ensureClientAccounts(client.id);
+    const account = accounts.find(a => a.account_type === req.params.type);
+    const clauses = ['account_id = ?']; const params = [account.id];
+    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
+    const rows = await all(`SELECT * FROM client_account_transactions WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`, params);
+    res.json({ account, transactions: rows });
+  });
+
+  // Real STK Push initiation for a client wallet deposit — money only
+  // ever lands in the wallet once a real completed callback for this
+  // request is processed (see mpesa.initiateWalletStkPush's own notes on
+  // why this is a genuinely separate path from loan-repayment STK).
+  router.post('/api/clients/:id/accounts/:type/deposit', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const client = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
+    if (!client) return next({ status: 404, message: 'Client not found' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    if (!CLIENT_ACCOUNT_TYPES.includes(req.params.type)) return next({ status: 400, message: 'Invalid account type' });
+    const { phone, amount } = req.body;
+    if (!phone) return next({ status: 400, message: 'phone is required' });
+    if (!(Number(amount) > 0)) return next({ status: 400, message: 'amount must be a positive number' });
+    const accounts = await ensureClientAccounts(client.id);
+    const account = accounts.find(a => a.account_type === req.params.type);
+    const mpesa = require('./../integrations/mpesa');
+    const result = await mpesa.initiateWalletStkPush({ accountId: account.id, accountNumber: account.account_number, phone, amount: Number(amount), initiatedBy: req.user.id });
+    await logAction(req, { action: 'Requested wallet deposit STK push', module: 'clients', recordType: 'ClientAccount', recordId: account.id, newValue: { amount, phone, status: result.status } });
+    res.json(result);
+  });
+
   // Leads
   router.get('/api/leads', requireAuth, requireModule('clients'), async (req, res) => {
     // Real branch/region scoping — a Loan Officer sees only their own

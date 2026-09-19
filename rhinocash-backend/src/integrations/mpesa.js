@@ -253,6 +253,53 @@ async function initiateStkPush({ phone, amount, loanId, accountRef, initiatedBy 
   }
 }
 
+// Real STK Push initiation for a client wallet deposit — a genuinely
+// separate request path from loan repayment STK above (its own table,
+// its own AccountReference/TransactionDesc), reusing the same real
+// OAuth/config/Daraja plumbing. Never touches mpesa_stk_requests or the
+// loan-repayment callback matching above, so it can't affect that path.
+async function initiateWalletStkPush({ accountId, accountNumber, phone, amount, initiatedBy }) {
+  const config = await effectiveConfig();
+  if (!config) return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration.' };
+  const tokenResult = await requestOAuthToken(config);
+  if (!tokenResult.ok) return { status: 'FAILED', message: tokenResult.message };
+
+  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const password = Buffer.from(`${config.shortcode}${config.passkey}${timestamp}`).toString('base64');
+  const payload = {
+    BusinessShortCode: config.shortcode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Math.round(amount),
+    PartyA: phone,
+    PartyB: config.shortcode,
+    PhoneNumber: phone,
+    CallBackURL: config.callbackUrl,
+    AccountReference: accountNumber,
+    TransactionDesc: 'Wallet deposit',
+  };
+  try {
+    const res = await fetch(STK_PUSH_URL[config.environment], {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenResult.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 200 && body && body.CheckoutRequestID) {
+      const crypto = require('node:crypto');
+      await run(
+        `INSERT INTO client_account_stk_requests (id, checkout_request_id, account_id, phone, amount, environment, initiated_by) VALUES (?,?,?,?,?,?,?)`,
+        ['wstk_' + crypto.randomUUID(), body.CheckoutRequestID, accountId, phone, amount, config.environment, initiatedBy || null]
+      );
+      return { status: 'INITIATED', checkoutRequestId: body.CheckoutRequestID, message: 'STK push sent to the customer\'s phone.' };
+    }
+    return { status: 'FAILED', message: (body && (body.errorMessage || body.ResponseDescription)) || `Safaricom returned HTTP ${res.status}.` };
+  } catch (e) {
+    return { status: 'FAILED', message: 'Could not reach Safaricom to initiate the STK push — check outbound network access.' };
+  }
+}
+
 // ==================== B2C — real disbursement-to-customer ====================
 // Real, deliberate design: initiating a B2C request NEVER marks a loan as
 // disbursed. Only a genuine successful ResultURL callback does that (via
@@ -535,7 +582,7 @@ async function processCallback(callbackId, actorUserId) {
 }
 
 module.exports = {
-  isConfigured, initiateStkPush, recordCallback, unmatchedCallbacks, processCallback,
+  isConfigured, initiateStkPush, initiateWalletStkPush, recordCallback, unmatchedCallbacks, processCallback,
   validateC2b, recordC2bTransaction, processC2bTransaction, unmatchedC2bTransactions,
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,

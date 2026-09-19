@@ -405,6 +405,50 @@ CREATE TABLE IF NOT EXISTS client_documents (
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- A client's real wallet accounts (Transactional/Investment/Savings),
+-- auto-provisioned the first time they're requested — every client gets
+-- exactly one of each, never fabricated balances, just a real ledger of
+-- real transactions summing to the stored balance.
+CREATE TABLE IF NOT EXISTS client_accounts (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  account_type TEXT NOT NULL CHECK (account_type IN ('Transactional','Investment','Savings')),
+  account_number TEXT UNIQUE NOT NULL,
+  balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  UNIQUE(client_id, account_type)
+);
+CREATE INDEX IF NOT EXISTS idx_client_accounts_client ON client_accounts(client_id);
+
+CREATE TABLE IF NOT EXISTS client_account_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES client_accounts(id),
+  type TEXT NOT NULL,
+  tid TEXT,
+  details TEXT,
+  approval_status TEXT NOT NULL DEFAULT 'Pending',
+  amount NUMERIC(14,2) NOT NULL,
+  balance_after NUMERIC(14,2) NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE INDEX IF NOT EXISTS idx_client_account_tx_account ON client_account_transactions(account_id);
+
+-- A real, separate STK-push request table for wallet deposits — kept
+-- entirely apart from mpesa_stk_requests (loan repayments only, whose
+-- loan_id column is NOT NULL) so this never touches that flow.
+CREATE TABLE IF NOT EXISTS client_account_stk_requests (
+  id TEXT PRIMARY KEY,
+  checkout_request_id TEXT UNIQUE,
+  account_id TEXT NOT NULL REFERENCES client_accounts(id),
+  phone TEXT NOT NULL,
+  amount NUMERIC(14,2) NOT NULL,
+  environment TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  initiated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
 -- ===================== Loans =====================
 CREATE TABLE IF NOT EXISTS loan_products (
   id TEXT PRIMARY KEY,
