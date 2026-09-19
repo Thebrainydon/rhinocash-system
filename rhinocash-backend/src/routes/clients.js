@@ -264,6 +264,17 @@ function register(router) {
     res.status(201).json({ document: await get('SELECT * FROM client_documents WHERE id = ?', [id]) });
   });
 
+  router.delete('/api/clients/:id/documents/:docId', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const client = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
+    if (!client) return next({ status: 404, message: 'Client not found' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    const doc = await get('SELECT * FROM client_documents WHERE id = ? AND client_id = ?', [req.params.docId, req.params.id]);
+    if (!doc) return next({ status: 404, message: 'Document not found' });
+    await run('DELETE FROM client_documents WHERE id = ?', [doc.id]);
+    await logAction(req, { action: 'Deleted client document', module: 'clients', recordType: 'Client', recordId: req.params.id, previousValue: { doc_type: doc.doc_type, name: doc.name } });
+    res.json({ deleted: true });
+  });
+
   // Leads
   router.get('/api/leads', requireAuth, requireModule('clients'), async (req, res) => {
     // Real branch/region scoping — a Loan Officer sees only their own

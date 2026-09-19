@@ -1564,14 +1564,14 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const doc = await addDocument(newClient.id, 'client-photo.png', 'Client Photo', uploaded.path);
     __assert(doc.filePath === uploaded.path, "the real uploaded file is genuinely attached as a real client document, with its real stored path");
 
-    // Client Account page: image viewer (zoom/rotate) on the real uploaded Client Photo, the Notes modal, and the Loan History/Client Documents/Repossessed items tabs — all through the actual UI functions.
+    // Client Account page: image viewer (zoom/rotate/camera-replace/delete) on the real uploaded Client Photo, the Notes page + Post Client Interaction modal, and the Loan History/Client Documents/Repossessed items tabs — all through the actual UI functions.
     {
       session.selectedClientId = newClient.id; // same as openClient() does
       const detailHtml = renderClientDetail(newClient.id);
-      __assert(detailHtml.includes('Client photo') && detailHtml.includes('onclick="openImageViewer(') && detailHtml.includes(uploaded.path), "the real rendered Client Account page genuinely makes the real uploaded Client Photo clickable, pointing at its real stored path");
+      __assert(detailHtml.includes('Client photo') && detailHtml.includes(`openImageViewer('${newClient.id}','Client Photo'`), "the real rendered Client Account page genuinely makes the real uploaded Client Photo clickable, tied to its real client id and doc type");
 
-      openImageViewer(`${API_BASE}${uploaded.path}`, 'Client photo');
-      __assert(modal && modal.type === 'image-viewer' && DB.imageViewer.scale === 1 && DB.imageViewer.rotation === 0, "openImageViewer() genuinely opens the real image viewer at its real default zoom/rotation");
+      openImageViewer(newClient.id, 'Client Photo', 'Client photo');
+      __assert(modal && modal.type === 'image-viewer' && DB.imageViewer.docId === doc.id && DB.imageViewer.url.endsWith(uploaded.path) && DB.imageViewer.scale === 1 && DB.imageViewer.rotation === 0, "openImageViewer() genuinely opens the real image viewer on the real existing document, at its real default zoom/rotation");
       zoomImageViewer(0.25);
       __assert(DB.imageViewer.scale === 1.25, "zoomImageViewer() through the real UI function genuinely changes the real zoom level");
       rotateImageViewer(90);
@@ -1580,24 +1580,49 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
       __assert(DB.imageViewer.rotation === 180, "a second real 90° rotation genuinely reaches 180° (upside down)");
       const viewerHtml = renderImageViewerModal();
       __assert(viewerHtml.includes('scale(1.25) rotate(180deg)'), "the real rendered image viewer genuinely applies the real zoom/rotation as a real CSS transform");
+
+      // Camera: a real replace-via-upload that deletes the old document for this slot, so no duplicate is left behind.
+      const oldDocId = DB.imageViewer.docId;
+      const fakeFile2 = { arrayBuffer: async ()=> new TextEncoder().encode('fake replacement png bytes').buffer, type: 'image/png', name: 'client-photo-2.png' };
+      await handleImageViewerFileChange({ target: { files: [fakeFile2] } });
+      __assert(DB.imageViewer.docId && DB.imageViewer.docId !== oldDocId, "the real camera upload genuinely replaced the photo with a real new document");
+      __assert(!DB.documents.some(d=>d.id===oldDocId), "the real old document for this photo slot is genuinely deleted, not left behind as a duplicate");
+      __assert(DB.documents.filter(d=>d.clientId===newClient.id && d.type==='Client Photo').length === 1, "exactly one real Client Photo document exists for this client after the replace — no duplicates");
+
+      const replacedDocsHtml = renderClientDocumentsTab(newClient.id, DB.documents.filter(d=>d.clientId===newClient.id));
+      __assert(replacedDocsHtml.includes('client-photo-2.png'), "the 'Client Documents' tab genuinely lists the real replacement document, not the deleted original");
+
+      // Delete: removes the real document entirely.
+      await deleteImageViewerPhoto();
+      __assert(DB.imageViewer.docId === null && DB.imageViewer.url === null, "deleteImageViewerPhoto() through the real UI function genuinely clears the real viewer state");
+      __assert(!DB.documents.some(d=>d.clientId===newClient.id && d.type==='Client Photo'), "the real Client Photo document genuinely no longer exists server-side after delete");
+      const emptyThumbHtml = renderClientPhotoThumb(newClient.id, 'Client Photo', 'Client photo');
+      __assert(!emptyThumbHtml.includes('<img'), "the real rendered thumbnail genuinely falls back to the placeholder once the real photo is deleted");
       closeModal();
 
-      // Notes: the real interaction log, reachable from this page's own "Notes" button.
-      openClientNotesModal();
-      __assert(modal && modal.type === 'client-notes', "openClientNotesModal() genuinely opens the real Notes modal");
-      let notesForm = new Map([['type','Call'],['note','Logged from the real Notes modal']]);
-      global.FormData = class { constructor(){ return notesForm; } };
+      // Notes: a real page (not a modal), reachable from this page's own "Notes" button, with its own real "Post Client Interaction" modal.
+      openClientNotesPage();
+      __assert(session.clientNotesOpen === true, "openClientNotesPage() genuinely opens the real Notes page");
+      let notesPageHtml = renderClients();
+      __assert(notesPageHtml.includes('Interactions') && notesPageHtml.includes('+ Create'), "the real rendered Notes page genuinely shows the client's Interactions heading and its own Create action");
+
+      openPostClientInteractionModal();
+      __assert(modal && modal.type === 'post-client-interaction', "openPostClientInteractionModal() genuinely opens the real Post Client Interaction modal");
+      let postForm = new Map([['note','Logged from the real Post Client Interaction modal']]);
+      global.FormData = class { constructor(){ return postForm; } };
       const notesBefore = DB.interactions.filter(i=>i.clientId===newClient.id).length;
-      await submitInteraction({ preventDefault(){}, target:{} }, newClient.id);
-      __assert(DB.interactions.filter(i=>i.clientId===newClient.id).length === notesBefore + 1, "logging a note through the real Notes modal genuinely persists a real interaction");
-      const notesHtml = renderClientNotesModal();
-      __assert(notesHtml.includes('Logged from the real Notes modal'), "the real rendered Notes modal genuinely shows the just-logged real note");
-      closeModal();
+      await submitPostClientInteraction({ preventDefault(){}, target:{} });
+      __assert(DB.interactions.filter(i=>i.clientId===newClient.id).length === notesBefore + 1, "posting a comment through the real modal genuinely persists a real interaction");
+      __assert(!modal, "submitPostClientInteraction() genuinely closes the real modal on success");
+      const notesPageHtml2 = renderClientNotesPage(newClient.id);
+      __assert(notesPageHtml2.includes('Logged from the real Post Client Interaction modal'), "the real rendered Notes page genuinely shows the just-posted real comment");
+      closeClientNotesPage();
+      __assert(session.clientNotesOpen === false, "closeClientNotesPage() genuinely returns to the real Client Account page");
 
       // Loan History / Client Documents / Repossessed items — a real category switch, through the actual UI state.
       session.clientHistoryTab = 'Client Documents';
       let docsHtml = renderClientDetail(newClient.id);
-      __assert(docsHtml.includes('client-photo.png'), "the 'Client Documents' tab genuinely lists the real uploaded document");
+      __assert(!docsHtml.includes('client-photo-2.png') && docsHtml.includes('No documents'), "the 'Client Documents' tab genuinely reflects the real delete — no leftover reference to the removed photo");
       session.clientHistoryTab = 'Repossessed items';
       let reposHtml = renderClientDetail(newClient.id);
       __assert(reposHtml.includes('No repossessed items recorded'), "the 'Repossessed items' tab honestly shows no fabricated data, since this system does not yet track repossessions");

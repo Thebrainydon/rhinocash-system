@@ -187,6 +187,25 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(wrongBranchInteraction.status === 403, 'AC: a Nairobi Manager cannot log an interaction against a Kisumu client');
   }
 
+  // AI. Delete client document — DELETE /api/clients/:id/documents/:docId.
+  {
+    const doc = await api('POST', `/api/clients/${clientId}/documents`, { token: officerToken, body: { name: 'test-photo.png', doc_type: 'Client Photo', file_path: '/uploads/test-photo.png' } });
+    assert(doc.status === 201, 'AI: a real document is created');
+    const docId = doc.json.document.id;
+
+    const wrongBranchDelete = await api('DELETE', `/api/clients/${clientId}/documents/${docId}`, { token: nairobiManagerToken });
+    assert(wrongBranchDelete.status === 403, 'AI: a Nairobi Manager cannot delete a Kisumu client\'s document');
+
+    const deleted = await api('DELETE', `/api/clients/${clientId}/documents/${docId}`, { token: officerToken });
+    assert(deleted.status === 200 && deleted.json.deleted === true, 'AI: the real document is genuinely deleted');
+
+    const refetched = await api('GET', `/api/clients/${clientId}`, { token: officerToken });
+    assert(!refetched.json.documents.some(d => d.id === docId), 'AI: the deleted document genuinely no longer appears on a fresh fetch');
+
+    const doubleDelete = await api('DELETE', `/api/clients/${clientId}/documents/${docId}`, { token: officerToken });
+    assert(doubleDelete.status === 404, 'AI: deleting an already-deleted document is genuinely rejected, not silently accepted');
+  }
+
   // AF. Client Interactions list page — /api/clients/interactions.
   {
     const list = await api('GET', '/api/clients/interactions', { token: officerToken });

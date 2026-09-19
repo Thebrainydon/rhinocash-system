@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  887 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 691 passed, 0 failed  (drives the real UI functions in
+Backend:  892 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 702 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,578 passed, 0 failed
+Total:    1,594 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -240,9 +240,19 @@ Generate/Import counterparts; an extra "+ Create" button on the Leads
 browser's header that wasn't in the reference design was removed (the
 sidebar's own "Create a Lead" quick action already covers it, so
 nothing was lost); and the Client Account page's header (back arrow +
-client name + Notes button) no longer wraps on a long client name.
-
-## What is explicitly NOT verified, stated plainly
+client name + Notes button) no longer wraps on a long client name ·
+Notes moved from a modal to its own real page: "`<Client>` Interactions"
+with a Source/Comment table and its own real "+ Create" action, which
+opens a real "Post Client Interaction" modal (just a Comment field and
+Post — the type defaults server-side, same as any other interaction) ·
+the Client Photo / ID Photo Front / ID Photo Back image viewer is now
+real editing, not just viewing: a camera button uploads a real
+replacement (deleting the old document for that slot server-side, via a
+new `DELETE /api/clients/:id/documents/:docId`, so no duplicate is left
+behind) and a trash button deletes the photo outright, alongside the
+existing real zoom and rotate. The thumbnails are always clickable now,
+even with no photo yet, showing a generic placeholder so a first photo
+can be uploaded straight from the viewer.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code is real and
   the failure/callback paths are tested; a genuine handshake with
