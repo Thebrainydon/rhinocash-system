@@ -221,6 +221,36 @@ async function api(method, path, { token, body } = {}) {
     assert(reverse.status === 200 && reverse.json.payment.status === 'Reversed', 'accountant can reverse a payment');
     const scheduleAfter = (await api('GET', `/api/loans/${loanId}`, { token: adminToken })).json.schedule;
     assert(scheduleAfter[0].paid_amount < paidBefore, 'reversal actually unwinds the schedule allocation');
+
+    // ---- Installments view: per-installment transaction breakdown,
+    // derived by replaying real payment_allocations principal-first (the
+    // schema has no stored principal/interest split per payment) ----
+    const period1 = scheduleAfter[0];
+    assert(Number(period1.paid_amount) === 0, 'period 1 is a clean slate again after the earlier payment was reversed');
+    const principalDue1 = Number(period1.principal_due);
+    const firstAmt = Math.round(principalDue1 / 2);
+    const pay1 = await api('POST', '/api/payments', { token: officerToken, body: { loan_id: loanId, amount: firstAmt, channel: 'Cash' } });
+    assert(pay1.status === 201, 'first real payment against period 1 recorded');
+    const secondAmt = (principalDue1 - firstAmt) + 50; // finishes principal, spills 50 into interest
+    const pay2 = await api('POST', '/api/payments', { token: officerToken, body: { loan_id: loanId, amount: secondAmt, channel: 'M-Pesa' } });
+    assert(pay2.status === 201, 'second real payment against period 1 recorded');
+
+    const badLoanTxns = await api('GET', `/api/loans/does-not-exist/schedule/${period1.id}/transactions`, { token: adminToken });
+    assert(badLoanTxns.status === 404, 'unknown loan id on the transactions endpoint 404s');
+    const badScheduleTxns = await api('GET', `/api/loans/${loanId}/schedule/999999999/transactions`, { token: adminToken });
+    assert(badScheduleTxns.status === 404, 'schedule id that does not belong to this loan 404s as "Installment not found"');
+
+    const txns = await api('GET', `/api/loans/${loanId}/schedule/${period1.id}/transactions`, { token: officerToken });
+    assert(txns.status === 200 && txns.json.transactions.length === 2, 'the owning Loan Officer can pull both real payments that touched this period');
+    const [t1, t2] = txns.json.transactions;
+    assert(t1.channel === 'Cash' && t2.channel === 'M-Pesa', 'transactions come back in real chronological order (first payment, Cash, before second, M-Pesa)');
+    assert(Math.abs(t1.principal - firstAmt) < 0.01 && Math.abs(t1.interest) < 0.01, 'first payment applies entirely to principal (principal-first replay)');
+    assert(Math.abs(t2.principal - (principalDue1 - firstAmt)) < 0.01 && Math.abs(t2.interest - 50) < 0.01, 'second payment finishes principal then spills the remainder into interest');
+    assert(t1.deducted === firstAmt && t1.amount === firstAmt, 'deducted/amount reflect the real amount_applied and real payment amount');
+    assert(!!t1.postedBy && t1.postedBy !== 'System', 'each transaction carries the real staff member who recorded it');
+
+    const scheduleAfterPayments = (await api('GET', `/api/loans/${loanId}`, { token: adminToken })).json.schedule;
+    assert(!!scheduleAfterPayments[0].last_payment_date, 'schedule now carries a real last_payment_date for the period the two payments touched');
   }
 
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----

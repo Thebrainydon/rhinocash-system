@@ -1009,7 +1009,7 @@ function adaptClient(c){
     verifiedBy:c.verified_by, verifiedAt:c.verified_at, createdBy:c.created_by, createdAt:c.created_at };
 }
 function adaptScheduleRow(r){
-  return { period:r.period, dueDate:r.due_date, principalDue:r.principal_due, interestDue:r.interest_due, totalDue:r.total_due, paidAmount:r.paid_amount, status:r.status };
+  return { id:r.id, period:r.period, dueDate:r.due_date, principalDue:r.principal_due, interestDue:r.interest_due, totalDue:r.total_due, paidAmount:r.paid_amount, status:r.status, lastPaymentDate:r.last_payment_date };
 }
 function adaptLoan(l){
   return { id:l.id, clientId:l.client_id, productId:l.product_id, productName: l.product_name || productName(l.product_id),
@@ -4529,6 +4529,141 @@ function renderLoanDetailsModal(){
     </div>
   `;
 }
+// ---- Installments / per-installment transactions / receipt: all derived
+// from real loan_schedule + payment_allocations + payments rows (the
+// GET /api/loans/:id/schedule/:scheduleId/transactions endpoint). The
+// schema never stores a principal/interest split per payment, so the
+// server reconstructs it by replaying each real amount_applied value,
+// principal first — never fabricated, just derived from real numbers. ----
+// On-time rule: a fully-settled installment is red only if its latest real
+// payment landed after its due date (paid late); an unsettled one is red
+// only once its due date has already passed (overdue). Anything else is
+// black — paid on time, or simply not yet due.
+function installmentIsLate(row){
+  if(row.totalDue>0 && (row.paidAmount||0) >= row.totalDue){
+    return !!(row.lastPaymentDate && row.lastPaymentDate.slice(0,10) > row.dueDate);
+  }
+  return row.dueDate < todayISO();
+}
+function openInstallmentsModal(loanId){
+  openModal('installments', { loanId });
+  return withRequest('installments-'+loanId, async ()=>{ await refreshLoan(loanId); });
+}
+function renderInstallmentsModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  const schedule = loan.schedule||[];
+  let runningBalance = loan.principal;
+  const totals = { amount:0, principal:0, interest:0, paid:0 };
+  const rows = schedule.map(r=>{
+    const late = installmentIsLate(r);
+    runningBalance -= r.principalDue;
+    totals.amount += r.totalDue; totals.principal += r.principalDue; totals.interest += r.interestDue; totals.paid += (r.paidAmount||0);
+    return `<tr style="color:${late?'var(--red)':'var(--ink)'};">
+      <td>${fmtLoanDetailDate(r.dueDate)}</td>
+      <td>${fmtNum(r.totalDue)}</td>
+      <td>${fmtNum(r.principalDue)}</td>
+      <td>${fmtNum(r.interestDue)}</td>
+      <td>${fmtNum(r.paidAmount||0)}</td>
+      <td>${r.lastPaymentDate ? fmtLoanDetailDate(r.lastPaymentDate) : '—'}</td>
+      <td>${fmtNum(Math.max(0,runningBalance))}</td>
+      <td style="text-align:center;"><span style="cursor:pointer; color:var(--blue); font-weight:800;" onclick="openInstallmentTransactionsModal('${loan.id}','${r.id}')" title="Transactions">+</span></td>
+    </tr>`;
+  }).join("");
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Loan ${loan.id.slice(-8).toUpperCase()} Installments</h3>
+      <div class="table-wrap"><table>
+        <tr><th>Schedule</th><th>Amount</th><th>Principal</th><th>Interest</th><th>Paid</th><th>Date</th><th>Balance</th><th></th></tr>
+        ${rows || `<tr><td colspan="8" class="empty">No schedule for this loan.</td></tr>`}
+        ${schedule.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Total</td><td>${fmtNum(totals.amount)}</td><td>${fmtNum(totals.principal)}</td><td>${fmtNum(totals.interest)}</td><td>${fmtNum(totals.paid)}</td><td></td><td></td><td></td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
+async function loadInstallmentTransactions(loanId, scheduleId){
+  return withRequest('installment-txns:'+loanId+':'+scheduleId, async ()=>{
+    const res = await api.get(`/api/loans/${loanId}/schedule/${scheduleId}/transactions`);
+    DB.installmentTransactions = { loanId, scheduleId, period: adaptScheduleRow(res.period), transactions: res.transactions };
+  });
+}
+function openInstallmentTransactionsModal(loanId, scheduleId){
+  openModal('installment-transactions', { loanId, scheduleId });
+  DB.installmentTransactions = null;
+  return loadInstallmentTransactions(loanId, scheduleId);
+}
+function renderInstallmentTransactionsModal(){
+  const data = DB.installmentTransactions;
+  const fresh = data && data.loanId===modal.loanId && String(data.scheduleId)===String(modal.scheduleId);
+  const rows = fresh ? data.transactions.map((t,i)=>`
+    <tr>
+      <td>${fmtLoanDetailDate(t.date)}</td>
+      <td>${escapeHtml(t.channel)}${t.reference?' - '+escapeHtml(t.reference):''}
+        <span style="cursor:pointer; margin-left:6px;" title="Print receipt" onclick="openInstallmentReceiptModal(${i})">🖨</span></td>
+      <td>${escapeHtml(t.account)}</td>
+      <td>${fmtNum(t.amount)}</td>
+      <td>${fmtNum(t.deducted)}</td>
+    </tr>`).join("") : "";
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+        <span class="btn btn-outline btn-sm" onclick="openInstallmentsModal('${modal.loanId}')" style="border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">Installment ${fresh?'#'+data.period.period:''} Transactions</h3>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Date</th><th>Transaction</th><th>Account</th><th>Amount</th><th>Deducted</th></tr>
+        ${!fresh ? `<tr><td colspan="5" class="empty">Loading…</td></tr>` : (rows || `<tr><td colspan="5" class="empty">No transactions recorded for this installment yet.</td></tr>`)}
+      </table></div>
+    </div>
+  `;
+}
+function openInstallmentReceiptModal(txnIndex){
+  openModal('installment-receipt', { loanId: modal.loanId, scheduleId: modal.scheduleId, txnIndex });
+}
+function renderInstallmentReceiptModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  const data = DB.installmentTransactions;
+  const fresh = data && data.loanId===modal.loanId && String(data.scheduleId)===String(modal.scheduleId);
+  const t = fresh ? data.transactions[modal.txnIndex] : null;
+  if(!loan || !t) return `<div class="empty">Receipt not available.</div>`;
+  const client = DB.clients.find(c=>c.id===loan.clientId);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:18px; font-weight:800; color:var(--navy);">Rhinocash Limited</div>
+        <div class="hint">Official Payment Receipt</div>
+      </div>
+      <table style="width:100%;">
+        <tr><td>Client Name</td><td style="text-align:right;">${escapeHtml(client?client.name:'—')}</td></tr>
+        <tr><td>IDNO</td><td style="text-align:right;">${escapeHtml(client&&client.idNumber?client.idNumber:'—')}</td></tr>
+        <tr><td>Loan ID</td><td style="text-align:right;">${loan.id.slice(-8).toUpperCase()}</td></tr>
+        <tr><td>Date</td><td style="text-align:right;">${fmtLoanDetailDateTime(t.date)}</td></tr>
+        <tr><td>Receipt#</td><td style="text-align:right;">${t.paymentId.slice(-8).toUpperCase()}</td></tr>
+      </table>
+      <table style="width:100%; margin-top:10px;">
+        <tr><th>Description</th><th>Transaction</th><th>Total</th></tr>
+        <tr><td>Principal</td><td>${escapeHtml(t.channel)}${t.reference?' - '+escapeHtml(t.reference):''}</td><td>${fmtNum(t.principal)}</td></tr>
+        <tr><td>Interest</td><td></td><td>${fmtNum(t.interest)}</td></tr>
+        <tr style="font-weight:700; border-top:1px solid var(--line);"><td>Total</td><td></td><td>${fmtNum(t.deducted)}</td></tr>
+      </table>
+      <table style="width:100%; margin-top:10px;">
+        <tr><td>Posted By</td><td style="text-align:right;">${escapeHtml(t.postedBy)}</td></tr>
+        <tr><td>Loan Balance</td><td style="text-align:right;">${fmtNum(loanBalance(loan))}</td></tr>
+      </table>
+      <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+          <div class="hint">Signature</div>
+          <div style="border-bottom:1px solid var(--line); width:140px; height:28px;"></div>
+        </div>
+        <div class="hint">Print Date: ${fmtLoanDetailDateTime(new Date().toISOString())}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="window.print && window.print()">🖨 Print</button>
+    </div>
+  `;
+}
 function renderClientLoanHistoryTable(loans){
   const rows = loans.map(l=>{
     const bal = loanBalance(l);
@@ -4544,7 +4679,7 @@ function renderClientLoanHistoryTable(loans){
       <td>${fmt(arrears).replace('KES ','')}</td>
       <td>${fmt(principal).replace('KES ','')}</td>
       <td>${fmt(bal).replace('KES ','')}<br>
-        <span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">View</span>
+        <span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">View</span>
         <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Print">🖨</span>
         <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Statement">📄</span>
       </td>
@@ -10869,8 +11004,11 @@ function renderModal(){
   else if(modal.type === "post-client-interaction") body = renderPostClientInteractionModal();
   else if(modal.type === "deposit-wallet") body = renderDepositModal();
   else if(modal.type === "loan-details") body = renderLoanDetailsModal();
+  else if(modal.type === "installments") body = renderInstallmentsModal();
+  else if(modal.type === "installment-transactions") body = renderInstallmentTransactionsModal();
+  else if(modal.type === "installment-receipt") body = renderInstallmentReceiptModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){

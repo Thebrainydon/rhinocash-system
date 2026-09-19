@@ -1592,7 +1592,16 @@ function register(router) {
     if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
       return next({ status: 403, message: 'This loan is not part of your portfolio' });
     }
-    const schedule = await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loan.id]);
+    // last_payment_date: the real, latest real payment that touched each
+    // real period (via payment_allocations -> payments), used by the
+    // Installments view to show when a period was actually paid and
+    // whether that was on time — never a separate stored/fabricated field.
+    const schedule = await all(
+      `SELECT s.*,
+              (SELECT MAX(p.created_at) FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id WHERE pa.schedule_id = s.id) as last_payment_date
+       FROM loan_schedule s WHERE s.loan_id = ? ORDER BY s.period`,
+      [loan.id]
+    );
     const approvals = await all('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY created_at', [loan.id]);
     // Real, derived from records that already exist as a side effect of
     // the real actions that created/disbursed this loan — no new columns,
@@ -1613,6 +1622,55 @@ function register(router) {
     );
     const templateCreation = creationLog ? { name: creationLog.user_name, at: creationLog.created_at } : null;
     res.json({ loan, schedule, approvals, workflow: await workflowSteps(), postedBy, templateCreation });
+  });
+
+  // Per-installment transaction breakdown — powers the Installments "+"
+  // drill-down and the printable receipt. The schema only stores a single
+  // lump paid_amount per period (no principal/interest split per payment),
+  // so we reconstruct that split by replaying the real, chronologically
+  // ordered payment_allocations.amount_applied values against this period's
+  // real principal_due/interest_due, applying each transaction to principal
+  // first and the remainder to interest — nothing here is fabricated, it is
+  // a derived view over real recorded amounts.
+  router.get('/api/loans/:id/schedule/:scheduleId/transactions', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+    if (!loan) return next({ status: 404, message: 'Loan not found' });
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
+    if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
+      return next({ status: 403, message: 'This loan is not part of your portfolio' });
+    }
+    const period = await get('SELECT * FROM loan_schedule WHERE id = ? AND loan_id = ?', [req.params.scheduleId, loan.id]);
+    if (!period) return next({ status: 404, message: 'Installment not found' });
+    const allocations = await all(
+      `SELECT pa.amount_applied, p.id as payment_id, p.reference, p.channel, p.amount as payment_amount, p.created_at, u.name as posted_by_name
+       FROM payment_allocations pa
+       JOIN payments p ON p.id = pa.payment_id
+       LEFT JOIN users u ON u.id = p.recorded_by
+       WHERE pa.schedule_id = ?
+       ORDER BY p.created_at ASC, pa.id ASC`,
+      [period.id]
+    );
+    let principalLeft = period.principal_due;
+    let interestLeft = period.interest_due;
+    const transactions = allocations.map(a => {
+      const toPrincipal = Math.min(principalLeft, a.amount_applied);
+      principalLeft -= toPrincipal;
+      const toInterest = Math.min(interestLeft, a.amount_applied - toPrincipal);
+      interestLeft -= toInterest;
+      return {
+        paymentId: a.payment_id,
+        date: a.created_at,
+        channel: a.channel || 'Cash',
+        reference: a.reference || null,
+        account: a.channel || 'Cash',
+        amount: a.payment_amount,
+        deducted: a.amount_applied,
+        principal: toPrincipal,
+        interest: toInterest,
+        postedBy: a.posted_by_name || 'System'
+      };
+    });
+    res.json({ period, loan, transactions });
   });
 
   router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {

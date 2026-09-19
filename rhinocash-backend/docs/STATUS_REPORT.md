@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  903 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 718 passed, 0 failed  (drives the real UI functions in
+Backend:  915 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 725 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,621 passed, 0 failed
+Total:    1,640 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -276,7 +276,23 @@ is the real actor already recorded on the loan's original "Submitted
 loan application" audit log row — no new database columns were needed
 for either. Approvals lists every real `loan_approvals` decision.
 Clearance has no backing concept in this system yet, so it's shown
-honestly as "----" rather than invented.
+honestly as "----" rather than invented · the Loan History table's
+Repayment "View" link opens a real, color-coded Installments modal:
+each schedule row is red only if it was genuinely paid late (a fully
+settled period whose real latest payment landed after its due date) or
+is genuinely overdue (unsettled and past its due date), black
+otherwise — never a cosmetic guess. Its "+" opens a real per-installment
+transactions modal listing every real payment that touched that period,
+and its print icon opens a real receipt. None of this needed a new
+database column: the schema has no stored principal/interest split per
+payment, so a new endpoint (`GET
+/api/loans/:id/schedule/:scheduleId/transactions`) reconstructs it by
+replaying that period's real, chronologically-ordered
+`payment_allocations.amount_applied` values against its real
+`principal_due`/`interest_due`, principal first — a genuine derivation
+over real recorded amounts, not fabricated data. The main schedule query
+also now carries each period's real `last_payment_date` (the latest real
+payment that touched it), used to drive the on-time/late coloring.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

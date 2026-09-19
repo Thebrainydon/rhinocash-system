@@ -317,6 +317,27 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     updatedLoan = DB.loans.find(l=>l.id===loan.id);
     __assert(updatedLoan.schedule.some(r=>r.paidAmount > 0), "real payment allocation reflected in the refreshed schedule (not computed locally)");
 
+    // Installments / per-installment transactions / receipt: real UI
+    // functions driving the real GET /api/loans/:id/schedule/:scheduleId/transactions
+    // endpoint (principal-first replay over real payment_allocations).
+    const touchedPeriod = updatedLoan.schedule.find(r=>r.paidAmount > 0);
+    await openInstallmentsModal(loan.id);
+    __assert(modal && modal.type === 'installments' && modal.loanId === loan.id, "openInstallmentsModal() genuinely opens the real Installments modal for the real loan");
+    const installmentsHtml = renderInstallmentsModal();
+    __assert(installmentsHtml.includes('Installments') && installmentsHtml.includes(fmtNum(touchedPeriod.totalDue)) && installmentsHtml.includes(fmtNum(touchedPeriod.paidAmount)), "the real rendered Installments modal genuinely shows the real schedule amounts, not placeholders");
+
+    await openInstallmentTransactionsModal(loan.id, touchedPeriod.id);
+    __assert(modal && modal.type === 'installment-transactions' && modal.scheduleId === touchedPeriod.id, "openInstallmentTransactionsModal() genuinely opens the real per-installment transactions modal");
+    __assert(DB.installmentTransactions.transactions.length === 1 && DB.installmentTransactions.transactions[0].amount === 8000, "the real transactions endpoint genuinely returned the real 8000 payment that touched this period");
+    const txnsHtml = renderInstallmentTransactionsModal();
+    __assert(txnsHtml.includes('Cash') && txnsHtml.includes(fmtNum(8000)), "the real rendered per-installment transactions modal genuinely shows the real payment channel and amount");
+
+    openInstallmentReceiptModal(0);
+    __assert(modal && modal.type === 'installment-receipt' && modal.txnIndex === 0, "openInstallmentReceiptModal() genuinely opens the real receipt modal for the real transaction");
+    const receiptHtml = renderInstallmentReceiptModal();
+    __assert(receiptHtml.includes('Official Payment Receipt') && receiptHtml.includes(escapeHtml(testClient.name)) && receiptHtml.includes('Print'), "the real rendered receipt genuinely shows the real client name and a Print action");
+    closeModal();
+
     // Duplicate guard: global.confirm is not defined in this headless harness,
     // so trigger it via the real API directly (recordPayment already handles
     // the POSSIBLE_DUPLICATE code path with a confirm() the browser would show).
