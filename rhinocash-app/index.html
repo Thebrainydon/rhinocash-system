@@ -1360,6 +1360,7 @@ async function refreshLoan(loanId){
   const loan = adaptLoan(res.loan);
   loan.approvals = res.approvals; loan.workflow = res.workflow;
   loan.postedBy = res.postedBy; loan.templateCreation = res.templateCreation;
+  loan.disbursementChannel = res.disbursementChannel;
   const idx = DB.loans.findIndex(x=>x.id===loanId);
   if(idx>=0) DB.loans[idx] = loan; else DB.loans.unshift(loan);
   return loan;
@@ -4664,6 +4665,136 @@ function renderInstallmentReceiptModal(){
     </div>
   `;
 }
+// ---- Loan Account Statement & Loan Ledger Statement: the Repayment
+// column's two print icons. Both are built purely from real data — a
+// per-payment principal/interest split reuses the payment's own real
+// allocated_principal/allocated_interest (already stored at allocation
+// time, no replay needed at this whole-loan scope), disbursement channel
+// comes from the real "Disbursed loan" audit log row (same derivation the
+// disbursement-method report already uses). This system has no
+// processing-fee or penalty concept anywhere (loan_products.fee_pct is
+// never actually applied/posted, and there is no penalty column or table
+// at all), so neither is shown — inventing a specific amount for either
+// would be fabrication, the same principle behind Loan Details' honest
+// "----" Clearance placeholder. ----
+function statementChannelLabel(channel){ return channel || 'Cash'; }
+async function loadLoanStatementData(loanId){
+  return withRequest('loan-statement:'+loanId, async ()=>{
+    await refreshLoan(loanId);
+    const res = await api.get(`/api/payments?loan_id=${loanId}&limit=500`);
+    DB.loanStatementPayments = { loanId, payments: res.payments.map(adaptPayment).filter(p=>p.status!=='Reversed').sort((a,b)=>new Date(a.date)-new Date(b.date)) };
+  });
+}
+function openLoanAccountStatementModal(loanId){
+  openModal('loan-account-statement', { loanId });
+  DB.loanStatementPayments = null;
+  return loadLoanStatementData(loanId);
+}
+function renderLoanAccountStatementModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  const paysData = DB.loanStatementPayments;
+  const fresh = loan && paysData && paysData.loanId===modal.loanId;
+  if(!fresh) return `<div class="empty">Loading…</div>`;
+  const client = DB.clients.find(c=>c.id===loan.clientId);
+  const branch = DB.branches.find(b=>b.id===loan.branchId);
+  const maturity = loan.schedule && loan.schedule.length ? loan.schedule[loan.schedule.length-1].dueDate : null;
+  const durationDays = loan.disbursedAt && maturity ? daysBetween(loan.disbursedAt, maturity) : null;
+  const rows = paysData.payments.map(p=>{
+    const lines = [];
+    if((p.allocated.principal||0)>0.004) lines.push(`- Principal - ${fmtNum(p.allocated.principal)}`);
+    if((p.allocated.interest||0)>0.004) lines.push(`- Interest - ${fmtNum(p.allocated.interest)}`);
+    const overpay = p.amount - (p.allocated.principal||0) - (p.allocated.interest||0);
+    if(overpay>0.004) lines.push(`- Overpayment - ${fmtNum(overpay)}`);
+    return `<tr>
+      <td>${fmtLoanDetailDateTime(p.date)}</td>
+      <td>${escapeHtml(p.reference||'—')}</td>
+      <td>${escapeHtml(statementChannelLabel(p.channel))}</td>
+      <td>${client&&client.idNumber?escapeHtml(client.idNumber):'—'}</td>
+      <td>${fmtNum(p.amount)}</td>
+      <td>${lines.length?lines.map(l=>`<div>${escapeHtml(l)}</div>`).join(""):'—'}</td>
+    </tr>`;
+  }).join("");
+  const total = paysData.payments.reduce((s,p)=>s+p.amount,0);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:18px; font-weight:800; color:var(--navy);">Rhinocash Limited</div>
+        <div class="hint">Loan Account Statement</div>
+      </div>
+      <table style="width:100%; margin-bottom:14px;">
+        <tr><td style="font-weight:700; width:20%;">Branch</td><td style="width:30%;">${escapeHtml(branch?branch.name:'—')}</td><td style="font-weight:700; width:20%;">Loan Amount</td><td>${fmtNum(loan.principal)}</td></tr>
+        <tr><td style="font-weight:700;">Client Name</td><td>${escapeHtml(client?client.name:'—')}</td><td style="font-weight:700;">Disbursement</td><td>${loan.disbursedAt?fmtLoanDetailDate(loan.disbursedAt):'Not yet disbursed'}</td></tr>
+        <tr><td style="font-weight:700;">ID Number</td><td>${client&&client.idNumber?escapeHtml(client.idNumber):'—'}</td><td style="font-weight:700;">Duration</td><td>${durationDays!=null?durationDays+' days':'—'}</td></tr>
+        <tr><td style="font-weight:700;">Print Date</td><td>${fmtLoanDetailDateTime(new Date().toISOString())}</td><td style="font-weight:700;">Loan Balance</td><td>${fmtNum(loanBalance(loan))}</td></tr>
+      </table>
+      <h4 style="color:var(--navy); margin:0 0 8px;">Payment History</h4>
+      <div class="table-wrap"><table>
+        <tr><th>Date</th><th>Transaction</th><th>Channel</th><th>Account</th><th>Amount</th><th>Breakdown</th></tr>
+        ${rows || `<tr><td colspan="6" class="empty">No payments recorded yet.</td></tr>`}
+        ${paysData.payments.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4">Totals</td><td>${fmtNum(total)}</td><td></td></tr>` : ""}
+      </table></div>
+      <div class="hint" style="text-align:center; margin-top:14px; font-style:italic;">${escapeHtml(client?client.name:'')} Loan Statement: Page 1 of 1</div>
+      <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="window.print && window.print()">🖨 Print</button>
+    </div>
+  `;
+}
+function openLoanLedgerStatementModal(loanId){
+  openModal('loan-ledger-statement', { loanId });
+  DB.loanStatementPayments = null;
+  return loadLoanStatementData(loanId);
+}
+function renderLoanLedgerStatementModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  const paysData = DB.loanStatementPayments;
+  const fresh = loan && paysData && paysData.loanId===modal.loanId;
+  if(!fresh) return `<div class="empty">Loading…</div>`;
+  const client = DB.clients.find(c=>c.id===loan.clientId);
+  const totalInterest = (loan.schedule||[]).reduce((s,r)=>s+r.interestDue,0);
+  let balance = 0;
+  const rows = [];
+  if(loan.disbursedAt){
+    balance += loan.principal;
+    rows.push({ date:loan.disbursedAt, desc:`Disbursement to ${escapeHtml(client?client.name:'client')} via ${escapeHtml(statementChannelLabel(loan.disbursementChannel))}. Ref ${loan.id.slice(-8).toUpperCase()}`, debit:0, credit:loan.principal, balance });
+    balance += totalInterest;
+    rows.push({ date:loan.disbursedAt, desc:'Interest charges applied', debit:totalInterest, credit:0, balance });
+  }
+  paysData.payments.forEach(p=>{
+    if((p.allocated.principal||0)>0.004){
+      balance -= p.allocated.principal;
+      rows.push({ date:p.date, desc:`Principal paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.principal, balance });
+    }
+    if((p.allocated.interest||0)>0.004){
+      balance -= p.allocated.interest;
+      rows.push({ date:p.date, desc:`Interest paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.interest, balance });
+    }
+  });
+  const rowsHtml = rows.map(r=>`<tr>
+    <td>${fmtLoanDetailDateTime(r.date)}</td>
+    <td>${r.desc}</td>
+    <td>${r.debit>0.004?fmtNum(r.debit):''}</td>
+    <td>${r.credit>0.004?fmtNum(r.credit):''}</td>
+    <td>${fmtNum(r.balance)}</td>
+  </tr>`).join("");
+  const statementTitle = `${client?escapeHtml(client.name):''} - ${escapeHtml(loan.productName||'Loan')} Loan #${loan.id.slice(-8).toUpperCase()} Statement`;
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:18px; font-weight:800; color:var(--navy);">Rhinocash Limited</div>
+        <div class="hint">${statementTitle}</div>
+      </div>
+      <div class="hint" style="margin-bottom:10px;">Generated on ${fmtLoanDetailDateTime(new Date().toISOString())} by ${escapeHtml(DB.me?DB.me.name:'—')}</div>
+      <div class="table-wrap"><table>
+        <tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr>
+        ${rowsHtml || `<tr><td colspan="5" class="empty">No ledger activity yet.</td></tr>`}
+        ${rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4">BALANCE AS AT ${fmtLoanDetailDateTime(new Date().toISOString())}</td><td>${fmtNum(balance)}</td></tr>` : ""}
+      </table></div>
+      <div class="hint" style="text-align:center; margin-top:14px; font-style:italic;">${statementTitle} : Page 1</div>
+      <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="window.print && window.print()">🖨 Print</button>
+    </div>
+  `;
+}
 function renderClientLoanHistoryTable(loans){
   const rows = loans.map(l=>{
     const bal = loanBalance(l);
@@ -4680,8 +4811,8 @@ function renderClientLoanHistoryTable(loans){
       <td>${fmt(principal).replace('KES ','')}</td>
       <td>${fmt(bal).replace('KES ','')}<br>
         <span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">View</span>
-        <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Print">🖨</span>
-        <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Statement">📄</span>
+        <span style="cursor:pointer; margin-left:4px;" onclick="openLoanAccountStatementModal('${l.id}')" title="Print">🖨</span>
+        <span style="cursor:pointer; margin-left:4px;" onclick="openLoanLedgerStatementModal('${l.id}')" title="Statement">📄</span>
       </td>
       <td><span style="color:${dotColor};">●</span> ${escapeHtml(l.status)}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">☰ Action</span></td>
     </tr>`;
@@ -11007,8 +11138,10 @@ function renderModal(){
   else if(modal.type === "installments") body = renderInstallmentsModal();
   else if(modal.type === "installment-transactions") body = renderInstallmentTransactionsModal();
   else if(modal.type === "installment-receipt") body = renderInstallmentReceiptModal();
+  else if(modal.type === "loan-account-statement") body = renderLoanAccountStatementModal();
+  else if(modal.type === "loan-ledger-statement") body = renderLoanLedgerStatementModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){

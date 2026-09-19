@@ -1621,7 +1621,16 @@ function register(router) {
       [loan.id]
     );
     const templateCreation = creationLog ? { name: creationLog.user_name, at: creationLog.created_at } : null;
-    res.json({ loan, schedule, approvals, workflow: await workflowSteps(), postedBy, templateCreation });
+    // Real disbursement channel — recorded in the real audit log (not a
+    // direct loan column, same derivation already used by the disbursement
+    // method breakdown report below) — powers the printable Loan Ledger
+    // Statement's disbursement line without fabricating a channel.
+    let disbursementChannel = null;
+    const disbursementAuditRow = await get(`SELECT new_value FROM audit_logs WHERE record_type = 'Loan' AND record_id = ? AND action = 'Disbursed loan' ORDER BY id DESC LIMIT 1`, [loan.id]);
+    if (disbursementAuditRow && disbursementAuditRow.new_value) {
+      try { disbursementChannel = JSON.parse(disbursementAuditRow.new_value).channel || null; } catch (e) { /* leave null */ }
+    }
+    res.json({ loan, schedule, approvals, workflow: await workflowSteps(), postedBy, templateCreation, disbursementChannel });
   });
 
   // Per-installment transaction breakdown — powers the Installments "+"

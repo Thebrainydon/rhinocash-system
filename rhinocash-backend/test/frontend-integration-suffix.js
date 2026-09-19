@@ -338,6 +338,23 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(receiptHtml.includes('Official Payment Receipt') && receiptHtml.includes(escapeHtml(testClient.name)) && receiptHtml.includes('Print'), "the real rendered receipt genuinely shows the real client name and a Print action");
     closeModal();
 
+    // Loan Account Statement & Loan Ledger Statement: the Repayment
+    // column's two other real print icons, both driven by real UI functions.
+    await openLoanAccountStatementModal(loan.id);
+    __assert(modal && modal.type === 'loan-account-statement' && modal.loanId === loan.id, "openLoanAccountStatementModal() genuinely opens the real Loan Account Statement modal for the real loan");
+    __assert(DB.loanStatementPayments && DB.loanStatementPayments.payments.length === 1 && DB.loanStatementPayments.payments[0].amount === 8000, "the real statement data genuinely loaded the real 8000 payment for this loan");
+    const acctStatementHtml = renderLoanAccountStatementModal();
+    __assert(acctStatementHtml.includes('Loan Account Statement') && acctStatementHtml.includes(escapeHtml(testClient.name)) && acctStatementHtml.includes(fmtNum(loan.principal)) && acctStatementHtml.includes(fmtNum(8000)), "the real rendered Loan Account Statement genuinely shows the real client name, loan amount, and payment amount");
+    closeModal();
+
+    await openLoanLedgerStatementModal(loan.id);
+    __assert(modal && modal.type === 'loan-ledger-statement' && modal.loanId === loan.id, "openLoanLedgerStatementModal() genuinely opens the real Loan Ledger Statement modal for the real loan");
+    const updatedLoanForLedger = DB.loans.find(l=>l.id===loan.id);
+    __assert(updatedLoanForLedger.disbursementChannel === 'Bank', "the real disbursementChannel genuinely reflects the real channel this loan was disbursed through ('Bank')");
+    const ledgerHtml = renderLoanLedgerStatementModal();
+    __assert(ledgerHtml.includes('Bank') && ledgerHtml.includes(fmtNum(loan.principal)) && ledgerHtml.includes('BALANCE AS AT') && ledgerHtml.includes(fmtNum(loanBalance(updatedLoanForLedger))), "the real rendered Loan Ledger Statement genuinely shows the real disbursement channel, principal, and running balance ending at the real current loan balance");
+    closeModal();
+
     // Duplicate guard: global.confirm is not defined in this headless harness,
     // so trigger it via the real API directly (recordPayment already handles
     // the POSSIBLE_DUPLICATE code path with a confirm() the browser would show).

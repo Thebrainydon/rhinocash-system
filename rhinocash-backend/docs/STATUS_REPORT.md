@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  915 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 725 passed, 0 failed  (drives the real UI functions in
+Backend:  918 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 731 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,640 passed, 0 failed
+Total:    1,649 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -293,6 +293,21 @@ replaying that period's real, chronologically-ordered
 over real recorded amounts, not fabricated data. The main schedule query
 also now carries each period's real `last_payment_date` (the latest real
 payment that touched it), used to drive the on-time/late coloring.
+The Repayment column's other two icons open two further real, printable
+statements: a Loan Account Statement (branch, loan amount, disbursement
+date, real term-in-days duration, current balance, and a real payment
+history with each payment's real principal/interest breakdown — its
+own real `allocated_principal`/`allocated_interest` columns, not
+replayed, since this view is whole-loan scope) and a Loan Ledger
+Statement (a real debit/credit/running-balance ledger: disbursement,
+interest charged, then two real lines per payment). Disbursement
+channel comes from the real "Disbursed loan" audit log row (the same
+derivation the existing disbursement-method report already used) via a
+new `disbursementChannel` field on `GET /api/loans/:id`. This system
+has no processing-fee or penalty concept anywhere — `loan_products.fee_pct`
+is configured but never actually applied/posted anywhere, and there is
+no penalty column or table at all — so neither appears on either
+statement; showing a specific amount for either would be fabrication.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

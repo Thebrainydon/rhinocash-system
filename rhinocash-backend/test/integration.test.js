@@ -206,6 +206,7 @@ async function api(method, path, { token, body } = {}) {
     const detailAfterDisbursement = await api('GET', `/api/loans/${loanId}`, { token: adminToken });
     assert(detailAfterDisbursement.json.postedBy && detailAfterDisbursement.json.postedBy.name === adminMeForDetails.json.user.name && !!detailAfterDisbursement.json.postedBy.at, 'the real "Posted By" genuinely identifies the real Admin who disbursed this loan, with a real timestamp');
     assert(detailAfterDisbursement.json.templateCreation && detailAfterDisbursement.json.templateCreation.name === officerMeForDetails.json.user.name && !!detailAfterDisbursement.json.templateCreation.at, 'the real "Template Creation" genuinely identifies the real Loan Officer who submitted this application, with a real timestamp');
+    assert(detailAfterDisbursement.json.disbursementChannel === 'M-Pesa', 'the real "disbursementChannel" genuinely identifies the real channel this loan was disbursed through, derived from the real disbursement audit log row');
 
     // Record a payment, verify allocation + cash position moves
     const cashBefore = await api('GET', '/api/accounting/cash-position', { token: adminToken });
@@ -213,6 +214,14 @@ async function api(method, path, { token, body } = {}) {
     assert(payment.status === 201 && payment.json.payment.status === 'Posted', 'payment recorded and posted');
     const cashAfter = await api('GET', '/api/accounting/cash-position', { token: adminToken });
     assert(cashAfter.json.balances.mpesa > cashBefore.json.balances.mpesa, 'cash position (M-Pesa account) increases from a real posted payment, derived from the ledger');
+
+    // The real GET /api/payments?loan_id= filter (used by the Loan Account
+    // Statement / Loan Ledger Statement pages) returns this exact real
+    // payment with its real allocated_principal/allocated_interest split.
+    const loanPayments = await api('GET', `/api/payments?loan_id=${loanId}`, { token: officerToken });
+    assert(loanPayments.status === 200 && loanPayments.json.payments.some(p => p.id === payment.json.payment.id), 'GET /api/payments?loan_id= genuinely returns this real payment');
+    const foundPayment = loanPayments.json.payments.find(p => p.id === payment.json.payment.id);
+    assert(Math.abs((foundPayment.allocated_principal + foundPayment.allocated_interest) - 9500) < 0.01, 'the real allocated_principal + allocated_interest for this payment genuinely sums to the real amount paid');
 
     // Reverse it (accountant permission), verify schedule unwinds
     const scheduleBefore = (await api('GET', `/api/loans/${loanId}`, { token: adminToken })).json.schedule;
