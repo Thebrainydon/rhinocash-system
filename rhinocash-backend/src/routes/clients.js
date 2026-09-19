@@ -1,5 +1,5 @@
 'use strict';
-const { all, get, run } = require('./../db');
+const { all, get, run, transaction } = require('./../db');
 const { requireAuth, requireModule, requireAnyModule, requirePermission } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId } = require('./../rbac');
@@ -135,6 +135,55 @@ function register(router) {
     );
     await logAction(req, { action: 'Created client', module: 'clients', recordType: 'Client', recordId: id, newValue: { name: b.name, branch_id: branchId } });
     res.status(201).json({ client: await get('SELECT * FROM clients WHERE id = ?', [id]) });
+  });
+
+  // Bulk import — a real CSV template (Name/Contact/Idno/Loan officer/
+  // Location/Kin contact/Next of kin/Business type). "Loan officer" is
+  // looked up by staff_code (each staff member's real "ID Number ... as
+  // in the system") against users with the Loan Officer role — never a
+  // free-text name, so a typo can't silently misassign a client. Each row
+  // reuses the exact same validation/branch-resolution as a single real
+  // POST /api/clients; a bad row is skipped and reported, never allowed
+  // to abort rows that were valid.
+  router.post('/api/clients/bulk', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+    if (!rows.length) return next({ status: 400, message: 'No rows to import' });
+    const created = [];
+    const errors = [];
+    await transaction(async () => {
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i] || {};
+        const rowNum = i + 2; // spreadsheet row 1 is the header
+        if (!r.name || !r.phone) { errors.push({ row: rowNum, error: 'Name and Contact (phone) are required' }); continue; }
+        const dup = await get('SELECT id, name FROM clients WHERE phone = ?', [r.phone]);
+        if (dup) { errors.push({ row: rowNum, error: `A client with this phone number already exists: ${dup.name}` }); continue; }
+
+        let branchId;
+        try { branchId = await resolveWriteBranchId(req.user, null); } catch (e) { errors.push({ row: rowNum, error: e.message }); continue; }
+
+        let officerId = null;
+        if (r.loan_officer) {
+          const officer = await get(`SELECT * FROM users WHERE staff_code = ? AND role_id = 'loan_officer'`, [r.loan_officer]);
+          if (!officer) { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" was not found` }); continue; }
+          if (officer.status !== 'Active') { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" is not an active staff member` }); continue; }
+          if (officer.branch_id && officer.branch_id !== branchId) { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" belongs to a different branch than this import is registering clients under` }); continue; }
+          officerId = officer.id;
+        } else if (req.user.role_id === 'loan_officer') {
+          officerId = req.user.id;
+        }
+
+        const id = 'cl_' + crypto.randomUUID();
+        const code = generateClientCode();
+        await run(
+          `INSERT INTO clients (id, client_code, name, national_id, phone, address, next_of_kin, next_of_kin_phone, business_type, branch_id, officer_id, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, code, r.name, r.national_id || null, r.phone, r.location || null, r.next_of_kin || null, r.kin_contact || null, r.business_type || null, branchId, officerId, req.user.id]
+        );
+        created.push(id);
+      }
+    });
+    await logAction(req, { action: 'Bulk-imported clients', module: 'clients', recordType: 'Client', recordId: null, newValue: { created: created.length, errors: errors.length } });
+    res.status(created.length ? 201 : 400).json({ created: created.length, errors });
   });
 
   router.patch('/api/clients/:id', requireAuth, requireModule('clients'), async (req, res, next) => {

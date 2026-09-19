@@ -208,6 +208,33 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(futureOnly.status === 200 && !futureOnly.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AF: a real "from" date after today genuinely excludes today\'s interaction — the date filter is not a silent no-op');
   }
 
+  // AH. Bulk Import Clients — /api/clients/bulk with real per-row validation, Loan Officer lookup by staff_code, and partial success.
+  {
+    const rows = [
+      { name: 'Bulk Client One', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), national_id: '11112222', loan_officer: officerMe.staff_code, location: 'Kisumu CBD', kin_contact: '0711000111', next_of_kin: 'Bulk Kin', business_type: 'Retail' },
+      { name: '', phone: '0722000000' }, // bad row: missing name
+      { name: 'Bulk Client Bad Officer', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), loan_officer: 'RC-9999' }, // bad row: unknown officer ID
+    ];
+    const bulk = await api('POST', '/api/clients/bulk', { token: officerToken, body: { rows } });
+    assert(bulk.status === 201, 'AH: a real bulk import genuinely creates the valid rows even though other rows in the same file are bad');
+    assert(bulk.json.created === 1, 'AH: exactly the one genuinely valid row was created');
+    assert(bulk.json.errors.length === 2, 'AH: both genuinely bad rows are reported as errors, not silently dropped');
+    assert(bulk.json.errors.some(e => e.row === 3 && /Name and Contact/.test(e.error)), 'AH: the missing-name row is reported with the real spreadsheet row number and a clear reason');
+    assert(bulk.json.errors.some(e => e.row === 4 && /not found/.test(e.error)), 'AH: the unknown loan-officer-ID row is reported clearly, not silently misassigned');
+
+    const search = await api('GET', `/api/clients?q=${encodeURIComponent('Bulk Client One')}`, { token: officerToken });
+    const c = search.json.clients.find(cl => cl.name === 'Bulk Client One');
+    assert(!!c && c.officer_id === officerMe.id && c.national_id === '11112222' && c.address === 'Kisumu CBD' && c.next_of_kin === 'Bulk Kin' && c.next_of_kin_phone === '0711000111' && c.business_type === 'Retail', 'AH: every real field from the bulk row genuinely persisted, correctly mapped, including the real Loan Officer resolved by staff_code');
+
+    // A staff_code belonging to a real user who is NOT a Loan Officer (a Manager) is genuinely rejected, not silently assigned.
+    const nairobiManagerMe = await api('GET', '/api/auth/me', { token: nairobiManagerToken });
+    const wrongRoleRow = await api('POST', '/api/clients/bulk', { token: officerToken, body: { rows: [{ name: 'Wrong Role Officer', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), loan_officer: nairobiManagerMe.json.user.staff_code }] } });
+    assert(wrongRoleRow.status === 400 && wrongRoleRow.json.errors[0].error.includes('not found'), 'AH: a real staff_code belonging to a non-Loan-Officer role is genuinely rejected, not silently assigned');
+
+    const empty = await api('POST', '/api/clients/bulk', { token: officerToken, body: { rows: [] } });
+    assert(empty.status === 400, 'AH: an empty rows array is genuinely rejected up front');
+  }
+
   // AD. Investor isolation.
   {
     const r1 = await api('GET', '/api/clients', { token: investorToken });

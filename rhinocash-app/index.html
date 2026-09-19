@@ -865,7 +865,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1065,7 +1065,7 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -3841,7 +3841,7 @@ function renderClients(){
   if(active==="Client Leads") return renderClientLeads();
   if(active==="Interactions") return renderClientInteractionsPage();
 
-  return tabsHtml + renderClientDirectoryPage();
+  return renderClientDirectoryPage();
 }
 async function loadClientDirectory(filters, page){
   return withRequest('load-clientdir', async ()=>{
@@ -3850,45 +3850,231 @@ async function loadClientDirectory(filters, page){
     DB.acctPages.clientdir = { clients: res.clients.map(adaptClient), pagination: res.pagination, filters: filters||{}, page: res.pagination.page };
   });
 }
+// The visible dropdown label ('All'/'Dormant'/'Active'/'Blacklisted'/
+// 'Unfunded') is stashed on filters.category purely so the page can
+// re-render the right heading/selection — it isn't a real query param,
+// and the backend harmlessly ignores it.
+const CLIENT_DIR_CATEGORIES = ['All','Dormant','Active','Blacklisted','Unfunded'];
+function setClientDirCategory(category){
+  const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
+  const merged = { q: prev.q, branch_id: prev.branch_id, category };
+  if(category==='Unfunded'){ merged.unfunded = 'true'; }
+  else if(category!=='All'){ merged.status = category; }
+  loadClientDirectory(merged, 1);
+}
 function submitClientDirFilter(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   Object.keys(f).forEach(k=>{ if(!f[k]) delete f[k]; });
-  if(f.status==='All'){ delete f.status; }
-  if(f.status==='Unfunded'){ delete f.status; f.unfunded='true'; }
-  return loadClientDirectory(f, 1);
+  const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
+  const merged = { ...prev, ...f };
+  if(merged.status==='All'){ delete merged.status; }
+  if(merged.status==='Unfunded'){ delete merged.status; merged.unfunded='true'; }
+  return loadClientDirectory(merged, 1);
 }
 function renderClientDirectoryPage(){
   const state = DB.acctPages.clientdir;
-  if(!state) loadClientDirectory({},1);
+  if(!state) loadClientDirectory({ category:'Active', status:'Active' }, 1);
+  const category = state ? (state.filters.category || 'All') : 'Active';
+  const header = `
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
+        <h3 style="color:var(--navy); margin:0;">${category} clients (${state?state.pagination.total:0})</h3>
+      </div>
+      <form onsubmit="return submitClientDirFilter(event)">
+        <input class="search" name="q" placeholder="Search by Name, Phone or ID" value="${state?escapeHtml(state.filters.q||''):''}" onchange="this.form.requestSubmit()">
+      </form>
+    </div>`;
   const rows = state ? state.clients.map(c=>{
     const loans = DB.loans.filter(l=>l.clientId===c.id);
-    const outstanding = loans.filter(l=>["Active","Disbursed"].includes(l.status)).reduce((s,l)=>s+loanBalance(l),0);
+    const location = c.address || '—';
+    const truncated = location.length>40 ? location.slice(0,40)+'…' : location;
     return `<tr class="clickable" onclick="openClient('${c.id}')">
-      <td><strong>${escapeHtml(c.name)}</strong><br><span class="hint">${escapeHtml(c.clientCode||'')} · ${escapeHtml(c.phone)}</span></td>
-      <td>${c.type}</td><td>${branchName(c.branch)}</td><td>${c.officerId?staffName(c.officerId):'—'}</td>
-      <td>${loans.length}</td><td>${fmt(outstanding)}</td>
-      <td><span class="badge ${c.verificationStatus==='Verified'?'green':c.verificationStatus==='Rejected'?'red':'amber'}">${c.verificationStatus}</span></td>
-      <td><span class="badge ${c.status==='Active'?'green':'grey'}">${c.status}</span></td></tr>`;
+      <td><strong>${escapeHtml(c.name)}</strong></td>
+      <td>${escapeHtml(c.phone||'—')}</td>
+      <td>${escapeHtml(c.idNumber||'—')}</td>
+      <td>${branchName(c.branch)}</td>
+      <td>${c.officerId?staffName(c.officerId):'—'}</td>
+      <td>${loans.length}</td>
+      <td>${escapeHtml(truncated)}${location.length>40?` <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="event.stopPropagation(); toast('${escapeHtml(location).replace(/'/g,"&#39;")}')">View</span>`:''}</td>
+      <td>${escapeHtml(c.nextOfKinPhone||'—')}</td>
+      <td>${escapeHtml(c.nextOfKin||'—')}</td>
+      <td><span style="color:${CLIENT_STATUS_DOT[c.status]||'#8B897F'};">●</span> ${escapeHtml(c.status)}</td>
+    </tr>`;
   }).join("") : "";
   return `
     <div class="card">
-      <div class="card-title">All Clients <small>${state?state.pagination.total+' registered':'Loading…'}</small></div>
-      <form onsubmit="return submitClientDirFilter(event)" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
-        <input name="q" placeholder="Search name/phone/ID/client code" value="${state?escapeHtml(state.filters.q||''):''}">
-        ${DB.branches.length>1 ? `<select name="branch_id"><option value="">All branches (within your scope)</option>${DB.branches.map(b=>`<option value="${b.id}" ${state&&state.filters.branch_id===b.id?'selected':''}>${b.name}</option>`).join("")}</select>` : ""}
-        <select name="status"><option value="">All statuses</option><option ${state&&state.filters.status==='Active'?'selected':''}>Active</option><option ${state&&state.filters.status==='Dormant'?'selected':''}>Dormant</option><option ${state&&state.filters.status==='Blacklisted'?'selected':''}>Blacklisted</option><option ${state&&state.filters.unfunded?'selected':''}>Unfunded</option></select>
-        <select name="verification_status"><option value="">All KYC statuses</option><option ${state&&state.filters.verification_status==='Verified'?'selected':''}>Verified</option><option ${state&&state.filters.verification_status==='Unverified'?'selected':''}>Unverified</option><option ${state&&state.filters.verification_status==='Pending'?'selected':''}>Pending</option><option ${state&&state.filters.verification_status==='Rejected'?'selected':''}>Rejected</option></select>
-        <button class="btn btn-sm btn-outline" type="submit">Apply</button>
-      </form>
+      ${header}
+      <div class="pill-row" style="align-items:center;">
+        <select onchange="setClientDirCategory(this.value)">
+          ${CLIENT_DIR_CATEGORIES.map(c=>`<option value="${c}" ${c===category?'selected':''}>${c} clients</option>`).join("")}
+        </select>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+          <select onchange="if(this.value) generateClientReport(this.value); this.value='';" style="min-width:130px;">
+            <option value="" selected>-- Generate --</option>
+            <option value="pdf">PDF Printout</option>
+            <option value="excel">Excel File</option>
+          </select>
+          <button class="btn btn-sm btn-outline" onclick="openImportClientsModal()">↑ Import</button>
+          <button class="btn btn-sm btn-outline" onclick="openFilterClientFieldsModal()" title="Filter client fields">↓</button>
+        </div>
+      </div>
       <div class="table-wrap"><table>
-        <tr><th>Client</th><th>Type</th><th>Branch</th><th>Loan Officer</th><th>Loans</th><th>Outstanding</th><th>KYC</th><th>Status</th></tr>
-        ${rows || `<tr><td colspan="8" class="empty">${state?'No clients match these filters.':'Loading…'}</td></tr>`}
+        <tr>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Name</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Contact</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Idno</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Branch</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Loan officer</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Cycles</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Location</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Kin contact</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Next of kin</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none; font-size:12.5px;">Status</th>
+        </tr>
+        ${rows || `<tr><td colspan="10" class="empty">${state?'No clients match these filters.':'Loading…'}</td></tr>`}
       </table></div>
       ${state ? renderPaginationControls('clientdir','loadClientDirectory',state.filters) : ""}
     </div>
   `;
 }
+
+// ---- Client Directory toolbar: Generate (real PDF-via-print / real CSV
+// export), Import (a real CSV bulk-create, same honest CSV-only pattern
+// as the Bulk Upload Utility Payments modal above — this dependency-free
+// build has no binary .xlsx parser), Filter client Fields (which columns
+// a generated report includes). ----
+const CLIENT_EXPORT_FIELD_DEFS = [
+  { key:'phone', label:'Contact' }, { key:'idNumber', label:'Idno' },
+  { key:'branch', label:'Branch' }, { key:'officer', label:'Loan Officer' },
+  { key:'cycles', label:'Cycles' }, { key:'location', label:'Location' },
+  { key:'kinContact', label:'Kin Contact' }, { key:'nextOfKin', label:'Next Of Kin' },
+  { key:'businessType', label:'Business Type' },
+];
+function openFilterClientFieldsModal(){
+  if(!session.clientExportFields){ session.clientExportFields = CLIENT_EXPORT_FIELD_DEFS.map(d=>d.key); }
+  openModal('filter-client-fields');
+}
+function toggleClientExportField(key){
+  const set = new Set(session.clientExportFields||CLIENT_EXPORT_FIELD_DEFS.map(d=>d.key));
+  if(set.has(key)) set.delete(key); else set.add(key);
+  session.clientExportFields = CLIENT_EXPORT_FIELD_DEFS.map(d=>d.key).filter(k=>set.has(k));
+  renderApp();
+}
+function renderFilterClientFieldsModal(){
+  const selected = new Set(session.clientExportFields||CLIENT_EXPORT_FIELD_DEFS.map(d=>d.key));
+  const checkbox = (d) => `<label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; cursor:pointer;"><input type="checkbox" ${selected.has(d.key)?'checked':''} onchange="toggleClientExportField('${d.key}')"> ${d.label}</label>`;
+  return `
+    <div class="modal-head"><h3>Filter client Fields</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="two-col" style="margin-top:10px;">
+      <div>${CLIENT_EXPORT_FIELD_DEFS.slice(0,5).map(checkbox).join("")}</div>
+      <div>${CLIENT_EXPORT_FIELD_DEFS.slice(5).map(checkbox).join("")}</div>
+    </div>
+    <div style="text-align:right; margin-top:10px;">
+      <button class="btn btn-green" type="button" onclick="closeModal(); toast(session.clientExportFields.length+' field(s) selected for your next report');">View Selected</button>
+    </div>
+  `;
+}
+// Reports on every real client matching the current filters (fetched
+// fresh, not just the current 25-row page), so "Active clients (153)"
+// genuinely produces up to 153 rows, not just what happens to be loaded.
+async function generateClientReport(format){
+  const state = DB.acctPages.clientdir;
+  const filters = state ? state.filters : {};
+  return withRequest('generate-client-report', async ()=>{
+    const params = new URLSearchParams();
+    Object.entries(filters||{}).forEach(([k,v])=>{ if(v && k!=='category') params.set(k,v); });
+    params.set('page','1'); params.set('limit','200');
+    const res = await api.get('/api/clients?'+params.toString());
+    const clients = res.clients.map(adaptClient);
+    const selected = new Set(session.clientExportFields||CLIENT_EXPORT_FIELD_DEFS.map(d=>d.key));
+    const columns = ['name', ...CLIENT_EXPORT_FIELD_DEFS.filter(d=>selected.has(d.key)).map(d=>d.key)];
+    const rows = clients.map(c=>({
+      name: c.name, phone: c.phone, idNumber: c.idNumber||'',
+      branch: branchName(c.branch), officer: c.officerId?staffName(c.officerId):'',
+      cycles: DB.loans.filter(l=>l.clientId===c.id).length, location: c.address||'',
+      kinContact: c.nextOfKinPhone||'', nextOfKin: c.nextOfKin||'', businessType: c.businessType||'',
+    }));
+    if(format==='pdf'){ window.print && window.print(); }
+    else { exportRowsToCsv('clients.csv', columns, rows); }
+  });
+}
+// A real CSV-only template import (same honest limitation as Bulk Upload
+// Utility Payments — no binary .xlsx parser in this dependency-free
+// build). "Loan officer" is a real staff_code, matched server-side
+// against Loan Officer users — never a free-text name.
+const IMPORT_CLIENTS_COLUMNS = ["name","phone","national_id","loan_officer","location","kin_contact","next_of_kin","business_type"];
+function openImportClientsModal(){
+  DB.importClientsForm = { fileName:"", rows:null, parseError:null };
+  openModal('import-clients');
+}
+function parseImportClientsCsv(text){
+  const lines = text.split(/\r\n|\n|\r/).filter(l=>l.trim().length);
+  if(lines.length < 2) return { rows:[], error:"The file has no data rows below the header." };
+  const splitLine = l => l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+  const dataLines = lines.slice(1); // first line is the header row
+  const rows = dataLines.map(l=>{
+    const cells = splitLine(l);
+    const row = {};
+    IMPORT_CLIENTS_COLUMNS.forEach((key,i)=>{ row[key] = (cells[i]||'').trim(); });
+    return row;
+  }).filter(r=>r.name || r.phone);
+  return { rows, error:null };
+}
+function handleImportClientsFileChange(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const f = DB.importClientsForm;
+  f.fileName = file.name;
+  f.rows = null; f.parseError = null;
+  if(!/\.csv$/i.test(file.name)){
+    f.parseError = "This build can only parse .csv files — export your filled Excel template as CSV (File → Save As → CSV) and select that file instead.";
+    renderApp(); return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const { rows, error } = parseImportClientsCsv(String(reader.result||''));
+    f.rows = rows; f.parseError = error;
+    renderApp();
+  };
+  reader.onerror = () => { f.parseError = "Could not read that file."; renderApp(); };
+  reader.readAsText(file);
+  renderApp();
+}
+function submitImportClients(){
+  const f = DB.importClientsForm;
+  if(!f.rows || !f.rows.length){ toast("Choose a filled CSV file first"); return; }
+  return withRequest('import-clients', async ()=>{
+    const res = await api.post('/api/clients/bulk', { rows:f.rows });
+    toast(res.errors && res.errors.length
+      ? `Imported ${res.created} of ${f.rows.length} row(s) — ${res.errors.length} failed (see console for details)`
+      : `Imported all ${res.created} row(s) successfully`);
+    if(res.errors && res.errors.length) console.error('Client import row errors:', res.errors);
+    if(res.created > 0){ closeModal(); DB.acctPages.clientdir = null; renderApp(); }
+  });
+}
+function renderImportClientsModal(){
+  const f = DB.importClientsForm;
+  return `
+    <div class="modal-head"><h3>Import New Clients</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="hint" style="margin-bottom:14px;">Your Excel file <strong>MUST</strong> be formatted as below. <strong>Note:</strong> For Loan Officer, use their ID Numbers as in the system. If your file has date, format as <strong>${new Date().getDate().toString().padStart(2,'0')}-${(new Date().getMonth()+1).toString().padStart(2,'0')}-${new Date().getFullYear()}</strong>.</div>
+    <div class="table-wrap"><table>
+      <tr><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th></tr>
+      <tr><td><strong>Name</strong></td><td><strong>Contact</strong></td><td><strong>Idno</strong></td><td><strong>Loan officer</strong></td><td><strong>Location</strong></td><td><strong>Kin contact</strong></td><td><strong>Next of kin</strong></td><td><strong>Business type</strong></td></tr>
+    </table></div>
+    <div class="field" style="margin-top:16px;">
+      <label>Select Your Filled Excel File</label>
+      <input type="file" accept=".csv,.xlsx,.xls" onchange="handleImportClientsFileChange(event)" style="max-width:220px;">
+      ${f.fileName ? `<div class="hint" style="margin-top:6px;">Selected: ${escapeHtml(f.fileName)}${f.rows?` — ${f.rows.length} row(s) parsed`:''}</div>` : ""}
+      ${f.parseError ? `<div class="hint" style="margin-top:6px; color:var(--red);">${escapeHtml(f.parseError)}</div>` : ""}
+    </div>
+    <div style="text-align:right; margin-top:16px;">
+      <button class="btn btn-green" type="button" onclick="submitImportClients()">Upload</button>
+    </div>
+  `;
+}
+
 const CLIENT_STATUS_DOT = { Active:'#2F7D5C', Dormant:'#8B897F', Blacklisted:'#B3261E' };
 function defaultClientInteractionsState(){
   return {
@@ -10285,8 +10471,10 @@ function renderModal(){
   else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
   else if(modal.type === "create-lead") body = renderCreateLeadModal();
   else if(modal.type === "client-added-success") body = renderClientAddedSuccessModal();
+  else if(modal.type === "import-clients") body = renderImportClientsModal();
+  else if(modal.type === "filter-client-fields") body = renderFilterClientFieldsModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){

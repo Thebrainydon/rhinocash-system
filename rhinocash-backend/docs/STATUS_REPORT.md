@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  879 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 668 passed, 0 failed  (drives the real UI functions in
+Backend:  887 passed, 0 failed  (26 suites — see test/run-all.sh)
+Frontend: 680 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,547 passed, 0 failed
+Total:    1,567 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -175,7 +175,29 @@ capture, and a real interactions count (the number of real
 `client_interactions` logged against the client the lead converted
 into, zero for a lead that hasn't converted yet) — converting a lead
 straight from this page immediately moves it from "Unboarded" to
-"Onboarded", with no manual refresh.
+"Onboarded", with no manual refresh · the Clients menu's "View Client"/
+"All Clients" directory was rebuilt to match the reference design: a
+real status browser (All/Dormant/Active/Blacklisted/Unfunded clients),
+searchable by name/phone/ID, with Name/Contact/Idno/Branch/Loan
+officer/Cycles/Location/Kin contact/Next of kin/Status columns. Its
+toolbar's three actions are all real: **Generate** exports every client
+matching the current filters (not just the loaded page) as a real CSV
+("Excel File") via the existing `exportRowsToCsv()` utility, or opens
+the browser's native print dialog ("PDF Printout" — a real,
+dependency-free way to produce an actual PDF, the same approach this
+codebase already used for `Print Receipt`); **Import** opens a real
+CSV-only bulk-create flow (`POST /api/clients/bulk`, new) — Name/
+Contact/Idno/Loan officer/Location/Kin contact/Next of kin/Business
+type, where "Loan officer" is the officer's real `staff_code` looked up
+server-side against Loan Officer users, never a free-text name, and a
+bad row is skipped and reported rather than aborting the valid rows,
+same pattern as the existing Bulk Upload (Utility Payments) flow; the
+**↓** button opens a real "Filter client Fields" picker (9 real,
+independently toggleable columns) whose selection genuinely drives
+which columns the next Excel export includes. Like Bulk Upload, this
+dependency-free build has no binary `.xlsx` parser, so Import honestly
+accepts CSV only and says so, rather than pretending to read Excel
+files it can't.
 
 ## What is explicitly NOT verified, stated plainly
 

@@ -2622,6 +2622,44 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     loadClientDirectory({}, 1);
     while(!DB.acctPages.clientdir){ await new Promise(r=>setTimeout(r,20)); }
     __assert(!DB.acctPages.clientdir.filters.status && !DB.acctPages.clientdir.filters.unfunded, "the real 'All statuses' default genuinely applies no status/unfunded filter at all");
+
+    // setClientDirCategory(): the real dropdown-driven category browser.
+    setClientDirCategory('Dormant');
+    for(let i=0; i<100 && (!DB.acctPages.clientdir || DB.acctPages.clientdir.filters.category!=='Dormant'); i++){ await new Promise(r=>setTimeout(r,20)); }
+    __assert(DB.acctPages.clientdir.filters.status==='Dormant' && !DB.acctPages.clientdir.filters.unfunded, "setClientDirCategory('Dormant') through the real UI function genuinely applies the real status filter");
+    setClientDirCategory('Active');
+    for(let i=0; i<100 && (!DB.acctPages.clientdir || DB.acctPages.clientdir.filters.category!=='Active'); i++){ await new Promise(r=>setTimeout(r,20)); }
+
+    // Import New Clients: a real CSV parse + real bulk-create, through the actual UI functions (same honest CSV-only pattern as Bulk Upload).
+    openImportClientsModal();
+    __assert(modal && modal.type === 'import-clients', "openImportClientsModal() genuinely opens the real Import New Clients modal");
+    const importPhone = '0733' + Math.floor(Math.random()*900000+100000);
+    const clientsCsv = `Name,Contact,Idno,Loan officer,Location,Kin contact,Next of kin,Business type\nFrontend Bulk Client,${importPhone},55667788,,Kisumu Town,0700111222,Kin Person,Boda boda\n`;
+    handleImportClientsFileChange({ target: { files: [{ name:'clients.csv', __content: clientsCsv }] } });
+    __assert(DB.importClientsForm.rows && DB.importClientsForm.rows.length === 1, "handleImportClientsFileChange() through the actual UI function genuinely parsed the real CSV row");
+    __assert(DB.importClientsForm.rows[0].name === 'Frontend Bulk Client' && DB.importClientsForm.rows[0].phone === importPhone && DB.importClientsForm.rows[0].business_type === 'Boda boda', "the parsed row genuinely carries the real CSV cell values under the right column keys");
+    const importModalHtml = renderImportClientsModal();
+    __assert(importModalHtml.includes('Import New Clients') && importModalHtml.includes('Loan officer') && importModalHtml.includes('Business type'), "the real rendered Import modal genuinely shows the required template columns");
+    await submitImportClients();
+    __assert(!modal, "submitImportClients() genuinely closes the real modal on a successful import");
+    const afterImport = await api.get(`/api/clients?q=${encodeURIComponent(importPhone)}`);
+    __assert(afterImport.clients.some(c=>c.phone===importPhone && c.officer_id===session.userId), "a real client from the CSV import genuinely exists server-side, with the Loan Officer defaulting to the importing officer since the row left it blank");
+
+    // Filter client Fields: real column-selection state for Generate, through the actual UI functions.
+    openFilterClientFieldsModal();
+    __assert(modal && modal.type === 'filter-client-fields', "openFilterClientFieldsModal() genuinely opens the real Filter client Fields modal");
+    __assert(session.clientExportFields.length === 9, "every real field is genuinely selected by default");
+    toggleClientExportField('phone');
+    __assert(session.clientExportFields.length === 8 && !session.clientExportFields.includes('phone'), "toggleClientExportField() through the real UI function genuinely deselects a real field");
+    const fieldsModalHtml = renderFilterClientFieldsModal();
+    __assert(fieldsModalHtml.includes('Filter client Fields') && fieldsModalHtml.includes('Business Type') && fieldsModalHtml.includes('Cycles'), "the real rendered Filter client Fields modal genuinely shows the required checkboxes");
+    toggleClientExportField('phone'); // restore, so it doesn't leak into later assertions
+    closeModal();
+
+    // generateClientReport(): real PDF-via-print / real CSV export, driven by the actual current filters.
+    let generateThrew = false;
+    try { await generateClientReport('excel'); await generateClientReport('pdf'); } catch(e){ generateThrew = true; }
+    __assert(!generateThrew, "generateClientReport() genuinely runs to completion for both real formats without throwing");
   }
 
   // ---- 85. LOAN OFFICER CREATE APPLICATION: real client-ID lookup auto-populates the real fee-payer field ----
