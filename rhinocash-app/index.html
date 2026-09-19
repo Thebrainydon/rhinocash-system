@@ -4134,11 +4134,11 @@ function renderClientInteractionsPage(){
   return `
     <div class="card">
       ${header}
-      <form onsubmit="return submitClientInteractionsFilter(event)" class="pill-row" style="align-items:center;">
-        <input type="date" name="from" value="${escapeHtml(st.from)}" onchange="this.form.requestSubmit()">
-        <span class="hint">~</span>
-        <input type="date" name="to" value="${escapeHtml(st.to)}" onchange="this.form.requestSubmit()">
-        <input class="search" name="q" placeholder="Search client" value="${escapeHtml(st.q||'')}" style="margin-left:auto;" onchange="this.form.requestSubmit()">
+      <form onsubmit="return submitClientInteractionsFilter(event)" class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <input type="date" name="from" value="${escapeHtml(st.from)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
+        <span class="hint" style="flex-shrink:0;">~</span>
+        <input type="date" name="to" value="${escapeHtml(st.to)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
+        <input class="search" name="q" placeholder="Search client" value="${escapeHtml(st.q||'')}" style="margin-left:auto; width:120px; flex-shrink:0;" onchange="this.form.requestSubmit()">
       </form>
       <div class="table-wrap"><table>
         <tr><th></th><th>Client</th><th>Loan Officer</th><th>Comment</th><th>Source</th><th>Client Status</th></tr>
@@ -4311,12 +4311,9 @@ function formatLeadOtherInfo(l){
 function renderClientLeads(){
   const st = session.leadsBrowserState || (session.leadsBrowserState = defaultLeadsBrowserState());
   const header = (count) => `
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span class="btn btn-outline btn-sm" onclick="goTo('clients','All Clients')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
-        <h3 style="color:var(--navy); margin:0;">${st.category==='Onboarded'?'Onboarded':'Unboarded'} Leads (${count})</h3>
-      </div>
-      <span class="btn btn-primary btn-sm" onclick="openCreateLeadModal()">+ Create</span>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+      <span class="btn btn-outline btn-sm" onclick="goTo('clients','All Clients')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+      <h3 style="color:var(--navy); margin:0;">${st.category==='Onboarded'?'Onboarded':'Unboarded'} Leads (${count})</h3>
     </div>`;
   if(!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(st)){
     loadLeadsBrowser();
@@ -4340,17 +4337,17 @@ function renderClientLeads(){
   return `
     <div class="card">
       ${header(rows.length)}
-      <div class="pill-row" style="align-items:center;">
-        <select onchange="session.leadsBrowserState.category=this.value; DB.leadsBrowser=null; renderApp();">
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap;">
+        <select onchange="session.leadsBrowserState.category=this.value; DB.leadsBrowser=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           <option value="Unboarded" ${st.category==='Unboarded'?'selected':''}>Unboarded Leads</option>
           <option value="Onboarded" ${st.category==='Onboarded'?'selected':''}>Onboarded Leads</option>
         </select>
-        <input class="search" placeholder="Search" value="${escapeHtml(st.q||'')}" style="margin-left:auto;" oninput="session.leadsBrowserState.q=this.value; DB.leadsBrowser=null; renderApp();">
+        <input class="search" placeholder="Search" value="${escapeHtml(st.q||'')}" style="margin-left:auto; width:130px; flex-shrink:0;" oninput="session.leadsBrowserState.q=this.value; DB.leadsBrowser=null; renderApp();">
       </div>
-      <div class="pill-row" style="align-items:center;">
-        <input type="date" value="${escapeHtml(st.from)}" onchange="session.leadsBrowserState.from=this.value; DB.leadsBrowser=null; renderApp();">
-        <span class="hint">~</span>
-        <input type="date" value="${escapeHtml(st.to)}" onchange="session.leadsBrowserState.to=this.value; DB.leadsBrowser=null; renderApp();">
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <input type="date" value="${escapeHtml(st.from)}" onchange="session.leadsBrowserState.from=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
+        <span class="hint" style="flex-shrink:0;">~</span>
+        <input type="date" value="${escapeHtml(st.to)}" onchange="session.leadsBrowserState.to=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
       </div>
       <div class="table-wrap"><table>
         <tr><th>Name</th><th>Idno</th><th>Contact</th><th>Branch</th><th>Client Location</th><th>Other Info</th><th>Creator</th><th>Date Created</th><th>Interactions</th><th>Status</th></tr>
@@ -4360,7 +4357,7 @@ function renderClientLeads(){
   `;
 }
 // ---- Create Client Lead: a real modal, reachable from the sidebar's
-// "Create a Lead" quick action or this list's own "+ Create" button.
+// "Create a Lead" quick action.
 // "Add More Field" lets the user optionally attach Kin Contact/Next of
 // Kin/Business Type — real client_leads columns, not thrown away, and
 // carried over onto the real client record when the lead converts. ----
@@ -4526,12 +4523,12 @@ function renderClientDetail(id){
   const canDecideKyc = hasPermission(session.role,"Manage Branches")||['Manager','Regional Manager','Operational Manager','Admin','Accountant'].includes(session.role);
 
   return `
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span class="btn btn-outline btn-sm" onclick="closeClient()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
-        <h3 style="color:var(--navy); margin:0;">${escapeHtml(c.name)}</h3>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:nowrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 auto;">
+        <span class="btn btn-outline btn-sm" onclick="closeClient()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.name)}</h3>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="openClientNotesModal()">👤 Notes</button>
+      <button class="btn btn-outline btn-sm" onclick="openClientNotesModal()" style="flex-shrink:0;">👤 Notes</button>
     </div>
 
     <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:stretch; margin-bottom:14px;">

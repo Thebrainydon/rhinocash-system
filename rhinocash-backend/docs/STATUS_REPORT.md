@@ -231,7 +231,16 @@ Keyed by the real filters instead, same as everywhere else this pattern
 is used. Also tightened the directory's header and toolbar layout (the
 search box, and the Generate/Import/filter-fields button group) so they
 stay on one line and match the reference's button styling, instead of
-wrapping and rendering the Generate dropdown with a mismatched border.
+wrapping and rendering the Generate dropdown with a mismatched border ·
+carried the same layout audit across every other Clients-menu page
+built this session: Client Interactions' and the Leads browser's
+date-range/search rows now stay on one line the same way; the Leads
+browser's category dropdown got the same button styling as its
+Generate/Import counterparts; an extra "+ Create" button on the Leads
+browser's header that wasn't in the reference design was removed (the
+sidebar's own "Create a Lead" quick action already covers it, so
+nothing was lost); and the Client Account page's header (back arrow +
+client name + Notes button) no longer wraps on a long client name.
 
 ## What is explicitly NOT verified, stated plainly
 
