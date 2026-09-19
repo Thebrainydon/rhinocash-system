@@ -366,6 +366,29 @@ async function api(method, path, { token, body } = {}) {
     assert(newProduct.status === 201 && Math.abs(newProduct.json.product.penalty_pct - 7.5) < 0.01, 'creating a real loan product with a real, non-default penalty_pct genuinely persists and returns it');
   }
 
+  // ---- 11c. Tag/Rate Loan: the Loan History "Unrated" badge is a real,
+  // persisted rating + reason, not a cosmetic default ----
+  {
+    const badRating = await api('POST', `/api/loans/${loanId}/rate`, { token: officerToken, body: { rating: 'Not a real option', reason: 'x' } });
+    assert(badRating.status === 400, 'an invalid rating value is genuinely rejected');
+
+    const rateRes = await api('POST', `/api/loans/${loanId}/rate`, { token: officerToken, body: { rating: 'Good paying client', reason: 'Always pays on time' } });
+    assert(rateRes.status === 200 && rateRes.json.loan.rating === 'Good paying client' && rateRes.json.loan.rating_reason === 'Always pays on time', 'a real, valid rating + reason genuinely persists on the loan');
+    assert(!!rateRes.json.loan.rated_by && !!rateRes.json.loan.rated_at, 'the real rater and timestamp are genuinely recorded');
+
+    const detailAfterRate = await api('GET', `/api/loans/${loanId}`, { token: adminToken });
+    assert(detailAfterRate.json.loan.rating === 'Good paying client', 'the real rating genuinely comes back on a fresh GET /api/loans/:id, not just the write response');
+
+    // Re-rating overwrites, not duplicates.
+    const reRate = await api('POST', `/api/loans/${loanId}/rate`, { token: officerToken, body: { rating: 'Bad Faith Client', reason: 'Missed several installments' } });
+    assert(reRate.status === 200 && reRate.json.loan.rating === 'Bad Faith Client', 're-rating a loan genuinely overwrites the previous rating, not stacking a history');
+
+    // A Nairobi manager (different branch) cannot rate a Kisumu loan.
+    const nairobiMgrLoginForRate = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });
+    const wrongBranchRate = await api('POST', `/api/loans/${loanId}/rate`, { token: nairobiMgrLoginForRate.json.token, body: { rating: 'Control Failure', reason: 'x' } });
+    assert(wrongBranchRate.status === 403, "a Manager outside this loan's branch cannot rate it (real branch scoping)");
+  }
+
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----
   {
     const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });

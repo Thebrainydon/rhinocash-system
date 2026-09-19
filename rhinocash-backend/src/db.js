@@ -490,7 +490,11 @@ CREATE TABLE IF NOT EXISTS loans (
   created_at TEXT NOT NULL DEFAULT iso_now(),
   disbursed_at TEXT,
   written_off_at TEXT,
-  processing_fee NUMERIC(14,2) NOT NULL DEFAULT 0
+  processing_fee NUMERIC(14,2) NOT NULL DEFAULT 0,
+  rating TEXT,
+  rating_reason TEXT,
+  rated_by TEXT REFERENCES users(id),
+  rated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS loan_approvals (

@@ -319,6 +319,40 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     try { await disburseLoan(loan.id, "Bank"); } catch(e){ dupDisburseBlocked = (e.status === 409); }
     __assert(dupDisburseBlocked, "a second real disburseLoan() call on the same loan is rejected with 409");
 
+    // Loan Action Options (the Loan History "☰ Action" link): real Make
+    // Payment / Tag Loan / Loan Statement actions through the actual UI functions.
+    __assert(!DB.loans.find(l=>l.id===loan.id).rating, "sanity check: the real loan genuinely starts Unrated (no rating field set yet)");
+    let loanHistoryHtml = renderClientLoanHistoryTable([DB.loans.find(l=>l.id===loan.id)]);
+    __assert(loanHistoryHtml.includes('>Unrated<'), "the real Loan History table genuinely shows Unrated before any real tag has been set");
+
+    openLoanActionOptionsModal(loan.id);
+    __assert(modal && modal.type === 'loan-action-options' && modal.loanId === loan.id, "openLoanActionOptionsModal() genuinely opens the real Loan Action Options modal for the real loan");
+    const actionOptionsHtml = renderLoanActionOptionsModal();
+    __assert(actionOptionsHtml.includes('Loan Action Options') && actionOptionsHtml.includes('Make Payment') && actionOptionsHtml.includes('Tag Loan') && actionOptionsHtml.includes('Loan Statement'), "the real rendered Loan Action Options modal genuinely shows all three real actions");
+
+    openLoanPaymentRequestModal(loan.id);
+    __assert(modal && modal.type === 'loan-payment-request' && modal.loanId === loan.id, "openLoanPaymentRequestModal() genuinely opens the real Initiate Payment Request modal for the real loan");
+    const paymentRequestHtml = renderLoanPaymentRequestModal();
+    __assert(paymentRequestHtml.includes('Initiate Payment Request') && paymentRequestHtml.includes(testClient.phone), "the real rendered payment request modal genuinely pre-fills the real client's real phone number");
+    let paymentRequestForm = new Map([['phone', testClient.phone],['amount','1000']]);
+    global.FormData = class { constructor(){ return paymentRequestForm; } };
+    await submitLoanPaymentRequest({ preventDefault(){}, target:{} });
+    __assert(modal && modal.type === 'loan-payment-request', "submitLoanPaymentRequest() genuinely runs to completion without throwing — this test environment has no real M-Pesa credentials (NOT_CONFIGURED), so the modal honestly stays open rather than pretending a push was sent");
+    closeModal();
+
+    openTagLoanModal(loan.id);
+    __assert(modal && modal.type === 'tag-loan' && modal.loanId === loan.id, "openTagLoanModal() genuinely opens the real Tag/Rate Client Loan modal for the real loan");
+    const tagLoanHtml = renderTagLoanModal();
+    __assert(tagLoanHtml.includes('Tag/Rate Client Loan') && tagLoanHtml.includes('Your Rating') && tagLoanHtml.includes('Bad Luck Client') && tagLoanHtml.includes('Bad Faith Client') && tagLoanHtml.includes('Control Failure'), "the real rendered Tag Loan modal genuinely shows all four real rating options");
+    let tagForm = new Map([['rating','Good paying client'],['reason','Always pays on time']]);
+    global.FormData = class { constructor(){ return tagForm; } };
+    await submitTagLoan({ preventDefault(){}, target:{} });
+    __assert(!modal, "submitTagLoan() genuinely closes the modal once the real rating is saved");
+    const ratedLoan = DB.loans.find(l=>l.id===loan.id);
+    __assert(ratedLoan.rating === 'Good paying client' && ratedLoan.ratingReason === 'Always pays on time', "the real rating and reason genuinely persisted on the real loan via the actual API, not just locally");
+    loanHistoryHtml = renderClientLoanHistoryTable([ratedLoan]);
+    __assert(loanHistoryHtml.includes('Good paying client') && !loanHistoryHtml.includes('>Unrated<'), "the real Loan History table now genuinely shows the real rating instead of the old Unrated placeholder");
+
     // Real payment recording, including the duplicate-payment guard.
     form = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return form; } };

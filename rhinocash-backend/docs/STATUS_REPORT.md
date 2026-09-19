@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  939 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 737 passed, 0 failed  (drives the real UI functions in
+Backend:  945 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 749 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,676 passed, 0 failed
+Total:    1,694 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -330,7 +330,18 @@ through — now includes any real outstanding penalty, so a client with
 an unpaid late fee is never shown as owing less than they really do.
 Both real fee and real penalty now appear on the Loan Details modal,
 the Installments view, the per-installment receipt, and both loan
-statements.
+statements. The Loan History table's "☰ Action" link now opens a real
+Loan Action Options modal with three real actions: Make Payment (a
+real M-Pesa STK push request against that specific loan, reusing the
+existing `/api/payments/mpesa/initiate` bridge, pre-filled with the
+real client's phone), Loan Statement (the Loan Ledger Statement built
+above), and Tag Loan — a real rating (one of four real, fixed options:
+Good paying client / Bad Luck Client / Bad Faith Client / Control
+Failure) plus a free-text reason, persisted via a new
+`POST /api/loans/:id/rate` (same branch/officer-ownership scope every
+other single-loan action already enforces). The Loan History table's
+"Unrated" badge is this same real field — it shows the actual rating
+once one has been set, not a hardcoded placeholder.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

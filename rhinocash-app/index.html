@@ -1018,6 +1018,7 @@ function adaptLoan(l){
     guarantorContact:l.guarantor_contact, loanSecurities:l.loan_securities, processingFee:l.processing_fee||0,
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
+    rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
 }
 function adaptPayment(p){
@@ -4847,6 +4848,98 @@ function renderLoanLedgerStatementModal(){
     </div>
   `;
 }
+// ---- Loan History's "☰ Action" link: a real Loan Action Options modal
+// with three real actions — an M-Pesa STK payment request against this
+// specific loan (reuses the real, already-existing /api/payments/mpesa/initiate
+// bridge), the real Loan Ledger Statement already built above, and a real
+// Tag/Rate Loan action that persists an actual rating + reason on the loan
+// itself (POST /api/loans/:id/rate) — the Loan History table's "Unrated"
+// badge is this same real field, not a cosmetic default. ----
+function openLoanActionOptionsModal(loanId){ openModal('loan-action-options', { loanId }); }
+function renderLoanActionOptionsModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Loan Action Options</h3>
+      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="openLoanPaymentRequestModal('${loan.id}')">💳 Make Payment</button>
+        <button class="btn btn-outline btn-sm" onclick="openTagLoanModal('${loan.id}')">🏷 Tag Loan</button>
+      </div>
+      <div style="display:flex; justify-content:center; margin-top:10px;">
+        <button class="btn btn-outline btn-sm" onclick="openLoanLedgerStatementModal('${loan.id}')">☰ Loan Statement</button>
+      </div>
+    </div>
+  `;
+}
+function openLoanPaymentRequestModal(loanId){ openModal('loan-payment-request', { loanId }); }
+function submitLoanPaymentRequest(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.phone || !f.amount || !(Number(f.amount)>0)){ toast("Enter a valid phone number and amount"); return false; }
+  const loanId = modal.loanId;
+  return withRequest('loan-payment-request:'+loanId, async ()=>{
+    const res = await api.post('/api/payments/mpesa/initiate', { loan_id: loanId, phone: f.phone, amount: Number(f.amount) });
+    if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
+    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
+    else { toast(res.message || "Could not initiate the payment request"); }
+  });
+}
+function renderLoanPaymentRequestModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  const client = DB.clients.find(c=>c.id===loan.clientId);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Initiate Payment Request</h3>
+      <form onsubmit="return submitLoanPaymentRequest(event)">
+        <div class="field"><label>MPESA Phone number</label><input name="phone" value="${escapeHtml(client?client.phone:'')}" required></div>
+        <div class="field"><label>Amount to Pay</label><input name="amount" type="number" min="1" required></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Request</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+const LOAN_RATINGS = ['Good paying client', 'Bad Luck Client', 'Bad Faith Client', 'Control Failure'];
+function openTagLoanModal(loanId){ openModal('tag-loan', { loanId }); }
+async function rateLoan(loanId, rating, reason){
+  return withRequest('rate-loan:'+loanId, async ()=>{
+    const res = await api.post(`/api/loans/${loanId}/rate`, { rating, reason: reason||null });
+    const adapted = adaptLoan(res.loan);
+    const idx = DB.loans.findIndex(l=>l.id===loanId);
+    if(idx>=0) DB.loans[idx] = { ...DB.loans[idx], ...adapted };
+    toast("Loan tagged");
+  });
+}
+function submitTagLoan(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const loanId = modal.loanId;
+  return rateLoan(loanId, f.rating, f.reason).then(()=>closeModal());
+}
+function renderTagLoanModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Tag/Rate Client Loan</h3>
+      <form onsubmit="return submitTagLoan(event)">
+        <div class="field"><label>Your Rating</label>
+          <select name="rating">${LOAN_RATINGS.map(r=>`<option value="${r}" ${loan.rating===r?'selected':''}>${r}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>Reason for your Choice</label><textarea name="reason" rows="4">${escapeHtml(loan.ratingReason||'')}</textarea></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Tag Now</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
 function renderClientLoanHistoryTable(loans){
   const rows = loans.map(l=>{
     const bal = loanBalance(l);
@@ -4854,7 +4947,7 @@ function renderClientLoanHistoryTable(loans){
     const arrears = loanArrearsAmount(l);
     const dotColor = LOAN_STATUS_DOT[l.status] || '#B4791F';
     return `<tr>
-      <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString('en-KE',{month:'2-digit',year:'numeric'}) : '—'}<br><span class="badge grey" style="margin-top:4px;">Unrated</span></td>
+      <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString('en-KE',{month:'2-digit',year:'numeric'}) : '—'}<br><span class="badge grey" style="margin-top:4px;">${escapeHtml(l.rating||'Unrated')}</span></td>
       <td>${fmt(l.principal).replace('KES ','')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanDetailsModal('${l.id}')">Details</span></td>
       <td>${escapeHtml(l.productName||'')}</td>
       <td>None</td>
@@ -4866,7 +4959,7 @@ function renderClientLoanHistoryTable(loans){
         <span style="cursor:pointer; margin-left:4px;" onclick="openLoanAccountStatementModal('${l.id}')" title="Print">🖨</span>
         <span style="cursor:pointer; margin-left:4px;" onclick="openLoanLedgerStatementModal('${l.id}')" title="Statement">📄</span>
       </td>
-      <td><span style="color:${dotColor};">●</span> ${escapeHtml(l.status)}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">☰ Action</span></td>
+      <td><span style="color:${dotColor};">●</span> ${escapeHtml(l.status)}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanActionOptionsModal('${l.id}')">☰ Action</span></td>
     </tr>`;
   }).join("");
   return `<div class="table-wrap"><table>
@@ -11192,6 +11285,9 @@ function renderModal(){
   else if(modal.type === "installment-receipt") body = renderInstallmentReceiptModal();
   else if(modal.type === "loan-account-statement") body = renderLoanAccountStatementModal();
   else if(modal.type === "loan-ledger-statement") body = renderLoanLedgerStatementModal();
+  else if(modal.type === "loan-action-options") body = renderLoanActionOptionsModal();
+  else if(modal.type === "loan-payment-request") body = renderLoanPaymentRequestModal();
+  else if(modal.type === "tag-loan") body = renderTagLoanModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

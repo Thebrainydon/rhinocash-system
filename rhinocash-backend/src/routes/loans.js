@@ -1711,6 +1711,26 @@ function register(router) {
     res.json({ period, loan, transactions });
   });
 
+  // Loan Action Options -> Tag Loan: a real, persisted rating + reason on
+  // the loan itself (the Loan History table's "Unrated" badge becomes the
+  // real rating once one is set) — the same branch/officer-ownership scope
+  // every other single-loan action on this route already enforces.
+  const LOAN_RATINGS = ['Good paying client', 'Bad Luck Client', 'Bad Faith Client', 'Control Failure'];
+  router.post('/api/loans/:id/rate', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+    if (!loan) return next({ status: 404, message: 'Loan not found' });
+    await assertRecordInScope(req.user, loan.branch_id, 'loan');
+    if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
+      return next({ status: 403, message: 'This loan is not part of your portfolio' });
+    }
+    if (!LOAN_RATINGS.includes(req.body.rating)) {
+      return next({ status: 400, message: `rating must be one of: ${LOAN_RATINGS.join(', ')}` });
+    }
+    await run('UPDATE loans SET rating = ?, rating_reason = ?, rated_by = ?, rated_at = iso_now() WHERE id = ?', [req.body.rating, req.body.reason || null, req.user.id, loan.id]);
+    await logAction(req, { action: 'Tagged loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, newValue: { rating: req.body.rating, reason: req.body.reason || null } });
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
+  });
+
   router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.product_id || !b.principal || !b.term_months) {
