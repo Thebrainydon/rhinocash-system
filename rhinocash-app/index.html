@@ -865,7 +865,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null };
+let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null };
 let loginError = "";
 let toasts = [];
 let modal = null; // {type, ...}
@@ -1006,7 +1006,7 @@ function adaptClient(c){
   return { id:c.id, clientCode:c.client_code, name:c.name, gender:c.gender, idNumber:c.national_id, phone:c.phone, email:c.email, address:c.address,
     nextOfKin:c.next_of_kin, nextOfKinPhone:c.next_of_kin_phone, businessType:c.business_type,
     type:c.client_type, branch:c.branch_id, officerId:c.officer_id, groupId:null, status:c.status, verificationStatus:c.verification_status,
-    verifiedBy:c.verified_by, verifiedAt:c.verified_at, createdAt:c.created_at };
+    verifiedBy:c.verified_by, verifiedAt:c.verified_at, createdBy:c.created_by, createdAt:c.created_at };
 }
 function adaptScheduleRow(r){
   return { period:r.period, dueDate:r.due_date, principalDue:r.principal_due, interestDue:r.interest_due, totalDue:r.total_due, paidAmount:r.paid_amount, status:r.status };
@@ -1181,6 +1181,9 @@ function loanArrearsDays(loan){
   if(!overdueRows.length) return 0;
   const oldest = overdueRows.reduce((a,b)=> new Date(a.dueDate)<new Date(b.dueDate)?a:b);
   return Math.max(0, daysBetween(oldest.dueDate, todayISO()));
+}
+function loanArrearsAmount(loan){
+  return (loan.schedule||[]).filter(isOverdue).reduce((s,r)=> s + Math.max(0, r.totalDue - (r.paidAmount||0)), 0);
 }
 function arrearsBucket(days){
   if(days<=0) return null;
@@ -3834,7 +3837,7 @@ function renderClients(){
   const active = session.subtab || "All Clients";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('clients','${t}')">${t}</div>`).join("")}</div>`;
 
-  if(session.selectedClientId){ return tabsHtml + renderClientDetail(session.selectedClientId); }
+  if(session.selectedClientId){ return renderClientDetail(session.selectedClientId); }
 
   if(active==="Add Client") return renderAddClientForm();
   if(active==="Client Groups") return tabsHtml + renderClientGroups();
@@ -4418,6 +4421,7 @@ function submitCreateLead(ev){
   });
 }
 function openClient(id){
+  if(session.selectedClientId !== id) session.clientHistoryTab = null;
   session.selectedClientId = id;
   renderApp();
   return withRequest('open-client-'+id, async ()=>{
@@ -4449,71 +4453,137 @@ async function decideClientKyc(clientId, status){
   if(idx>=0) DB.clients[idx] = adapted; else DB.clients.unshift(adapted);
   toast(`KYC status set to ${status}`);
 }
+const LOAN_STATUS_DOT = { Active:'#2F7D5C', Disbursed:'#2F7D5C', Completed:'#2F7D5C', Closed:'#8B897F',
+  Rejected:'#B3261E', Declined:'#B3261E', 'Written Off':'#B3261E', Cancelled:'#8B897F', Restructured:'#2E5C8A' };
+function renderClientPhotoThumb(doc, label, size){
+  const s = size || 64;
+  if(doc && doc.filePath){
+    const url = `${API_BASE}${doc.filePath}`;
+    return `<div style="text-align:center;"><img src="${url}" alt="${escapeHtml(label)}" style="width:${s}px; height:${s}px; object-fit:cover; border-radius:8px; cursor:pointer; border:1px solid var(--line);" onclick="openImageViewer('${url}','${escapeHtml(label).replace(/'/g,"&#39;")}')"><div class="hint" style="margin-top:4px;">${label}</div></div>`;
+  }
+  return `<div style="text-align:center;"><div style="width:${s}px; height:${s}px; border-radius:8px; background:#EFEDE7; display:flex; align-items:center; justify-content:center; color:var(--ink-faint); font-size:22px;">🖼️</div><div class="hint" style="margin-top:4px;">${label}</div></div>`;
+}
+function renderClientLoanHistoryTable(loans){
+  const rows = loans.map(l=>{
+    const bal = loanBalance(l);
+    const principal = loanOutstandingPrincipal(l);
+    const arrears = loanArrearsAmount(l);
+    const dotColor = LOAN_STATUS_DOT[l.status] || '#B4791F';
+    return `<tr>
+      <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString('en-KE',{month:'2-digit',year:'numeric'}) : '—'}<br><span class="badge grey" style="margin-top:4px;">Unrated</span></td>
+      <td>${fmt(l.principal).replace('KES ','')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">Details</span></td>
+      <td>${escapeHtml(l.productName||'')}</td>
+      <td>None</td>
+      <td>0</td>
+      <td>${fmt(arrears).replace('KES ','')}</td>
+      <td>${fmt(principal).replace('KES ','')}</td>
+      <td>${fmt(bal).replace('KES ','')}<br>
+        <span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">View</span>
+        <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Print">🖨</span>
+        <span style="cursor:pointer; margin-left:4px;" onclick="toast('Coming soon')" title="Statement">📄</span>
+      </td>
+      <td><span style="color:${dotColor};">●</span> ${escapeHtml(l.status)}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="toast('Coming soon')">☰ Action</span></td>
+    </tr>`;
+  }).join("");
+  return `<div class="table-wrap"><table>
+    <tr><th>Date</th><th>Loan</th><th>Product</th><th>Coll. Agent</th><th>Penalty</th><th>Arrears</th><th>Principal</th><th>Total Bal</th><th>Repayment</th><th>Status</th></tr>
+    ${rows || `<tr><td colspan="10" class="empty">No loans yet.</td></tr>`}
+  </table></div>`;
+}
+function renderClientDocumentsTab(id, docs){
+  return `
+    <div class="table-wrap"><table>
+      <tr><th>Name</th><th>Type</th><th>Date</th><th></th></tr>
+      ${docs.map(d=>`<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.type)}</td><td>${new Date(d.date).toLocaleDateString()}</td>
+        <td>${d.filePath?`<a href="${API_BASE}${d.filePath}" target="_blank" rel="noopener">View</a>`:''}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No documents.</td></tr>`}
+    </table></div>
+    <form onsubmit="return submitDocument(event,'${id}')" style="margin-top:12px;">
+      <div class="form-grid">
+        <div class="field"><label>Document Name</label><input name="name" required placeholder="e.g. Business Permit"></div>
+        <div class="field"><label>Type</label><select name="type"><option>ID</option><option>Photo</option><option>Permit</option><option>Statement</option><option>Other</option></select></div>
+        <div class="field"><label>File</label><input name="file" type="file" required accept="image/png,image/jpeg,image/webp,application/pdf"></div>
+      </div>
+      <button class="btn btn-outline btn-sm" type="submit">Upload Document</button>
+    </form>
+  `;
+}
 function renderClientDetail(id){
   const c = DB.clients.find(x=>x.id===id);
   if(!c) return `<div class="empty">Client not found.</div>`;
   const loans = DB.loans.filter(l=>l.clientId===id);
-  const totalBorrowed = loans.reduce((s,l)=>s+ (l.disbursedAt? l.principal:0),0);
-  const totalOutstanding = loans.filter(l=>["Active","Disbursed"].includes(l.status)).reduce((s,l)=>s+loanBalance(l),0);
-  const totalRepaid = DB.payments.filter(p=>p.clientId===id && p.status!=="Unposted").reduce((s,p)=>s+p.amount,0);
-  const ints = DB.interactions.filter(i=>i.clientId===id);
   const docs = DB.documents.filter(d=>d.clientId===id);
+  const photoDoc = docs.find(d=>d.type==='Client Photo');
+  const idFrontDoc = docs.find(d=>d.type==='ID Photo Front');
+  const idBackDoc = docs.find(d=>d.type==='ID Photo Back');
+  const location = c.address || '—';
+  const truncatedLocation = location.length>40 ? location.slice(0,40)+'…' : location;
+  const historyTab = session.clientHistoryTab || 'Loan History';
+  const canDecideKyc = hasPermission(session.role,"Manage Branches")||['Manager','Regional Manager','Operational Manager','Admin','Accountant'].includes(session.role);
+
   return `
-    <button class="btn btn-outline btn-sm" onclick="closeClient()">← Back to Clients</button>
-    <div class="card" style="margin-top:14px;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
-        <div>
-          <div style="font-size:19px; font-weight:800; color:var(--navy);">${escapeHtml(c.name)} <span class="hint">${escapeHtml(c.clientCode||'')}</span></div>
-          <div class="hint">${escapeHtml(c.phone)} · ${escapeHtml(c.idNumber||'no ID on file')} · ${branchName(c.branch)} · ${c.type}</div>
-          <div class="hint" style="margin-top:4px;">Loan Officer: ${c.officerId?staffName(c.officerId):'Unassigned'} ${c.businessType?' · '+escapeHtml(c.businessType):''}</div>
-          ${c.nextOfKin ? `<div class="hint">Next of Kin: ${escapeHtml(c.nextOfKin)}${c.nextOfKinPhone?' ('+escapeHtml(c.nextOfKinPhone)+')':''}</div>` : ""}
-        </div>
-        <div style="text-align:right;">
-          <span class="badge green">${c.status}</span>
-          <div style="margin-top:6px;"><span class="badge ${c.verificationStatus==='Verified'?'green':c.verificationStatus==='Rejected'?'red':'amber'}">KYC: ${c.verificationStatus}</span></div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="btn btn-outline btn-sm" onclick="closeClient()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px;">←</span>
+        <h3 style="color:var(--navy); margin:0;">${escapeHtml(c.name)}</h3>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openClientNotesModal()">👤 Notes</button>
+    </div>
+
+    <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:stretch; margin-bottom:14px;">
+      <div style="flex:1; min-width:150px; background:#6C4BA6; color:#fff; border-radius:12px; padding:14px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.4px; opacity:0.85;">LOYALTY POINTS</div>
+        <div style="font-size:22px; font-weight:800; margin-top:6px;">🏆 0</div>
+      </div>
+      <div style="flex:1; min-width:190px; background:var(--navy); color:#fff; border-radius:12px; padding:14px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.4px; opacity:0.85;">ACC BALANCES (KSH)</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-top:6px;">
+          <div style="font-size:22px; font-weight:800;">0</div>
+          <button class="btn btn-sm" style="background:#fff; color:var(--navy); border:none;" onclick="toast('Coming soon')">📤 View</button>
         </div>
       </div>
-      ${hasPermission(session.role,"Manage Branches")||['Manager','Regional Manager','Operational Manager','Admin','Accountant'].includes(session.role) ? `
+      ${renderClientPhotoThumb(photoDoc, 'Client photo', 72)}
+    </div>
+
+    <div class="pill-row" style="margin-bottom:16px;">
+      ${renderClientPhotoThumb(idFrontDoc, 'Id photo front')}
+      ${renderClientPhotoThumb(idBackDoc, 'Id photo back')}
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="justify-content:center; position:relative; background:var(--navy); color:#fff; margin:-16px -16px 12px; padding:12px 16px; border-radius:10px 10px 0 0;">
+        Client Details
+        <span onclick="openClient('${id}')" style="position:absolute; right:16px; cursor:pointer;" title="Refresh">🔄</span>
+      </div>
+      <table style="width:100%;">
+        <tr><td class="hint" style="width:35%; font-weight:700;">Contact</td><td>${escapeHtml(c.phone||'—')}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Idno</td><td>${escapeHtml(c.idNumber||'—')}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Branch</td><td>${branchName(c.branch)}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Loan officer</td><td>${c.officerId?staffName(c.officerId):'—'}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Cycles</td><td>${loans.length}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Creator</td><td>${c.createdBy?staffName(c.createdBy):'—'}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Location</td><td>${escapeHtml(truncatedLocation)}${location.length>40?` <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="toast('${escapeHtml(location).replace(/'/g,"&#39;")}')">View</span>`:''}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Kin contact</td><td>${escapeHtml(c.nextOfKinPhone||'—')}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Next of kin</td><td>${escapeHtml(c.nextOfKin||'—')}</td></tr>
+        <tr><td class="hint" style="font-weight:700;">Business type</td><td>${escapeHtml(c.businessType||'—')}</td></tr>
+      </table>
+      ${canDecideKyc ? `
       <div class="pill-row" style="margin-top:12px;">
+        <span class="hint">KYC: ${c.verificationStatus}</span>
         ${c.verificationStatus!=='Verified' ? `<button class="btn btn-sm btn-green" onclick="withRequest('kyc-verify-${c.id}', ()=>decideClientKyc('${c.id}','Verified'))">Mark Verified</button>` : ""}
         ${c.verificationStatus!=='Rejected' ? `<button class="btn btn-sm btn-red" onclick="withRequest('kyc-reject-${c.id}', ()=>decideClientKyc('${c.id}','Rejected'))">Reject KYC</button>` : ""}
       </div>` : ""}
     </div>
-    <div class="grid3">
-      <div class="kpi"><div class="kpi-label">Total Borrowed</div><div class="kpi-value">${fmt(totalBorrowed)}</div></div>
-      <div class="kpi"><div class="kpi-label">Outstanding</div><div class="kpi-value">${fmt(totalOutstanding)}</div></div>
-      <div class="kpi"><div class="kpi-label">Total Repaid</div><div class="kpi-value">${fmt(totalRepaid)}</div></div>
-    </div>
+
     <div class="card">
-      <div class="card-title">Loans</div>
-      <div class="table-wrap"><table><tr><th>Loan ID</th><th>Product</th><th>Principal</th><th>Status</th><th>Balance</th></tr>
-      ${loans.map(l=>`<tr class="clickable" onclick="goTo('loanbook','Loan Applications'); openLoan('${l.id}')"><td>${l.id}</td><td>${l.productName}</td><td>${fmt(l.principal)}</td>
-        <td>${statusBadge(l.status)}</td><td>${fmt(loanBalance(l))}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No loans yet.</td></tr>`}</table></div>
-    </div>
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">Interactions</div>
-        ${ints.map(i=>`<div style="padding:9px 0; border-bottom:1px solid var(--line);"><strong>${i.type}</strong> — ${escapeHtml(i.note)}<br><span class="hint">${escapeHtml(i.staff)} · ${new Date(i.date).toLocaleDateString()}</span></div>`).join("") || `<div class="empty">No interactions logged.</div>`}
-        <form onsubmit="return submitInteraction(event,'${id}')" style="margin-top:12px;">
-          <div class="form-grid">
-            <div class="field"><label>Type</label><select name="type"><option>Call</option><option>Visit</option><option>SMS</option><option>Meeting</option></select></div>
-            <div class="field"><label>Note</label><input name="note" required></div>
-          </div>
-          <button class="btn btn-outline btn-sm" type="submit">Log Interaction</button>
-        </form>
+      <div class="card-title" style="justify-content:center; background:var(--navy); color:#fff; margin:-16px -16px 12px; padding:12px 16px; border-radius:10px 10px 0 0; position:relative;">
+        <select onchange="session.clientHistoryTab=this.value; renderApp();" style="position:absolute; left:16px; font-size:12px; padding:4px 8px;">
+          ${['Loan History','Client Documents','Repossessed items'].map(t=>`<option ${historyTab===t?'selected':''}>${t}</option>`).join("")}
+        </select>
+        ${historyTab}
       </div>
-      <div class="card">
-        <div class="card-title">Documents</div>
-        ${docs.map(d=>`<div style="padding:9px 0; border-bottom:1px solid var(--line);">📄 ${escapeHtml(d.name)} <span class="hint">(${d.type})</span> ${d.filePath?`<a href="${API_BASE}${d.filePath}" target="_blank" rel="noopener" style="margin-left:6px;">View</a>`:''}</div>`).join("") || `<div class="empty">No documents.</div>`}
-        <form onsubmit="return submitDocument(event,'${id}')" style="margin-top:12px;">
-          <div class="form-grid">
-            <div class="field"><label>Document Name</label><input name="name" required placeholder="e.g. Business Permit"></div>
-            <div class="field"><label>Type</label><select name="type"><option>ID</option><option>Photo</option><option>Permit</option><option>Statement</option><option>Other</option></select></div>
-            <div class="field"><label>File</label><input name="file" type="file" required accept="image/png,image/jpeg,image/webp,application/pdf"></div>
-          </div>
-          <button class="btn btn-outline btn-sm" type="submit">Upload Document</button>
-        </form>
-      </div>
+      ${historyTab==='Loan History' ? renderClientLoanHistoryTable(loans) : ""}
+      ${historyTab==='Client Documents' ? renderClientDocumentsTab(id, docs) : ""}
+      ${historyTab==='Repossessed items' ? `<div class="empty">No repossessed items recorded.</div>` : ""}
     </div>
   `;
 }
@@ -10453,6 +10523,62 @@ async function refreshMyData(){
   toast("Data refreshed");
 }
 
+// ---- Client photo / ID photo viewer: real zoom (in/out) and rotate
+// (90° steps — two steps turns it sideways, four turns it upside down),
+// pure client-side CSS transforms on the real uploaded document image,
+// no server round-trip needed. ----
+function openImageViewer(url, title){
+  DB.imageViewer = { url, title: title||'Image', scale:1, rotation:0 };
+  openModal('image-viewer');
+}
+function zoomImageViewer(delta){
+  const iv = DB.imageViewer; if(!iv) return;
+  iv.scale = Math.max(0.25, Math.min(4, +(iv.scale+delta).toFixed(2)));
+  renderApp();
+}
+function rotateImageViewer(deg){
+  const iv = DB.imageViewer; if(!iv) return;
+  iv.rotation = (iv.rotation + deg + 360) % 360;
+  renderApp();
+}
+function renderImageViewerModal(){
+  const iv = DB.imageViewer;
+  if(!iv) return `<div class="empty">No image selected.</div>`;
+  return `
+    <div class="modal-head"><h3>${escapeHtml(iv.title)}</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div style="display:flex; align-items:center; justify-content:center; overflow:auto; min-height:320px; max-height:60vh; background:#F5F4F1; border-radius:10px; padding:16px;">
+      <img src="${iv.url}" alt="${escapeHtml(iv.title)}" style="max-width:none; max-height:50vh; transition:transform 0.15s ease; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">
+    </div>
+    <div class="pill-row" style="margin-top:14px; justify-content:center;">
+      <button class="btn btn-sm btn-outline" onclick="zoomImageViewer(-0.25)" title="Zoom out">－</button>
+      <button class="btn btn-sm btn-outline" onclick="zoomImageViewer(0.25)" title="Zoom in">＋</button>
+      <button class="btn btn-sm btn-outline" onclick="rotateImageViewer(-90)">⟲ Rotate Left</button>
+      <button class="btn btn-sm btn-outline" onclick="rotateImageViewer(90)">⟳ Rotate Right</button>
+    </div>
+  `;
+}
+// ---- Client Notes: the real interaction log, reachable from the
+// Client Account page's "Notes" button instead of a permanently
+// on-page card — the same real submitInteraction()/addInteraction()
+// flow as before, just relocated. ----
+function openClientNotesModal(){ openModal('client-notes'); }
+function renderClientNotesModal(){
+  const id = session.selectedClientId;
+  const ints = DB.interactions.filter(i=>i.clientId===id);
+  return `
+    <div class="modal-head"><h3>Notes</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div style="max-height:300px; overflow-y:auto; margin-bottom:12px;">
+      ${ints.map(i=>`<div style="padding:9px 0; border-bottom:1px solid var(--line);"><strong>${escapeHtml(i.type)}</strong> — ${escapeHtml(i.note)}<br><span class="hint">${escapeHtml(i.staff)} · ${new Date(i.date).toLocaleDateString()}</span></div>`).join("") || `<div class="empty">No notes logged.</div>`}
+    </div>
+    <form onsubmit="return submitInteraction(event,'${id}')">
+      <div class="form-grid">
+        <div class="field"><label>Type</label><select name="type"><option>Call</option><option>Visit</option><option>SMS</option><option>Meeting</option></select></div>
+        <div class="field"><label>Note</label><input name="note" required></div>
+      </div>
+      <button class="btn btn-outline btn-sm" type="submit">Log Note</button>
+    </form>
+  `;
+}
 function openModal(type, props){ modal = { type, ...(props||{}) }; renderApp(); }
 function closeModal(){ modal = null; renderApp(); }
 function renderModal(){
@@ -10473,6 +10599,8 @@ function renderModal(){
   else if(modal.type === "client-added-success") body = renderClientAddedSuccessModal();
   else if(modal.type === "import-clients") body = renderImportClientsModal();
   else if(modal.type === "filter-client-fields") body = renderFilterClientFieldsModal();
+  else if(modal.type === "image-viewer") body = renderImageViewerModal();
+  else if(modal.type === "client-notes") body = renderClientNotesModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

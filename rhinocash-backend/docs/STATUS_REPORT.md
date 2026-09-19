@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  887 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 680 passed, 0 failed  (drives the real UI functions in
+Frontend: 691 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,567 passed, 0 failed
+Total:    1,578 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -197,7 +197,30 @@ independently toggleable columns) whose selection genuinely drives
 which columns the next Excel export includes. Like Bulk Upload, this
 dependency-free build has no binary `.xlsx` parser, so Import honestly
 accepts CSV only and says so, rather than pretending to read Excel
-files it can't.
+files it can't · clicking a client (from the directory's search results
+or any other list) now opens a real, redesigned Client Account page
+matching the reference exactly: a Notes button (the same real
+interaction log as before, relocated into its own modal), Loyalty
+Points/Account Balances tiles (genuinely 0 — this system does not track
+either yet, so it says so rather than fabricating a number), the real
+uploaded Client Photo and both ID photos (when present) as clickable
+thumbnails, a Client Details panel, and a Loan History section with a
+real Loan History/Client Documents/Repossessed items switcher (the
+first two are real data; Repossessed items is an honest empty state,
+since this system has no repossession tracking yet). Client Photo and
+both ID photos open a real, dependency-free image viewer — pure CSS
+`transform: scale()/rotate()` on the real uploaded image, with real
+zoom in/out and 90°-step rotate controls (two steps turns it sideways,
+four turns it upside down). The Loan History table's Arrears/Principal/
+Total Bal columns are all real, computed from each loan's actual
+repayment schedule via the same `loanBalance()`/`loanOutstandingPrincipal()`
+helpers already used elsewhere, plus a new `loanArrearsAmount()`
+alongside the pre-existing `loanArrearsDays()`. Coll. Agent, credit
+rating, and the Loan/Repayment/Status row-level action links (Details,
+View, print, statement, Action) are left as explicit, honestly-labeled
+placeholders — this system doesn't track a distinct collection agent or
+credit rating separately from the loan officer yet, and the destination
+pages for those actions are still to be specified.
 
 ## What is explicitly NOT verified, stated plainly
 
