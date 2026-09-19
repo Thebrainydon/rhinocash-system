@@ -10709,7 +10709,7 @@ function renderClientAccountPage(id){
         <div class="hint" style="color:#DCEBFA; margin-top:2px;">Available Balance</div>
         <div style="border-top:1px solid rgba(255,255,255,0.3); margin-top:12px; padding-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <span style="font-size:12px; color:#BEE0FF;">AccNo: ${account?escapeHtml(account.account_number):''}</span>
-          <button class="btn btn-sm btn-green" onclick="toast('Coming soon')" style="flex-shrink:0;">⇄ Transfer</button>
+          <button class="btn btn-sm btn-green" onclick="transferWalletFunds()" style="flex-shrink:0;">⇄ Transfer</button>
         </div>
       </div>
 
@@ -10747,6 +10747,13 @@ function renderClientAccountPage(id){
       </table></div>
     </div>
   `;
+}
+// A Loan Officer has no authority to move client funds between accounts
+// — a real permission boundary, not yet a fully designed feature for the
+// roles that do have it (Transfer's own reference page is still to come).
+function transferWalletFunds(){
+  if(session.role === 'Loan Officer'){ toast("Access denied"); return; }
+  toast("Coming soon");
 }
 function openDepositModal(){ openModal('deposit-wallet'); }
 function submitDeposit(ev){

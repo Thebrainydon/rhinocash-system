@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  901 passed, 0 failed  (26 suites — see test/run-all.sh)
-Frontend: 711 passed, 0 failed  (drives the real UI functions in
+Frontend: 713 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,612 passed, 0 failed
+Total:    1,614 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -262,7 +262,10 @@ requested. "Deposit" opens a real STK-push request against a genuinely
 separate M-Pesa code path (`mpesa.initiateWalletStkPush`, its own
 `client_account_stk_requests` table) from loan-repayment STK, so it can
 never affect that existing flow. Transfer is left an explicit
-placeholder, pending its own reference design.
+placeholder, pending its own reference design — a Loan Officer clicking
+it now genuinely gets "Access denied" (they have no real authority to
+move client funds between accounts); every other role still sees the
+placeholder until Transfer's own page is specified.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

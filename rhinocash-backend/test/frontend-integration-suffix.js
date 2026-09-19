@@ -1654,6 +1654,12 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
       __assert(modal && modal.type === 'deposit-wallet', "submitDeposit() genuinely runs to completion without throwing — this test environment has no real M-Pesa credentials (NOT_CONFIGURED), so the modal honestly stays open rather than pretending a push was sent");
       closeModal();
 
+      // Transfer: a Loan Officer has no real authority to move client funds between accounts.
+      __assert(session.role === 'Loan Officer', "sanity check: still genuinely logged in as the real Loan Officer for this Transfer check");
+      const toastsBefore = toasts.length;
+      transferWalletFunds();
+      __assert(toasts.length === toastsBefore + 1 && toasts[toasts.length-1].msg === 'Access denied', "transferWalletFunds() genuinely shows a real 'Access denied' toast for a Loan Officer");
+
       closeClientAccountPage();
       __assert(session.clientAccountOpen === false, "closeClientAccountPage() genuinely returns to the real Client Account page");
     }
