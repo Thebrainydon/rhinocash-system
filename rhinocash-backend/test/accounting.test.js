@@ -44,7 +44,7 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'a real Kisumu-branch disbursement decreases the real Kisumu-scoped bank balance');
 
     const glCheck = await api('GET', `/api/journal-entries?ref_type=loan&ref_id=${loanId}`, { token: adminToken });
-    assert(glCheck.json.entries.length === 2, 'the disbursement created exactly 2 real journal lines (balanced double-entry)');
+    assert(glCheck.json.entries.length === 3, 'the disbursement created exactly 3 real journal lines (receivable, net funding, and the real processing-fee income line — balanced double-entry)');
     const debits = glCheck.json.entries.reduce((s, e) => s + e.debit, 0);
     const credits = glCheck.json.entries.reduce((s, e) => s + e.credit, 0);
     assert(Math.abs(debits - credits) < 0.01, 'the disbursement journal entry is genuinely balanced (debits === credits)');

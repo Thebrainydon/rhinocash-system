@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  918 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 731 passed, 0 failed  (drives the real UI functions in
+Backend:  939 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 737 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,649 passed, 0 failed
+Total:    1,676 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -303,11 +303,34 @@ Statement (a real debit/credit/running-balance ledger: disbursement,
 interest charged, then two real lines per payment). Disbursement
 channel comes from the real "Disbursed loan" audit log row (the same
 derivation the existing disbursement-method report already used) via a
-new `disbursementChannel` field on `GET /api/loans/:id`. This system
-has no processing-fee or penalty concept anywhere — `loan_products.fee_pct`
-is configured but never actually applied/posted anywhere, and there is
-no penalty column or table at all — so neither appears on either
-statement; showing a specific amount for either would be fabrication.
+new `disbursementChannel` field on `GET /api/loans/:id`.
+
+Processing fee and late-payment penalty are now real, end-to-end
+features, not placeholders. A real processing fee (the product's own
+real, admin-configurable `fee_pct`, shown and editable in System
+Configuration — Loan Products) is charged at disbursement: deducted
+straight out of the disbursed cash and recognized immediately as real
+`fee_income`, while `loans_receivable` still books the FULL principal —
+the fee is never added to what the client owes, exactly like future
+interest never was. A real late-payment penalty (the product's own
+real, admin-configurable `penalty_pct`) is charged once, flatly, the
+first time an installment is genuinely found overdue — accrual is a
+pure `loan_schedule.penalty_due` update with no journal entry, run
+lazily on read (this dependency-free app has no background job
+runner) and on every payment, and is idempotent by construction (a
+`penalty_due = 0` guard). `allocate()`'s waterfall now pays a period's
+principal+interest before any penalty on that same period, `payments`
+carries a real `allocated_penalty`, penalty income is recognized only
+once actually collected (the same cash-basis timing as interest, via a
+real `penalty_income` GL account), and reversing a payment correctly
+unwinds the penalty portion first (the exact reverse of the order it
+was applied). `loanBalance()` — the one shared function every KPI,
+table, and statement in the app reads a loan's outstanding balance
+through — now includes any real outstanding penalty, so a client with
+an unpaid late fee is never shown as owing less than they really do.
+Both real fee and real penalty now appear on the Loan Details modal,
+the Installments view, the per-installment receipt, and both loan
+statements.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

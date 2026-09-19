@@ -5,22 +5,64 @@ const { logAction, notify } = require('./../audit');
 const { assertRecordInScope, branchIdsInScope } = require('./../rbac');
 const crypto = require('node:crypto');
 
+// Real overdue-installment penalty accrual. A loan_schedule row's penalty
+// is charged ONCE — a flat percentage (the loan's product's real,
+// admin-configured penalty_pct) of that installment's total_due — the
+// first time it's found still unpaid past its due date, then left alone
+// (never recomputed/increased on a later call, and never reduced by a
+// partial payment, matching how principal_due/interest_due are likewise
+// fixed once the schedule is built). Guarded by `penalty_due = 0` so
+// calling this repeatedly (it runs on every loan read and before every
+// payment allocation, since this dependency-free app has no background
+// job runner to accrue it on a timer) can never double-charge. No journal
+// entry is posted here — like interest, penalty income is only
+// recognized in the ledger once actually collected (see
+// postPaymentJournal), never at the moment it merely becomes due.
+async function accrueOverduePenalties(loanId) {
+  const loan = await get('SELECT product_id FROM loans WHERE id = ?', [loanId]);
+  if (!loan) return;
+  const product = await get('SELECT penalty_pct FROM loan_products WHERE id = ?', [loan.product_id]);
+  const pct = (product && product.penalty_pct) || 0;
+  if (pct <= 0) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueRows = await all(
+    `SELECT id, total_due FROM loan_schedule WHERE loan_id = ? AND due_date < ? AND paid_amount < total_due - 0.01 AND penalty_due = 0`,
+    [loanId, today]
+  );
+  for (const row of overdueRows) {
+    const penalty = Math.round((pct / 100) * row.total_due * 100) / 100;
+    if (penalty > 0) await run('UPDATE loan_schedule SET penalty_due = ? WHERE id = ?', [penalty, row.id]);
+  }
+}
+
 async function allocate(loanId, amount, paymentId) {
+  await accrueOverduePenalties(loanId);
   const rows = await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period', [loanId]);
   const today = new Date().toISOString().slice(0, 10);
   let remaining = amount;
-  let allocPrincipal = 0, allocInterest = 0;
+  let allocPrincipal = 0, allocInterest = 0, allocPenalty = 0;
   let touchedCount = 0;
   for (const row of rows) {
     if (remaining <= 0) break;
-    const due = row.total_due - row.paid_amount;
-    if (due <= 0) continue;
-    const pay = Math.min(due, remaining);
-    const newPaid = row.paid_amount + pay;
-    const newStatus = newPaid >= row.total_due - 0.01 ? 'Paid' : 'Partial';
-    await run('UPDATE loan_schedule SET paid_amount = ?, status = ? WHERE id = ?', [newPaid, newStatus, row.id]);
-    allocPrincipal += pay * (row.principal_due / row.total_due);
-    allocInterest += pay * (row.interest_due / row.total_due);
+    const piDue = row.total_due - row.paid_amount;
+    const penaltyDue = row.penalty_due - row.penalty_paid;
+    const rowDue = piDue + penaltyDue;
+    if (rowDue <= 0) continue;
+    const pay = Math.min(rowDue, remaining);
+    // Principal + interest are paid off before any penalty on the same
+    // installment — a standard, and here also the safer, priority (a
+    // partial payment should never look like it cleared a late fee while
+    // the underlying principal/interest it was actually meant for is
+    // still outstanding).
+    const toPI = Math.min(piDue, pay);
+    const toPenalty = pay - toPI;
+    const newPaid = row.paid_amount + toPI;
+    const newPenaltyPaid = row.penalty_paid + toPenalty;
+    const newStatus = (newPaid >= row.total_due - 0.01 && newPenaltyPaid >= row.penalty_due - 0.01) ? 'Paid' : 'Partial';
+    await run('UPDATE loan_schedule SET paid_amount = ?, penalty_paid = ?, status = ? WHERE id = ?', [newPaid, newPenaltyPaid, newStatus, row.id]);
+    allocPrincipal += toPI * (row.principal_due / row.total_due);
+    allocInterest += toPI * (row.interest_due / row.total_due);
+    allocPenalty += toPenalty;
     if (paymentId) {
       // The FIRST unpaid installment this payment reaches is, by
       // definition, the loan's current obligation — arrears if its
@@ -40,7 +82,7 @@ async function allocate(loanId, amount, paymentId) {
     }
     remaining -= pay;
   }
-  return { allocPrincipal, allocInterest, remaining };
+  return { allocPrincipal, allocInterest, allocPenalty, remaining };
 }
 
 // Payment channels come from the frontend as "M-Pesa" / "Bank" / "Cash";
@@ -60,12 +102,17 @@ function glAccountFor(channel) {
 // which is the one place this sign convention is applied when reading
 // balances back out — post here, read there, always the same rule.)
 //
-// A repayment is a 2-or-3-line balanced entry:
+// A repayment is a 2-to-4-line balanced entry:
 //   DEBIT  cash/bank/mpesa        (amount)         — asset increases
 //   CREDIT loans_receivable       (principal part) — asset decreases
 //   CREDIT interest_income        (interest part)  — revenue recognized
+//   CREDIT penalty_income         (penalty part)   — revenue recognized
 //   CREDIT overpayment_suspense   (any excess)      — held pending refund/allocation
-async function postPaymentJournal({ paymentId, loanId, amount, channel, allocPrincipal, allocInterest, overpay, userId, branchId }) {
+// Penalty follows the exact same recognition timing as interest: nothing
+// is posted when a penalty merely becomes due (accrueOverduePenalties()
+// above only ever touches loan_schedule, never journal_entries) — it is
+// only ever real, recognized income once the client actually pays it.
+async function postPaymentJournal({ paymentId, loanId, amount, channel, allocPrincipal, allocInterest, allocPenalty, overpay, userId, branchId }) {
   const fundingAccount = glAccountFor(channel);
   await run(
     `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?,?,0,?,'payment',?,?,?)`,
@@ -83,6 +130,12 @@ async function postPaymentJournal({ paymentId, loanId, amount, channel, allocPri
       [allocInterest, `Interest income — ${loanId}`, paymentId, branchId || null, userId]
     );
   }
+  if (allocPenalty > 0) {
+    await run(
+      `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('penalty_income',0,?,?,'payment',?,?,?)`,
+      [allocPenalty, `Penalty income — ${loanId}`, paymentId, branchId || null, userId]
+    );
+  }
   if (overpay > 0) {
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('overpayment_suspense',0,?,?,'payment',?,?,?)`,
@@ -93,7 +146,7 @@ async function postPaymentJournal({ paymentId, loanId, amount, channel, allocPri
 
 // The exact reverse of postPaymentJournal — same amounts, opposite sides,
 // so the running SUM(debit)=SUM(credit) invariant holds after a reversal too.
-async function reversePaymentJournal({ paymentId, loanId, amount, channel, allocPrincipal, allocInterest, overpay, userId, branchId }) {
+async function reversePaymentJournal({ paymentId, loanId, amount, channel, allocPrincipal, allocInterest, allocPenalty, overpay, userId, branchId }) {
   const fundingAccount = glAccountFor(channel);
   await run(
     `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?,0,?,?,'payment_reversal',?,?,?)`,
@@ -109,6 +162,12 @@ async function reversePaymentJournal({ paymentId, loanId, amount, channel, alloc
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('interest_income',?,0,?,'payment_reversal',?,?,?)`,
       [allocInterest, `Interest reversal — ${loanId}`, paymentId, branchId || null, userId]
+    );
+  }
+  if (allocPenalty > 0) {
+    await run(
+      `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('penalty_income',?,0,?,'payment_reversal',?,?,?)`,
+      [allocPenalty, `Penalty reversal — ${loanId}`, paymentId, branchId || null, userId]
     );
   }
   if (overpay > 0) {
@@ -275,24 +334,24 @@ function register(router) {
     // journal entries must all commit together or none of them do. Before
     // this, a crash between any two of these steps could leave a payment
     // recorded with no matching journal entry, or vice versa.
-    let status = 'Unposted', allocP = 0, allocI = 0, overpay = 0;
+    let status = 'Unposted', allocP = 0, allocI = 0, allocPen = 0, overpay = 0;
     await transaction(async () => {
       // Insert the payment row first (Unposted, zero-allocated) so
       // payment_allocations — which references payments(id) by real foreign
       // key — has something to reference. allocate() runs second and
       // updates this same row's status/allocation once it's done.
       await run(
-        `INSERT INTO payments (id, loan_id, client_id, amount, channel, reference, status, allocated_principal, allocated_interest, recorded_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [id, loan.id, loan.client_id, b.amount, b.channel || 'Cash', reference, 'Unposted', 0, 0, req.user.id]
+        `INSERT INTO payments (id, loan_id, client_id, amount, channel, reference, status, allocated_principal, allocated_interest, allocated_penalty, recorded_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, loan.id, loan.client_id, b.amount, b.channel || 'Cash', reference, 'Unposted', 0, 0, 0, req.user.id]
       );
       if (post) {
         const result = await allocate(loan.id, b.amount, id);
         status = result.remaining > 0 ? 'Overpayment' : 'Posted';
-        allocP = result.allocPrincipal; allocI = result.allocInterest; overpay = result.remaining;
-        await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ? WHERE id = ?', [status, allocP, allocI, id]);
-        await postPaymentJournal({ paymentId: id, loanId: loan.id, amount: b.amount, channel: b.channel, allocPrincipal: allocP, allocInterest: allocI, overpay, userId: req.user.id, branchId: loan.branch_id });
-        const stillOwed = (await get('SELECT COALESCE(SUM(total_due - paid_amount),0) as bal FROM loan_schedule WHERE loan_id = ?', [loan.id])).bal;
+        allocP = result.allocPrincipal; allocI = result.allocInterest; allocPen = result.allocPenalty; overpay = result.remaining;
+        await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ?, allocated_penalty = ? WHERE id = ?', [status, allocP, allocI, allocPen, id]);
+        await postPaymentJournal({ paymentId: id, loanId: loan.id, amount: b.amount, channel: b.channel, allocPrincipal: allocP, allocInterest: allocI, allocPenalty: allocPen, overpay, userId: req.user.id, branchId: loan.branch_id });
+        const stillOwed = (await get('SELECT COALESCE(SUM((total_due - paid_amount) + (penalty_due - penalty_paid)),0) as bal FROM loan_schedule WHERE loan_id = ?', [loan.id])).bal;
         if (stillOwed <= 0.01) await run('UPDATE loans SET status = ? WHERE id = ?', ['Completed', loan.id]);
       }
     });
@@ -312,11 +371,11 @@ function register(router) {
     await transaction(async () => {
       result = await allocate(payment.loan_id, payment.amount, payment.id);
       const status = result.remaining > 0 ? 'Overpayment' : 'Posted';
-      await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ? WHERE id = ?', [status, result.allocPrincipal, result.allocInterest, payment.id]);
+      await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ?, allocated_penalty = ? WHERE id = ?', [status, result.allocPrincipal, result.allocInterest, result.allocPenalty, payment.id]);
       // This was missing before: posting a previously-unposted payment must
       // hit the ledger exactly like an immediately-posted one does, or the
       // money silently never appears in cash position / P&L.
-      await postPaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: result.allocPrincipal, allocInterest: result.allocInterest, overpay: result.remaining, userId: req.user.id, branchId: loan.branch_id });
+      await postPaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: result.allocPrincipal, allocInterest: result.allocInterest, allocPenalty: result.allocPenalty, overpay: result.remaining, userId: req.user.id, branchId: loan.branch_id });
     });
     await logAction(req, { action: 'Posted payment', module: 'payments', recordType: 'Payment', recordId: payment.id });
     res.json({ payment: await get('SELECT * FROM payments WHERE id = ?', [payment.id]) });
@@ -334,15 +393,22 @@ function register(router) {
         const rows = await all('SELECT * FROM loan_schedule WHERE loan_id = ? ORDER BY period DESC', [payment.loan_id]);
         for (const row of rows) {
           if (toUnwind <= 0) break;
-          if (row.paid_amount <= 0) continue;
+          if (row.paid_amount <= 0 && row.penalty_paid <= 0) continue;
+          // Undo in the exact reverse of allocate()'s own priority: this
+          // payment paid off principal/interest first and any penalty
+          // second, so unwinding it undoes the penalty portion first.
+          const undoPenalty = Math.min(row.penalty_paid, toUnwind);
+          const newPenaltyPaid = row.penalty_paid - undoPenalty;
+          toUnwind -= undoPenalty;
           const undo = Math.min(row.paid_amount, toUnwind);
           const newPaid = row.paid_amount - undo;
-          await run('UPDATE loan_schedule SET paid_amount = ?, status = ? WHERE id = ?', [newPaid, newPaid <= 0 ? 'Pending' : 'Partial', row.id]);
           toUnwind -= undo;
+          const newStatus = (newPaid <= 0 && newPenaltyPaid <= 0) ? 'Pending' : 'Partial';
+          await run('UPDATE loan_schedule SET paid_amount = ?, penalty_paid = ?, status = ? WHERE id = ?', [newPaid, newPenaltyPaid, newStatus, row.id]);
         }
         await run(`UPDATE loans SET status = 'Active' WHERE id = ? AND status = 'Completed'`, [payment.loan_id]);
-        const overpay = Math.max(0, payment.amount - payment.allocated_principal - payment.allocated_interest);
-        await reversePaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: payment.allocated_principal, allocInterest: payment.allocated_interest, overpay, userId: req.user.id, branchId: loan ? loan.branch_id : null });
+        const overpay = Math.max(0, payment.amount - payment.allocated_principal - payment.allocated_interest - payment.allocated_penalty);
+        await reversePaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: payment.allocated_principal, allocInterest: payment.allocated_interest, allocPenalty: payment.allocated_penalty, overpay, userId: req.user.id, branchId: loan ? loan.branch_id : null });
       }
       await run('UPDATE payments SET status = ? WHERE id = ?', ['Reversed', payment.id]);
       // Reversed money is no longer "allocated" anywhere — a reversed
@@ -356,4 +422,4 @@ function register(router) {
   });
 }
 
-module.exports = { register, allocate, glAccountFor, postPaymentJournal, reversePaymentJournal };
+module.exports = { register, allocate, glAccountFor, postPaymentJournal, reversePaymentJournal, accrueOverduePenalties };

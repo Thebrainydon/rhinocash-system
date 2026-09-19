@@ -288,6 +288,8 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     updatedLoan = DB.loans.find(l=>l.id===loan.id);
     __assert(updatedLoan.status === "Active", "real disburseLoan() moves the loan to Active");
     __assert(updatedLoan.schedule && updatedLoan.schedule.length === 4, "real repayment schedule (4 periods) came back from the backend");
+    // Real processing fee: the real seeded product's own real fee_pct (2%) applied to the real 30000 principal.
+    __assert(Math.abs(updatedLoan.processingFee - 600) < 0.01, "the real disbursement genuinely charged a real processing fee (principal * the product's real fee_pct), not a fabricated placeholder");
 
     // Loan Details modal: real Posted By / Template Creation / Approvals through the actual UI functions.
     await openLoanDetailsModal(loan.id);
@@ -298,6 +300,18 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(loanWithDetails.approvals.length === 4, "the real Loan Details modal's approvals list genuinely has all 4 real approval decisions");
     const detailsModalHtml = renderLoanDetailsModal();
     __assert(detailsModalHtml.includes('Loan Details') && detailsModalHtml.includes('Guarantor name') && detailsModalHtml.includes(fmtNum(loan.principal)) && detailsModalHtml.includes(escapeHtml(loanWithDetails.postedBy.name)), "the real rendered Loan Details modal genuinely shows the real loan amount and Posted By name, not placeholders");
+    __assert(detailsModalHtml.includes('Processing Fee') && detailsModalHtml.includes(fmtNum(600)), "the real rendered Loan Details modal genuinely shows the real Processing Fee amount");
+    closeModal();
+
+    // Loan Account Statement & Loan Ledger Statement: real processing fee
+    // now genuinely appears on both, through the real UI functions.
+    await openLoanAccountStatementModal(loan.id);
+    const acctStatementHtmlFee = renderLoanAccountStatementModal();
+    __assert(acctStatementHtmlFee.includes('Processing Fee') && acctStatementHtmlFee.includes(fmtNum(600)) && acctStatementHtmlFee.includes('Penalty Charged'), "the real Loan Account Statement genuinely shows the real Processing Fee and a real (here zero) Penalty Charged, not the old placeholder");
+    closeModal();
+    await openLoanLedgerStatementModal(loan.id);
+    const ledgerStatementHtmlFee = renderLoanLedgerStatementModal();
+    __assert(ledgerStatementHtmlFee.includes('processing fee') && ledgerStatementHtmlFee.includes(fmtNum(600)), "the real Loan Ledger Statement genuinely discloses the real processing fee deducted at disbursement");
     closeModal();
 
     // Duplicate disbursement is rejected.
@@ -414,10 +428,14 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     global.FormData = class { constructor(){ return form; } };
     await doLogin({ preventDefault(){}, target:{} });
     const productsBefore = DB.products.length;
-    const newProduct = await addLoanProduct({ name:'Frontend Test Product', rate:'5', minAmt:'1000', maxAmt:'50000', minTerm:'1', maxTerm:'12', fee:'1' });
+    const newProduct = await addLoanProduct({ name:'Frontend Test Product', rate:'5', minAmt:'1000', maxAmt:'50000', minTerm:'1', maxTerm:'12', fee:'1', penalty:'6' });
     __assert(DB.products.length === productsBefore + 1 && newProduct.name === 'Frontend Test Product', "real addLoanProduct() persisted via the actual API");
+    __assert(newProduct.penalty === 6, "the real, non-default penalty_pct genuinely round-trips through addLoanProduct(), not just fee_pct");
     const reload = await api.get('/api/loan-products');
-    __assert(reload.products.some(p=>p.name==='Frontend Test Product'), "the new product genuinely persisted server-side, confirmed via a fresh fetch");
+    const reloadedProduct = reload.products.find(p=>p.name==='Frontend Test Product');
+    __assert(reloadedProduct && Math.abs(reloadedProduct.penalty_pct - 6) < 0.01, "the new product's real penalty_pct genuinely persisted server-side, confirmed via a fresh fetch");
+    const adminDashboardHtml = renderAdminDashboard();
+    __assert(adminDashboardHtml.includes('Penalty') && adminDashboardHtml.includes('Late Payment Penalty'), "the real System Configuration — Loan Products card now shows a Penalty column and a Late Payment Penalty field, not just Fee");
   }
 
   // ---- 13. Role dashboards actually render with real data (were previously broken) ----

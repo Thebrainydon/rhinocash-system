@@ -262,6 +262,110 @@ async function api(method, path, { token, body } = {}) {
     assert(!!scheduleAfterPayments[0].last_payment_date, 'schedule now carries a real last_payment_date for the period the two payments touched');
   }
 
+  // ---- 11b. Processing fee (real, deducted at disbursement) & late-payment
+  // penalty (real, accrued on overdue installments, payable and reversible
+  // through the same allocate()/reverse machinery as principal/interest) ----
+  {
+    const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    const rmLogin = await api('POST', '/api/auth/login', { body: { email: 'regional@rhinocash.co.ke', password: process.env.SEEDED_REGIONAL_PASSWORD } });
+    const omLogin = await api('POST', '/api/auth/login', { body: { email: 'opsmanager@rhinocash.co.ke', password: process.env.SEEDED_OPSMGR_PASSWORD } });
+    const acctLogin = await api('POST', '/api/auth/login', { body: { email: 'accountant@rhinocash.co.ke', password: process.env.SEEDED_ACCOUNTANT_PASSWORD } });
+
+    const c = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Fee Penalty Test Client', phone: '0722555099', national_id: '30112299' } });
+    const productsRes = await api('GET', '/api/loan-products', { token: officerToken });
+    const product = productsRes.json.products[0];
+    assert(product.penalty_pct > 0 && product.fee_pct > 0, 'the real seeded product genuinely carries nonzero fee_pct and penalty_pct — the feature is actually configured, not merely present in the schema');
+
+    const loanRes = await api('POST', '/api/loans', { token: officerToken, body: { client_id: c.json.client.id, product_id: product.id, principal: 20000, term_months: 2, purpose: 'Stock' } });
+    const feePenaltyLoanId = loanRes.json.loan.id;
+    await api('POST', `/api/loans/${feePenaltyLoanId}/approve`, { token: mgrLogin.json.token, body: {} });
+    await api('POST', `/api/loans/${feePenaltyLoanId}/approve`, { token: rmLogin.json.token, body: {} });
+    await api('POST', `/api/loans/${feePenaltyLoanId}/approve`, { token: omLogin.json.token, body: {} });
+    await api('POST', `/api/loans/${feePenaltyLoanId}/approve`, { token: acctLogin.json.token, body: {} });
+    const disburseFP = await api('POST', `/api/loans/${feePenaltyLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    assert(disburseFP.status === 200, 'fee/penalty test loan disburses');
+
+    // Real processing fee — the product's real fee_pct applied to the real
+    // principal, stored on the loan, and genuinely deducted from the cash
+    // actually disbursed (never inflating what the client owes).
+    const expectedFee = Math.round((20000 * product.fee_pct / 100) * 100) / 100;
+    const loanAfterDisburse = await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken });
+    assert(Math.abs(loanAfterDisburse.json.loan.processing_fee - expectedFee) < 0.01, 'the real processing_fee stored on the loan matches principal * the product\'s real fee_pct');
+    const feeJournal = await api('GET', `/api/journal-entries?ref_type=loan&ref_id=${feePenaltyLoanId}`, { token: adminToken });
+    assert(feeJournal.json.entries.length === 3, 'disbursement posted exactly 3 real journal lines: receivable, net cash, and real fee income');
+    const cashLine = feeJournal.json.entries.find(e => e.account_id === 'cash');
+    const feeLine = feeJournal.json.entries.find(e => e.account_id === 'fee_income');
+    assert(cashLine && Math.abs(cashLine.credit - (20000 - expectedFee)) < 0.01, 'the real cash account was credited the NET disbursed amount (principal minus the real fee), not the full principal');
+    assert(feeLine && Math.abs(feeLine.credit - expectedFee) < 0.01, 'real fee income was genuinely recognized for the exact real fee amount at the moment of disbursement');
+    const receivableLine = feeJournal.json.entries.find(e => e.account_id === 'loans_receivable');
+    assert(receivableLine && Math.abs(receivableLine.debit - 20000) < 0.01, 'loans_receivable is still debited the FULL principal — the fee never inflates what the client owes');
+
+    // Backdate period 1's due date directly in the real database to
+    // simulate it genuinely being overdue (the schedule always starts in
+    // the future relative to "today", so there is no other way to
+    // reach this real state inside a single test run).
+    const { run: dbRun, get: dbGet, all: dbAll3 } = require('../src/db');
+    const scheduleFP = (await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken })).json.schedule;
+    const period1FP = scheduleFP[0];
+    const pastDate = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+    await dbRun('UPDATE loan_schedule SET due_date = ? WHERE id = ?', [pastDate, period1FP.id]);
+
+    // Real accrual — genuinely happens as a side effect of reading the
+    // loan (this dependency-free app has no background job runner).
+    const afterAccrual = await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken });
+    const accruedPeriod1 = afterAccrual.json.schedule.find(r => r.id === period1FP.id);
+    const expectedPenalty = Math.round((period1FP.total_due * product.penalty_pct / 100) * 100) / 100;
+    assert(Math.abs(accruedPeriod1.penalty_due - expectedPenalty) < 0.01, 'the real penalty_due genuinely equals the product\'s real penalty_pct applied to this installment\'s real total_due, once it is genuinely overdue');
+    assert(accruedPeriod1.penalty_paid === 0, 'the real penalty is charged but not yet paid');
+
+    // Re-reading again must NOT double-charge (idempotent accrual).
+    const afterSecondRead = await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken });
+    const stillSamePenalty = afterSecondRead.json.schedule.find(r => r.id === period1FP.id);
+    assert(Math.abs(stillSamePenalty.penalty_due - expectedPenalty) < 0.01, 'accruing penalties a second time genuinely does not double-charge the same installment');
+
+    // No journal entry exists yet for the mere accrual — penalty income,
+    // like interest income, is only ever recognized once really collected.
+    const journalBeforePenaltyPay = await api('GET', `/api/journal-entries?ref_type=loan&ref_id=${feePenaltyLoanId}`, { token: adminToken });
+    assert(journalBeforePenaltyPay.json.entries.length === 3, 'accruing a real penalty posts no journal entry by itself — it is recognized only when actually paid, exactly like interest');
+
+    // Pay exactly enough to clear period 1's principal+interest AND its
+    // real accrued penalty — a genuine, real three-way split.
+    const payAmount = Math.round((period1FP.total_due + expectedPenalty) * 100) / 100;
+    const penaltyPayment = await api('POST', '/api/payments', { token: officerToken, body: { loan_id: feePenaltyLoanId, amount: payAmount, channel: 'Cash' } });
+    assert(penaltyPayment.status === 201, 'the real payment covering principal+interest+penalty is recorded');
+    assert(Math.abs(penaltyPayment.json.payment.allocated_penalty - expectedPenalty) < 0.01, 'the real payment\'s allocated_penalty genuinely equals the real accrued penalty it paid off');
+    assert(Math.abs(penaltyPayment.json.payment.allocated_principal - period1FP.principal_due) < 0.01 && Math.abs(penaltyPayment.json.payment.allocated_interest - period1FP.interest_due) < 0.01, 'principal and interest are still allocated in full alongside the real penalty');
+
+    const scheduleAfterPenaltyPay = (await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken })).json.schedule;
+    const period1AfterPay = scheduleAfterPenaltyPay.find(r => r.id === period1FP.id);
+    assert(period1AfterPay.status === 'Paid' && Math.abs(period1AfterPay.penalty_paid - expectedPenalty) < 0.01, 'the real installment is only marked Paid once BOTH principal+interest and the real penalty are fully settled');
+
+    const journalAfterPenaltyPay = await api('GET', `/api/journal-entries?ref_type=payment&ref_id=${penaltyPayment.json.payment.id}`, { token: adminToken });
+    const penaltyIncomeLine = journalAfterPenaltyPay.json.entries.find(e => e.account_id === 'penalty_income' && e.credit > 0);
+    assert(penaltyIncomeLine && Math.abs(penaltyIncomeLine.credit - expectedPenalty) < 0.01, 'real penalty income is recognized in the ledger for the exact real amount collected, at the moment it was actually paid');
+
+    // The per-installment transactions endpoint correctly attributes the
+    // real penalty portion of this payment (principal-first, interest
+    // second, penalty last — matching allocate()'s own real priority).
+    const txnsFP = await api('GET', `/api/loans/${feePenaltyLoanId}/schedule/${period1FP.id}/transactions`, { token: adminToken });
+    assert(txnsFP.json.transactions.length === 1 && Math.abs(txnsFP.json.transactions[0].penalty - expectedPenalty) < 0.01, 'the real per-installment transactions breakdown correctly attributes the real penalty portion of the payment');
+
+    // Reversing the payment genuinely unwinds the real penalty too.
+    const reversePenaltyPay = await api('POST', `/api/payments/${penaltyPayment.json.payment.id}/reverse`, { token: acctLogin.json.token, body: { reason: 'test' } });
+    assert(reversePenaltyPay.status === 200, 'the real payment (principal+interest+penalty) can be reversed');
+    const scheduleAfterReverse = (await api('GET', `/api/loans/${feePenaltyLoanId}`, { token: adminToken })).json.schedule;
+    const period1AfterReverse = scheduleAfterReverse.find(r => r.id === period1FP.id);
+    assert(period1AfterReverse.penalty_paid === 0 && period1AfterReverse.paid_amount === 0 && period1AfterReverse.status === 'Pending', 'reversing the payment genuinely unwinds BOTH the real principal/interest AND the real penalty_paid');
+    const journalAfterReverse = await api('GET', `/api/journal-entries?ref_type=payment_reversal&ref_id=${penaltyPayment.json.payment.id}`, { token: adminToken });
+    const penaltyReversalLine = journalAfterReverse.json.entries.find(e => e.account_id === 'penalty_income' && e.debit > 0);
+    assert(penaltyReversalLine && Math.abs(penaltyReversalLine.debit - expectedPenalty) < 0.01, 'reversing the payment genuinely posts a real, exact reversal of the penalty income that was recognized');
+
+    // Product management genuinely persists and returns the real
+    // configured penalty_pct (not just fee_pct) end-to-end.
+    const newProduct = await api('POST', '/api/loan-products', { token: adminToken, body: { name: 'Penalty Config Test Product', rate_pct: 3, min_amount: 1000, max_amount: 50000, min_term_months: 1, max_term_months: 6, fee_pct: 1.5, penalty_pct: 7.5 } });
+    assert(newProduct.status === 201 && Math.abs(newProduct.json.product.penalty_pct - 7.5) < 0.01, 'creating a real loan product with a real, non-default penalty_pct genuinely persists and returns it');
+  }
+
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----
   {
     const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });

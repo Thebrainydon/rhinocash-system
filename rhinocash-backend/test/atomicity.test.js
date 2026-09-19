@@ -118,7 +118,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     const journalRows2 = await dbAll2(`SELECT * FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId]);
     assert(loanRow.status === 'Active', 'the real loan status is genuinely Active');
     assert(scheduleRows.length === 3, 'the real loan schedule (3 installments) was genuinely built');
-    assert(journalRows2.length === 2, 'the real disbursement journal entries (debit + credit) genuinely exist — status, schedule, and journal all committed together in the one real transaction');
+    assert(journalRows2.length === 3, 'the real disbursement journal entries (receivable debit, net funding credit, real processing-fee income credit) genuinely exist — status, schedule, and journal all committed together in the one real transaction');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

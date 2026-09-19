@@ -460,6 +460,7 @@ CREATE TABLE IF NOT EXISTS loan_products (
   min_term_months INTEGER NOT NULL,
   max_term_months INTEGER NOT NULL,
   fee_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
+  penalty_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1
 );
 
@@ -488,7 +489,8 @@ CREATE TABLE IF NOT EXISTS loans (
   reject_reason TEXT,
   created_at TEXT NOT NULL DEFAULT iso_now(),
   disbursed_at TEXT,
-  written_off_at TEXT
+  written_off_at TEXT,
+  processing_fee NUMERIC(14,2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS loan_approvals (
@@ -513,7 +515,9 @@ CREATE TABLE IF NOT EXISTS loan_schedule (
   interest_due NUMERIC(14,2) NOT NULL,
   total_due NUMERIC(14,2) NOT NULL,
   paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'Pending'
+  status TEXT NOT NULL DEFAULT 'Pending',
+  penalty_due NUMERIC(14,2) NOT NULL DEFAULT 0,
+  penalty_paid NUMERIC(14,2) NOT NULL DEFAULT 0
 );
 
 -- ===================== Payments =====================
@@ -527,6 +531,7 @@ CREATE TABLE IF NOT EXISTS payments (
   status TEXT NOT NULL DEFAULT 'Posted',
   allocated_principal NUMERIC(14,2) NOT NULL DEFAULT 0,
   allocated_interest NUMERIC(14,2) NOT NULL DEFAULT 0,
+  allocated_penalty NUMERIC(14,2) NOT NULL DEFAULT 0,
   recorded_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT iso_now()
 );

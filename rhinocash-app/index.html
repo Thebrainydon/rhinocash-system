@@ -1009,19 +1009,20 @@ function adaptClient(c){
     verifiedBy:c.verified_by, verifiedAt:c.verified_at, createdBy:c.created_by, createdAt:c.created_at };
 }
 function adaptScheduleRow(r){
-  return { id:r.id, period:r.period, dueDate:r.due_date, principalDue:r.principal_due, interestDue:r.interest_due, totalDue:r.total_due, paidAmount:r.paid_amount, status:r.status, lastPaymentDate:r.last_payment_date };
+  return { id:r.id, period:r.period, dueDate:r.due_date, principalDue:r.principal_due, interestDue:r.interest_due, totalDue:r.total_due, paidAmount:r.paid_amount, status:r.status, lastPaymentDate:r.last_payment_date,
+    penaltyDue:r.penalty_due||0, penaltyPaid:r.penalty_paid||0 };
 }
 function adaptLoan(l){
   return { id:l.id, clientId:l.client_id, productId:l.product_id, productName: l.product_name || productName(l.product_id),
     principal:l.principal, term:l.term_months, rate:l.rate_pct, purpose:l.purpose, guarantor:l.guarantor,
-    guarantorContact:l.guarantor_contact, loanSecurities:l.loan_securities,
+    guarantorContact:l.guarantor_contact, loanSecurities:l.loan_securities, processingFee:l.processing_fee||0,
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
 }
 function adaptPayment(p){
   return { id:p.id, loanId:p.loan_id, clientId:p.client_id, amount:p.amount, channel:p.channel, reference:p.reference,
-    status:p.status, allocated:{ principal:p.allocated_principal||0, interest:p.allocated_interest||0, fees:0, penalty:0 },
+    status:p.status, allocated:{ principal:p.allocated_principal||0, interest:p.allocated_interest||0, fees:0, penalty:p.allocated_penalty||0 },
     date:p.created_at, recordedBy:p.recorded_by };
 }
 function adaptStaff(u){
@@ -1034,7 +1035,7 @@ function adaptStaff(u){
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
 function adaptRegion(r){ return { id:r.id, name:r.name }; }
-function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct }; }
+function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0 }; }
 function adaptNotification(n){ return { id:n.id, type:n.type, title:n.title, message:n.message, date:n.created_at, read: !!n.read }; }
 function adaptAudit(a){ return { id:a.id, user:a.user_name, role: ROLE_ID_TO_DISPLAY[a.role_id]||a.role_id||"", action:a.action, entity:a.record_type||a.module, entityId:a.record_id, details:a.reason || (a.new_value?String(a.new_value):"") || "", date:a.created_at }; }
 function adaptTicket(t){ return { id:t.id, subject:t.subject, message:t.message, category:t.category, priority:t.priority, status:t.status, createdBy:t.created_by, assignedTo:t.assigned_to, resolvedAt:t.resolved_at, date:t.created_at }; }
@@ -1165,9 +1166,17 @@ async function refreshNotifications(){
 }
 
 /* ---------------- Derived calculations ---------------- */
+// Real outstanding balance = unpaid principal+interest PLUS any real,
+// genuinely accrued-but-unpaid penalty (penaltyDue/penaltyPaid — real
+// loan_schedule columns, only ever nonzero when the loan's product has a
+// real penalty_pct and this installment genuinely is overdue). A loan
+// with an unpaid penalty is not actually fully settled, so every reader
+// of this single function — KPIs, the Loan History table, the wallet,
+// statements — sees that correctly, rather than a handful of call sites
+// each remembering to add penalty back in themselves.
 function loanBalance(loan){
   if(!loan.schedule || !loan.schedule.length) return (loan.status||"").startsWith("Waiting for") ? 0 : loan.principal;
-  return loan.schedule.reduce((s,r)=> s + Math.max(0, r.totalDue - (r.paidAmount||0)), 0);
+  return loan.schedule.reduce((s,r)=> s + Math.max(0, r.totalDue - (r.paidAmount||0)) + Math.max(0, (r.penaltyDue||0) - (r.penaltyPaid||0)), 0);
 }
 function loanOutstandingPrincipal(loan){
   if(!loan.schedule || !loan.schedule.length) return 0;
@@ -1579,7 +1588,7 @@ function togglePermission(role, perm){
 }
 async function addLoanProduct(data){
   const res = await api.post('/api/loan-products', { name:data.name, rate_type:'Flat', rate_pct:Number(data.rate),
-    min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm), max_term_months:Number(data.maxTerm), fee_pct:Number(data.fee) });
+    min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm), max_term_months:Number(data.maxTerm), fee_pct:Number(data.fee), penalty_pct:Number(data.penalty||0) });
   const p = adaptProduct(res.product);
   DB.products.push(p);
   return p;
@@ -2889,8 +2898,8 @@ function renderAdminDashboard(){
 
     <div class="card">
       <div class="card-title">System Configuration — Loan Products</div>
-      <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th></tr>
-      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% flat</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.minTerm}–${p.maxTerm} mo</td><td>${p.fee}%</td></tr>`).join("")}</table></div>
+      <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Penalty</th></tr>
+      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% flat</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.minTerm}–${p.maxTerm} mo</td><td>${p.fee}%</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
       ${CAN_MANAGE_SETTINGS(session.role) ? `
       <form onsubmit="return submitAddProduct(event)" style="margin-top:14px;">
         <div class="form-grid">
@@ -2901,6 +2910,7 @@ function renderAdminDashboard(){
           <div class="field"><label>Min Term (months)</label><input name="minTerm" type="number" required></div>
           <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number" required></div>
           <div class="field"><label>Processing Fee (%)</label><input name="fee" type="number" step="0.1" required></div>
+          <div class="field"><label>Late Payment Penalty (% per overdue installment)</label><input name="penalty" type="number" step="0.1" value="0"></div>
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Add Loan Product</button>
       </form>` : `<div class="hint" style="margin-top:10px;">You don't have Manage System Settings permission.</div>`}
@@ -4509,6 +4519,7 @@ function renderLoanDetailsModal(){
   const approvalNames = (loan.approvals||[]).map(a=>staffName(a.approver_id));
   const rows = [
     ['Loan Amount', fmtNum(loan.principal)],
+    ['Processing Fee', fmtNum(loan.processingFee||0)],
     ['Disbursement', loan.disbursedAt ? `• ${fmtDisbursementLine(loan.postedBy?loan.postedBy.at:loan.disbursedAt, loan.principal)}` : 'Not yet disbursed'],
     ['Posted By', loan.postedBy ? `${escapeHtml(loan.postedBy.name)}<br>${fmtLoanDetailDateTime(loan.postedBy.at)}` : '—'],
     ['Template Creation', loan.templateCreation ? `${escapeHtml(loan.templateCreation.name)}<br>${fmtLoanDetailDateTime(loan.templateCreation.at)}` : '—'],
@@ -4555,11 +4566,19 @@ function renderInstallmentsModal(){
   if(!loan) return `<div class="empty">Loan not found.</div>`;
   const schedule = loan.schedule||[];
   let runningBalance = loan.principal;
-  const totals = { amount:0, principal:0, interest:0, paid:0 };
+  const totals = { amount:0, principal:0, interest:0, paid:0, penalty:0 };
   const rows = schedule.map(r=>{
     const late = installmentIsLate(r);
     runningBalance -= r.principalDue;
     totals.amount += r.totalDue; totals.principal += r.principalDue; totals.interest += r.interestDue; totals.paid += (r.paidAmount||0);
+    // A real, genuinely accrued late-payment penalty (never fabricated —
+    // only ever nonzero when the product has a real penalty_pct and this
+    // installment is genuinely overdue) shown alongside Balance so the
+    // row's real total obligation (principal+interest+penalty) stays
+    // visible without inflating "Amount", which is the originally
+    // scheduled principal+interest only.
+    const penaltyOutstanding = Math.max(0, (r.penaltyDue||0) - (r.penaltyPaid||0));
+    totals.penalty += (r.penaltyDue||0);
     return `<tr style="color:${late?'var(--red)':'var(--ink)'};">
       <td>${fmtLoanDetailDate(r.dueDate)}</td>
       <td>${fmtNum(r.totalDue)}</td>
@@ -4567,7 +4586,7 @@ function renderInstallmentsModal(){
       <td>${fmtNum(r.interestDue)}</td>
       <td>${fmtNum(r.paidAmount||0)}</td>
       <td>${r.lastPaymentDate ? fmtLoanDetailDate(r.lastPaymentDate) : '—'}</td>
-      <td>${fmtNum(Math.max(0,runningBalance))}</td>
+      <td>${fmtNum(Math.max(0,runningBalance))}${penaltyOutstanding>0.004?`<br><span class="hint" style="color:var(--red);">+ Penalty ${fmtNum(penaltyOutstanding)}</span>`:''}</td>
       <td style="text-align:center;"><span style="cursor:pointer; color:var(--blue); font-weight:800;" onclick="openInstallmentTransactionsModal('${loan.id}','${r.id}')" title="Transactions">+</span></td>
     </tr>`;
   }).join("");
@@ -4578,7 +4597,7 @@ function renderInstallmentsModal(){
       <div class="table-wrap"><table>
         <tr><th>Schedule</th><th>Amount</th><th>Principal</th><th>Interest</th><th>Paid</th><th>Date</th><th>Balance</th><th></th></tr>
         ${rows || `<tr><td colspan="8" class="empty">No schedule for this loan.</td></tr>`}
-        ${schedule.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Total</td><td>${fmtNum(totals.amount)}</td><td>${fmtNum(totals.principal)}</td><td>${fmtNum(totals.interest)}</td><td>${fmtNum(totals.paid)}</td><td></td><td></td><td></td></tr>` : ""}
+        ${schedule.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Total</td><td>${fmtNum(totals.amount)}</td><td>${fmtNum(totals.principal)}</td><td>${fmtNum(totals.interest)}</td><td>${fmtNum(totals.paid)}</td><td></td><td>${totals.penalty>0.004?'Penalty '+fmtNum(totals.penalty):''}</td><td></td></tr>` : ""}
       </table></div>
     </div>
   `;
@@ -4648,6 +4667,7 @@ function renderInstallmentReceiptModal(){
         <tr><th>Description</th><th>Transaction</th><th>Total</th></tr>
         <tr><td>Principal</td><td>${escapeHtml(t.channel)}${t.reference?' - '+escapeHtml(t.reference):''}</td><td>${fmtNum(t.principal)}</td></tr>
         <tr><td>Interest</td><td></td><td>${fmtNum(t.interest)}</td></tr>
+        ${(t.penalty||0)>0.004 ? `<tr><td>Penalty</td><td></td><td>${fmtNum(t.penalty)}</td></tr>` : ''}
         <tr style="font-weight:700; border-top:1px solid var(--line);"><td>Total</td><td></td><td>${fmtNum(t.deducted)}</td></tr>
       </table>
       <table style="width:100%; margin-top:10px;">
@@ -4667,16 +4687,17 @@ function renderInstallmentReceiptModal(){
 }
 // ---- Loan Account Statement & Loan Ledger Statement: the Repayment
 // column's two print icons. Both are built purely from real data — a
-// per-payment principal/interest split reuses the payment's own real
-// allocated_principal/allocated_interest (already stored at allocation
-// time, no replay needed at this whole-loan scope), disbursement channel
-// comes from the real "Disbursed loan" audit log row (same derivation the
-// disbursement-method report already uses). This system has no
-// processing-fee or penalty concept anywhere (loan_products.fee_pct is
-// never actually applied/posted, and there is no penalty column or table
-// at all), so neither is shown — inventing a specific amount for either
-// would be fabrication, the same principle behind Loan Details' honest
-// "----" Clearance placeholder. ----
+// per-payment principal/interest/penalty split reuses the payment's own
+// real allocated_principal/allocated_interest/allocated_penalty (already
+// stored at allocation time, no replay needed at this whole-loan scope),
+// disbursement channel comes from the real "Disbursed loan" audit log row
+// (same derivation the disbursement-method report already uses). Real
+// processing fee (loan.processingFee, set once at disbursement from the
+// product's own real fee_pct) and real penalty charged/paid (summed from
+// the schedule's real penaltyDue/penaltyPaid, accrued only when the
+// product's own real penalty_pct is set and an installment is genuinely
+// overdue) both now come from real system state — see loanBalance()'s own
+// note on why the loan balance already includes outstanding penalty. ----
 function statementChannelLabel(channel){ return channel || 'Cash'; }
 async function loadLoanStatementData(loanId){
   return withRequest('loan-statement:'+loanId, async ()=>{
@@ -4699,22 +4720,32 @@ function renderLoanAccountStatementModal(){
   const branch = DB.branches.find(b=>b.id===loan.branchId);
   const maturity = loan.schedule && loan.schedule.length ? loan.schedule[loan.schedule.length-1].dueDate : null;
   const durationDays = loan.disbursedAt && maturity ? daysBetween(loan.disbursedAt, maturity) : null;
-  const rows = paysData.payments.map(p=>{
+  const penaltyCharged = (loan.schedule||[]).reduce((s,r)=>s+(r.penaltyDue||0),0);
+  const penaltyPaid = (loan.schedule||[]).reduce((s,r)=>s+(r.penaltyPaid||0),0);
+  const feeRow = loan.disbursedAt && loan.processingFee>0.004 ? [{
+    date: loan.disbursedAt, ref: `Disbursement — ${loan.id.slice(-8).toUpperCase()}`,
+    channel: statementChannelLabel(loan.disbursementChannel), amount: loan.processingFee,
+    lines: [`- Processing fee - ${fmtNum(loan.processingFee)}`]
+  }] : [];
+  const paymentRows = paysData.payments.map(p=>{
     const lines = [];
     if((p.allocated.principal||0)>0.004) lines.push(`- Principal - ${fmtNum(p.allocated.principal)}`);
     if((p.allocated.interest||0)>0.004) lines.push(`- Interest - ${fmtNum(p.allocated.interest)}`);
-    const overpay = p.amount - (p.allocated.principal||0) - (p.allocated.interest||0);
+    if((p.allocated.penalty||0)>0.004) lines.push(`- Penalty - ${fmtNum(p.allocated.penalty)}`);
+    const overpay = p.amount - (p.allocated.principal||0) - (p.allocated.interest||0) - (p.allocated.penalty||0);
     if(overpay>0.004) lines.push(`- Overpayment - ${fmtNum(overpay)}`);
-    return `<tr>
-      <td>${fmtLoanDetailDateTime(p.date)}</td>
-      <td>${escapeHtml(p.reference||'—')}</td>
-      <td>${escapeHtml(statementChannelLabel(p.channel))}</td>
+    return { date: p.date, ref: p.reference||'—', channel: statementChannelLabel(p.channel), amount: p.amount, lines };
+  });
+  const allRows = feeRow.concat(paymentRows);
+  const rows = allRows.map(r=>`<tr>
+      <td>${fmtLoanDetailDateTime(r.date)}</td>
+      <td>${escapeHtml(r.ref)}</td>
+      <td>${escapeHtml(r.channel)}</td>
       <td>${client&&client.idNumber?escapeHtml(client.idNumber):'—'}</td>
-      <td>${fmtNum(p.amount)}</td>
-      <td>${lines.length?lines.map(l=>`<div>${escapeHtml(l)}</div>`).join(""):'—'}</td>
-    </tr>`;
-  }).join("");
-  const total = paysData.payments.reduce((s,p)=>s+p.amount,0);
+      <td>${fmtNum(r.amount)}</td>
+      <td>${r.lines.length?r.lines.map(l=>`<div>${escapeHtml(l)}</div>`).join(""):'—'}</td>
+    </tr>`).join("");
+  const total = allRows.reduce((s,r)=>s+r.amount,0);
   return `
     <div style="position:relative;">
       <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
@@ -4726,13 +4757,15 @@ function renderLoanAccountStatementModal(){
         <tr><td style="font-weight:700; width:20%;">Branch</td><td style="width:30%;">${escapeHtml(branch?branch.name:'—')}</td><td style="font-weight:700; width:20%;">Loan Amount</td><td>${fmtNum(loan.principal)}</td></tr>
         <tr><td style="font-weight:700;">Client Name</td><td>${escapeHtml(client?client.name:'—')}</td><td style="font-weight:700;">Disbursement</td><td>${loan.disbursedAt?fmtLoanDetailDate(loan.disbursedAt):'Not yet disbursed'}</td></tr>
         <tr><td style="font-weight:700;">ID Number</td><td>${client&&client.idNumber?escapeHtml(client.idNumber):'—'}</td><td style="font-weight:700;">Duration</td><td>${durationDays!=null?durationDays+' days':'—'}</td></tr>
-        <tr><td style="font-weight:700;">Print Date</td><td>${fmtLoanDetailDateTime(new Date().toISOString())}</td><td style="font-weight:700;">Loan Balance</td><td>${fmtNum(loanBalance(loan))}</td></tr>
+        <tr><td style="font-weight:700;">Processing Fee</td><td>${fmtNum(loan.processingFee||0)}</td><td style="font-weight:700;">Loan Balance</td><td>${fmtNum(loanBalance(loan))}</td></tr>
+        <tr><td style="font-weight:700;">Penalty Charged</td><td>${fmtNum(penaltyCharged)}</td><td style="font-weight:700;">Paid Penalty</td><td>${fmtNum(penaltyPaid)}</td></tr>
+        <tr><td style="font-weight:700;">Print Date</td><td colspan="3">${fmtLoanDetailDateTime(new Date().toISOString())}</td></tr>
       </table>
       <h4 style="color:var(--navy); margin:0 0 8px;">Payment History</h4>
       <div class="table-wrap"><table>
         <tr><th>Date</th><th>Transaction</th><th>Channel</th><th>Account</th><th>Amount</th><th>Breakdown</th></tr>
         ${rows || `<tr><td colspan="6" class="empty">No payments recorded yet.</td></tr>`}
-        ${paysData.payments.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4">Totals</td><td>${fmtNum(total)}</td><td></td></tr>` : ""}
+        ${allRows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4">Totals</td><td>${fmtNum(total)}</td><td></td></tr>` : ""}
       </table></div>
       <div class="hint" style="text-align:center; margin-top:14px; font-style:italic;">${escapeHtml(client?client.name:'')} Loan Statement: Page 1 of 1</div>
       <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="window.print && window.print()">🖨 Print</button>
@@ -4751,24 +4784,43 @@ function renderLoanLedgerStatementModal(){
   if(!fresh) return `<div class="empty">Loading…</div>`;
   const client = DB.clients.find(c=>c.id===loan.clientId);
   const totalInterest = (loan.schedule||[]).reduce((s,r)=>s+r.interestDue,0);
-  let balance = 0;
+  // `delta` drives the running balance directly (positive = adds to what
+  // the client owes, negative = a real repayment reducing it) — kept
+  // separate from the Debit/Credit display columns below, which mirror
+  // the reference statement's own layout (disbursement/interest/penalty
+  // charges display under Credit even though they increase the balance;
+  // real repayments display under Credit too, but reduce it).
   const rows = [];
   if(loan.disbursedAt){
-    balance += loan.principal;
-    rows.push({ date:loan.disbursedAt, desc:`Disbursement to ${escapeHtml(client?client.name:'client')} via ${escapeHtml(statementChannelLabel(loan.disbursementChannel))}. Ref ${loan.id.slice(-8).toUpperCase()}`, debit:0, credit:loan.principal, balance });
-    balance += totalInterest;
-    rows.push({ date:loan.disbursedAt, desc:'Interest charges applied', debit:totalInterest, credit:0, balance });
+    // The real processing fee is deducted straight out of the disbursed
+    // cash (see completeDisbursement()'s own note) — it never touches
+    // what the client owes, so it's disclosed here for transparency but
+    // does not move the running balance.
+    const feeNote = loan.processingFee>0.004 ? ` (net of a real ${fmtNum(loan.processingFee)} processing fee)` : '';
+    rows.push({ date:loan.disbursedAt, desc:`Disbursement to ${escapeHtml(client?client.name:'client')} via ${escapeHtml(statementChannelLabel(loan.disbursementChannel))}${feeNote}. Ref ${loan.id.slice(-8).toUpperCase()}`, debit:0, credit:loan.principal, delta:loan.principal });
+    rows.push({ date:loan.disbursedAt, desc:'Interest charges applied', debit:totalInterest, credit:0, delta:totalInterest });
   }
+  // Real penalty charge lines — one per real overdue installment that has
+  // genuinely accrued a penalty (loan_schedule.penalty_due, only ever set
+  // by accrueOverduePenalties() once that installment's real due date has
+  // passed unpaid), dated to that installment's own due date.
+  (loan.schedule||[]).filter(r=>(r.penaltyDue||0)>0.004).forEach(r=>{
+    rows.push({ date:r.dueDate, desc:`Late payment penalty charged — Installment #${r.period}`, debit:r.penaltyDue, credit:0, delta:r.penaltyDue });
+  });
   paysData.payments.forEach(p=>{
     if((p.allocated.principal||0)>0.004){
-      balance -= p.allocated.principal;
-      rows.push({ date:p.date, desc:`Principal paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.principal, balance });
+      rows.push({ date:p.date, desc:`Principal paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.principal, delta:-p.allocated.principal });
     }
     if((p.allocated.interest||0)>0.004){
-      balance -= p.allocated.interest;
-      rows.push({ date:p.date, desc:`Interest paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.interest, balance });
+      rows.push({ date:p.date, desc:`Interest paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.interest, delta:-p.allocated.interest });
+    }
+    if((p.allocated.penalty||0)>0.004){
+      rows.push({ date:p.date, desc:`Penalty paid via ${escapeHtml(statementChannelLabel(p.channel))}. Ref ${escapeHtml(p.reference||'—')}`, debit:0, credit:p.allocated.penalty, delta:-p.allocated.penalty });
     }
   });
+  rows.sort((a,b)=> new Date(a.date)-new Date(b.date));
+  let balance = 0;
+  rows.forEach(r=>{ balance += r.delta; r.balance = balance; });
   const rowsHtml = rows.map(r=>`<tr>
     <td>${fmtLoanDetailDateTime(r.date)}</td>
     <td>${r.desc}</td>

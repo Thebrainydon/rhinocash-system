@@ -137,6 +137,7 @@ async function seedChartOfAccounts() {
     ['loans_receivable', '1100', 'Loans Receivable', 'Asset'],
     ['interest_income', '4000', 'Interest Income', 'Revenue'],
     ['fee_income', '4010', 'Fee Income', 'Revenue'],
+    ['penalty_income', '4020', 'Penalty Income', 'Revenue'],
     ['operating_expense', '5000', 'Operating Expenses', 'Expense'],
     ['overpayment_suspense', '2100', 'Overpayment Suspense (client credit balances)', 'Liability'],
     // Real non-Expense accounts a vendor payment's Journal Account can
@@ -261,7 +262,7 @@ async function seedDemoData() {
   ];
   for (const [id, name, rate, min, max, minT, maxT] of products) {
     await run(
-      "INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct) VALUES (?,?,'Flat',?,?,?,?,?,2) ON CONFLICT DO NOTHING",
+      "INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct) VALUES (?,?,'Flat',?,?,?,?,?,2,5) ON CONFLICT DO NOTHING",
       [id, name, rate, min, max, minT, maxT]
     );
   }

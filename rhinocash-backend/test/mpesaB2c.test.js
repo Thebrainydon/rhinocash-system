@@ -94,7 +94,7 @@ async function driveLoanToApproved(officerToken, mgrToken, regionalToken, opsTok
     assert(loanAfter.status === 'Active' && loanAfter.disbursed_at, 'the loan is now genuinely Active/disbursed, only after the real confirmed callback');
 
     const journalCount = (await get(`SELECT COUNT(*) as c FROM journal_entries WHERE ref_type = 'loan' AND ref_id = ?`, [loanId2])).c;
-    assert(journalCount === 2, 'a real balanced journal entry was posted for this B2C disbursement — via the exact same completeDisbursement() a manual disbursement uses');
+    assert(journalCount === 3, 'a real balanced journal entry (including the real processing-fee income line) was posted for this B2C disbursement — via the exact same completeDisbursement() a manual disbursement uses');
 
     // Idempotency: a duplicate real result callback (Safaricom retry) does nothing extra.
     const beforeJournals = journalCount;

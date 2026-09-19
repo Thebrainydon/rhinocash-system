@@ -49,13 +49,24 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
   const today = new Date().toISOString().slice(0, 10);
   const { glAccountFor } = require('./payments');
   const fundingAccount = glAccountFor(channel);
+  // Real processing fee — the product's own real, admin-configured
+  // fee_pct, deducted straight out of the disbursed proceeds (a standard
+  // "fee taken at source" model). The client still owes the FULL
+  // principal (loans_receivable is unaffected by it, same as it's
+  // unaffected by future interest — see postPaymentJournal's own note on
+  // that), but actually receives principal-minus-fee, and the fee is
+  // real income recognized immediately since it was genuinely collected
+  // on the spot, not merely scheduled for later.
+  const product = await get('SELECT fee_pct FROM loan_products WHERE id = ?', [loan.product_id]);
+  const fee = Math.round((loan.principal * ((product && product.fee_pct) || 0) / 100) * 100) / 100;
+  const netDisbursed = loan.principal - fee;
   // Real transaction boundary — the audit's exact "Loan marked Active +
   // disbursement accounting missing" scenario. The status flip, schedule
   // build, and both journal entries must commit together or none of them
   // do; shared by both the manual and M-Pesa B2C disbursement paths since
   // both call this one function.
   await transaction(async () => {
-    await run('UPDATE loans SET status = ?, disbursed_at = ? WHERE id = ?', ['Active', today, loan.id]);
+    await run('UPDATE loans SET status = ?, disbursed_at = ?, processing_fee = ? WHERE id = ?', ['Active', today, fee, loan.id]);
     await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today);
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
@@ -65,8 +76,15 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
        VALUES (?, 0, ?, ?, 'loan', ?, ?, ?)`,
-      [fundingAccount, loan.principal, `Disbursement — ${loan.id}`, loan.id, loan.branch_id, actorUserId]
+      [fundingAccount, netDisbursed, `Disbursement — ${loan.id}`, loan.id, loan.branch_id, actorUserId]
     );
+    if (fee > 0) {
+      await run(
+        `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
+         VALUES ('fee_income', 0, ?, ?, 'loan', ?, ?, ?)`,
+        [fee, `Processing fee — ${loan.id}`, loan.id, loan.branch_id, actorUserId]
+      );
+    }
   });
   if (logActionFn) await logActionFn({ action: 'Disbursed loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, newValue: { principal: loan.principal, channel } });
   if (notifyFn) await notifyFn(loan.officer_id, 'loan', 'Loan disbursed', `${loan.principal} disbursed for loan ${loan.id}.`);
@@ -1520,9 +1538,9 @@ function register(router) {
     if (!b.name || !b.rate_pct) return next({ status: 400, message: 'name and rate_pct are required' });
     const id = 'pr_' + crypto.randomUUID();
     await run(
-      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
-      [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0, b.min_term_months || 1, b.max_term_months || 12, b.fee_pct || 0]
+      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0, b.min_term_months || 1, b.max_term_months || 12, b.fee_pct || 0, b.penalty_pct || 0]
     );
     await logAction(req, { action: 'Added loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: id, newValue: b.name });
     res.status(201).json({ product: await get('SELECT * FROM loan_products WHERE id = ?', [id]) });
@@ -1592,6 +1610,11 @@ function register(router) {
     if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
       return next({ status: 403, message: 'This loan is not part of your portfolio' });
     }
+    // Real overdue-installment penalty accrual — see accrueOverduePenalties()
+    // in payments.js for why this runs on read (this app has no background
+    // job runner): idempotent, and only ever sets a real fact (this period
+    // genuinely is overdue as of today), never a fabricated one.
+    await require('./payments').accrueOverduePenalties(loan.id);
     // last_payment_date: the real, latest real payment that touched each
     // real period (via payment_allocations -> payments), used by the
     // Installments view to show when a period was actually paid and
@@ -1635,12 +1658,14 @@ function register(router) {
 
   // Per-installment transaction breakdown — powers the Installments "+"
   // drill-down and the printable receipt. The schema only stores a single
-  // lump paid_amount per period (no principal/interest split per payment),
-  // so we reconstruct that split by replaying the real, chronologically
-  // ordered payment_allocations.amount_applied values against this period's
-  // real principal_due/interest_due, applying each transaction to principal
-  // first and the remainder to interest — nothing here is fabricated, it is
-  // a derived view over real recorded amounts.
+  // lump paid_amount (and, now, penalty_paid) per period (no principal/
+  // interest/penalty split per payment), so we reconstruct that split by
+  // replaying the real, chronologically ordered payment_allocations.
+  // amount_applied values against this period's real principal_due/
+  // interest_due/penalty_due, applying each transaction to principal
+  // first, then interest, then any penalty last — the exact same priority
+  // allocate() itself uses — nothing here is fabricated, it is a derived
+  // view over real recorded amounts.
   router.get('/api/loans/:id/schedule/:scheduleId/transactions', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
@@ -1661,11 +1686,14 @@ function register(router) {
     );
     let principalLeft = period.principal_due;
     let interestLeft = period.interest_due;
+    let penaltyLeft = period.penalty_due;
     const transactions = allocations.map(a => {
       const toPrincipal = Math.min(principalLeft, a.amount_applied);
       principalLeft -= toPrincipal;
       const toInterest = Math.min(interestLeft, a.amount_applied - toPrincipal);
       interestLeft -= toInterest;
+      const toPenalty = Math.min(penaltyLeft, a.amount_applied - toPrincipal - toInterest);
+      penaltyLeft -= toPenalty;
       return {
         paymentId: a.payment_id,
         date: a.created_at,
@@ -1676,6 +1704,7 @@ function register(router) {
         deducted: a.amount_applied,
         principal: toPrincipal,
         interest: toInterest,
+        penalty: toPenalty,
         postedBy: a.posted_by_name || 'System'
       };
     });
