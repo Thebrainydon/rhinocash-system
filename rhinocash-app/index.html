@@ -5049,11 +5049,11 @@ function renderClientDetail(id){
     </div>
 
     <div class="card">
-      <div class="card-title" style="justify-content:center; background:var(--navy); color:#fff; margin:-16px -16px 12px; padding:12px 16px; border-radius:10px 10px 0 0; position:relative;">
-        <select onchange="session.clientHistoryTab=this.value; renderApp();" style="position:absolute; left:16px; font-size:12px; padding:4px 8px;">
+      <div class="card-title" style="background:var(--navy); color:#fff; margin:-16px -16px 12px; padding:12px 16px; border-radius:10px 10px 0 0;">
+        <select onchange="session.clientHistoryTab=this.value; renderApp();" style="font-size:12px; padding:4px 8px;">
           ${['Loan History','Client Documents','Repossessed items'].map(t=>`<option ${historyTab===t?'selected':''}>${t}</option>`).join("")}
         </select>
-        ${historyTab}
+        <span>${historyTab}</span>
       </div>
       ${historyTab==='Loan History' ? renderClientLoanHistoryTable(loans) : ""}
       ${historyTab==='Client Documents' ? renderClientDocumentsTab(id, docs) : ""}
