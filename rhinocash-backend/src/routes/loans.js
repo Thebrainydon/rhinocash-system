@@ -1595,6 +1595,22 @@ function register(router) {
     const scheduleByLoan = {};
     if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     rows.forEach(loan => { loan.schedule = scheduleByLoan[loan.id] || []; });
+    // Real most-recent approval decision per loan (Undisbursed Loans'
+    // "Approvals" column) — one real bulk query rather than N+1, the
+    // exact real row loan_approvals.id (BIGSERIAL, so MAX == latest)
+    // records for that loan, joined to the real approver's name.
+    const lastApprovalByLoan = {};
+    if (loanIds.length) {
+      const idPh2 = loanIds.map(() => '?').join(',');
+      (await all(
+        `SELECT la.loan_id, la.decision, u.name as approver_name
+         FROM loan_approvals la
+         JOIN users u ON u.id = la.approver_id
+         WHERE la.id IN (SELECT MAX(id) FROM loan_approvals WHERE loan_id IN (${idPh2}) GROUP BY loan_id)`,
+        loanIds
+      )).forEach(r => { lastApprovalByLoan[r.loan_id] = { name: r.approver_name, decision: r.decision }; });
+    }
+    rows.forEach(loan => { loan.last_approval = lastApprovalByLoan[loan.id] || null; });
     res.json({ loans: rows });
   });
 

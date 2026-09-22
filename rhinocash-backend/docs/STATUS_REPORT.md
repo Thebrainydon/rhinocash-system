@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  959 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 757 passed, 0 failed  (drives the real UI functions in
+Backend:  962 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 771 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,716 passed, 0 failed
+Total:    1,733 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -362,10 +362,40 @@ genuinely has a prior loan on record (and inherits that prior loan's
 real guarantor when none is supplied), and a New Loan application is
 rejected without a real guarantor name and contact — both server-side,
 so a direct API call can't bypass either rule the way a frontend
-`required` attribute could be. Saving still lands on Loan Applications,
-the same real destination the Dashboard's own "Undisbursed Loans" card
-already points to (a dedicated Undisbursed Loans table is a later
-submenu, not yet built).
+`required` attribute could be. The Loan Officer's Create Application
+page is now genuinely chrome-free — no LoanBook subtab bar and no
+explanatory paragraph above the form — matching the reference design,
+which shows only the application itself.
+
+Saving now redirects to the real Loan Applications page with its
+"Undisbursed loans" category pre-selected — matching the reference
+design precisely: Undisbursed Loans is a real filtered *view* of the
+existing Loan Applications submenu, not a separate submenu of its own (an
+earlier pass in this same round briefly built it as a standalone
+submenu; corrected once the reference screenshots showed it as a
+category dropdown — All templates / Disbursed loans / Undisbursed loans
+/ Pended loans / Declined loans — sitting above the one real table). What
+counts as "undisbursed" is a single shared definition,
+`isUndisbursedLoan()` — every loan whose status isn't one of a fixed set
+of terminal outcomes (Active, Disbursed, Completed, Rejected, Written
+Off, Cancelled) — used consistently by both the Dashboard's "Undisbursed
+Loans" card and this category, so a loan still working through the
+approval chain (e.g. "Waiting Regional Manager") genuinely appears here,
+not just loans already fully approved for disbursement (the other three
+categories reuse the same real status groupings the backend's own
+`/api/loans/applications-overview` "category" filter already defines,
+for consistency). The table's columns match the reference layout:
+Application (real submission date and time), Client (resolved name, not
+an ID), Loan product (with a real "Schedule" link), Loan officer,
+Amount/duration, Guarantor name/contact, Loan securities, Charges, a
+real Approvals column (who last approved/rejected it, sourced from
+`loan_approvals` via a bulk last-decision-per-loan query on
+`GET /api/loans` rather than N+1 calls), and Disbursement status.
+Clicking "Schedule" on a loan that hasn't been disbursed yet — so has no
+real stored installment schedule — shows a clearly labeled *projected*
+preview computed with the exact same math
+`buildSchedule()` will use at disbursement, never a fabricated or
+hardcoded schedule.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

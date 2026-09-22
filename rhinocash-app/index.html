@@ -1019,6 +1019,7 @@ function adaptLoan(l){
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
+    lastApproval: l.last_approval ? { name:l.last_approval.name, decision:l.last_approval.decision } : null,
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
 }
 function adaptPayment(p){
@@ -1167,6 +1168,14 @@ async function refreshNotifications(){
 }
 
 /* ---------------- Derived calculations ---------------- */
+// A loan is genuinely "undisbursed" for as long as it hasn't reached a
+// real terminal or disbursed state — every status from the moment it's
+// submitted through the whole real approval chain, including Returned
+// for Correction and a real B2C request still in flight, counts. Shared
+// by the Dashboard's own "Undisbursed Loans" KPI and the LoanBook
+// Undisbursed Loans page so both always agree on the same real set.
+const LOAN_TERMINAL_STATUSES = ['Active','Disbursed','Completed','Rejected','Written Off','Cancelled'];
+function isUndisbursedLoan(loan){ return !LOAN_TERMINAL_STATUSES.includes(loan.status); }
 // Real outstanding balance = unpaid principal+interest PLUS any real,
 // genuinely accrued-but-unpaid penalty (penaltyDue/penaltyPaid — real
 // loan_schedule columns, only ever nonzero when the loan's product has a
@@ -1205,7 +1214,7 @@ function arrearsBucket(days){
 }
 function activeLoans(){ return DB.loans.filter(l=> ["Active","Disbursed"].includes(l.status) ); }
 function clientName(id){ const c=DB.clients.find(x=>x.id===id); return c?c.name:"—"; }
-function staffName(id){ const s=DB.staff.find(x=>x.id===id); return s?s.name:"—"; }
+function staffName(id){ const s=DB.staff.find(x=>x.id===id); if(s) return s.name; if(id && id===session.userId) return session.userName; return "—"; }
 function branchName(id){ const b=DB.branches.find(x=>x.id===id); return b?b.name:"—"; }
 function productName(id){ const p=DB.products.find(x=>x.id===id); return p?p.name:"—"; }
 
@@ -2079,7 +2088,7 @@ function computeStats(officerId, branchIds){
   const duePrev = activeScope.flatMap(l=>l.schedule).filter(r=>r.dueDate && isPrevMonth(r.dueDate)).reduce((s,r)=>s+r.totalDue,0);
   const collPctPrev = duePrev>0 ? Math.min(150, collectionsPrev/duePrev*100) : 100;
 
-  const undisbursed = loansScope.filter(l=>l.status==="Approved for Disbursement");
+  const undisbursed = loansScope.filter(isUndisbursedLoan);
   const undisbursedAmt = undisbursed.reduce((s,l)=>s+l.principal,0);
 
   const totalClients = clientsScope.length;
@@ -2267,7 +2276,7 @@ function kpiTiles(st){
         <div style="width:38px; height:38px; border-radius:9px; background:var(--blue-bg); display:flex; align-items:center; justify-content:center; font-size:17px;">💰</div>
         <div><div class="detail-label" style="margin:0;">Undisbursed Loans (${st.undisbursedCount})</div><div style="font-size:16px; font-weight:800; color:var(--navy);">${fmt(st.undisbursedAmt)}</div></div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="goTo('loanbook','Loan Applications')">↝ View</button>
+      <button class="btn btn-outline btn-sm" onclick="goToUndisbursedLoans()">↝ View</button>
     </div>
   `;
 }
@@ -4564,10 +4573,45 @@ function openInstallmentsModal(loanId){
   openModal('installments', { loanId });
   return withRequest('installments-'+loanId, async ()=>{ await refreshLoan(loanId); });
 }
+// A real, non-fabricated preview for a loan that hasn't been disbursed
+// yet — there is genuinely no stored schedule until disbursement, but
+// the officer can still see what they're about to disburse, computed
+// with the exact same real math buildSchedule() itself uses server-side
+// (a real term_weeks product: one lump-sum installment at principal *
+// rate/100 interest; a legacy monthly product: the usual flat-rate
+// split over loan.term periods) — clearly labeled "Projected", never
+// presented as if it were the real, disbursed schedule.
+function renderProjectedInstallmentsPreview(loan){
+  const product = DB.products.find(p=>p.id===loan.productId);
+  const rows = [];
+  if(product && product.termWeeks){
+    const interest = loan.principal * (product.rate/100);
+    rows.push({ label:`Due ${product.termWeeks*7} days after disbursement`, principal:loan.principal, interest, total:loan.principal+interest });
+  } else if(product){
+    const totalInterest = loan.principal * (product.rate/100) * loan.term;
+    const principalPerPeriod = loan.principal/loan.term;
+    const interestPerPeriod = totalInterest/loan.term;
+    for(let i=1;i<=loan.term;i++) rows.push({ label:`Period ${i}`, principal:principalPerPeriod, interest:interestPerPeriod, total:principalPerPeriod+interestPerPeriod });
+  }
+  const totalP = rows.reduce((s,r)=>s+r.principal,0), totalI = rows.reduce((s,r)=>s+r.interest,0), totalT = rows.reduce((s,r)=>s+r.total,0);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 8px;">Loan ${loan.id.slice(-8).toUpperCase()} Installments</h3>
+      <div class="hint" style="text-align:center; margin-bottom:16px;">Projected — this loan hasn't been disbursed yet. The real schedule is created at disbursement.</div>
+      <div class="table-wrap"><table>
+        <tr><th>Schedule</th><th>Principal</th><th>Interest</th><th>Total</th></tr>
+        ${rows.length ? rows.map(r=>`<tr><td>${escapeHtml(r.label)}</td><td>${fmtNum(r.principal)}</td><td>${fmtNum(r.interest)}</td><td>${fmtNum(r.total)}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">This loan's real product could not be found.</td></tr>`}
+        ${rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Total</td><td>${fmtNum(totalP)}</td><td>${fmtNum(totalI)}</td><td>${fmtNum(totalT)}</td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
 function renderInstallmentsModal(){
   const loan = DB.loans.find(l=>l.id===modal.loanId);
   if(!loan) return `<div class="empty">Loan not found.</div>`;
   const schedule = loan.schedule||[];
+  if(!schedule.length && !loan.disbursedAt) return renderProjectedInstallmentsPreview(loan);
   let runningBalance = loan.principal;
   const totals = { amount:0, principal:0, interest:0, paid:0, penalty:0 };
   const rows = schedule.map(r=>{
@@ -5094,7 +5138,11 @@ function renderLoanBook(){
   const active = session.subtab || "Loan Applications";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('loanbook','${t}')">${t}</div>`).join("")}</div>`;
 
-  if(active==="Create Application") return tabsHtml + (session.role==='Loan Officer' ? renderLoanApplicationForm() : (session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
+  // Create Application (Loan Officer) is its own full-screen, chrome-free
+  // page — no subtab bar above it, matching the requested design exactly.
+  // The other two roles' Create Application forms are untouched.
+  if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
+  if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
   if(active==="Collection MTD") return tabsHtml + renderCollectionMTD();
   if(active==="Disbursements") return tabsHtml + renderDisbursementsOverviewPage();
@@ -5145,7 +5193,6 @@ function renderLoanApplicationForm(){
     <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
       <span onclick="goTo('dashboard')" style="position:absolute; top:14px; right:16px; color:var(--rust); font-size:22px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
       <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Create Loan Application</h3>
-      <div class="section-note">Submitted under your own name and branch (${branchName(DB.me && DB.me.branch_id)}) — the officer and branch are set by the server from your logged-in account, not chosen here.</div>
       <form onsubmit="return submitLoanApp(event)">
         <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
         <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
@@ -5209,23 +5256,94 @@ function submitLoanApp(ev){
     await createLoanApplication(f);
     toast("Loan application submitted");
     session.loanAppState = null;
-    goTo("loanbook","Loan Applications");
+    goToUndisbursedLoans();
   });
-}function renderLoanApplications(){
-  const waitingStatuses = ["Waiting for Manager","Waiting for Regional Manager","Waiting for Operational Manager","Waiting for Accountant"];
-  const rows = DB.loans.map(l=>{
-    const prod = DB.products.find(p=>p.id===l.productId);
-    const termLabel = prod && prod.termWeeks ? `${prod.termWeeks} week${prod.termWeeks>1?'s':''}` : `${l.term} mo`;
-    return `
-    <tr class="clickable" onclick="openLoan('${l.id}')">
-      <td>${l.id}</td><td>${clientName(l.clientId)}</td><td>${l.productName}</td><td>${fmt(l.principal)}</td>
-      <td>${termLabel}</td><td>${staffName(l.officerId)}</td><td>${statusBadge(l.status)}</td>
-    </tr>`;}).join("");
+}
+// ---- Loan Applications (Loan Officer): one real table, filterable by
+// category — All templates / Disbursed loans / Undisbursed loans / Pended
+// loans / Declined loans — matching the real reference design, where
+// "Undisbursed Loans" is a filtered VIEW of this same page, not a
+// separate submenu. "Undisbursed loans" uses the same broad, real
+// definition as the Dashboard's own KPI (see isUndisbursedLoan()) — every
+// loan that hasn't reached a real terminal/disbursed state yet, not only
+// the narrow "Approved for Disbursement" status the backend's own
+// /api/loans/applications-overview "category" filter uses for the
+// topbar's Loan Status Browser. "Approvals" is the real most-recent
+// decision (GET /api/loans' own bulk last_approval subquery — no N+1, no
+// fabricated placeholder); "Charges" is the loan's own real processing
+// fee; "Schedule" opens the real Installments modal, which shows a real,
+// clearly-labeled projected schedule for a loan that hasn't been
+// disbursed yet (see renderProjectedInstallmentsPreview). ----
+const LOAN_APP_CATEGORIES = ['All templates','Disbursed loans','Undisbursed loans','Pended loans','Declined loans'];
+const LOAN_APP_CATEGORY_STATUSES = {
+  'Disbursed loans': ['Active','Disbursed','Completed','Written Off','Restructured'],
+  'Pended loans': ['Pending','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Returned for Correction'],
+  'Declined loans': ['Rejected'],
+};
+function defaultLoanApplicationsFilterState(){ return { category:'All templates', search:'' }; }
+function goToUndisbursedLoans(){
+  if(session.role === 'Loan Officer') session.loanAppFilterState = { category:'Undisbursed loans', search:'' };
+  goTo('loanbook','Loan Applications');
+}
+function loanTermDaysLabel(loan){
+  const prod = DB.products.find(p=>p.id===loan.productId);
+  if(prod && prod.termWeeks) return `${prod.termWeeks*7} Days`;
+  return `${loan.term} month${loan.term>1?'s':''}`;
+}
+function loanApplicationsFiltered(st){
+  let rows = DB.loans;
+  if(st.category === 'Undisbursed loans') rows = rows.filter(isUndisbursedLoan);
+  else if(LOAN_APP_CATEGORY_STATUSES[st.category]) rows = rows.filter(l=>LOAN_APP_CATEGORY_STATUSES[st.category].includes(l.status));
+  if(st.search){
+    const q = st.search.toLowerCase();
+    rows = rows.filter(l=> clientName(l.clientId).toLowerCase().includes(q) || (l.productName||'').toLowerCase().includes(q) || l.id.toLowerCase().includes(q));
+  }
+  return rows;
+}
+function exportLoanApplicationsCSV(){
+  const st = session.loanAppFilterState || defaultLoanApplicationsFilterState();
+  const rows = loanApplicationsFiltered(st);
+  exportRowsToCsv('loan-applications.csv',
+    ['application','client','product','officer','amount','duration','guarantor','guarantorContact','loanSecurities','charges','approvals','status'],
+    rows.map(l=>({
+      application: l.createdAt, client: clientName(l.clientId), product: l.productName, officer: staffName(l.officerId),
+      amount: l.principal, duration: loanTermDaysLabel(l), guarantor: l.guarantor||'', guarantorContact: l.guarantorContact||'',
+      loanSecurities: l.loanSecurities||'', charges: l.processingFee||0, approvals: l.lastApproval?`${l.lastApproval.name}: ${l.lastApproval.decision}`:'', status: l.status
+    }))
+  );
+}
+function renderLoanApplications(){
+  const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
+  const rows = loanApplicationsFiltered(st);
+  const rowsHtml = rows.map(l=>`
+    <tr>
+      <td>${fmtLoanDetailDateTime(l.createdAt)}</td>
+      <td class="clickable" onclick="openLoan('${l.id}')">${escapeHtml(clientName(l.clientId))}</td>
+      <td>${escapeHtml(l.productName||'')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">Schedule</span></td>
+      <td>${escapeHtml(staffName(l.officerId))}</td>
+      <td>${fmt(l.principal)}<br><span class="hint">${loanTermDaysLabel(l)}</span></td>
+      <td>${escapeHtml(l.guarantor||'—')}</td>
+      <td>${escapeHtml(l.guarantorContact||'—')}</td>
+      <td>${escapeHtml(l.loanSecurities||'—')}</td>
+      <td>${fmt(l.processingFee||0)}</td>
+      <td>${l.lastApproval ? `<strong>${escapeHtml(l.lastApproval.name)}</strong>: <em>${escapeHtml(l.lastApproval.decision)}</em>` : '—'}</td>
+      <td><em class="hint">${escapeHtml(l.status)}</em></td>
+    </tr>`).join("");
   return `
     <div class="card">
-      <div class="card-title">Loan Applications &amp; Approval <small>${DB.loans.filter(l=>waitingStatuses.includes(l.status)).length} awaiting approval</small></div>
-      <div class="table-wrap"><table><tr><th>ID</th><th>Client</th><th>Product</th><th>Principal</th><th>Term</th><th>Officer</th><th>Status</th></tr>
-      ${rows || `<tr><td colspan="7" class="empty">No applications yet.</td></tr>`}</table></div>
+      <div class="card-title">${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <select onchange="session.loanAppFilterState.category=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${LOAN_APP_CATEGORIES.map(c=>`<option ${st.category===c?'selected':''}>${c}</option>`).join("")}
+        </select>
+        <input type="text" placeholder="Search" value="${escapeHtml(st.search)}" oninput="session.loanAppFilterState.search=this.value; renderApp();" style="flex-shrink:0; width:160px;">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanApplicationsCSV()">↓ Generate</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>Approvals</th><th>Disbursement</th></tr>
+        ${rowsHtml || `<tr><td colspan="11" class="empty">No loans in this category.</td></tr>`}
+      </table></div>
     </div>
     ${session.selectedLoanId ? renderLoanDetail(session.selectedLoanId) : ""}
   `;

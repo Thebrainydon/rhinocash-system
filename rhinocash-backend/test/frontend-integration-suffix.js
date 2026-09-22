@@ -2949,7 +2949,22 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.loans.length === loansBeforeNoGuarantor, "no real loan was created for a New Loan application missing its real guarantor — enforced server-side, not just a frontend 'required' attribute");
     __assert(toasts.length > toastsBeforeNoGuarantor && /[Gg]uarantor/.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing guarantor) genuinely surfaces to the officer as a real toast");
 
-    // With a real guarantor, the real weekly-product application succeeds.
+    // The real Create Application page is genuinely a chrome-free,
+    // wordless page for the Loan Officer — no subtab bar above it, no
+    // explanatory paragraph, matching the requested design exactly.
+    goTo('loanbook','Create Application');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    let createAppHtml = document.getElementById('root').innerHTML;
+    __assert(!createAppHtml.includes('class="subtabs"'), "the real Create Application page genuinely has no subtab bar above it for the Loan Officer");
+    __assert(!createAppHtml.includes('Submitted under your own name'), "the real Create Application page genuinely drops the old explanatory paragraph — no words, just the real form");
+
+    // isUndisbursedLoan() is the real single source of truth the
+    // Dashboard's own "Undisbursed Loans" KPI and this new page both use.
+    __assert(isUndisbursedLoan({status:'Waiting for Manager'}) && isUndisbursedLoan({status:'Approved for Disbursement'}) && isUndisbursedLoan({status:'Disbursement Pending'}), "every real pre-disbursement status genuinely counts as undisbursed");
+    __assert(!isUndisbursedLoan({status:'Active'}) && !isUndisbursedLoan({status:'Completed'}) && !isUndisbursedLoan({status:'Rejected'}), "a real terminal/disbursed status genuinely does not count as undisbursed");
+
+    // With a real guarantor, the real weekly-product application succeeds
+    // and genuinely redirects to the real Undisbursed Loans page.
     let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333']]);
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
@@ -2957,6 +2972,39 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor present");
     const wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
+    __assert(session.section === 'loanbook' && session.subtab === 'Loan Applications', "saving genuinely redirects to the real Loan Applications page — Undisbursed Loans is a real filtered VIEW of this same page, not a separate submenu");
+    __assert(session.loanAppFilterState && session.loanAppFilterState.category === 'Undisbursed loans', "the real redirect genuinely pre-selects the 'Undisbursed loans' category filter, matching the real reference design where this is an option filtered within the Loan Application submenu");
+
+    // The real rendered, filtered Loan Applications table genuinely shows
+    // this real loan with the exact requested columns — Application/Client
+    // BEFORE Loan product, real Schedule link, real duration in days, and
+    // the real (still-empty) Approvals/Disbursement state.
+    let undisbHtml = document.getElementById('root').innerHTML;
+    __assert(undisbHtml.includes('Undisbursed loans') && undisbHtml.includes('>Application<') && undisbHtml.includes('>Client<'), "the real filtered page genuinely renders with the requested category title and Application/Client columns");
+    __assert(undisbHtml.includes(escapeHtml(wkFrontendClient.name)) && undisbHtml.includes('Starter') && undisbHtml.includes('Schedule') && undisbHtml.includes('28 Days'), "the real new loan genuinely appears with its real client name, product, a real Schedule link, and its real 28-day (4-week) duration");
+    __assert(undisbHtml.includes('Waiting for Manager'), "the real new loan's real current status (Waiting for Manager) genuinely appears in the Disbursement column");
+    __assert(undisbHtml.includes(escapeHtml(session.userName)), "the real Loan officer column genuinely resolves to the officer's real name (staffName() falls back to the logged-in user's own session identity), not a dash — a Loan Officer's own nav scope never loads the full DB.staff directory, so this was a real display bug the reference screenshot's populated column exposed");
+
+    // Switching the category dropdown to 'All templates' genuinely widens
+    // the real table back out — this is a real client-side filter over the
+    // same real DB.loans, not a separate fabricated dataset.
+    const undisbursedCount = loanApplicationsFiltered(session.loanAppFilterState).length;
+    session.loanAppFilterState.category = 'All templates';
+    renderApp();
+    const allTemplatesCount = loanApplicationsFiltered(session.loanAppFilterState).length;
+    __assert(allTemplatesCount >= undisbursedCount, "the real 'All templates' category genuinely includes at least every real loan the 'Undisbursed loans' category showed");
+    session.loanAppFilterState.category = 'Undisbursed loans';
+    renderApp();
+
+    // Clicking Schedule on this real, not-yet-disbursed loan genuinely
+    // shows a real, clearly-labeled PROJECTED installment (never
+    // presented as the real disbursed schedule, since none exists yet).
+    openInstallmentsModal(wkFrontendLoan.id);
+    __assert(modal && modal.type==='installments' && modal.loanId===wkFrontendLoan.id, "the real Schedule link genuinely opens the real Installments modal for this real loan");
+    const projectedHtml = renderInstallmentsModal();
+    __assert(projectedHtml.includes('Projected') && projectedHtml.includes('hasn\'t been disbursed yet'), "the real projected preview is genuinely labeled as a projection, not the real disbursed schedule");
+    __assert(projectedHtml.includes(fmtNum(4000)) && projectedHtml.includes(fmtNum(800)) && projectedHtml.includes(fmtNum(4800)), "the real projected preview genuinely computes principal 4,000 / interest 800 (20% flat) / total 4,800 from the real loan and product data");
+    closeModal();
   }
 
   // ---- 99. MANAGER COLLECTION SHEET: real officer grouping/expand-collapse, KPIs, exceptions, completed-loan fix, branch isolation ----

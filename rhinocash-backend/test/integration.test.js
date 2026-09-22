@@ -434,9 +434,27 @@ async function api(method, path, { token, body } = {}) {
     const repeatLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: jijengeSpecial.id, principal: 8000, loan_category: 'Repeat Loan' } });
     assert(repeatLoan.status === 201 && repeatLoan.json.loan.guarantor === 'Jane Guarantor' && repeatLoan.json.loan.guarantor_contact === '0733000111', 'a real "Repeat Loan" application genuinely succeeds for a client with a real prior loan, and genuinely inherits that prior loan\'s real guarantor');
 
+    // A freshly submitted, never-approved loan genuinely has no last_approval yet.
+    const bulkLoansFresh = await api('GET', '/api/loans', { token: adminToken });
+    const repeatLoanBulk = bulkLoansFresh.json.loans.find(l => l.id === repeatLoan.json.loan.id);
+    assert(repeatLoanBulk && repeatLoanBulk.last_approval === null, 'a real loan with no real approval decisions yet genuinely has a null last_approval, not a fabricated one');
+
     // Full real approval chain + disbursement of the first (Starter, 4-week) loan.
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: mgrLoginWk.json.token, body: {} });
+
+    // The bulk GET /api/loans list (what populates the real Undisbursed
+    // Loans page) genuinely carries the real most-recent approval — name
+    // and decision — for this loan, not a fabricated placeholder.
+    const mgrMe = await api('GET', '/api/auth/me', { token: mgrLoginWk.json.token });
+    const bulkLoansAfterMgr = await api('GET', '/api/loans', { token: adminToken });
+    const wkLoanBulk = bulkLoansAfterMgr.json.loans.find(l => l.id === wkLoanId);
+    assert(wkLoanBulk && wkLoanBulk.last_approval && wkLoanBulk.last_approval.name === mgrMe.json.user.name && wkLoanBulk.last_approval.decision === 'Approved', 'the real bulk GET /api/loans genuinely carries the real most-recent approver name and decision for this loan');
+
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: rmLoginWk.json.token, body: {} });
+    const rmMe = await api('GET', '/api/auth/me', { token: rmLoginWk.json.token });
+    const bulkLoansAfterRm = await api('GET', '/api/loans', { token: adminToken });
+    const wkLoanBulk2 = bulkLoansAfterRm.json.loans.find(l => l.id === wkLoanId);
+    assert(wkLoanBulk2.last_approval.name === rmMe.json.user.name, 'the real last_approval genuinely advances to the next real approver, not stuck on the first one');
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: omLoginWk.json.token, body: {} });
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: acctLoginWk.json.token, body: {} });
     const wkDisburse = await api('POST', `/api/loans/${wkLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
