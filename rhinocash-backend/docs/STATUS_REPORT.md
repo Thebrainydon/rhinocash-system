@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  945 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 749 passed, 0 failed  (drives the real UI functions in
+Backend:  959 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 757 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,694 passed, 0 failed
+Total:    1,716 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -342,6 +342,30 @@ Failure) plus a free-text reason, persisted via a new
 other single-loan action already enforces). The Loan History table's
 "Unrated" badge is this same real field — it shows the actual rating
 once one has been set, not a hardcoded placeholder.
+
+LoanBook's Create Application (Loan Officer view) is now backed by a
+real, admin-configurable short-term loan product catalog — Starter,
+Jijenge, Ibuka, Mavuno and Fly, each with a real 4-week tier and a real
+6-week "Special" tier at a real flat rate (20%/30%) over the loan's
+whole term, repaid once rather than in monthly installments. A new
+`loan_products.term_weeks` column (only set on this catalog; every
+pre-existing monthly product is untouched) drives this: `buildSchedule()`
+builds exactly one real installment due `term_weeks` real days after
+disbursement instead of the usual monthly series, and `POST /api/loans`
+treats the product as authoritative for term (a client-sent term_months
+is never trusted for these). Client Id Number does a real backend
+lookup by national ID (pre-existing, confirmed still correct); Loan
+Amount/Duration auto-fill from the real selected product. Type of Loan
+(New Loan / Repeat Loan) is real and backend-enforced, not a frontend
+convenience: a Repeat Loan application is rejected unless the client
+genuinely has a prior loan on record (and inherits that prior loan's
+real guarantor when none is supplied), and a New Loan application is
+rejected without a real guarantor name and contact — both server-side,
+so a direct API call can't bypass either rule the way a frontend
+`required` attribute could be. Saving still lands on Loan Applications,
+the same real destination the Dashboard's own "Undisbursed Loans" card
+already points to (a dedicated Undisbursed Loans table is a later
+submenu, not yet built).
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

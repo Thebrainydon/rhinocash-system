@@ -13,7 +13,32 @@ function addMonths(dateStr, n) {
   return d.toISOString().slice(0, 10);
 }
 
-async function buildSchedule(loanId, principal, ratePct, term, startDate) {
+function addDays(dateStr, n) {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// termWeeks (real per-product setting — see seed.js's weeklyProducts and
+// POST /api/loan-products) switches this from the original multi-period
+// monthly-installment schedule to a single real installment due
+// termWeeks*7 days after disbursement — the real short-term product
+// catalog (Starter/Jijenge/Ibuka/Mavuno/Fly and their "Special" 6-week
+// variants) is repaid once, in full, not spread over monthly
+// installments. ratePct in that case is the real FLAT rate for the
+// loan's whole real term (e.g. 20% for 4 weeks), not a per-month rate —
+// the math below (principal * ratePct/100 * 1 period) already produces
+// exactly that when term is forced to 1.
+async function buildSchedule(loanId, principal, ratePct, term, startDate, termWeeks) {
+  if (termWeeks) {
+    const interest = principal * (ratePct / 100);
+    await run(
+      `INSERT INTO loan_schedule (loan_id, period, due_date, principal_due, interest_due, total_due, paid_amount, status)
+       VALUES (?,?,?,?,?,?,0,'Pending')`,
+      [loanId, 1, addDays(startDate, termWeeks * 7), principal, interest, principal + interest]
+    );
+    return;
+  }
   const totalInterest = principal * (ratePct / 100) * term;
   const totalDue = principal + totalInterest;
   const perPeriod = totalDue / term;
@@ -57,7 +82,7 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
   // that), but actually receives principal-minus-fee, and the fee is
   // real income recognized immediately since it was genuinely collected
   // on the spot, not merely scheduled for later.
-  const product = await get('SELECT fee_pct FROM loan_products WHERE id = ?', [loan.product_id]);
+  const product = await get('SELECT fee_pct, term_weeks FROM loan_products WHERE id = ?', [loan.product_id]);
   const fee = Math.round((loan.principal * ((product && product.fee_pct) || 0) / 100) * 100) / 100;
   const netDisbursed = loan.principal - fee;
   // Real transaction boundary — the audit's exact "Loan marked Active +
@@ -67,7 +92,7 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
   // both call this one function.
   await transaction(async () => {
     await run('UPDATE loans SET status = ?, disbursed_at = ?, processing_fee = ? WHERE id = ?', ['Active', today, fee, loan.id]);
-    await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today);
+    await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today, product && product.term_weeks);
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
        VALUES ('loans_receivable', ?, 0, ?, 'loan', ?, ?, ?)`,
@@ -1537,10 +1562,17 @@ function register(router) {
     const b = req.body;
     if (!b.name || !b.rate_pct) return next({ status: 400, message: 'name and rate_pct are required' });
     const id = 'pr_' + crypto.randomUUID();
+    // term_weeks (optional): a real fixed-term, single-repayment product
+    // (the Starter/Jijenge/Ibuka/Mavuno/Fly catalog) — when set, it
+    // overrides the min/max month range entirely (buildSchedule() and
+    // POST /api/loans both treat it as authoritative; see their own notes).
+    const termWeeks = b.term_weeks ? Number(b.term_weeks) : null;
     await run(
-      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0, b.min_term_months || 1, b.max_term_months || 12, b.fee_pct || 0, b.penalty_pct || 0]
+      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0,
+        termWeeks ? 1 : (b.min_term_months || 1), termWeeks ? 1 : (b.max_term_months || 12),
+        b.fee_pct || 0, b.penalty_pct || 0, termWeeks]
     );
     await logAction(req, { action: 'Added loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: id, newValue: b.name });
     res.status(201).json({ product: await get('SELECT * FROM loan_products WHERE id = ?', [id]) });
@@ -1733,16 +1765,47 @@ function register(router) {
 
   router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
-    if (!b.client_id || !b.product_id || !b.principal || !b.term_months) {
-      return next({ status: 400, message: 'client_id, product_id, principal and term_months are required' });
+    if (!b.client_id || !b.product_id || !b.principal) {
+      return next({ status: 400, message: 'client_id, product_id and principal are required' });
     }
     const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
     if (!client) return next({ status: 400, message: 'Unknown client' });
     await assertRecordInScope(req.user, client.branch_id, 'client'); // can't write a loan against a client outside your scope
     const product = await get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
     if (!product) return next({ status: 400, message: 'Unknown loan product' });
+    // A real term_weeks product (the real Starter/Jijenge/Ibuka/Mavuno/Fly
+    // catalog — see seed.js) has exactly one real valid term: itself. The
+    // client never chooses a duration for these — the server is
+    // authoritative on term_months (always 1 real period; buildSchedule()
+    // uses the product's own term_weeks for the real due date), the same
+    // way it's already authoritative on rate_pct just below. A legacy
+    // monthly product still requires a genuine client-supplied term_months.
+    let termMonths = product.term_weeks ? 1 : b.term_months;
+    if (!termMonths) return next({ status: 400, message: 'term_months is required for this product' });
     if (b.principal < product.min_amount || b.principal > product.max_amount) {
       return next({ status: 400, message: `Principal must be between ${product.min_amount} and ${product.max_amount} for this product` });
+    }
+    // Real New Loan / Repeat Loan enforcement — server-side, not a
+    // frontend-only convenience, exactly as specified: a "Repeat Loan"
+    // application is only valid for a client with a real prior loan (and
+    // inherits that prior loan's real guarantor when none is supplied
+    // here); a "New Loan" application must carry its own real guarantor
+    // details. Any other/blank loan_category (the field is optional) is
+    // untouched, so every existing caller that predates this — the other
+    // two Create Application forms, the whole test suite — keeps working.
+    let guarantor = b.guarantor || null;
+    let guarantorContact = b.guarantor_contact || null;
+    if (b.loan_category === 'Repeat Loan') {
+      const priorLoan = await get('SELECT guarantor, guarantor_contact FROM loans WHERE client_id = ? ORDER BY created_at DESC LIMIT 1', [b.client_id]);
+      if (!priorLoan) {
+        return next({ status: 400, message: 'This client has no prior loan — a Repeat Loan application requires a real prior loan on record' });
+      }
+      if (!guarantor) guarantor = priorLoan.guarantor;
+      if (!guarantorContact) guarantorContact = priorLoan.guarantor_contact;
+    } else if (b.loan_category === 'New Loan') {
+      if (!guarantor || !guarantorContact) {
+        return next({ status: 400, message: 'Guarantor name and contact are required for a New Loan application' });
+      }
     }
     const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
@@ -1761,8 +1824,8 @@ function register(router) {
     await run(
       `INSERT INTO loans (id, client_id, product_id, principal, term_months, rate_pct, purpose, guarantor, guarantor_contact, loan_securities, loan_category, officer_id, branch_id, status, current_step)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
-      [id, b.client_id, b.product_id, b.principal, b.term_months, product.rate_pct, b.purpose || null, b.guarantor || null,
-        b.guarantor_contact || null, b.loan_securities || null, b.loan_category || null,
+      [id, b.client_id, b.product_id, b.principal, termMonths, product.rate_pct, b.purpose || null, guarantor,
+        guarantorContact, b.loan_securities || null, b.loan_category || null,
         officerId, branchId, steps[0] ? steps[0].status_label : 'Waiting for Manager']
     );
     await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });

@@ -389,6 +389,73 @@ async function api(method, path, { token, body } = {}) {
     assert(wrongBranchRate.status === 403, "a Manager outside this loan's branch cannot rate it (real branch scoping)");
   }
 
+  // ---- 11d. Real short-term, single-repayment loan product catalog
+  // (Starter/Jijenge/Ibuka/Mavuno/Fly + their 6-week "Special" variants) —
+  // a flat rate for the loan's whole real term, repaid once; and real
+  // backend-enforced New Loan / Repeat Loan validation on POST /api/loans ----
+  {
+    const mgrLoginWk = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    const rmLoginWk = await api('POST', '/api/auth/login', { body: { email: 'regional@rhinocash.co.ke', password: process.env.SEEDED_REGIONAL_PASSWORD } });
+    const omLoginWk = await api('POST', '/api/auth/login', { body: { email: 'opsmanager@rhinocash.co.ke', password: process.env.SEEDED_OPSMGR_PASSWORD } });
+    const acctLoginWk = await api('POST', '/api/auth/login', { body: { email: 'accountant@rhinocash.co.ke', password: process.env.SEEDED_ACCOUNTANT_PASSWORD } });
+
+    const allProducts = (await api('GET', '/api/loan-products', { token: officerToken })).json.products;
+    const starter = allProducts.find(p => p.id === 'pr_ln_starter');
+    const jijengeSpecial = allProducts.find(p => p.id === 'pr_ln_jijenge_special');
+    assert(starter && starter.term_weeks === 4 && Number(starter.rate_pct) === 20 && Number(starter.min_amount) === 3000 && Number(starter.max_amount) === 5000, 'the real "Starter" product genuinely has the real 4-week term, 20% flat rate, and 3,000–5,000 range');
+    assert(jijengeSpecial && jijengeSpecial.term_weeks === 6 && Number(jijengeSpecial.rate_pct) === 30 && Number(jijengeSpecial.min_amount) === 6000 && Number(jijengeSpecial.max_amount) === 10000, 'the real "Jijenge Special" product genuinely has the real 6-week term, 30% flat rate, and 6,000–10,000 range');
+
+    const wkClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Weekly Product Test Client', phone: '0722555088', national_id: '30112288' } });
+
+    // Amount outside the real product range is genuinely rejected.
+    const outOfRange = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 2000 } });
+    assert(outOfRange.status === 400, 'a principal below the real product range (3,000–5,000) is genuinely rejected');
+
+    // No term_months sent at all — the server is authoritative for a real
+    // term_weeks product; it never needs (or trusts) a client-supplied term.
+    const wkLoanNoGuarantor = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, loan_category: 'New Loan' } });
+    assert(wkLoanNoGuarantor.status === 400, 'a real "New Loan" application without guarantor name/contact is genuinely rejected server-side');
+
+    const wkLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, term_months: 99, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111' } });
+    assert(wkLoan.status === 201 && wkLoan.json.loan.term_months === 1, 'the real loan is created with term_months forced to 1 — a bogus client-sent term_months (99) is genuinely ignored, not trusted');
+    const wkLoanId = wkLoan.json.loan.id;
+
+    // Repeat Loan on a client with NO prior loan is genuinely rejected —
+    // this specific client's very first loan (wkLoan above) doesn't count
+    // as "prior" for itself, so a second, fresh client with zero loans
+    // makes the "no prior loan" case unambiguous.
+    const freshClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'No Prior Loan Client', phone: '0722555077', national_id: '30112277' } });
+    const repeatNoPrior = await api('POST', '/api/loans', { token: officerToken, body: { client_id: freshClient.json.client.id, product_id: starter.id, principal: 4000, loan_category: 'Repeat Loan' } });
+    assert(repeatNoPrior.status === 400, 'a real "Repeat Loan" application for a client with NO prior loan is genuinely rejected server-side');
+
+    // Repeat Loan on the client that now genuinely has a prior loan
+    // (wkLoan above) succeeds, and genuinely inherits that prior loan's
+    // real guarantor — never asked for again on the form.
+    const repeatLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: jijengeSpecial.id, principal: 8000, loan_category: 'Repeat Loan' } });
+    assert(repeatLoan.status === 201 && repeatLoan.json.loan.guarantor === 'Jane Guarantor' && repeatLoan.json.loan.guarantor_contact === '0733000111', 'a real "Repeat Loan" application genuinely succeeds for a client with a real prior loan, and genuinely inherits that prior loan\'s real guarantor');
+
+    // Full real approval chain + disbursement of the first (Starter, 4-week) loan.
+    await api('POST', `/api/loans/${wkLoanId}/approve`, { token: mgrLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${wkLoanId}/approve`, { token: rmLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${wkLoanId}/approve`, { token: omLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${wkLoanId}/approve`, { token: acctLoginWk.json.token, body: {} });
+    const wkDisburse = await api('POST', `/api/loans/${wkLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    assert(wkDisburse.status === 200, 'the real weekly-product loan disburses');
+    assert(wkDisburse.json.schedule.length === 1, 'a real term_weeks product genuinely builds exactly ONE schedule row — a single real repayment, not monthly installments');
+    const wkRow = wkDisburse.json.schedule[0];
+    assert(Math.abs(wkRow.principal_due - 4000) < 0.01, 'the single real installment\'s principal_due genuinely equals the full real principal');
+    assert(Math.abs(wkRow.interest_due - 800) < 0.01, 'the single real installment\'s interest_due genuinely equals the real flat 20% of principal (4000 * 0.20 = 800), not a per-month rate');
+    assert(Math.abs(wkRow.total_due - 4800) < 0.01, 'total_due genuinely equals principal + the real flat interest');
+    const expectedDueDate = new Date(wkDisburse.json.loan.disbursed_at);
+    expectedDueDate.setDate(expectedDueDate.getDate() + 28);
+    assert(wkRow.due_date === expectedDueDate.toISOString().slice(0, 10), 'the single real installment is genuinely due exactly 4 real weeks (28 days) after disbursement, not 1 month later');
+
+    // Admin-facing product management genuinely accepts and returns a
+    // real term_weeks product end-to-end too.
+    const newWeeklyProduct = await api('POST', '/api/loan-products', { token: adminToken, body: { name: 'Weekly Config Test Product', rate_pct: 20, min_amount: 1000, max_amount: 2000, fee_pct: 0, penalty_pct: 0, term_weeks: 4 } });
+    assert(newWeeklyProduct.status === 201 && newWeeklyProduct.json.product.term_weeks === 4 && newWeeklyProduct.json.product.min_term_months === 1 && newWeeklyProduct.json.product.max_term_months === 1, 'creating a real loan product with a real term_weeks genuinely persists it and forces the month range to a real single period');
+  }
+
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----
   {
     const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });

@@ -267,6 +267,36 @@ async function seedDemoData() {
     );
   }
 
+  // Real short-term, single-repayment loan products (the actual product
+  // catalog Loan Officers pick from on Create Loan Application): a flat
+  // rate for the loan's ENTIRE real fixed term — 20% for the 4-week tier,
+  // 30% for the 6-week ("Special") tier — repaid once, in a single real
+  // installment due term_weeks after disbursement (see buildSchedule()'s
+  // own note on how term_weeks changes schedule generation). Each pair
+  // shares its real amount range; the "Special" variant is the same
+  // product at a longer real term and a real higher rate. Kept as
+  // separate rows (added after the 3 above, in this fixed order) rather
+  // than replacing them so every existing product_id already hardcoded
+  // across the test suite keeps working unchanged.
+  const weeklyProducts = [
+    ['pr_ln_starter', 'Starter', 20, 3000, 5000, 4],
+    ['pr_ln_starter_special', 'Starter Special', 30, 3000, 5000, 6],
+    ['pr_ln_jijenge', 'Jijenge', 20, 6000, 10000, 4],
+    ['pr_ln_jijenge_special', 'Jijenge Special', 30, 6000, 10000, 6],
+    ['pr_ln_ibuka', 'Ibuka', 20, 11000, 15000, 4],
+    ['pr_ln_ibuka_special', 'Ibuka Special', 30, 11000, 15000, 6],
+    ['pr_ln_mavuno', 'Mavuno', 20, 16000, 20000, 4],
+    ['pr_ln_mavuno_special', 'Mavuno Special', 30, 16000, 20000, 6],
+    ['pr_ln_fly', 'Fly', 20, 21000, 25000, 4],
+    ['pr_ln_fly_special', 'Fly Special', 30, 21000, 25000, 6],
+  ];
+  for (const [id, name, rate, min, max, weeks] of weeklyProducts) {
+    await run(
+      "INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks) VALUES (?,?,'Flat',?,?,?,1,1,0,0,?) ON CONFLICT DO NOTHING",
+      [id, name, rate, min, max, weeks]
+    );
+  }
+
   const demoStaff = [
     ['usr_opsmgr', 'Esther Wanjiku', 'opsmanager@rhinocash.co.ke', '0711000001', 'operational_manager', 'br_nairobi', 'rg_central', 'usr_ceo'],
     ['usr_regional', 'Daniel Kiptoo', 'regional@rhinocash.co.ke', '0711000002', 'regional_manager', 'br_kisumu', 'rg_coastwest', 'usr_opsmgr'],

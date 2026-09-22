@@ -461,6 +461,7 @@ CREATE TABLE IF NOT EXISTS loan_products (
   max_term_months INTEGER NOT NULL,
   fee_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
   penalty_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
+  term_weeks INTEGER,
   active INTEGER NOT NULL DEFAULT 1
 );
 

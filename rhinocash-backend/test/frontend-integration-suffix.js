@@ -2896,7 +2896,67 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     const optionCount = (html.match(/<option value="\d+">\d+ month/g) || []).length;
     __assert(optionCount === (DB.products[0].maxTerm - DB.products[0].minTerm + 1), "the real Loan Duration dropdown genuinely reflects the selected product's real min/max term range, not a fabricated fixed list");
+
+    // The real modal-style chrome (centered title, red X close) and the
+    // real Type of Loan options (New Loan / Repeat Loan, replacing the
+    // old New/Top-up/Renewal/Emergency set).
+    __assert(html.includes('>Create Loan Application<') && html.includes('New Loan') && html.includes('Repeat Loan') && !html.includes('>Top-up<'), "the real form's title and real Type of Loan options match the requested design exactly");
+
+    // A real short-term, single-repayment product (Starter, a real 4-week
+    // term) auto-fills Loan Duration with exactly one real, pre-selected
+    // option — the officer never picks a duration for these.
+    const starterProduct = DB.products.find(p=>p.id==='pr_ln_starter');
+    __assert(!!starterProduct && starterProduct.termWeeks === 4, "the real seeded 'Starter' product genuinely carries a real 4-week term_weeks, adapted through to the frontend");
+    session.loanAppState.productId = starterProduct.id;
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('<option value="1" selected>4 weeks</option>'), "selecting a real weekly product genuinely auto-fills Loan Duration with its own single real term, pre-selected");
+
+    // Real "Repeat Loan" prefill: DB.loans already has a real prior loan
+    // for this client (createLoanApplication further below reuses
+    // lookupClient) — simulate the real onchange handler's real DOM write.
+    const priorLoanForPrefill = { id:'ln_prefill_test', clientId: lookupClient.id, guarantor:'Prefill Guarantor', guarantorContact:'0700111222', createdAt: new Date().toISOString() };
+    DB.loans.unshift(priorLoanForPrefill);
+    session.loanAppState.matchedClient = lookupClient;
+    const fakeGuarantorInput = { value:'' }, fakeGuarantorContactInput = { value:'' };
+    const fakeForm = { elements: { guarantor: fakeGuarantorInput, guarantor_contact: fakeGuarantorContactInput } };
+    handleLoanCategoryChange('Repeat Loan', { form: fakeForm });
+    __assert(fakeGuarantorInput.value === 'Prefill Guarantor' && fakeGuarantorContactInput.value === '0700111222', "choosing Repeat Loan genuinely prefills the real guarantor name/contact from the client's real most recent prior loan");
+    DB.loans.splice(DB.loans.indexOf(priorLoanForPrefill), 1);
     session.loanAppState = null;
+  }
+
+  // ---- 85b. LOAN OFFICER CREATE APPLICATION: real submission against a
+  // real weekly product, and real backend-enforced New/Repeat Loan rules ----
+  {
+    let of30b = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of30b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    const wkClientForm = new Map([['name','[TEST] Weekly Loan Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)],['idNumber','']]);
+    global.FormData = class { constructor(){ return wkClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const wkFrontendClient = DB.clients.find(c=>c.name==='[TEST] Weekly Loan Client');
+
+    // A real "New Loan" without a guarantor is genuinely rejected by the
+    // real backend (withRequest() swallows the thrown ApiError itself and
+    // surfaces it as a real toast — never a silently-created loan).
+    let noGuarantorForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan']]);
+    global.FormData = class { constructor(){ return noGuarantorForm; } };
+    const loansBeforeNoGuarantor = DB.loans.length;
+    const toastsBeforeNoGuarantor = toasts.length;
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    __assert(DB.loans.length === loansBeforeNoGuarantor, "no real loan was created for a New Loan application missing its real guarantor — enforced server-side, not just a frontend 'required' attribute");
+    __assert(toasts.length > toastsBeforeNoGuarantor && /[Gg]uarantor/.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing guarantor) genuinely surfaces to the officer as a real toast");
+
+    // With a real guarantor, the real weekly-product application succeeds.
+    let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333']]);
+    global.FormData = class { constructor(){ return wkLoanForm; } };
+    const wkLoansBefore = DB.loans.length;
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor present");
+    const wkFrontendLoan = DB.loans[0];
+    __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
   }
 
   // ---- 99. MANAGER COLLECTION SHEET: real officer grouping/expand-collapse, KPIs, exceptions, completed-loan fix, branch isolation ----

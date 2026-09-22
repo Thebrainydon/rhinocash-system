@@ -1036,7 +1036,7 @@ function adaptStaff(u){
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
 function adaptRegion(r){ return { id:r.id, name:r.name }; }
-function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0 }; }
+function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0, termWeeks:p.term_weeks||null }; }
 function adaptNotification(n){ return { id:n.id, type:n.type, title:n.title, message:n.message, date:n.created_at, read: !!n.read }; }
 function adaptAudit(a){ return { id:a.id, user:a.user_name, role: ROLE_ID_TO_DISPLAY[a.role_id]||a.role_id||"", action:a.action, entity:a.record_type||a.module, entityId:a.record_id, details:a.reason || (a.new_value?String(a.new_value):"") || "", date:a.created_at }; }
 function adaptTicket(t){ return { id:t.id, subject:t.subject, message:t.message, category:t.category, priority:t.priority, status:t.status, createdBy:t.created_by, assignedTo:t.assigned_to, resolvedAt:t.resolved_at, date:t.created_at }; }
@@ -1589,7 +1589,8 @@ function togglePermission(role, perm){
 }
 async function addLoanProduct(data){
   const res = await api.post('/api/loan-products', { name:data.name, rate_type:'Flat', rate_pct:Number(data.rate),
-    min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm), max_term_months:Number(data.maxTerm), fee_pct:Number(data.fee), penalty_pct:Number(data.penalty||0) });
+    min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm)||undefined, max_term_months:Number(data.maxTerm)||undefined,
+    fee_pct:Number(data.fee), penalty_pct:Number(data.penalty||0), term_weeks:Number(data.termWeeks)||undefined });
   const p = adaptProduct(res.product);
   DB.products.push(p);
   return p;
@@ -2900,16 +2901,17 @@ function renderAdminDashboard(){
     <div class="card">
       <div class="card-title">System Configuration — Loan Products</div>
       <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Penalty</th></tr>
-      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% flat</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.minTerm}–${p.maxTerm} mo</td><td>${p.fee}%</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
+      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (single repayment)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
       ${CAN_MANAGE_SETTINGS(session.role) ? `
       <form onsubmit="return submitAddProduct(event)" style="margin-top:14px;">
         <div class="form-grid">
           <div class="field"><label>Product Name</label><input name="name" required></div>
-          <div class="field"><label>Flat Rate (%/month)</label><input name="rate" type="number" step="0.1" required></div>
+          <div class="field"><label>Flat Rate (%)</label><input name="rate" type="number" step="0.1" required></div>
           <div class="field"><label>Min Amount</label><input name="minAmt" type="number" required></div>
           <div class="field"><label>Max Amount</label><input name="maxAmt" type="number" required></div>
-          <div class="field"><label>Min Term (months)</label><input name="minTerm" type="number" required></div>
-          <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number" required></div>
+          <div class="field"><label>Min Term (months)</label><input name="minTerm" type="number"></div>
+          <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number"></div>
+          <div class="field"><label>Duration (weeks — for a real single-repayment product like Starter/Jijenge; overrides the month range above)</label><input name="termWeeks" type="number"></div>
           <div class="field"><label>Processing Fee (%)</label><input name="fee" type="number" step="0.1" required></div>
           <div class="field"><label>Late Payment Penalty (% per overdue installment)</label><input name="penalty" type="number" step="0.1" value="0"></div>
         </div>
@@ -5119,12 +5121,30 @@ function renderLoanBook(){
   if(active==="Portfolio Monitoring") return tabsHtml + renderPortfolioMonitoring();
   return tabsHtml + renderLoanApplications();
 }
+// Real "Repeat Loan" convenience prefill — the actual enforcement (a
+// Repeat Loan requires a genuine prior loan, and inherits its real
+// guarantor when the form doesn't supply one) lives server-side in
+// POST /api/loans; this just saves the officer retyping what the
+// backend would fill in anyway, using the client's own already-loaded
+// real loan history (DB.loans) rather than a fresh round trip.
+function handleLoanCategoryChange(value, formEl){
+  if(value !== 'Repeat Loan') return;
+  const st = session.loanAppState;
+  if(!st || !st.matchedClient) return;
+  const priorLoans = DB.loans.filter(l=>l.clientId===st.matchedClient.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  const prior = priorLoans[0];
+  if(!prior) return;
+  const form = formEl.form;
+  if(prior.guarantor && !form.elements['guarantor'].value) form.elements['guarantor'].value = prior.guarantor;
+  if(prior.guarantorContact && !form.elements['guarantor_contact'].value) form.elements['guarantor_contact'].value = prior.guarantorContact;
+}
 function renderLoanApplicationForm(){
   const st = session.loanAppState || (session.loanAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false });
   const product = DB.products.find(p=>p.id===st.productId);
   return `
-    <div class="card" style="max-width:760px;">
-      <div class="card-title">Create Loan Application</div>
+    <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
+      <span onclick="goTo('dashboard')" style="position:absolute; top:14px; right:16px; color:var(--rust); font-size:22px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Create Loan Application</h3>
       <div class="section-note">Submitted under your own name and branch (${branchName(DB.me && DB.me.branch_id)}) — the officer and branch are set by the server from your logged-in account, not chosen here.</div>
       <form onsubmit="return submitLoanApp(event)">
         <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
@@ -5137,7 +5157,10 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Loan Amount</label><input name="principal" type="number" required placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
         <div class="field"><label>Loan Duration</label><select name="term" required>
           <option value="">-- Select --</option>
-          ${product ? Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join("") : ""}
+          ${product ? (product.termWeeks
+            ? `<option value="1" selected>${product.termWeeks} week${product.termWeeks>1?'s':''}</option>`
+            : Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join(""))
+            : ""}
         </select></div>
         <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
         <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
@@ -5147,11 +5170,13 @@ function renderLoanApplicationForm(){
           ${st.matchedClient.phone ? `<option value="${escapeHtml(st.matchedClient.phone)}">${escapeHtml(st.matchedClient.name)} - ${st.matchedClient.phone.slice(-3)}</option>` : ""}
           ${st.matchedClient.nextOfKinPhone ? `<option value="${escapeHtml(st.matchedClient.nextOfKinPhone)}">${escapeHtml(st.matchedClient.nextOfKin||'Next of Kin')} - ${st.matchedClient.nextOfKinPhone.slice(-3)}</option>` : ""}
         </select></div>` : ""}
-        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category">
+        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this)">
           <option value="">-- Select --</option>
-          <option>New</option><option>Top-up</option><option>Renewal</option><option>Emergency</option>
+          <option>New Loan</option><option>Repeat Loan</option>
         </select></div>
-        <button class="btn btn-primary" type="submit">Save</button>
+        <div style="text-align:right; margin-top:16px;">
+          <button class="btn btn-green" type="submit">Save</button>
+        </div>
       </form>
     </div>
   `;
@@ -5188,11 +5213,14 @@ function submitLoanApp(ev){
   });
 }function renderLoanApplications(){
   const waitingStatuses = ["Waiting for Manager","Waiting for Regional Manager","Waiting for Operational Manager","Waiting for Accountant"];
-  const rows = DB.loans.map(l=>`
+  const rows = DB.loans.map(l=>{
+    const prod = DB.products.find(p=>p.id===l.productId);
+    const termLabel = prod && prod.termWeeks ? `${prod.termWeeks} week${prod.termWeeks>1?'s':''}` : `${l.term} mo`;
+    return `
     <tr class="clickable" onclick="openLoan('${l.id}')">
       <td>${l.id}</td><td>${clientName(l.clientId)}</td><td>${l.productName}</td><td>${fmt(l.principal)}</td>
-      <td>${l.term} mo</td><td>${staffName(l.officerId)}</td><td>${statusBadge(l.status)}</td>
-    </tr>`).join("");
+      <td>${termLabel}</td><td>${staffName(l.officerId)}</td><td>${statusBadge(l.status)}</td>
+    </tr>`;}).join("");
   return `
     <div class="card">
       <div class="card-title">Loan Applications &amp; Approval <small>${DB.loans.filter(l=>waitingStatuses.includes(l.status)).length} awaiting approval</small></div>
@@ -5269,7 +5297,7 @@ function renderLoanDetail(id){
         <div>
           <div class="detail-label">Product</div><div class="detail-value">${l.productName}</div>
           <div class="detail-label">Principal</div><div class="detail-value">${fmt(l.principal)}</div>
-          <div class="detail-label">Term / Rate</div><div class="detail-value">${l.term} months · ${l.rate}% flat</div>
+          <div class="detail-label">Term / Rate</div><div class="detail-value">${(()=>{ const prod=DB.products.find(p=>p.id===l.productId); return prod && prod.termWeeks ? `${prod.termWeeks} week${prod.termWeeks>1?'s':''}` : `${l.term} months`; })()} · ${l.rate}% flat</div>
           <div class="detail-label">Purpose</div><div class="detail-value">${escapeHtml(l.purpose||"—")}</div>
         </div>
         <div>
