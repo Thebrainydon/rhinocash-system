@@ -490,6 +490,7 @@ async function api(method, path, { token, body } = {}) {
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: acctLoginWk.json.token, body: {} });
     const wkDisburse = await api('POST', `/api/loans/${wkLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
     assert(wkDisburse.status === 200, 'the real weekly-product loan disburses');
+    assert(Number(wkDisburse.json.loan.processing_fee) === 600 && wkDisburse.json.loan.processing_fee_receipt === 'QGX7TT61SV', 'disbursement genuinely never overwrites the real upfront processing fee already confirmed at application time — a real regression this exact assertion catches');
     assert(wkDisburse.json.schedule.length === 1, 'a real term_weeks product genuinely builds exactly ONE schedule row — a single real repayment, not monthly installments');
     const wkRow = wkDisburse.json.schedule[0];
     assert(Math.abs(wkRow.principal_due - 4000) < 0.01, 'the single real installment\'s principal_due genuinely equals the full real principal');

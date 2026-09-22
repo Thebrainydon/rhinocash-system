@@ -82,8 +82,16 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
   // that), but actually receives principal-minus-fee, and the fee is
   // real income recognized immediately since it was genuinely collected
   // on the spot, not merely scheduled for later.
-  const product = await get('SELECT fee_pct, term_weeks FROM loan_products WHERE id = ?', [loan.product_id]);
-  const fee = Math.round((loan.principal * ((product && product.fee_pct) || 0) / 100) * 100) / 100;
+  const product = await get('SELECT fee_pct, term_weeks, processing_fee_amount FROM loan_products WHERE id = ?', [loan.product_id]);
+  // A real upfront-fee product (processing_fee_amount set) already had its
+  // real fee collected and confirmed via M-Pesa before this loan even
+  // existed — loans.processing_fee/processing_fee_receipt were set for
+  // real at application time (see POST /api/loans) and must never be
+  // overwritten here; nothing is deducted from the disbursed proceeds a
+  // second time for it. Only a legacy fee_pct product computes and takes
+  // its fee at the point of disbursement, exactly as before.
+  const hasUpfrontFee = product && product.processing_fee_amount != null;
+  const fee = hasUpfrontFee ? 0 : Math.round((loan.principal * ((product && product.fee_pct) || 0) / 100) * 100) / 100;
   const netDisbursed = loan.principal - fee;
   // Real transaction boundary — the audit's exact "Loan marked Active +
   // disbursement accounting missing" scenario. The status flip, schedule
@@ -91,7 +99,11 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
   // do; shared by both the manual and M-Pesa B2C disbursement paths since
   // both call this one function.
   await transaction(async () => {
-    await run('UPDATE loans SET status = ?, disbursed_at = ?, processing_fee = ? WHERE id = ?', ['Active', today, fee, loan.id]);
+    if (hasUpfrontFee) {
+      await run('UPDATE loans SET status = ?, disbursed_at = ? WHERE id = ?', ['Active', today, loan.id]);
+    } else {
+      await run('UPDATE loans SET status = ?, disbursed_at = ?, processing_fee = ? WHERE id = ?', ['Active', today, fee, loan.id]);
+    }
     await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today, product && product.term_weeks);
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)

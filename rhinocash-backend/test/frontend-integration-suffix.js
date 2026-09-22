@@ -1807,12 +1807,25 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     global.FormData = class { constructor(){ return of6; } };
     await doLogin({ preventDefault(){}, target:{} });
 
-    // Collection MTD: real backend figures, not local computation.
+    // The real topbar genuinely shows "RHINOCASH LTD" at the top-left,
+    // next to the icon row, on every real page — not just this one.
+    __assert(document.getElementById('root').innerHTML.includes('RHINOCASH LTD'), "the real topbar genuinely shows the real RHINOCASH LTD brand text at the top-left");
+
+    // Collection MTD: the shared loader still feeds the real Dashboard KPI.
     await loadCollectionMTD();
     __assert(DB.acctPages.mtd && typeof DB.acctPages.mtd.expectedMTD === 'number', "real Collection MTD data loaded via the actual UI loader from the shared backend engine");
+
+    // The real Collection MTD submenu page itself is now the real
+    // Progressive Disbursements table — chrome-free, matching the real
+    // reference design, backed by a real dedicated endpoint (not the
+    // shared MTD loader above, which stays reserved for the Dashboard).
+    session.progressiveDisbState = null; DB.progressiveDisb = null;
     goTo('loanbook','Collection MTD');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Expected (MTD)') && html.includes('Collection Rate'), "Collection MTD page renders real KPIs from the real endpoint");
+    __assert(!html.includes('class="subtabs"'), "the real Progressive Disbursements page genuinely has no subtab bar above it, like every other real submenu page in this flow");
+    __assert(html.includes('Progressive Disbursements') && html.includes('Loan Officer') && html.includes('Disbursed Amount') && html.includes('Loan+Charges') && html.includes('GC%'), "the real Progressive Disbursements page genuinely renders with the requested title and column set");
+    __assert(DB.progressiveDisb && Array.isArray(DB.progressiveDisb.rows) && DB.progressiveDisb.totals, "the real Progressive Disbursements data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
     // Collection Sheet: real pagination, replacing the old client-side ±7-day computation.
     await loadCollectionSheet({}, 1);

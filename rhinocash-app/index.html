@@ -89,6 +89,7 @@ body{
   display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:5; gap:10px;
 }
 .topbar-left{display:flex; align-items:center; gap:10px; min-width:0;}
+.topbar-brand{font-weight:800; font-size:15px; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .topbar-right{display:flex; align-items:center; gap:10px; flex-shrink:0;}
 .role-select{
   border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 10px; font-size:12.5px;
@@ -1808,6 +1809,7 @@ function renderApp(){
         <div class="topbar">
           <div class="topbar-left">
             <div class="hamburger" onclick="toggleSidebar()">☰</div>
+            <div class="topbar-brand">RHINOCASH LTD</div>
           </div>
           <div class="topbar-right">
             ${session.role!=="Investor" ? `<div class="bell" onclick="openTicketsPanel()" title="Tickets">💬</div>` : ""}
@@ -5149,7 +5151,7 @@ function renderLoanBook(){
   if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
   if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
-  if(active==="Collection MTD") return tabsHtml + renderCollectionMTD();
+  if(active==="Collection MTD") return renderCollectionMTD();
   if(active==="Disbursements") return tabsHtml + renderDisbursementsOverviewPage();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
@@ -5567,27 +5569,51 @@ function exportCollectionReportsCSV(){
 async function loadCollectionMTD(){
   return withRequest('load-mtd', async ()=>{ DB.acctPages.mtd = await api.get('/api/collections/mtd'); });
 }
+// ---- Progressive Disbursements: the Loan Officer's real "Collection MTD"
+// submenu page — real loans disbursed within a real date range (defaults
+// to real month-to-date), grouped by officer, with their real lifetime
+// collection progress (see the backend route's own notes for the exact
+// real definitions of Loan+Charges/Paid/Arrears/GC%). Chrome-free like
+// every other real submenu page built in this LoanBook flow. ----
+function defaultProgressiveDisbState(){
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  return { from: monthStart, to: now.toISOString().slice(0,10) };
+}
+async function loadProgressiveDisbursements(){
+  const st = session.progressiveDisbState;
+  return withRequest('load-progressive-disb', async ()=>{
+    const params = new URLSearchParams({ from: st.from, to: st.to });
+    const res = await api.get('/api/collections/progressive-disbursements?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.progressiveDisb = res;
+  });
+}
+function exportProgressiveDisbursements(){
+  const rows = DB.progressiveDisb ? DB.progressiveDisb.rows : [];
+  exportRowsToCsv('progressive-disbursements.csv', ['officerName','disbursedAmount','totalLoans','loanPlusCharges','paid','arrears','gcPct'], rows);
+}
 function renderCollectionMTD(){
-  const state = DB.acctPages.mtd;
-  if(!state){ loadCollectionMTD(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const st = session.progressiveDisbState || (session.progressiveDisbState = defaultProgressiveDisbState());
+  if(!DB.progressiveDisb || DB.progressiveDisb.stateKey !== JSON.stringify(st)){ loadProgressiveDisbursements(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.progressiveDisb;
+  const rowHtml = r => `<tr><td>${escapeHtml(r.officerName)}</td><td>${fmtNum(r.disbursedAmount)}</td><td>${r.totalLoans}</td><td>${fmtNum(r.loanPlusCharges)}</td><td>${fmtNum(r.paid)}</td><td>${fmtNum(r.arrears)}</td><td>${r.gcPct.toFixed(2)}%</td></tr>`;
   return `
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Expected (MTD)</div><div class="kpi-value">${fmt(state.expectedMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Collected (MTD)</div><div class="kpi-value">${fmt(state.collectedMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Remaining</div><div class="kpi-value">${fmt(state.remainingMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Collection Rate</div><div class="kpi-value">${state.collectionRateMTD.toFixed(1)}%</div></div>
-    </div>
     <div class="card">
-      <div class="card-title">Today <small>as of ${state.asOf}</small></div>
-      <table><tr><td>Expected Today</td><td style="text-align:right;">${fmt(state.expectedToday)}</td></tr>
-      <tr><td>Collected Today</td><td style="text-align:right;">${fmt(state.collectedToday)}</td></tr></table>
+      <div class="card-title"><span onclick="goTo('dashboard')" style="cursor:pointer; margin-right:8px;">←</span>Progressive Disbursements</div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <input type="date" value="${st.from}" onchange="session.progressiveDisbState.from=this.value; DB.progressiveDisb=null; renderApp();" style="flex-shrink:0;">
+        <span>To</span>
+        <input type="date" value="${st.to}" onchange="session.progressiveDisbState.to=this.value; DB.progressiveDisb=null; renderApp();" style="flex-shrink:0;">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportProgressiveDisbursements()">↓ Generate</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Loan Officer</th><th>Disbursed Amount</th><th>Total Loans</th><th>Loan+Charges</th><th>Paid</th><th>Arrears</th><th>GC%</th></tr>
+        ${d.rows.map(rowHtml).join("") || `<tr><td colspan="7" class="empty">No loans disbursed in this range.</td></tr>`}
+        ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Totals</td><td>${fmtNum(d.totals.disbursedAmount)}</td><td>${d.totals.totalLoans}</td><td>${fmtNum(d.totals.loanPlusCharges)}</td><td>${fmtNum(d.totals.paid)}</td><td>${fmtNum(d.totals.arrears)}</td><td>${d.totals.gcPct.toFixed(2)}%</td></tr>` : ""}
+      </table></div>
     </div>
-    ${state.target ? `<div class="card">
-      <div class="card-title">Target Progress</div>
-      <table><tr><td>Target</td><td style="text-align:right;">${fmt(state.target.value)}</td></tr>
-      <tr><td>Achieved</td><td style="text-align:right;">${fmt(state.target.achievement)}</td></tr>
-      <tr><td><strong>Achievement</strong></td><td style="text-align:right;"><strong>${state.target.percentage.toFixed(1)}%</strong></td></tr></table>
-    </div>` : ""}
   `;
 }
 async function loadCollectionSheet(filters, page){

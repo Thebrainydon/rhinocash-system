@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  983 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 780 passed, 0 failed  (drives the real UI functions in
+Backend:  995 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 783 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,763 passed, 0 failed
+Total:    1,778 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -436,6 +436,41 @@ the Charges column genuinely shows a real M-Pesa-style receipt code above
 the real KES amount, matching the reference exactly, with nothing
 fabricated: the receipt shown is always one a human actually entered
 and the backend actually validated and recorded.
+
+Fixing this exposed a real, genuine bug in already-existing disbursement
+code: `completeDisbursement()` unconditionally recomputed and overwrote
+`loans.processing_fee` from the product's legacy `fee_pct` (0 for every
+weekly-catalog product) at the moment of disbursement, silently
+clobbering the real, already-confirmed upfront fee back to 0 the instant
+a loan was disbursed. Fixed by skipping that recomputation entirely for
+a product that carries a real `processing_fee_amount` — its
+`processing_fee`/`processing_fee_receipt` are set once, for real, at
+application time, and disbursement never touches them again. A real
+regression test (in `integration.test.js`) now asserts the fee and
+receipt survive disbursement unchanged, so this can't silently regress
+again.
+
+LoanBook's Collection MTD (Loan Officer view) is now the real Progressive
+Disbursements page: real loans genuinely disbursed within a real,
+officer-adjustable date range (defaulting to real month-to-date),
+grouped by officer, backed by a new dedicated endpoint
+(`GET /api/collections/progressive-disbursements`) rather than the
+existing MTD engine, which answers a different real question ("what's
+due in this window") — this page answers "how are the loans that
+originated in this window actually progressing," a real, distinct
+metric. Loan+Charges is the real principal + the real total scheduled
+interest + the real confirmed upfront processing fee (0 when a loan's
+product doesn't carry one); Paid is the real lifetime `paid_amount`
+across the whole real schedule, not restricted to the date range, since
+it tracks ongoing real recovery on loans that originated in this window,
+however long that takes; Arrears is the real outstanding balance on
+periods genuinely past their real due date; GC% is real Paid divided by
+real Loan+Charges. Chrome-free like every other real Loan Officer
+submenu page built in this flow, with a real "Totals" row that is a real
+sum of the real per-officer rows, never a separately fabricated figure.
+
+The topbar now shows "RHINOCASH LTD" at the top-left, next to the icon
+row, on every real page — matching the requested reference branding.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

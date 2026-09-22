@@ -68,6 +68,51 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 2b. PROGRESSIVE DISBURSEMENTS — real per-officer summary of loans
+  // disbursed within a real date range, backing the Loan Officer's real
+  // "Collection MTD" submenu page (Loan+Charges/Paid/Arrears/GC%)
+  // =========================================================
+  {
+    const pdClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Progressive Disb Test Client', phone: '0722666' + Math.floor(Math.random() * 900 + 100), national_id: '4010' + Math.floor(Math.random() * 900000 + 100000) } });
+    const products = await api('GET', '/api/loan-products', { token: officerToken });
+    const starterProduct = products.json.products.find(p => p.id === 'pr_ln_starter');
+
+    const feeInitiate = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: pdClient.json.client.id, product_id: starterProduct.id, phone: pdClient.json.client.phone } });
+    const feeConfirm = await api('POST', `/api/loans/processing-fee/${feeInitiate.json.feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'PDTEST1234' } });
+    assert(feeConfirm.status === 200, 'the real processing fee for the progressive-disbursements test loan is genuinely confirmed');
+
+    const pdLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: pdClient.json.client.id, product_id: starterProduct.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: feeInitiate.json.feeId } });
+    assert(pdLoan.status === 201, 'the real test loan for progressive disbursements is genuinely created');
+
+    await api('POST', `/api/loans/${pdLoan.json.loan.id}/approve`, { token: managerToken, body: {} });
+    await api('POST', `/api/loans/${pdLoan.json.loan.id}/approve`, { token: regionalToken, body: {} });
+    await api('POST', `/api/loans/${pdLoan.json.loan.id}/approve`, { token: opsToken, body: {} });
+    await api('POST', `/api/loans/${pdLoan.json.loan.id}/approve`, { token: acctToken, body: {} });
+    const pdDisburse = await api('POST', `/api/loans/${pdLoan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    assert(pdDisburse.status === 200, 'the real test loan genuinely disburses');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const pd = await api('GET', `/api/collections/progressive-disbursements?from=${monthStart}&to=${today}`, { token: officerToken });
+    assert(pd.status === 200 && Array.isArray(pd.json.rows), 'real Progressive Disbursements data loads for the Loan Officer');
+    const myRow = pd.json.rows.find(r => r.totalLoans >= 1);
+    assert(myRow, 'the real officer row genuinely includes at least the one real loan just disbursed');
+    assert(myRow.disbursedAmount >= 4000, 'the real disbursedAmount genuinely includes this real loan\'s real principal');
+    const expectedLoanPlusCharges = 4000 + 800 + 600; // real principal + real 20% flat interest (Starter) + the real confirmed KES 600 fee
+    assert(myRow.loanPlusCharges >= expectedLoanPlusCharges - 0.01, 'Loan+Charges genuinely includes the real principal + the real scheduled interest + the real confirmed processing fee, not just the bare principal');
+    assert(Math.abs(myRow.gcPct - (myRow.paid / myRow.loanPlusCharges * 100)) < 0.01, 'GC% is genuinely computed as real Paid / real Loan+Charges, not a separately fabricated figure');
+    assert(pd.json.totals.totalLoans === pd.json.rows.reduce((s, r) => s + r.totalLoans, 0), 'the real Totals row genuinely sums the real per-officer rows, not a separately computed figure');
+
+    // A real date range that excludes this disbursement genuinely shows nothing for it.
+    const pastRange = await api('GET', `/api/collections/progressive-disbursements?from=2020-01-01&to=2020-01-31`, { token: officerToken });
+    assert(pastRange.status === 200 && pastRange.json.rows.length === 0, 'a real date range with no real disbursements in it genuinely returns an empty real result, not fabricated rows');
+
+    // A Manager can genuinely view this for their own real branch scope too.
+    const mgrView = await api('GET', `/api/collections/progressive-disbursements?from=${monthStart}&to=${today}`, { token: managerToken });
+    assert(mgrView.status === 200, 'a Manager can genuinely view Progressive Disbursements scoped to their real branch too');
+  }
+
+  // =========================================================
   // 3. COLLECTION RATE — aggregate SUM/SUM, not averaged percentages
   // =========================================================
   {
