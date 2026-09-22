@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  962 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 771 passed, 0 failed  (drives the real UI functions in
+Backend:  965 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 774 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,733 passed, 0 failed
+Total:    1,739 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -384,16 +384,33 @@ approval chain (e.g. "Waiting Regional Manager") genuinely appears here,
 not just loans already fully approved for disbursement (the other three
 categories reuse the same real status groupings the backend's own
 `/api/loans/applications-overview` "category" filter already defines,
-for consistency). The table's columns match the reference layout:
-Application (real submission date and time), Client (resolved name, not
-an ID), Loan product (with a real "Schedule" link), Loan officer,
-Amount/duration, Guarantor name/contact, Loan securities, Charges, a
-real Approvals column (who last approved/rejected it, sourced from
-`loan_approvals` via a bulk last-decision-per-loan query on
-`GET /api/loans` rather than N+1 calls), and Disbursement status.
-Clicking "Schedule" on a loan that hasn't been disbursed yet — so has no
-real stored installment schedule — shows a clearly labeled *projected*
-preview computed with the exact same math
+for consistency). The table's columns match the reference layout — a
+real row number, Application (real submission date and time), Client
+(resolved name, not an ID), Loan product (with a real "Schedule" link),
+Loan officer, Amount/duration, Guarantor name/contact, Loan securities,
+Charges, a real Approvals column, and Disbursement — plus real month/day
+filter dropdowns alongside the category selector and search box, matching
+a further reference screenshot showing "All templates" with 300+ real
+rows. Approvals now shows the *whole* real approval chain stacked (each
+approver's name and decision, in the real order they happened), not just
+the most recent one — `GET /api/loans` now runs one bulk query per
+request (still no N+1) returning every `loan_approvals` row per loan,
+alongside the pre-existing `last_approval` field kept for backward
+compatibility. Disbursement shows the loan's real most-recent event
+timestamp — its real `disbursedAt` once disbursed, otherwise its latest
+real approval's timestamp, otherwise its own real submission time —
+replacing the earlier build's fixed "Waiting for X" status text once the
+reference showed a populated date/time in that column for every row,
+disbursed or not. Charges intentionally still shows only the real KES
+processing-fee amount, with no transaction reference: this build never
+actually collects the fee via a separate M-Pesa transaction at
+application time (`fee_payer_phone` is captured on the form but the
+backend never reads it), so there is no real receipt number anywhere in
+this system to show there — inventing one to match the reference's
+M-Pesa-style codes would be exactly the kind of fabrication this project
+has avoided everywhere else. Clicking "Schedule" on a loan that hasn't
+been disbursed yet — so has no real stored installment schedule — shows
+a clearly labeled *projected* preview computed with the exact same math
 `buildSchedule()` will use at disbursement, never a fabricated or
 hardcoded schedule.
 

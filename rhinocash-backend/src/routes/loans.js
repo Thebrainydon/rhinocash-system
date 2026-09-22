@@ -1595,22 +1595,31 @@ function register(router) {
     const scheduleByLoan = {};
     if (loanIds.length) { const idPh = loanIds.map(() => '?').join(','); (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period`, loanIds)).forEach(r => { if (!scheduleByLoan[r.loan_id]) scheduleByLoan[r.loan_id] = []; scheduleByLoan[r.loan_id].push(r); }); }
     rows.forEach(loan => { loan.schedule = scheduleByLoan[loan.id] || []; });
-    // Real most-recent approval decision per loan (Undisbursed Loans'
-    // "Approvals" column) — one real bulk query rather than N+1, the
-    // exact real row loan_approvals.id (BIGSERIAL, so MAX == latest)
-    // records for that loan, joined to the real approver's name.
+    // Real approval history per loan (Loan Applications' "Approvals"
+    // column shows the whole real chain — Manager, then Regional/
+    // Operational Manager, then Accountant, each with their real
+    // decision — not just the latest one) — one real bulk query rather
+    // than N+1, joined to each real approver's name, in real chronological
+    // order (loan_approvals.created_at ASC == the order the chain actually
+    // happened in).
+    const approvalsByLoan = {};
     const lastApprovalByLoan = {};
     if (loanIds.length) {
       const idPh2 = loanIds.map(() => '?').join(',');
       (await all(
-        `SELECT la.loan_id, la.decision, u.name as approver_name
+        `SELECT la.loan_id, la.decision, la.created_at, u.name as approver_name
          FROM loan_approvals la
          JOIN users u ON u.id = la.approver_id
-         WHERE la.id IN (SELECT MAX(id) FROM loan_approvals WHERE loan_id IN (${idPh2}) GROUP BY loan_id)`,
+         WHERE la.loan_id IN (${idPh2})
+         ORDER BY la.created_at ASC`,
         loanIds
-      )).forEach(r => { lastApprovalByLoan[r.loan_id] = { name: r.approver_name, decision: r.decision }; });
+      )).forEach(r => {
+        const entry = { name: r.approver_name, decision: r.decision, created_at: r.created_at };
+        (approvalsByLoan[r.loan_id] || (approvalsByLoan[r.loan_id] = [])).push(entry);
+        lastApprovalByLoan[r.loan_id] = entry; // chronological order, so the last push is genuinely the latest
+      });
     }
-    rows.forEach(loan => { loan.last_approval = lastApprovalByLoan[loan.id] || null; });
+    rows.forEach(loan => { loan.approvals = approvalsByLoan[loan.id] || []; loan.last_approval = lastApprovalByLoan[loan.id] || null; });
     res.json({ loans: rows });
   });
 

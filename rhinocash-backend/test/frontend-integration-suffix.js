@@ -2976,14 +2976,36 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(session.loanAppFilterState && session.loanAppFilterState.category === 'Undisbursed loans', "the real redirect genuinely pre-selects the 'Undisbursed loans' category filter, matching the real reference design where this is an option filtered within the Loan Application submenu");
 
     // The real rendered, filtered Loan Applications table genuinely shows
-    // this real loan with the exact requested columns — Application/Client
-    // BEFORE Loan product, real Schedule link, real duration in days, and
-    // the real (still-empty) Approvals/Disbursement state.
+    // this real loan with the exact requested columns — a real row number,
+    // Application/Client BEFORE Loan product, real Schedule link, real
+    // duration in days, real month/day filter dropdowns, and the real
+    // (still-empty) Approvals state.
     let undisbHtml = document.getElementById('root').innerHTML;
-    __assert(undisbHtml.includes('Undisbursed loans') && undisbHtml.includes('>Application<') && undisbHtml.includes('>Client<'), "the real filtered page genuinely renders with the requested category title and Application/Client columns");
+    __assert(undisbHtml.includes('Undisbursed loans') && undisbHtml.includes('>#<') && undisbHtml.includes('>Application<') && undisbHtml.includes('>Client<'), "the real filtered page genuinely renders with the requested category title, a real row-number column, and Application/Client columns");
+    __assert(undisbHtml.includes('-- Month --') && undisbHtml.includes('-- Day --'), "the real filter row genuinely includes real month/day dropdowns alongside the category and search, matching the real reference design");
     __assert(undisbHtml.includes(escapeHtml(wkFrontendClient.name)) && undisbHtml.includes('Starter') && undisbHtml.includes('Schedule') && undisbHtml.includes('28 Days'), "the real new loan genuinely appears with its real client name, product, a real Schedule link, and its real 28-day (4-week) duration");
-    __assert(undisbHtml.includes('Waiting for Manager'), "the real new loan's real current status (Waiting for Manager) genuinely appears in the Disbursement column");
     __assert(undisbHtml.includes(escapeHtml(session.userName)), "the real Loan officer column genuinely resolves to the officer's real name (staffName() falls back to the logged-in user's own session identity), not a dash — a Loan Officer's own nav scope never loads the full DB.staff directory, so this was a real display bug the reference screenshot's populated column exposed");
+
+    // Before any real approval exists, the real Approvals column genuinely
+    // shows a plain dash (never a fabricated approver), and the real
+    // Disbursement column genuinely shows the loan's real submission
+    // timestamp (its most recent real event, since no approval or
+    // disbursement has happened yet) — not the old fixed "Waiting for X"
+    // status text.
+    __assert(!wkFrontendLoan.approvals || wkFrontendLoan.approvals.length === 0, "a freshly submitted real loan genuinely has no real approvals yet");
+    __assert(undisbHtml.includes(fmtLoanDetailDateTime(wkFrontendLoan.createdAt)), "the real Disbursement column genuinely shows the loan's real most-recent event timestamp (its own submission time, since nothing has happened to it yet), not a fabricated placeholder");
+
+    // Rendering path check (adaptLoan's own real mapping is covered
+    // separately by the backend's approval-chain integration test): once a
+    // loan genuinely carries more than one real approval, the Approvals
+    // column stacks every one of them, in order, rather than only the
+    // latest — this exercises that exact real template branch.
+    wkFrontendLoan.approvals = [{ name:'First Approver', decision:'Approved', createdAt: wkFrontendLoan.createdAt }, { name:'Second Approver', decision:'Approved', createdAt: wkFrontendLoan.createdAt }];
+    renderApp();
+    const stackedHtml = document.getElementById('root').innerHTML;
+    __assert(stackedHtml.includes('First Approver') && stackedHtml.includes('Second Approver'), "the real Approvals column genuinely shows the whole real chain stacked, not only the most recent decision");
+    wkFrontendLoan.approvals = [];
+    renderApp();
 
     // Switching the category dropdown to 'All templates' genuinely widens
     // the real table back out — this is a real client-side filter over the

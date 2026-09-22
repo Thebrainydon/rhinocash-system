@@ -1019,7 +1019,8 @@ function adaptLoan(l){
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
-    lastApproval: l.last_approval ? { name:l.last_approval.name, decision:l.last_approval.decision } : null,
+    lastApproval: l.last_approval ? { name:l.last_approval.name, decision:l.last_approval.decision, createdAt:l.last_approval.created_at } : null,
+    approvals: (l.approvals||[]).map(a=>({ name:a.name, decision:a.decision, createdAt:a.created_at })),
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
 }
 function adaptPayment(p){
@@ -5268,21 +5269,28 @@ function submitLoanApp(ev){
 // loan that hasn't reached a real terminal/disbursed state yet, not only
 // the narrow "Approved for Disbursement" status the backend's own
 // /api/loans/applications-overview "category" filter uses for the
-// topbar's Loan Status Browser. "Approvals" is the real most-recent
-// decision (GET /api/loans' own bulk last_approval subquery — no N+1, no
-// fabricated placeholder); "Charges" is the loan's own real processing
-// fee; "Schedule" opens the real Installments modal, which shows a real,
-// clearly-labeled projected schedule for a loan that hasn't been
-// disbursed yet (see renderProjectedInstallmentsPreview). ----
+// topbar's Loan Status Browser. "Approvals" shows the real WHOLE approval
+// chain (GET /api/loans' own bulk approvals query — no N+1, no fabricated
+// placeholder), not only the latest decision; "Charges" is the loan's own
+// real processing fee (this build never actually collects the fee via a
+// separate real M-Pesa transaction at application time — fee_payer_phone
+// is captured but not acted on server-side — so there is no real receipt
+// reference to show here; showing one would be fabricated); "Disbursement"
+// shows the loan's real most-recent event timestamp (disbursedAt once
+// disbursed, otherwise its latest real approval's timestamp, otherwise its
+// own real submission time — never a placeholder for a loan that has any
+// real history at all); "Schedule" opens the real Installments modal,
+// which shows a real, clearly-labeled projected schedule for a loan that
+// hasn't been disbursed yet (see renderProjectedInstallmentsPreview). ----
 const LOAN_APP_CATEGORIES = ['All templates','Disbursed loans','Undisbursed loans','Pended loans','Declined loans'];
 const LOAN_APP_CATEGORY_STATUSES = {
   'Disbursed loans': ['Active','Disbursed','Completed','Written Off','Restructured'],
   'Pended loans': ['Pending','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Returned for Correction'],
   'Declined loans': ['Rejected'],
 };
-function defaultLoanApplicationsFilterState(){ return { category:'All templates', search:'' }; }
+function defaultLoanApplicationsFilterState(){ return { category:'All templates', month:'', day:'', search:'' }; }
 function goToUndisbursedLoans(){
-  if(session.role === 'Loan Officer') session.loanAppFilterState = { category:'Undisbursed loans', search:'' };
+  if(session.role === 'Loan Officer') session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' };
   goTo('loanbook','Loan Applications');
 }
 function loanTermDaysLabel(loan){
@@ -5290,10 +5298,20 @@ function loanTermDaysLabel(loan){
   if(prod && prod.termWeeks) return `${prod.termWeeks*7} Days`;
   return `${loan.term} month${loan.term>1?'s':''}`;
 }
+// The loan's real most-recent event timestamp — see the block comment
+// above for why this (not a fixed "Waiting for X" placeholder) is what
+// the real Disbursement column shows.
+function loanLastActionAt(loan){
+  if(loan.disbursedAt) return loan.disbursedAt;
+  if(loan.approvals && loan.approvals.length) return loan.approvals[loan.approvals.length-1].createdAt;
+  return loan.createdAt;
+}
 function loanApplicationsFiltered(st){
   let rows = DB.loans;
   if(st.category === 'Undisbursed loans') rows = rows.filter(isUndisbursedLoan);
   else if(LOAN_APP_CATEGORY_STATUSES[st.category]) rows = rows.filter(l=>LOAN_APP_CATEGORY_STATUSES[st.category].includes(l.status));
+  if(st.month) rows = rows.filter(l=> (l.createdAt||'').slice(0,7) === st.month);
+  if(st.day) rows = rows.filter(l=> (l.createdAt||'').slice(8,10) === String(st.day).padStart(2,'0'));
   if(st.search){
     const q = st.search.toLowerCase();
     rows = rows.filter(l=> clientName(l.clientId).toLowerCase().includes(q) || (l.productName||'').toLowerCase().includes(q) || l.id.toLowerCase().includes(q));
@@ -5308,15 +5326,18 @@ function exportLoanApplicationsCSV(){
     rows.map(l=>({
       application: l.createdAt, client: clientName(l.clientId), product: l.productName, officer: staffName(l.officerId),
       amount: l.principal, duration: loanTermDaysLabel(l), guarantor: l.guarantor||'', guarantorContact: l.guarantorContact||'',
-      loanSecurities: l.loanSecurities||'', charges: l.processingFee||0, approvals: l.lastApproval?`${l.lastApproval.name}: ${l.lastApproval.decision}`:'', status: l.status
+      loanSecurities: l.loanSecurities||'', charges: l.processingFee||0,
+      approvals: (l.approvals||[]).map(a=>`${a.name}: ${a.decision}`).join(' | '), status: l.status
     }))
   );
 }
 function renderLoanApplications(){
   const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
   const rows = loanApplicationsFiltered(st);
-  const rowsHtml = rows.map(l=>`
+  const monthOptions = loanStatusMonthOptions();
+  const rowsHtml = rows.map((l,i)=>`
     <tr>
+      <td>${i+1}</td>
       <td>${fmtLoanDetailDateTime(l.createdAt)}</td>
       <td class="clickable" onclick="openLoan('${l.id}')">${escapeHtml(clientName(l.clientId))}</td>
       <td>${escapeHtml(l.productName||'')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">Schedule</span></td>
@@ -5326,8 +5347,8 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.guarantorContact||'—')}</td>
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
       <td>${fmt(l.processingFee||0)}</td>
-      <td>${l.lastApproval ? `<strong>${escapeHtml(l.lastApproval.name)}</strong>: <em>${escapeHtml(l.lastApproval.decision)}</em>` : '—'}</td>
-      <td><em class="hint">${escapeHtml(l.status)}</em></td>
+      <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(a.decision)}</em>`).join('<br>') : '—'}</td>
+      <td>${fmtLoanDetailDateTime(loanLastActionAt(l))}</td>
     </tr>`).join("");
   return `
     <div class="card">
@@ -5336,13 +5357,21 @@ function renderLoanApplications(){
         <select onchange="session.loanAppFilterState.category=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${LOAN_APP_CATEGORIES.map(c=>`<option ${st.category===c?'selected':''}>${c}</option>`).join("")}
         </select>
+        <select onchange="session.loanAppFilterState.month=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Month --</option>
+          ${monthOptions.map(m=>`<option value="${m.value}" ${st.month===m.value?'selected':''}>${m.label}</option>`).join("")}
+        </select>
+        <select onchange="session.loanAppFilterState.day=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Day --</option>
+          ${Array.from({length:31},(_,i)=>i+1).map(dd=>`<option value="${dd}" ${String(dd)===String(st.day)?'selected':''}>${dd}</option>`).join("")}
+        </select>
         <input type="text" placeholder="Search" value="${escapeHtml(st.search)}" oninput="session.loanAppFilterState.search=this.value; renderApp();" style="flex-shrink:0; width:160px;">
         <span style="flex:1 1 auto;"></span>
         <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanApplicationsCSV()">↓ Generate</button>
       </div>
       <div class="table-wrap"><table>
-        <tr><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>Approvals</th><th>Disbursement</th></tr>
-        ${rowsHtml || `<tr><td colspan="11" class="empty">No loans in this category.</td></tr>`}
+        <tr><th>#</th><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>Approvals</th><th>Disbursement</th></tr>
+        ${rowsHtml || `<tr><td colspan="12" class="empty">No loans in this category.</td></tr>`}
       </table></div>
     </div>
     ${session.selectedLoanId ? renderLoanDetail(session.selectedLoanId) : ""}

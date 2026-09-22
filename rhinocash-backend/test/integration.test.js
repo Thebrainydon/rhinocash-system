@@ -438,6 +438,7 @@ async function api(method, path, { token, body } = {}) {
     const bulkLoansFresh = await api('GET', '/api/loans', { token: adminToken });
     const repeatLoanBulk = bulkLoansFresh.json.loans.find(l => l.id === repeatLoan.json.loan.id);
     assert(repeatLoanBulk && repeatLoanBulk.last_approval === null, 'a real loan with no real approval decisions yet genuinely has a null last_approval, not a fabricated one');
+    assert(Array.isArray(repeatLoanBulk.approvals) && repeatLoanBulk.approvals.length === 0, 'a real loan with no real approval decisions yet genuinely has an empty approvals array, not a fabricated one');
 
     // Full real approval chain + disbursement of the first (Starter, 4-week) loan.
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: mgrLoginWk.json.token, body: {} });
@@ -449,12 +450,14 @@ async function api(method, path, { token, body } = {}) {
     const bulkLoansAfterMgr = await api('GET', '/api/loans', { token: adminToken });
     const wkLoanBulk = bulkLoansAfterMgr.json.loans.find(l => l.id === wkLoanId);
     assert(wkLoanBulk && wkLoanBulk.last_approval && wkLoanBulk.last_approval.name === mgrMe.json.user.name && wkLoanBulk.last_approval.decision === 'Approved', 'the real bulk GET /api/loans genuinely carries the real most-recent approver name and decision for this loan');
+    assert(wkLoanBulk.approvals.length === 1 && wkLoanBulk.approvals[0].name === mgrMe.json.user.name, 'the real approvals array genuinely carries this one real decision so far, in real chronological order');
 
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: rmLoginWk.json.token, body: {} });
     const rmMe = await api('GET', '/api/auth/me', { token: rmLoginWk.json.token });
     const bulkLoansAfterRm = await api('GET', '/api/loans', { token: adminToken });
     const wkLoanBulk2 = bulkLoansAfterRm.json.loans.find(l => l.id === wkLoanId);
     assert(wkLoanBulk2.last_approval.name === rmMe.json.user.name, 'the real last_approval genuinely advances to the next real approver, not stuck on the first one');
+    assert(wkLoanBulk2.approvals.length === 2 && wkLoanBulk2.approvals[0].name === mgrMe.json.user.name && wkLoanBulk2.approvals[1].name === rmMe.json.user.name, 'the real approvals array genuinely accumulates the whole real chain in the real order it happened, not just the latest decision');
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: omLoginWk.json.token, body: {} });
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: acctLoginWk.json.token, body: {} });
     const wkDisburse = await api('POST', `/api/loans/${wkLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
