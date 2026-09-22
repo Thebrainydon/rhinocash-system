@@ -642,6 +642,63 @@ function register(router) {
     res.json({ sheet: pageRows, pagination: { page, limit, total: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / limit)) }, totals: { expected: rows.reduce((s, r) => s + r.expectedAmount, 0), outstanding: rows.reduce((s, r) => s + r.outstanding, 0) } });
   });
 
+  // Real Collection Sheet for a single real day — the Loan Officer's real
+  // "Collection Sheet" submenu page. Every real installment genuinely due
+  // on the real selected date, for this real officer's own loans (or the
+  // real branch scope for other roles). "Portfolio" is the loan's own
+  // real guarantor name (the only real per-loan "portfolio" concept this
+  // system has — never a fabricated grouping); "Installment" is the real
+  // period number out of the loan's real total number of periods;
+  // "Accumulated" is the real unpaid balance carried over from this
+  // loan's earlier real periods (due before this date, still not fully
+  // paid) — real arrears rolled into today's collection, not a
+  // fabricated running balance; "Paid" is the real amount already paid
+  // against this exact real installment.
+  router.get('/api/collections/sheet-day', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
+    const loanIds = loans.map(l => l.id);
+    if (!loanIds.length) return res.json({ date, rows: [], totals: { amount: 0, accumulated: 0, paid: 0 }, portfolios: [], periods: [] });
+
+    const idPh = loanIds.map(() => '?').join(',');
+    const dueToday = await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date = (?)::date ORDER BY period`, [...loanIds, date]);
+    if (!dueToday.length) return res.json({ date, rows: [], totals: { amount: 0, accumulated: 0, paid: 0 }, portfolios: [], periods: [] });
+
+    const totalPeriodsByLoan = {};
+    (await all(`SELECT loan_id, COUNT(*) as cnt FROM loan_schedule WHERE loan_id IN (${idPh}) GROUP BY loan_id`, loanIds)).forEach(r => { totalPeriodsByLoan[r.loan_id] = Number(r.cnt); });
+
+    const accumulatedByLoan = {};
+    (await all(`SELECT loan_id, SUM(total_due - paid_amount) as v FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date < (?)::date AND paid_amount < total_due - 0.01 GROUP BY loan_id`, [...loanIds, date])).forEach(r => { accumulatedByLoan[r.loan_id] = r.v; });
+
+    const loanById = {}; loans.forEach(l => { loanById[l.id] = l; });
+    const clientIds = [...new Set(loans.map(l => l.client_id))];
+    const clientById = {};
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
+
+    let rows = dueToday.map(sched => {
+      const loan = loanById[sched.loan_id];
+      const client = clientById[loan.client_id] || { name: 'Unknown', phone: null };
+      return {
+        loanId: loan.id, clientId: loan.client_id, clientName: client.name, contact: client.phone,
+        portfolio: loan.guarantor || null, period: sched.period, totalPeriods: totalPeriodsByLoan[loan.id] || 1,
+        amount: sched.total_due, accumulated: accumulatedByLoan[loan.id] || 0, paid: sched.paid_amount,
+      };
+    });
+
+    // Real filter option lists computed from the FULL real due-today set,
+    // before either filter is applied — so selecting one never removes
+    // the other's own real options.
+    const portfolios = [...new Set(dueToday.map(sched => (loanById[sched.loan_id].guarantor || null)).filter(Boolean))].sort();
+    const periods = [...new Set(dueToday.map(sched => sched.period))].sort((a, b) => a - b);
+
+    if (req.query.portfolio) rows = rows.filter(r => r.portfolio === req.query.portfolio);
+    if (req.query.period) rows = rows.filter(r => String(r.period) === String(req.query.period));
+
+    const totals = { amount: rows.reduce((s, r) => s + r.amount, 0), accumulated: rows.reduce((s, r) => s + r.accumulated, 0), paid: rows.reduce((s, r) => s + r.paid, 0) };
+    res.json({ date, rows, totals, portfolios, periods });
+  });
+
   // ==================== Collection MTD ====================
   router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);

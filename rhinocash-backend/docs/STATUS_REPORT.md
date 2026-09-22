@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,003 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 787 passed, 0 failed  (drives the real UI functions in
+Backend:  1,013 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 788 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,790 passed, 0 failed
+Total:    1,801 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -502,6 +502,28 @@ three real flex items (arrow, title text, count), space-between shoved
 the arrow to the far left and the title to the far right — exactly the
 misplacement reported. Both headers now wrap the arrow and title
 together into one flex-start-aligned group.
+
+LoanBook's Collection Sheet submenu (Loan Officer view) is now a real,
+single-day due-installment sheet — chrome-free, matching the reference
+design: "Collection sheet for <date>", with Month/Day selectors that
+compose the real selected date, a real Portfolio filter, a real
+Installment filter, and a Generate (CSV) button. Backed by a new
+dedicated endpoint (`GET /api/collections/sheet-day`), replacing the old
+paginated multi-day sheet page for this role specifically (Manager/
+Regional Manager/Operational Manager keep their own existing
+`renderSheetBranchPage()`, untouched). "Portfolio" is the loan's own real
+guarantor name — the only real per-loan "portfolio" concept this system
+has; inventing a separate grouping concept that isn't modeled anywhere
+else would have been fabrication. "Installment" is the real period
+number out of the loan's real total number of periods (e.g. "1/4").
+"Accumulated" is the real unpaid balance carried over from this loan's
+earlier real periods — due before the selected date and still not fully
+paid — a genuine, computed arrears figure, not a placeholder (every
+loan shown in the reference happened to have 0 there; this build
+computes a real, non-zero value the moment a real prior period is
+genuinely unpaid). "Paid" is the real amount already paid against that
+exact real installment. The real "Totals" row sums the real Amount/
+Accumulated/Paid columns across the real filtered rows.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

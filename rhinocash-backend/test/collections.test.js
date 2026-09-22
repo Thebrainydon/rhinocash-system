@@ -59,6 +59,46 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 1b. COLLECTION SHEET FOR A DAY — real single-day due-installment
+  // sheet, real Portfolio (guarantor) and Installment (period) filters,
+  // real carried-over Accumulated arrears
+  // =========================================================
+  {
+    const { run: dbRun, get: dbGet } = require('../src/db');
+    const today = new Date().toISOString().slice(0, 10);
+
+    // driveLoanToDisbursed() doesn't set a real guarantor — give this real
+    // loan one, and arrange its real schedule so period 1 is genuinely
+    // due today and period 2 is a real, already-overdue, unpaid balance
+    // (to exercise the real "accumulated" carry-over definition).
+    await dbRun('UPDATE loans SET guarantor = ? WHERE id = ?', ['Real Guarantor For Sheet Test', loanId]);
+    const period1 = await dbGet('SELECT * FROM loan_schedule WHERE loan_id = ? AND period = 1', [loanId]);
+    await dbRun('UPDATE loan_schedule SET due_date = ? WHERE id = ?', [today, period1.id]);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const period2 = await dbGet('SELECT * FROM loan_schedule WHERE loan_id = ? AND period = 2', [loanId]);
+    await dbRun('UPDATE loan_schedule SET due_date = ?, paid_amount = 0 WHERE id = ?', [yesterday, period2.id]);
+
+    const sheetDay = await api('GET', `/api/collections/sheet-day?date=${today}`, { token: officerToken });
+    assert(sheetDay.status === 200 && Array.isArray(sheetDay.json.rows), 'real Collection Sheet for a single day loads for the Loan Officer');
+    const row = sheetDay.json.rows.find(r => r.loanId === loanId);
+    assert(row, 'the real loan\'s real period-1 installment genuinely appears on the real sheet for today, the real day it is due');
+    assert(row.period === 1 && row.totalPeriods === 6, 'the real Installment column is genuinely period/totalPeriods (1/6), not a fabricated fraction');
+    assert(row.portfolio === 'Real Guarantor For Sheet Test', 'the real Portfolio column is genuinely the loan\'s own real guarantor name');
+    assert(Math.abs(row.accumulated - period2.total_due) < 0.01, 'the real Accumulated column genuinely carries over the real unpaid balance from this loan\'s real earlier, already-overdue period');
+    assert(sheetDay.json.portfolios.includes('Real Guarantor For Sheet Test'), 'the real Portfolio filter options genuinely include this loan\'s real guarantor');
+    assert(sheetDay.json.periods.includes(1), 'the real Installment filter options genuinely include this real due period');
+
+    const filteredByPortfolio = await api('GET', `/api/collections/sheet-day?date=${today}&portfolio=${encodeURIComponent('Real Guarantor For Sheet Test')}`, { token: officerToken });
+    assert(filteredByPortfolio.json.rows.every(r => r.portfolio === 'Real Guarantor For Sheet Test'), 'filtering by a real Portfolio (guarantor) genuinely narrows the real sheet to that guarantor\'s real clients only');
+
+    const filteredByWrongPeriod = await api('GET', `/api/collections/sheet-day?date=${today}&period=3`, { token: officerToken });
+    assert(!filteredByWrongPeriod.json.rows.some(r => r.loanId === loanId), 'filtering by a real Installment period that is not genuinely due today excludes this real loan');
+
+    const emptyDay = await api('GET', `/api/collections/sheet-day?date=2019-01-01`, { token: officerToken });
+    assert(emptyDay.status === 200 && emptyDay.json.rows.length === 0, 'a real day with nothing genuinely due returns an empty real result, not fabricated rows');
+  }
+
+  // =========================================================
   // 2. COLLECTION MTD — real expected/collected/rate/target
   // =========================================================
   {

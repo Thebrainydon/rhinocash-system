@@ -5156,7 +5156,7 @@ function renderLoanBook(){
   if(active==="Disbursements") return renderDailyDisbursementsPage();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
-  if(active==="Collection Sheet") return tabsHtml + renderCollectionSheet();
+  if(active==="Collection Sheet") return renderCollectionSheet();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
   if(active==="Collection Reports") return tabsHtml + renderCollectionReports();
   if(active==="Collection Rates") return tabsHtml + renderCollectionRatesBranchPage();
@@ -5545,14 +5545,85 @@ function renderLoanDetail(id){
   `;
 }
 // ==================== Collections — real, shared backend engine, reused across every role ====================
-function exportCollectionSheetCSV(){
-  return withRequest('export-collsheet', async ()=>{
-    const params = new URLSearchParams(); const f = DB.acctPages.collsheet?DB.acctPages.collsheet.filters:{};
-    Object.entries(f).forEach(([k,v])=>{ if(v) params.set(k,v); }); params.set('limit','200');
-    const res = await api.get('/api/collections/sheet?'+params.toString());
-    exportCSV('collection_sheet', ['Due Date','Client','Loan','Officer','Expected','Outstanding','Status'],
-      res.sheet.map(r=>[r.dueDate, clientName(r.clientId), r.loanId, staffName(r.officerId), r.expectedAmount, r.outstanding, r.status]));
+// ---- Collection Sheet (Loan Officer): a real, single-day due-installment
+// sheet — chrome-free, matching the reference design exactly. "Portfolio"
+// is the loan's own real guarantor name; "Installment" is the real
+// period/totalPeriods; "Accumulated" is the real carried-over unpaid
+// balance from this loan's earlier real periods. See the backend route's
+// own notes for the exact real definitions. ----
+function defaultCollSheetDayState(){
+  const now = new Date();
+  return { month: now.toISOString().slice(0,7), day: now.getDate(), portfolio:'', period:'' };
+}
+function collSheetDayMonthOptions(){
+  const opts = []; const now = new Date();
+  for(let i=0;i<12;i++){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); opts.push({ value: d.toISOString().slice(0,7), label: d.toLocaleString('en-KE',{month:'short', year:'numeric'}) }); }
+  return opts;
+}
+function collSheetDayDayOptions(monthStr){
+  const [y,m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const opts = [];
+  for(let day=1; day<=daysInMonth; day++){
+    const dt = new Date(y, m-1, day);
+    opts.push({ value: day, label: `${dt.toLocaleDateString('en-US',{weekday:'short'})} ${day}` });
+  }
+  return opts;
+}
+async function loadCollectionSheetDay(){
+  const st = session.collSheetDayState;
+  return withRequest('load-collsheet-day:'+JSON.stringify(st), async ()=>{
+    const date = `${st.month}-${String(st.day).padStart(2,'0')}`;
+    const params = new URLSearchParams({ date });
+    if(st.portfolio) params.set('portfolio', st.portfolio);
+    if(st.period) params.set('period', st.period);
+    const res = await api.get('/api/collections/sheet-day?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.collSheetDay = res;
   });
+}
+function exportCollectionSheetDayCSV(){
+  const rows = DB.collSheetDay ? DB.collSheetDay.rows : [];
+  exportRowsToCsv('collection-sheet.csv', ['clientName','contact','portfolio','period','totalPeriods','amount','accumulated','paid'], rows);
+}
+function renderCollectionSheet(){
+  const st = session.collSheetDayState || (session.collSheetDayState = defaultCollSheetDayState());
+  if(!DB.collSheetDay || DB.collSheetDay.stateKey !== JSON.stringify(st)){ loadCollectionSheetDay(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.collSheetDay;
+  const monthOptions = collSheetDayMonthOptions();
+  const dayOptions = collSheetDayDayOptions(st.month);
+  const [dispY,dispM,dispD] = `${st.month}-${String(st.day).padStart(2,'0')}`.split('-');
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Collection sheet for ${dispD}-${dispM}-${dispY}</span></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <select onchange="session.collSheetDayState.month=this.value; session.collSheetDayState.day=1; DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${monthOptions.map(m=>`<option value="${m.value}" ${m.value===st.month?'selected':''}>${m.label}</option>`).join("")}
+        </select>
+        <select onchange="session.collSheetDayState.day=Number(this.value); DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${dayOptions.map(o=>`<option value="${o.value}" ${o.value===st.day?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+        <select onchange="session.collSheetDayState.portfolio=this.value; DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Portfolio --</option>
+          ${d.portfolios.map(p=>`<option value="${escapeHtml(p)}" ${st.portfolio===p?'selected':''}>${escapeHtml(p)}</option>`).join("")}
+        </select>
+        <select onchange="session.collSheetDayState.period=this.value; DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Installment --</option>
+          ${d.periods.map(p=>`<option value="${p}" ${String(st.period)===String(p)?'selected':''}>Installment ${p}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionSheetDayCSV()">↓ Generate</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>#</th><th>Client</th><th>Contact</th><th>Portfolio</th><th>Installment</th><th>Amount</th><th>Accumulated</th><th>Paid</th></tr>
+        ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openLoan('${r.loanId}')">
+          <td>${i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${escapeHtml(r.portfolio||'—')}</td>
+          <td>${r.period}/${r.totalPeriods}</td><td>${fmtNum(r.amount)}</td><td>${fmtNum(r.accumulated)}</td><td>${fmtNum(r.paid)}</td>
+        </tr>`).join("") || `<tr><td colspan="8" class="empty">No installments due on this day.</td></tr>`}
+        ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="5"></td><td>${fmtNum(d.totals.amount)}</td><td>${fmtNum(d.totals.accumulated)}</td><td>${fmtNum(d.totals.paid)}</td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
 }
 function exportArrearsCSV(){
   return withRequest('export-arrears', async ()=>{
@@ -5616,13 +5687,6 @@ function renderCollectionMTD(){
       </table></div>
     </div>
   `;
-}
-async function loadCollectionSheet(filters, page){
-  return withRequest('load-collsheet', async ()=>{
-    const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); }); params.set('page',page||1); params.set('limit',50);
-    const res = await api.get('/api/collections/sheet?'+params.toString());
-    DB.acctPages.collsheet = { ...res, filters: filters||{}, page: res.pagination.page };
-  });
 }
 // ==================== Manager Collection Sheet — branch-level, officer grouping, exceptions, real charts ====================
 // Real application pipeline stages, matching the actual sequential approval workflow statuses.
@@ -7880,25 +7944,6 @@ function renderSheetBranchPage(){
   </div>`;
 }
 
-function renderCollectionSheet(){
-  const state = DB.acctPages.collsheet;
-  if(!state){ loadCollectionSheet({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
-  return `<div class="card">
-    <div class="card-title">Collection Sheet <small>${state.pagination.total} due installment(s) — expected ${fmt(state.totals.expected)}, outstanding ${fmt(state.totals.outstanding)}</small></div>
-    <form onsubmit="return submitAcctFilter(event,'collsheet')" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
-      <input type="date" name="date_from" value="${state.filters.date_from||''}">
-      <input type="date" name="date_to" value="${state.filters.date_to||''}">
-      <select name="status"><option value="">All statuses</option><option ${state.filters.status==='Overdue'?'selected':''}>Overdue</option><option ${state.filters.status==='Due Today'?'selected':''}>Due Today</option><option ${state.filters.status==='Upcoming'?'selected':''}>Upcoming</option></select>
-      <button class="btn btn-sm btn-outline" type="submit">Apply</button>
-    </form>
-    <button class="btn btn-sm btn-outline" style="margin-bottom:10px;" onclick="exportCollectionSheetCSV()">Export CSV</button>
-    <div class="table-wrap"><table><tr><th>Due Date</th><th>Client</th><th>Loan</th><th>Officer</th><th>Expected</th><th>Outstanding</th><th>Status</th><th></th></tr>
-    ${state.sheet.map(r=>`<tr><td>${r.dueDate}</td><td>${clientName(r.clientId)}</td><td>${r.loanId}</td><td>${staffName(r.officerId)}</td><td>${fmt(r.expectedAmount)}</td><td>${fmt(r.outstanding)}</td>
-      <td>${statusBadge(r.status==='Overdue'?'Overdue':(r.status==='Due Today'?'Pending':'Approved'))}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="goTo('payments','Record Payment'); prefillPayment('${r.loanId}')">Record Payment</button></td></tr>`).join("") || `<tr><td colspan="8" class="empty">Nothing due in this window.</td></tr>`}</table></div>
-    ${renderPaginationControls('collsheet','loadCollectionSheet',state.filters)}
-  </div>`;
-}
 async function loadCollectionRate(period){
   return withRequest('load-rate', async ()=>{ DB.acctPages.collrate = await api.get('/api/collections/rate?period='+(period||'monthly')); });
 }

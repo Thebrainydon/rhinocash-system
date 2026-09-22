@@ -1827,12 +1827,18 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Progressive Disbursements') && html.includes('Loan Officer') && html.includes('Disbursed Amount') && html.includes('Loan+Charges') && html.includes('GC%'), "the real Progressive Disbursements page genuinely renders with the requested title and column set");
     __assert(DB.progressiveDisb && Array.isArray(DB.progressiveDisb.rows) && DB.progressiveDisb.totals, "the real Progressive Disbursements data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
-    // Collection Sheet: real pagination, replacing the old client-side ±7-day computation.
-    await loadCollectionSheet({}, 1);
-    __assert(DB.acctPages.collsheet.pagination && typeof DB.acctPages.collsheet.pagination.total === 'number', "real Collection Sheet pagination loaded via the actual UI loader");
+    // Collection Sheet (Loan Officer): the real single-day due-installment
+    // sheet, chrome-free, backed by a real dedicated endpoint — replacing
+    // the old paginated multi-day sheet page for this role specifically
+    // (Manager/Regional Manager/Operational Manager still see their own
+    // renderSheetBranchPage(), untouched).
+    session.collSheetDayState = null; DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Page 1 of'), "Collection Sheet page renders real pagination controls");
+    __assert(!html.includes('class="subtabs"'), "the real Collection Sheet page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Collection sheet for') && html.includes('Portfolio') && html.includes('Installment') && html.includes('Accumulated'), "the real Collection Sheet page genuinely renders with the requested title format and column set");
+    __assert(DB.collSheetDay && Array.isArray(DB.collSheetDay.rows), "the real Collection Sheet data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
     // Disbursements (Loan Officer): the real Daily Disbursements calendar,
     // chrome-free, backed by a real dedicated endpoint — replacing the
@@ -1881,8 +1887,8 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await doLogin({ preventDefault(){}, target:{} });
     __assert(resolveRoute("Today's Collections").section === 'loanbook' && resolveRoute("Today's Collections").subtab === 'Collection Sheet', "Manager's real sidebar \"Today's Collections\" label reuses the same real Collection Sheet page — not a duplicate");
     __assert(resolveRoute('Promise to Pay').subtab === 'Promises to Pay', "Manager's real sidebar \"Promise to Pay\" label routes to the same real Promises to Pay page");
-    await loadCollectionSheet({}, 1);
-    __assert(!DB.acctPages.collsheet.sheet.some(r=>r.branchId && r.branchId!=='br_kisumu'), "the Kisumu Manager's real Collection Sheet, via the SAME shared page, is genuinely scoped to only their own branch");
+    const mgrSheetCheck = await api.get('/api/collections/sheet?limit=200');
+    __assert(!mgrSheetCheck.sheet.some(r=>r.branchId && r.branchId!=='br_kisumu'), "the Kisumu Manager's real Collection Sheet data, via the same real shared backend endpoint, is genuinely scoped to only their own branch");
 
     // Investor: real restricted dashboard card, real isolation.
     let invForm6 = new Map([['username','sara.investor@example.com'],['password', process.env.SEEDED_INVESTOR_PASSWORD]]);
@@ -1916,7 +1922,6 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     }
 
     // CSV export functions: verify they pull real data via the real API (not the loaded page only).
-    await loadCollectionSheet({}, 1);
     const sheetExportCheck = await api.get('/api/collections/sheet?limit=200');
     __assert(Array.isArray(sheetExportCheck.sheet), "Collection Sheet export path can fetch the real full filtered dataset (up to the real backend ceiling), not just the loaded page");
 
