@@ -4,6 +4,7 @@ const { hashPassword, verifyPassword, generateTempPassword, signToken, tokenHash
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { computeFinalAccess } = require('./../rbac');
+const email = require('./../integrations/email');
 const crypto = require('node:crypto');
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -67,6 +68,30 @@ function register(router) {
 
     const sysRow = await get('SELECT session_warning_minutes FROM system_settings WHERE id = 1');
     res.json({ token, user: await publicUser(user), mustChangePassword: !!user.must_change_password, expiresAt, sessionWarningMinutes: sysRow ? sysRow.session_warning_minutes : 5 });
+  });
+
+  // Public, unauthenticated password recovery. Never reveals whether the
+  // given email matched a real account — same generic response either way,
+  // same reasoning as the login route's credential errors. When it does
+  // match a real, Active account, it does exactly what the Admin-triggered
+  // reset above does (real temp password, forced change, sessions revoked),
+  // then attempts real delivery via the email integration — which honestly
+  // reports NOT_CONFIGURED rather than fabricating a "sent" email when no
+  // real provider is wired up (see src/integrations/email.js).
+  router.post('/api/auth/forgot-password', async (req, res, next) => {
+    const { email: rawEmail } = req.body;
+    if (!rawEmail) return next({ status: 400, message: 'Email is required' });
+    const genericMessage = 'If that email is registered, password reset instructions have been sent.';
+    const user = await get('SELECT * FROM users WHERE email = ?', [String(rawEmail).toLowerCase()]);
+    if (user && user.status === 'Active') {
+      const tempPassword = generateTempPassword();
+      const { hash, salt } = hashPassword(tempPassword);
+      await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1 WHERE id=?', [hash, salt, user.id]);
+      await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ?", [user.id]);
+      await logAction({ user }, { action: 'Requested password reset', module: 'auth', recordType: 'User', recordId: user.id });
+      await email.send('password_reset', user.email, { name: user.name, tempPassword });
+    }
+    res.json({ ok: true, message: genericMessage });
   });
 
   router.post('/api/auth/logout', requireAuth, async (req, res) => {

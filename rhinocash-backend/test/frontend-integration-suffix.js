@@ -4632,6 +4632,58 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     DB.c2bPaymentsBrowser = null;
   }
 
+  // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
+  {
+    await confirmLogout();
+    __assert(session.loggedIn === false, "logged out, back at the real login screen, before exercising Forgot Password");
+
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Forgot Password?'), "the login screen genuinely still offers a Forgot Password link");
+    __assert(!html.includes('Contact your System Administrator'), "the old fake toast-only placeholder text is genuinely gone — replaced by a real flow");
+
+    openForgotPassword();
+    html = document.getElementById('root').innerHTML;
+    __assert(forgotPasswordOpen === true, "openForgotPassword() genuinely switches the app into the recovery screen");
+    __assert(html.includes('Password Recovery'), "the real Password Recovery screen renders");
+    __assert(html.includes('Enter your email address linked to the account'), "the real instructional text renders");
+    __assert(html.includes('Confirm'), "the real Confirm button renders");
+
+    // Real request for a real, currently-existing seeded account.
+    const form = new Map([['email','officer@rhinocash.co.ke']]);
+    global.FormData = class { constructor(){ return form; } };
+    await doForgotPassword({ preventDefault(){}, target:{} });
+    __assert(forgotPasswordState.submitted === true, "submitting a real, registered email genuinely completes — no fabricated failure");
+    __assert(!forgotPasswordState.error, "no error is shown for a real, registered email");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Back to Login'), "after submitting, a real way back to the login screen is shown");
+
+    // This is the last block in the suite (a single seed/server for the
+    // whole frontend run, unlike the backend's per-suite reseed), so the
+    // officer's now-rotated real password is never read again — no restore
+    // needed here.
+
+    closeForgotPassword();
+    __assert(forgotPasswordOpen === false, "closeForgotPassword() genuinely returns to the login screen");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Account Login'), "back at the real login screen after closing recovery");
+
+    // An email that was never registered gets the exact same generic
+    // success response — the frontend never treats this as a special case,
+    // matching the backend's own can't-tell-if-it-matched design.
+    openForgotPassword();
+    const form2 = new Map([['email','nobody-real-at-all@rhinocash.co.ke']]);
+    global.FormData = class { constructor(){ return form2; } };
+    await doForgotPassword({ preventDefault(){}, target:{} });
+    __assert(forgotPasswordState.submitted === true, "an unregistered email still completes with the same generic success state — never a distinguishable error");
+    closeForgotPassword();
+
+    // Log back in as Admin so the app is left in a normal, logged-in state.
+    const adminForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the recovery screen");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

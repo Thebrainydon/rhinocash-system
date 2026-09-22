@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,013 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 788 passed, 0 failed  (drives the real UI functions in
+Backend:  1,025 passed, 0 failed  (28 suites — see test/run-all.sh)
+Frontend: 802 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,801 passed, 0 failed
+Total:    1,827 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -524,6 +524,44 @@ computes a real, non-zero value the moment a real prior period is
 genuinely unpaid). "Paid" is the real amount already paid against that
 exact real installment. The real "Totals" row sums the real Amount/
 Accumulated/Paid columns across the real filtered rows.
+
+The login screen has been redesigned to match a supplied reference: a
+dark navy/purple background, lime-green accents on the "Account Login"
+title, the input borders' focus ring, the "▸ Login" button, and the
+"Forgot Password?" link — all scoped to the `.login-screen` selector
+alone (a local `--lime`/`--lime-dark` CSS custom property pair), so
+none of it leaks into the shared `--navy`/`--rust-soft` variables used
+elsewhere in the app. The old logo — a large embedded raster PNG that
+read as a photograph rather than a mark — has been replaced everywhere
+it appears (the login screen and the sidebar profile card) with a
+compact, self-contained vector SVG: a simple line-art rhino silhouette
+plus a "RHINOCASH LIMITED" wordmark, on its own white rounded card so it
+reads correctly against both the dark login background and the
+sidebar's terracotta panel. It replaced roughly 500KB of base64-encoded
+PNG with about 1.2KB of inline vector markup.
+
+"Forgot Password?" now opens a real Password Recovery screen (matching
+the second supplied reference exactly: heading, "Enter your email
+address linked to the account", an email field, and a "✔ Confirm"
+button) wired to a new, genuinely public, unauthenticated endpoint,
+`POST /api/auth/forgot-password`. A request for an email that matches a
+real, Active account does exactly what the existing Admin-triggered
+reset already does — a real new temporary password via the same
+`generateTempPassword()`/`hashPassword()` path, `must_change_password`
+forced on, every one of that user's existing sessions genuinely revoked
+— and then attempts real delivery through the existing (but previously
+unused) `password_reset` email template in `src/integrations/email.js`.
+Consistent with this project's standing rule against fabricating
+integration success: with no real `EMAIL_PROVIDER`/`EMAIL_API_KEY`/
+`EMAIL_FROM_ADDRESS` configured, that attempt honestly reports
+`NOT_CONFIGURED` rather than claiming an email was sent — wiring in a
+real provider there is a config change, not a code change. Whether the
+email matched a real account or not, the endpoint always returns the
+identical generic response ("If that email is registered, password
+reset instructions have been sent.") — a request for a non-existent or
+Suspended account is genuinely indistinguishable from the outside, and
+a Suspended account's password is verified (by hash comparison) to be
+left completely untouched.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
