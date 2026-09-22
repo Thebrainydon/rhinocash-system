@@ -2963,14 +2963,40 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(isUndisbursedLoan({status:'Waiting for Manager'}) && isUndisbursedLoan({status:'Approved for Disbursement'}) && isUndisbursedLoan({status:'Disbursement Pending'}), "every real pre-disbursement status genuinely counts as undisbursed");
     __assert(!isUndisbursedLoan({status:'Active'}) && !isUndisbursedLoan({status:'Completed'}) && !isUndisbursedLoan({status:'Rejected'}), "a real terminal/disbursed status genuinely does not count as undisbursed");
 
-    // With a real guarantor, the real weekly-product application succeeds
-    // and genuinely redirects to the real Undisbursed Loans page.
-    let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333']]);
+    // A real guarantor alone still isn't enough — no loan application can
+    // be created without its real, required processing fee either,
+    // enforced the same server-side way as the guarantor rule above.
+    let noFeeForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333']]);
+    global.FormData = class { constructor(){ return noFeeForm; } };
+    const loansBeforeNoFee = DB.loans.length;
+    const toastsBeforeNoFee = toasts.length;
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    __assert(DB.loans.length === loansBeforeNoFee, "no real loan was created for an application missing its real, required processing fee payment — enforced server-side");
+    __assert(toasts.length > toastsBeforeNoFee && /processing fee/i.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing processing fee) genuinely surfaces to the officer as a real toast");
+
+    // The real processing fee section appears automatically once a real
+    // client is matched and a real fee-requiring product is selected,
+    // titled with the client's own real name — driven through the real
+    // initiateProcessingFee()/confirmProcessingFee() functions, the same
+    // ones the real "Request Payment"/"Confirm Payment" buttons call.
+    session.loanAppState = { idNumber: wkFrontendClient.idNumber||'', matchedClient: wkFrontendClient, productId: 'pr_ln_starter', notFound:false, feePhone: wkFrontendClient.phone, feePayment: null };
+    let feeSectionHtml = renderLoanApplicationForm();
+    __assert(feeSectionHtml.includes(escapeHtml(wkFrontendClient.name)) && feeSectionHtml.includes('Processing Fee') && feeSectionHtml.includes('600'), "the real Processing Fee section genuinely appears automatically, titled with the real client's own name, showing the real KES 600 fee once a real fee-requiring product is selected");
+    await initiateProcessingFee();
+    __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.id, "the real initiate call genuinely creates a real fee payment record, even though the real STK push itself cannot complete in this sandbox");
+    await confirmProcessingFee('QGX9TT61SV');
+    __assert(session.loanAppState.feePayment.status === 'Confirmed' && session.loanAppState.feePayment.receiptNumber === 'QGX9TT61SV', "the real manual confirmation genuinely marks the fee Confirmed with the real receipt code, exactly like a real officer typing in the code the client read them");
+
+    // With a real guarantor AND a real confirmed processing fee, the real
+    // weekly-product application succeeds and genuinely redirects to the
+    // real Undisbursed Loans page.
+    let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333'],['processing_fee_id',session.loanAppState.feePayment.id]]);
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
     await submitLoanApp({ preventDefault(){}, target:{} });
-    __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor present");
+    __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
     const wkFrontendLoan = DB.loans[0];
+    __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
     __assert(session.section === 'loanbook' && session.subtab === 'Loan Applications', "saving genuinely redirects to the real Loan Applications page — Undisbursed Loans is a real filtered VIEW of this same page, not a separate submenu");
     __assert(session.loanAppFilterState && session.loanAppFilterState.category === 'Undisbursed loans', "the real redirect genuinely pre-selects the 'Undisbursed loans' category filter, matching the real reference design where this is an option filtered within the Loan Application submenu");

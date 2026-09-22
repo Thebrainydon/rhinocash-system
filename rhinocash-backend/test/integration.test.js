@@ -407,7 +407,22 @@ async function api(method, path, { token, body } = {}) {
 
     const wkClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Weekly Product Test Client', phone: '0722555088', national_id: '30112288' } });
 
-    // Amount outside the real product range is genuinely rejected.
+    // Real helper: run the real processing-fee flow (initiate, then a real
+    // manual confirm with a real-format receipt code — this sandbox has no
+    // real Safaricom network access, so the STK push itself will genuinely
+    // come back NOT_CONFIGURED/FAILED, and confirmation is the real,
+    // working path, exactly like this codebase's existing C2B manual-
+    // reconciliation pattern) and return the real, now-Confirmed feeId.
+    async function payProcessingFee(token, clientId, productId, receiptNumber) {
+      const initiate = await api('POST', '/api/loans/processing-fee/initiate', { token, body: { client_id: clientId, product_id: productId, phone: '0722555088' } });
+      assert(initiate.status === 201, 'the real processing-fee initiate call genuinely succeeds and returns a real fee record, even though the real STK push to Safaricom cannot complete in this sandbox');
+      const confirm = await api('POST', `/api/loans/processing-fee/${initiate.json.feeId}/confirm`, { token, body: { mpesa_receipt_number: receiptNumber } });
+      assert(confirm.status === 200 && confirm.json.fee.status === 'Confirmed' && confirm.json.fee.mpesa_receipt_number === receiptNumber, 'the real manual confirmation genuinely marks the fee payment Confirmed with the real receipt code');
+      return initiate.json.feeId;
+    }
+
+    // Amount outside the real product range is genuinely rejected — before
+    // the processing-fee check is even reached.
     const outOfRange = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 2000 } });
     assert(outOfRange.status === 400, 'a principal below the real product range (3,000–5,000) is genuinely rejected');
 
@@ -416,9 +431,20 @@ async function api(method, path, { token, body } = {}) {
     const wkLoanNoGuarantor = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, loan_category: 'New Loan' } });
     assert(wkLoanNoGuarantor.status === 400, 'a real "New Loan" application without guarantor name/contact is genuinely rejected server-side');
 
-    const wkLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, term_months: 99, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111' } });
+    // No loan application can be created for this real product without a
+    // real, Confirmed processing-fee payment — server-enforced.
+    const wkLoanNoFee = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111' } });
+    assert(wkLoanNoFee.status === 400, 'a real loan application for a product that requires a real upfront processing fee is genuinely rejected without one — never created for free');
+
+    const wkFeeId = await payProcessingFee(officerToken, wkClient.json.client.id, starter.id, 'QGX7TT61SV');
+    const wkLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, term_months: 99, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111', processing_fee_id: wkFeeId } });
     assert(wkLoan.status === 201 && wkLoan.json.loan.term_months === 1, 'the real loan is created with term_months forced to 1 — a bogus client-sent term_months (99) is genuinely ignored, not trusted');
+    assert(Number(wkLoan.json.loan.processing_fee) === 600 && wkLoan.json.loan.processing_fee_receipt === 'QGX7TT61SV', 'the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan record itself, not just the payment row');
     const wkLoanId = wkLoan.json.loan.id;
+
+    // That same confirmed fee payment can never be spent twice.
+    const wkLoanReuseFee = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: starter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111', processing_fee_id: wkFeeId } });
+    assert(wkLoanReuseFee.status === 400, 'a real processing-fee payment already spent on one real loan application is genuinely refused for a second one');
 
     // Repeat Loan on a client with NO prior loan is genuinely rejected —
     // this specific client's very first loan (wkLoan above) doesn't count
@@ -430,8 +456,10 @@ async function api(method, path, { token, body } = {}) {
 
     // Repeat Loan on the client that now genuinely has a prior loan
     // (wkLoan above) succeeds, and genuinely inherits that prior loan's
-    // real guarantor — never asked for again on the form.
-    const repeatLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: jijengeSpecial.id, principal: 8000, loan_category: 'Repeat Loan' } });
+    // real guarantor — never asked for again on the form — once its own
+    // real processing fee has genuinely been paid too.
+    const repeatFeeId = await payProcessingFee(officerToken, wkClient.json.client.id, jijengeSpecial.id, 'QGX7TT62SW');
+    const repeatLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: jijengeSpecial.id, principal: 8000, loan_category: 'Repeat Loan', processing_fee_id: repeatFeeId } });
     assert(repeatLoan.status === 201 && repeatLoan.json.loan.guarantor === 'Jane Guarantor' && repeatLoan.json.loan.guarantor_contact === '0733000111', 'a real "Repeat Loan" application genuinely succeeds for a client with a real prior loan, and genuinely inherits that prior loan\'s real guarantor');
 
     // A freshly submitted, never-approved loan genuinely has no last_approval yet.
@@ -475,6 +503,62 @@ async function api(method, path, { token, body } = {}) {
     // real term_weeks product end-to-end too.
     const newWeeklyProduct = await api('POST', '/api/loan-products', { token: adminToken, body: { name: 'Weekly Config Test Product', rate_pct: 20, min_amount: 1000, max_amount: 2000, fee_pct: 0, penalty_pct: 0, term_weeks: 4 } });
     assert(newWeeklyProduct.status === 201 && newWeeklyProduct.json.product.term_weeks === 4 && newWeeklyProduct.json.product.min_term_months === 1 && newWeeklyProduct.json.product.max_term_months === 1, 'creating a real loan product with a real term_weeks genuinely persists it and forces the month range to a real single period');
+    assert(newWeeklyProduct.json.product.processing_fee_amount === null, 'a real product created without a real processing_fee_amount genuinely has none — a term_weeks product does not automatically require an upfront fee, only one that explicitly carries one');
+
+    // Admin can also configure a real upfront processing fee on a new product.
+    const feeConfiguredProduct = await api('POST', '/api/loan-products', { token: adminToken, body: { name: 'Fee Config Test Product', rate_pct: 20, min_amount: 1000, max_amount: 2000, fee_pct: 0, penalty_pct: 0, term_weeks: 4, processing_fee_amount: 350 } });
+    assert(feeConfiguredProduct.status === 201 && Number(feeConfiguredProduct.json.product.processing_fee_amount) === 350, 'Admin can genuinely configure a real flat upfront processing fee on a loan product, persisted and returned');
+
+    // A loan application for the fee-less product above genuinely does NOT
+    // require a processing_fee_id at all — the gate is scoped to products
+    // that actually carry a real processing_fee_amount.
+    const noFeeProductLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: wkClient.json.client.id, product_id: newWeeklyProduct.json.product.id, principal: 1500, loan_category: 'New Loan', guarantor: 'Jane Guarantor', guarantor_contact: '0733000111' } });
+    assert(noFeeProductLoan.status === 201, 'a real loan application for a product with no real processing_fee_amount genuinely succeeds without any processing_fee_id at all');
+  }
+
+  // ---- 11e. Processing fee payment: real client/product mismatch,
+  // invalid receipt format, and double-confirmation are all genuinely
+  // refused server-side ----
+  {
+    const feeClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Fee Mismatch Test Client', phone: '0722555199', national_id: '30112399' } });
+    const otherFeeClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Other Fee Test Client', phone: '0722555200', national_id: '30112400' } });
+    const feeProducts = (await api('GET', '/api/loan-products', { token: officerToken })).json.products;
+    const feeStarter = feeProducts.find(p => p.id === 'pr_ln_starter');
+    const feeIbuka = feeProducts.find(p => p.id === 'pr_ln_ibuka');
+
+    // Initiating for a product with no real processing_fee_amount is genuinely refused.
+    const legacyProduct = feeProducts.find(p => p.processing_fee_amount == null);
+    const legacyInitiate = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: legacyProduct.id, phone: '0722555099' } });
+    assert(legacyInitiate.status === 400, 'a real processing-fee initiate request for a product that does not require one is genuinely refused');
+
+    const initiate = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, phone: '0722555099' } });
+    assert(initiate.status === 201 && Number(initiate.json.amount) === 600, 'the real initiate call genuinely returns the real flat fee amount configured on the product');
+    const feeId = initiate.json.feeId;
+
+    // An invalid receipt code (wrong length/characters) is genuinely refused.
+    const badReceipt = await api('POST', `/api/loans/processing-fee/${feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'short' } });
+    assert(badReceipt.status === 400, 'a real M-Pesa receipt code that does not match the real 10-character Safaricom format is genuinely refused');
+
+    const confirm = await api('POST', `/api/loans/processing-fee/${feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'ABCDE12345' } });
+    assert(confirm.status === 200 && confirm.json.fee.status === 'Confirmed', 'a real, correctly-formatted M-Pesa receipt code is genuinely accepted and confirms the payment');
+
+    // Confirming the same real payment twice is genuinely refused.
+    const doubleConfirm = await api('POST', `/api/loans/processing-fee/${feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'ZZZZZ99999' } });
+    assert(doubleConfirm.status === 409, 'a real processing-fee payment that is already Confirmed is genuinely refused a second confirmation');
+
+    // Using this real Confirmed payment for a DIFFERENT client's loan
+    // application is genuinely refused — it only matches the exact real
+    // client and product it was paid for.
+    const mismatchClientLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: otherFeeClient.json.client.id, product_id: feeStarter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: feeId } });
+    assert(mismatchClientLoan.status === 400, 'a real confirmed processing-fee payment genuinely cannot be used for a different client\'s loan application');
+
+    // Using it for the right client but a DIFFERENT product is also refused.
+    const mismatchProductLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeIbuka.id, principal: 12000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: feeId } });
+    assert(mismatchProductLoan.status === 400, 'a real confirmed processing-fee payment genuinely cannot be used for a different product\'s loan application');
+
+    // The real matching client + product finally succeeds.
+    const matchingLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: feeId } });
+    assert(matchingLoan.status === 201 && matchingLoan.json.loan.processing_fee_receipt === 'ABCDE12345', 'the real confirmed payment genuinely succeeds for the exact real client and product it was paid for, and its real receipt code lands on the new loan');
   }
 
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----

@@ -1016,6 +1016,7 @@ function adaptLoan(l){
   return { id:l.id, clientId:l.client_id, productId:l.product_id, productName: l.product_name || productName(l.product_id),
     principal:l.principal, term:l.term_months, rate:l.rate_pct, purpose:l.purpose, guarantor:l.guarantor,
     guarantorContact:l.guarantor_contact, loanSecurities:l.loan_securities, processingFee:l.processing_fee||0,
+    processingFeeReceipt:l.processing_fee_receipt||null,
     officerId:l.officer_id, branchId:l.branch_id, status:l.status, currentStep:l.current_step, rejectReason:l.reject_reason,
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
@@ -1038,7 +1039,7 @@ function adaptStaff(u){
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
 function adaptRegion(r){ return { id:r.id, name:r.name }; }
-function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0, termWeeks:p.term_weeks||null }; }
+function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0, termWeeks:p.term_weeks||null, processingFeeAmount: p.processing_fee_amount!=null ? Number(p.processing_fee_amount) : null }; }
 function adaptNotification(n){ return { id:n.id, type:n.type, title:n.title, message:n.message, date:n.created_at, read: !!n.read }; }
 function adaptAudit(a){ return { id:a.id, user:a.user_name, role: ROLE_ID_TO_DISPLAY[a.role_id]||a.role_id||"", action:a.action, entity:a.record_type||a.module, entityId:a.record_id, details:a.reason || (a.new_value?String(a.new_value):"") || "", date:a.created_at }; }
 function adaptTicket(t){ return { id:t.id, subject:t.subject, message:t.message, category:t.category, priority:t.priority, status:t.status, createdBy:t.created_by, assignedTo:t.assigned_to, resolvedAt:t.resolved_at, date:t.created_at }; }
@@ -1359,6 +1360,7 @@ async function createLoanApplication(data){
     term_months:Number(data.term), purpose:data.purpose||null, guarantor:data.guarantor||null,
     guarantor_contact:data.guarantor_contact||null, loan_securities:data.loan_securities||null,
     loan_category:data.loan_category||null, fee_payer_phone:data.fee_payer_phone||null,
+    processing_fee_id:data.processing_fee_id||data.processingFeeId||null,
     branch_id:data.branchId||null, officer_id:data.officerId||null };
   const res = await api.post('/api/loans', payload);
   const loan = adaptLoan(res.loan);
@@ -1600,7 +1602,8 @@ function togglePermission(role, perm){
 async function addLoanProduct(data){
   const res = await api.post('/api/loan-products', { name:data.name, rate_type:'Flat', rate_pct:Number(data.rate),
     min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm)||undefined, max_term_months:Number(data.maxTerm)||undefined,
-    fee_pct:Number(data.fee), penalty_pct:Number(data.penalty||0), term_weeks:Number(data.termWeeks)||undefined });
+    fee_pct:Number(data.fee), penalty_pct:Number(data.penalty||0), term_weeks:Number(data.termWeeks)||undefined,
+    processing_fee_amount: data.processingFeeAmount ? Number(data.processingFeeAmount) : undefined });
   const p = adaptProduct(res.product);
   DB.products.push(p);
   return p;
@@ -2910,8 +2913,8 @@ function renderAdminDashboard(){
 
     <div class="card">
       <div class="card-title">System Configuration — Loan Products</div>
-      <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Penalty</th></tr>
-      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (single repayment)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
+      <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Processing Fee (upfront)</th><th>Penalty</th></tr>
+      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (single repayment)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.processingFeeAmount!=null?fmt(p.processingFeeAmount):'—'}</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
       ${CAN_MANAGE_SETTINGS(session.role) ? `
       <form onsubmit="return submitAddProduct(event)" style="margin-top:14px;">
         <div class="form-grid">
@@ -2923,6 +2926,7 @@ function renderAdminDashboard(){
           <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number"></div>
           <div class="field"><label>Duration (weeks — for a real single-repayment product like Starter/Jijenge; overrides the month range above)</label><input name="termWeeks" type="number"></div>
           <div class="field"><label>Processing Fee (%)</label><input name="fee" type="number" step="0.1" required></div>
+          <div class="field"><label>Processing Fee (KES, upfront — for a real single-repayment product; required and collected via M-Pesa before the application can be submitted)</label><input name="processingFeeAmount" type="number"></div>
           <div class="field"><label>Late Payment Penalty (% per overdue installment)</label><input name="penalty" type="number" step="0.1" value="0"></div>
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Add Loan Product</button>
@@ -5168,7 +5172,10 @@ function renderLoanBook(){
   if(active==="Promises to Pay") return tabsHtml + renderPromisesToPay();
   if(active==="Collection Activities") return tabsHtml + renderCollectionActivities();
   if(active==="Portfolio Monitoring") return tabsHtml + renderPortfolioMonitoring();
-  return tabsHtml + renderLoanApplications();
+  // Loan Applications (Loan Officer) is chrome-free too, like Create
+  // Application — no subtab bar above it, matching the requested design
+  // for every real submenu page built in this LoanBook flow.
+  return renderLoanApplications();
 }
 // Real "Repeat Loan" convenience prefill — the actual enforcement (a
 // Repeat Loan requires a genuine prior loan, and inherits its real
@@ -5188,7 +5195,7 @@ function handleLoanCategoryChange(value, formEl){
   if(prior.guarantorContact && !form.elements['guarantor_contact'].value) form.elements['guarantor_contact'].value = prior.guarantorContact;
 }
 function renderLoanApplicationForm(){
-  const st = session.loanAppState || (session.loanAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false });
+  const st = session.loanAppState || (session.loanAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false, feePhone:'', feePayment:null });
   const product = DB.products.find(p=>p.id===st.productId);
   return `
     <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
@@ -5198,7 +5205,7 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
         <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
         <div class="section-note">${st.matchedClient ? `${escapeHtml(st.matchedClient.name)} — ${branchName(st.matchedClient.branch)}` : (st.notFound ? 'No client found with that ID number.' : '')}</div>
-        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; renderApp();">
+        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; session.loanAppState.feePayment=null; session.loanAppState.feePhone=''; renderApp();">
           <option value="">-- Loan Product --</option>
           ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
         </select></div>
@@ -5213,11 +5220,12 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
         <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
         <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
-        ${st.matchedClient && (st.matchedClient.phone || st.matchedClient.nextOfKinPhone) ? `
+        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product)
+          : (st.matchedClient && (st.matchedClient.phone || st.matchedClient.nextOfKinPhone) ? `
         <div class="field"><label>Payment for Processing Fee</label><select name="fee_payer_phone">
           ${st.matchedClient.phone ? `<option value="${escapeHtml(st.matchedClient.phone)}">${escapeHtml(st.matchedClient.name)} - ${st.matchedClient.phone.slice(-3)}</option>` : ""}
           ${st.matchedClient.nextOfKinPhone ? `<option value="${escapeHtml(st.matchedClient.nextOfKinPhone)}">${escapeHtml(st.matchedClient.nextOfKin||'Next of Kin')} - ${st.matchedClient.nextOfKinPhone.slice(-3)}</option>` : ""}
-        </select></div>` : ""}
+        </select></div>` : "")}
         <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this)">
           <option value="">-- Select --</option>
           <option>New Loan</option><option>Repeat Loan</option>
@@ -5238,7 +5246,7 @@ function renderLoanApplicationForm(){
 let loanAppLookupTimer = null;
 function lookupClientForLoanApp(idNumber){
   const st = session.loanAppState;
-  st.idNumber = idNumber; st.matchedClient = null; st.notFound = false;
+  st.idNumber = idNumber; st.matchedClient = null; st.notFound = false; st.feePayment = null; st.feePhone = '';
   clearTimeout(loanAppLookupTimer);
   if(!idNumber || idNumber.length < 4){ return; }
   loanAppLookupTimer = setTimeout(()=>withRequest('loanapp-client-lookup', async ()=>{
@@ -5248,6 +5256,73 @@ function lookupClientForLoanApp(idNumber){
     session.loanAppState.matchedClient = match || null;
     session.loanAppState.notFound = !match;
   }), 400);
+}
+// Real, required, upfront processing fee — appears automatically once a
+// real client is matched AND a product that carries a real
+// processingFeeAmount is selected, titled with the client's own real
+// name. Three real states, driven entirely by the real backend: no
+// payment requested yet (phone select + "Request Payment"), a real STK
+// push has been attempted — successfully or not, the real message either
+// way is shown verbatim, never softened — and a real M-Pesa receipt code
+// can be typed in manually and confirmed regardless of whether the STK
+// push itself succeeded (this sandbox has no real path for Safaricom's
+// own callback to land on, so manual confirmation — a human reading back
+// the real code the client received — is the real, working path, mirroring
+// this codebase's existing C2B manual-reconciliation pattern); or the fee
+// is genuinely Confirmed, which locks in the real processing_fee_id the
+// form will submit. POST /api/loans refuses to create the loan without it.
+function renderProcessingFeeSection(st, product){
+  const fee = st.feePayment;
+  const phoneOptions = [];
+  if(st.matchedClient.phone) phoneOptions.push({ value: st.matchedClient.phone, label: `${st.matchedClient.name} - ${st.matchedClient.phone.slice(-3)}` });
+  if(st.matchedClient.nextOfKinPhone) phoneOptions.push({ value: st.matchedClient.nextOfKinPhone, label: `${st.matchedClient.nextOfKin||'Next of Kin'} - ${st.matchedClient.nextOfKinPhone.slice(-3)}` });
+  return `
+    <div class="field" style="border:1px solid var(--border,#ddd); border-radius:8px; padding:12px; background:#FAFAF8;">
+      <label style="font-weight:700;">${escapeHtml(st.matchedClient.name)} — Processing Fee</label>
+      <div class="hint" style="margin:2px 0 8px;">${fmt(product.processingFeeAmount)} required before this application can be saved.</div>
+      ${fee && fee.status==='Confirmed' ? `
+        <div style="color:var(--green,#2c6e49); font-weight:700;">✓ Processing fee paid — Receipt ${escapeHtml(fee.receiptNumber||'')}</div>
+        <input type="hidden" name="processing_fee_id" value="${escapeHtml(fee.id)}">
+      ` : `
+        <select onchange="session.loanAppState.feePhone=this.value;" ${phoneOptions.length===0?'disabled':''}>
+          <option value="">-- Select phone --</option>
+          ${phoneOptions.map(o=>`<option value="${escapeHtml(o.value)}" ${st.feePhone===o.value?'selected':''}>${escapeHtml(o.label)}</option>`).join("")}
+        </select>
+        ${!fee ? `
+        <div><button type="button" class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="initiateProcessingFee()">Request Payment</button></div>
+        ` : `
+        <div class="hint" style="margin-top:6px;">${escapeHtml(fee.message||'')}</div>
+        <div class="field" style="margin-top:8px;"><label>M-Pesa Receipt Code</label>
+          <input type="text" id="feeReceiptInput" placeholder="e.g. QGR7XJ2K9P" style="text-transform:uppercase;">
+        </div>
+        <button type="button" class="btn btn-sm btn-green" onclick="confirmProcessingFee(document.getElementById('feeReceiptInput').value)">Confirm Payment</button>
+        `}
+      `}
+    </div>
+  `;
+}
+function initiateProcessingFee(){
+  const st = session.loanAppState;
+  const product = DB.products.find(p=>p.id===st.productId);
+  if(!st.matchedClient || !product || product.processingFeeAmount==null) return;
+  if(!st.feePhone){ toast('Select a phone number to send the processing fee request to'); return; }
+  return withRequest('initiate-processing-fee', async ()=>{
+    const res = await api.post('/api/loans/processing-fee/initiate', { client_id: st.matchedClient.id, product_id: product.id, phone: st.feePhone });
+    session.loanAppState.feePayment = { id: res.feeId, status: res.status, amount: res.amount, message: res.message };
+    renderApp();
+  });
+}
+function confirmProcessingFee(code){
+  const st = session.loanAppState;
+  if(!st.feePayment){ toast('Request the processing fee payment first'); return; }
+  const trimmed = (code||'').trim();
+  if(!trimmed){ toast('Enter the M-Pesa receipt code'); return; }
+  return withRequest('confirm-processing-fee', async ()=>{
+    const res = await api.post(`/api/loans/processing-fee/${st.feePayment.id}/confirm`, { mpesa_receipt_number: trimmed });
+    session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
+    toast('Processing fee confirmed');
+    renderApp();
+  });
 }
 function submitLoanApp(ev){
   ev.preventDefault();
@@ -5346,13 +5421,13 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.guarantor||'—')}</td>
       <td>${escapeHtml(l.guarantorContact||'—')}</td>
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
-      <td>${fmt(l.processingFee||0)}</td>
+      <td>${l.processingFeeReceipt ? `${escapeHtml(l.processingFeeReceipt)}<br>` : ''}${fmt(l.processingFee||0)}</td>
       <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(a.decision)}</em>`).join('<br>') : '—'}</td>
       <td>${fmtLoanDetailDateTime(loanLastActionAt(l))}</td>
     </tr>`).join("");
   return `
     <div class="card">
-      <div class="card-title">${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></div>
+      <div class="card-title"><span onclick="goTo('dashboard')" style="cursor:pointer; margin-right:8px;">←</span>${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></div>
       <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
         <select onchange="session.loanAppFilterState.category=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${LOAN_APP_CATEGORIES.map(c=>`<option ${st.category===c?'selected':''}>${c}</option>`).join("")}

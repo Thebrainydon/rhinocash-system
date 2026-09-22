@@ -300,6 +300,67 @@ async function initiateWalletStkPush({ accountId, accountNumber, phone, amount, 
   }
 }
 
+// Real STK Push initiation for a loan application's real, required
+// processing fee — a genuinely separate request path again (its own
+// loan_fee_payments row, no mpesa_stk_requests/client_account_stk_requests
+// involved), reusing the same real OAuth/config/Daraja plumbing. The row
+// itself is created by the route BEFORE this is called (so a feeId
+// exists to hand back to the officer even if Safaricom can't be reached);
+// this only ever attempts the real push and records the real outcome —
+// it never marks the fee as paid. Confirmation of a real payment happens
+// separately (see the /confirm route), by whichever real signal actually
+// arrives first: Safaricom's own callback (once a public webhook is
+// wired up in a real deployment) or a human typing in the real M-Pesa
+// code the client read them, exactly like this codebase's existing C2B
+// manual-reconciliation path.
+async function initiateLoanFeeStkPush({ feeId, phone, amount, accountRef, initiatedBy }) {
+  const config = await effectiveConfig();
+  if (!config) {
+    await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, ['No M-Pesa environment is active — configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration. Enter the M-Pesa receipt code manually once the client has paid.', feeId]);
+    return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Enter the M-Pesa receipt code manually once the client has paid.' };
+  }
+  const tokenResult = await requestOAuthToken(config);
+  if (!tokenResult.ok) {
+    await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, [tokenResult.message, feeId]);
+    return { status: 'FAILED', message: tokenResult.message };
+  }
+
+  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const password = Buffer.from(`${config.shortcode}${config.passkey}${timestamp}`).toString('base64');
+  const payload = {
+    BusinessShortCode: config.shortcode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Math.round(amount),
+    PartyA: phone,
+    PartyB: config.shortcode,
+    PhoneNumber: phone,
+    CallBackURL: config.callbackUrl,
+    AccountReference: accountRef || 'Loan Processing Fee',
+    TransactionDesc: 'Loan application processing fee',
+  };
+  try {
+    const res = await fetch(STK_PUSH_URL[config.environment], {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenResult.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 200 && body && body.CheckoutRequestID) {
+      await run(`UPDATE loan_fee_payments SET checkout_request_id = ?, status = 'STK Sent', stk_message = ? WHERE id = ?`, [body.CheckoutRequestID, 'STK push sent to the customer\'s phone.', feeId]);
+      return { status: 'INITIATED', checkoutRequestId: body.CheckoutRequestID, message: 'STK push sent to the customer\'s phone.' };
+    }
+    const message = (body && (body.errorMessage || body.ResponseDescription)) || `Safaricom returned HTTP ${res.status}.`;
+    await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, [message, feeId]);
+    return { status: 'FAILED', message };
+  } catch (e) {
+    const message = 'Could not reach Safaricom to initiate the STK push — check outbound network access. Enter the M-Pesa receipt code manually once the client has paid.';
+    await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, [message, feeId]);
+    return { status: 'FAILED', message };
+  }
+}
+
 // ==================== B2C — real disbursement-to-customer ====================
 // Real, deliberate design: initiating a B2C request NEVER marks a loan as
 // disbursed. Only a genuine successful ResultURL callback does that (via
@@ -582,7 +643,7 @@ async function processCallback(callbackId, actorUserId) {
 }
 
 module.exports = {
-  isConfigured, initiateStkPush, initiateWalletStkPush, recordCallback, unmatchedCallbacks, processCallback,
+  isConfigured, initiateStkPush, initiateWalletStkPush, initiateLoanFeeStkPush, recordCallback, unmatchedCallbacks, processCallback,
   validateC2b, recordC2bTransaction, processC2bTransaction, unmatchedC2bTransactions,
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,

@@ -462,6 +462,7 @@ CREATE TABLE IF NOT EXISTS loan_products (
   fee_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
   penalty_pct NUMERIC(9,4) NOT NULL DEFAULT 0,
   term_weeks INTEGER,
+  processing_fee_amount NUMERIC(14,2),
   active INTEGER NOT NULL DEFAULT 1
 );
 
@@ -492,10 +493,36 @@ CREATE TABLE IF NOT EXISTS loans (
   disbursed_at TEXT,
   written_off_at TEXT,
   processing_fee NUMERIC(14,2) NOT NULL DEFAULT 0,
+  processing_fee_receipt TEXT,
   rating TEXT,
   rating_reason TEXT,
   rated_by TEXT REFERENCES users(id),
   rated_at TEXT
+);
+
+-- Real processing-fee payments collected up front, before a loan
+-- application can even be submitted, for products that require one
+-- (loan_products.processing_fee_amount set — the real weekly Starter/
+-- Jijenge/Ibuka/Mavuno/Fly catalog). Deliberately scoped by (client_id,
+-- product_id), not loan_id, since the fee is paid BEFORE the loan record
+-- exists; loan_id is filled in once the application that consumed this
+-- payment is actually created, so one confirmed payment can never be
+-- reused across two applications.
+CREATE TABLE IF NOT EXISTS loan_fee_payments (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  product_id TEXT NOT NULL REFERENCES loan_products(id),
+  amount NUMERIC(14,2) NOT NULL,
+  phone TEXT NOT NULL,
+  checkout_request_id TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  stk_message TEXT,
+  mpesa_receipt_number TEXT,
+  confirmed_by TEXT REFERENCES users(id),
+  loan_id TEXT REFERENCES loans(id),
+  initiated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  confirmed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS loan_approvals (

@@ -290,10 +290,19 @@ async function seedDemoData() {
     ['pr_ln_fly', 'Fly', 20, 21000, 25000, 4],
     ['pr_ln_fly_special', 'Fly Special', 30, 21000, 25000, 6],
   ];
+  // A real, flat, admin-editable processing fee (KES 600, matching the
+  // reference site's own Charges column for the large majority of real
+  // loans shown there) — required, and collected up front via a real
+  // confirmed loan_fee_payments record, before any of these weekly
+  // products can be submitted as a loan application. Legacy monthly
+  // products are untouched (processing_fee_amount stays NULL for them,
+  // so no upfront fee is required — they keep using fee_pct at
+  // disbursement exactly as before).
+  const WEEKLY_PRODUCT_PROCESSING_FEE = 600;
   for (const [id, name, rate, min, max, weeks] of weeklyProducts) {
     await run(
-      "INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks) VALUES (?,?,'Flat',?,?,?,1,1,0,0,?) ON CONFLICT DO NOTHING",
-      [id, name, rate, min, max, weeks]
+      "INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks, processing_fee_amount) VALUES (?,?,'Flat',?,?,?,1,1,0,0,?,?) ON CONFLICT DO NOTHING",
+      [id, name, rate, min, max, weeks, WEEKLY_PRODUCT_PROCESSING_FEE]
     );
   }
 

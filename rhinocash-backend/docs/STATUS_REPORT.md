@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  965 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 774 passed, 0 failed  (drives the real UI functions in
+Backend:  983 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 780 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,739 passed, 0 failed
+Total:    1,763 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -401,18 +401,41 @@ timestamp — its real `disbursedAt` once disbursed, otherwise its latest
 real approval's timestamp, otherwise its own real submission time —
 replacing the earlier build's fixed "Waiting for X" status text once the
 reference showed a populated date/time in that column for every row,
-disbursed or not. Charges intentionally still shows only the real KES
-processing-fee amount, with no transaction reference: this build never
-actually collects the fee via a separate M-Pesa transaction at
-application time (`fee_payer_phone` is captured on the form but the
-backend never reads it), so there is no real receipt number anywhere in
-this system to show there — inventing one to match the reference's
-M-Pesa-style codes would be exactly the kind of fabrication this project
-has avoided everywhere else. Clicking "Schedule" on a loan that hasn't
-been disbursed yet — so has no real stored installment schedule — shows
-a clearly labeled *projected* preview computed with the exact same math
+disbursed or not. Clicking "Schedule" on a loan that hasn't been
+disbursed yet — so has no real stored installment schedule — shows a
+clearly labeled *projected* preview computed with the exact same math
 `buildSchedule()` will use at disbursement, never a fabricated or
 hardcoded schedule.
+
+No loan application for this weekly catalog can be created without its
+real, required, upfront processing fee (a real flat `loan_products.
+processing_fee_amount`, KES 600 by default, admin-editable per product,
+legacy monthly products untouched) — this is now genuinely enforced by
+`POST /api/loans`, not merely a frontend convenience. The Processing Fee
+section appears automatically on Create Application once a real client
+is matched and a fee-requiring product is selected, titled with the
+client's own real name, exactly as requested. It offers two real paths
+to collect it, both landing on the same real `loan_fee_payments` record:
+a real STK push attempt (`POST /api/loans/processing-fee/initiate`,
+reusing the exact same real Daraja OAuth/STK plumbing every other M-Pesa
+feature in this codebase uses — it will genuinely attempt a Safaricom
+call and honestly report NOT_CONFIGURED/FAILED in this environment,
+which has no outbound network access, exactly like the STK/B2C features
+documented as untested-live below), and a real manual confirmation
+(`POST /api/loans/processing-fee/:id/confirm`) where the officer types in
+the real M-Pesa receipt code the client read them — validated against
+Safaricom's real 10-character receipt format, never accepted as free
+text. This mirrors this codebase's own pre-existing C2B manual-
+reconciliation pattern, since there is no real public webhook endpoint in
+this environment for Safaricom's own callback to land on. Once Confirmed,
+that exact payment (scoped to its one real client + product, before the
+loan even exists) can be spent on exactly one loan application — reusing
+it, or using it for a different client/product, is refused server-side —
+and its real receipt code and amount land on the created loan itself, so
+the Charges column genuinely shows a real M-Pesa-style receipt code above
+the real KES amount, matching the reference exactly, with nothing
+fabricated: the receipt shown is always one a human actually entered
+and the backend actually validated and recorded.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

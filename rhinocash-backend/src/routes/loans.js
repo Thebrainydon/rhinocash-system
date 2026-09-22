@@ -1567,12 +1567,18 @@ function register(router) {
     // overrides the min/max month range entirely (buildSchedule() and
     // POST /api/loans both treat it as authoritative; see their own notes).
     const termWeeks = b.term_weeks ? Number(b.term_weeks) : null;
+    // processing_fee_amount (optional): a real flat KES fee required
+    // upfront, before an application for this product can even be
+    // submitted (see POST /api/loans/processing-fee/initiate and the fee
+    // check in POST /api/loans). Left NULL for a legacy monthly product,
+    // which keeps using fee_pct at disbursement instead, unchanged.
+    const processingFeeAmount = b.processing_fee_amount != null && b.processing_fee_amount !== '' ? Number(b.processing_fee_amount) : null;
     await run(
-      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO loan_products (id, name, rate_type, rate_pct, min_amount, max_amount, min_term_months, max_term_months, fee_pct, penalty_pct, term_weeks, processing_fee_amount)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, b.name, b.rate_type || 'Flat', b.rate_pct, b.min_amount || 0, b.max_amount || 0,
         termWeeks ? 1 : (b.min_term_months || 1), termWeeks ? 1 : (b.max_term_months || 12),
-        b.fee_pct || 0, b.penalty_pct || 0, termWeeks]
+        b.fee_pct || 0, b.penalty_pct || 0, termWeeks, processingFeeAmount]
     );
     await logAction(req, { action: 'Added loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: id, newValue: b.name });
     res.status(201).json({ product: await get('SELECT * FROM loan_products WHERE id = ?', [id]) });
@@ -1788,6 +1794,63 @@ function register(router) {
     res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
+  // ==================== Loan application processing fee ====================
+  // A real, required, upfront payment for products that carry a real flat
+  // processing_fee_amount (the weekly Starter/Jijenge/Ibuka/Mavuno/Fly
+  // catalog) — POST /api/loans below refuses to create such a loan
+  // without a real Confirmed payment record. Scoped by (client_id,
+  // product_id), not loan_id, since the fee is genuinely paid before the
+  // loan exists; loan_id is filled in once the application that consumed
+  // it is actually created (see below), so one confirmed payment can
+  // never be spent twice.
+  const MPESA_RECEIPT_RE = /^[A-Z0-9]{10}$/i;
+  router.post('/api/loans/processing-fee/initiate', requireAuth, requirePermission('record_payments'), async (req, res, next) => {
+    const b = req.body;
+    if (!b.client_id || !b.product_id || !b.phone) return next({ status: 400, message: 'client_id, product_id and phone are required' });
+    const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
+    if (!client) return next({ status: 400, message: 'Unknown client' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    const product = await get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
+    if (!product) return next({ status: 400, message: 'Unknown loan product' });
+    if (product.processing_fee_amount == null) return next({ status: 400, message: 'This loan product does not require a separate upfront processing fee' });
+    const id = 'lfp_' + crypto.randomUUID();
+    await run(
+      `INSERT INTO loan_fee_payments (id, client_id, product_id, amount, phone, initiated_by) VALUES (?,?,?,?,?,?)`,
+      [id, b.client_id, b.product_id, product.processing_fee_amount, b.phone, req.user.id]
+    );
+    const mpesa = require('./../integrations/mpesa');
+    const result = await mpesa.initiateLoanFeeStkPush({ feeId: id, phone: b.phone, amount: product.processing_fee_amount, accountRef: client.name, initiatedBy: req.user.id });
+    await logAction(req, { action: 'Requested loan processing fee STK push', module: 'loanbook', recordType: 'LoanFeePayment', recordId: id, newValue: { amount: product.processing_fee_amount, phone: b.phone, status: result.status } });
+    const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [id]);
+    res.status(201).json({ feeId: fee.id, amount: fee.amount, status: fee.status, message: fee.stk_message || result.message });
+  });
+
+  // Real manual confirmation — the same real "a human reconciles the
+  // actual M-Pesa code" pattern this codebase already uses for unmatched
+  // C2B payments, since there is no real public webhook endpoint in this
+  // environment for Safaricom's own callback to land on. The receipt code
+  // is validated against Safaricom's real 10-character receipt format,
+  // never accepted as free text.
+  router.post('/api/loans/processing-fee/:id/confirm', requireAuth, requirePermission('record_payments'), async (req, res, next) => {
+    const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [req.params.id]);
+    if (!fee) return next({ status: 404, message: 'Processing fee payment not found' });
+    const client = await get('SELECT * FROM clients WHERE id = ?', [fee.client_id]);
+    try { await assertRecordInScope(req.user, client ? client.branch_id : null, 'client'); } catch (e) { return next(e); }
+    if (fee.status === 'Confirmed') return next({ status: 409, message: 'This processing fee payment has already been confirmed' });
+    if (fee.loan_id) return next({ status: 409, message: 'This processing fee payment has already been used for another application' });
+    const receipt = (req.body.mpesa_receipt_number || '').trim().toUpperCase();
+    if (!MPESA_RECEIPT_RE.test(receipt)) return next({ status: 400, message: 'Enter a real 10-character M-Pesa receipt code' });
+    await run(`UPDATE loan_fee_payments SET status = 'Confirmed', mpesa_receipt_number = ?, confirmed_by = ?, confirmed_at = iso_now() WHERE id = ?`, [receipt, req.user.id, fee.id]);
+    await logAction(req, { action: 'Confirmed loan processing fee payment', module: 'loanbook', recordType: 'LoanFeePayment', recordId: fee.id, newValue: { mpesaReceiptNumber: receipt } });
+    res.json({ fee: await get('SELECT * FROM loan_fee_payments WHERE id = ?', [fee.id]) });
+  });
+
+  router.get('/api/loans/processing-fee/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [req.params.id]);
+    if (!fee) return next({ status: 404, message: 'Processing fee payment not found' });
+    res.json({ fee });
+  });
+
   router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.product_id || !b.principal) {
@@ -1832,6 +1895,21 @@ function register(router) {
         return next({ status: 400, message: 'Guarantor name and contact are required for a New Loan application' });
       }
     }
+    // Real, required, upfront processing fee — for a product that
+    // carries one (processing_fee_amount set), no loan application can be
+    // created without a real, already-Confirmed payment for this exact
+    // client and product, not yet spent on another application. Server-
+    // enforced, exactly like the New/Repeat Loan rules above — a missing
+    // fee_id, a merely-Initiated payment, or a mismatched client/product
+    // is refused here, never left to the frontend to police.
+    let feePayment = null;
+    if (product.processing_fee_amount != null) {
+      if (!b.processing_fee_id) return next({ status: 400, message: 'A processing fee payment is required before this loan application can be submitted' });
+      feePayment = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [b.processing_fee_id]);
+      if (!feePayment || feePayment.status !== 'Confirmed') return next({ status: 400, message: 'The processing fee payment has not been confirmed yet' });
+      if (feePayment.client_id !== b.client_id || feePayment.product_id !== b.product_id) return next({ status: 400, message: 'The processing fee payment does not match this client and product' });
+      if (feePayment.loan_id) return next({ status: 400, message: 'This processing fee payment has already been used for another application' });
+    }
     const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
     // for an officer who genuinely belongs to the resolved branch (never
@@ -1847,12 +1925,14 @@ function register(router) {
     const steps = await workflowSteps();
     const id = 'ln_' + crypto.randomUUID();
     await run(
-      `INSERT INTO loans (id, client_id, product_id, principal, term_months, rate_pct, purpose, guarantor, guarantor_contact, loan_securities, loan_category, officer_id, branch_id, status, current_step)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+      `INSERT INTO loans (id, client_id, product_id, principal, term_months, rate_pct, purpose, guarantor, guarantor_contact, loan_securities, loan_category, officer_id, branch_id, status, current_step, processing_fee, processing_fee_receipt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
       [id, b.client_id, b.product_id, b.principal, termMonths, product.rate_pct, b.purpose || null, guarantor,
         guarantorContact, b.loan_securities || null, b.loan_category || null,
-        officerId, branchId, steps[0] ? steps[0].status_label : 'Waiting for Manager']
+        officerId, branchId, steps[0] ? steps[0].status_label : 'Waiting for Manager',
+        feePayment ? feePayment.amount : 0, feePayment ? feePayment.mpesa_receipt_number : null]
     );
+    if (feePayment) await run('UPDATE loan_fee_payments SET loan_id = ? WHERE id = ?', [id, feePayment.id]);
     await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
     res.status(201).json({ loan: await get('SELECT * FROM loans WHERE id = ?', [id]) });
   });
