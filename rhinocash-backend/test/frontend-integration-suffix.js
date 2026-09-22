@@ -1840,6 +1840,33 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Collection sheet for') && html.includes('Portfolio') && html.includes('Installment') && html.includes('Accumulated'), "the real Collection Sheet page genuinely renders with the requested title format and column set");
     __assert(DB.collSheetDay && Array.isArray(DB.collSheetDay.rows), "the real Collection Sheet data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
+    // Collection Report (Loan Officer): the real per-client date-range
+    // summary, chrome-free, backed by a real dedicated endpoint. The top
+    // badge must be the exact same real "today's collection %" value the
+    // Dashboard shows — both call the same computeStats().todayPct.
+    session.collectionReportState = null; DB.collectionReport = null;
+    goTo('loanbook','Collection Report');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Collection Report page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Collection Report') && html.includes('Portfolio') && html.includes('Collection') && html.includes('Arrears') && html.includes('Balance'), "the real Collection Report page genuinely renders with the requested title and column set");
+    __assert(DB.collectionReport && Array.isArray(DB.collectionReport.rows), "the real Collection Report data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+    const dashboardPct = computeStats(DB.me.id).todayPct;
+    __assert(html.includes(`${dashboardPct.toFixed(1)}%`), "the real percentage badge on the Collection Report page genuinely matches the exact same real value shown on the Dashboard — both derive from the identical computeStats().todayPct");
+    const reportDateInputs = (html.match(/type="date"/g) || []).length;
+    __assert(reportDateInputs === 2, "the real Collection Report page genuinely offers two real date inputs (from ~ to), not a single-day picker");
+
+    // Real percentage badge color thresholds, exactly as requested: below
+    // 24% red, below 50% (but not below 24%) purple, 50%+ green.
+    __assert(collectionPctBadgeClass(0) === 'red' && collectionPctBadgeClass(23.9) === 'red', "below 24% is genuinely red");
+    __assert(collectionPctBadgeClass(24) === 'purple' && collectionPctBadgeClass(49.9) === 'purple', "24% up to (not including) 50% is genuinely purple");
+    __assert(collectionPctBadgeClass(50) === 'green' && collectionPctBadgeClass(100) === 'green', "50% and above is genuinely green");
+
+    // Real front-dated cap: the "to" date input's max attribute is capped
+    // 3 real days ahead of today — back dates are never restricted (no min).
+    const maxDateInHtml = html.match(/type="date"[^>]*max="([\d-]+)"/g) || [];
+    __assert(maxDateInHtml.length === 2 && maxDateInHtml.every(m => m.includes(collectionReportMaxDate())), "both real date inputs genuinely cap future selection at exactly 3 days ahead of today");
+
     // Disbursements (Loan Officer): the real Daily Disbursements calendar,
     // chrome-free, backed by a real dedicated endpoint — replacing the
     // old shared KPI-tile Disbursements Overview page (still used by

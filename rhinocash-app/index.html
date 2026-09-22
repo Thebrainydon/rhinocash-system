@@ -15,6 +15,7 @@
   --amber:#B4791F; --amber-bg:#FBF0DD;
   --red:#B3261E; --red-bg:#FAEAE9;
   --blue:#2E5C8A; --blue-bg:#E9F0F8;
+  --purple:#7A4FB5; --purple-bg:#F0E9FA;
   font-size:15px;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
@@ -151,6 +152,7 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .badge.amber{background:var(--amber-bg); color:var(--amber);}
 .badge.red{background:var(--red-bg); color:var(--red);}
 .badge.blue{background:var(--blue-bg); color:var(--blue);}
+.badge.purple{background:var(--purple-bg); color:var(--purple);}
 .badge.grey{background:#EFEDE7; color:var(--ink-soft);}
 
 /* ---- Buttons ---- */
@@ -435,7 +437,7 @@ const SIDEBAR_MENUS = {
   "Loan Officer": [
     {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Cashflow"]},
     {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","View Loans","Regional Loan Portfolio","Regional Loan Portfolio Quality","Loan Approval Monitoring","Loan Maturity Pipeline"]},
+    {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Reports","Collection Rates","Loan Arrears","View Loans","Regional Loan Portfolio","Regional Loan Portfolio Quality","Loan Approval Monitoring","Loan Maturity Pipeline"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
@@ -852,6 +854,13 @@ const ROLE_ROUTE_OVERRIDES = {
   },
   "Investor": {
     "Receipts":{section:"dashboard"}, "Collection Performance":{section:"dashboard"},
+  },
+  // Scoped to Loan Officer only — "Collection Report" is also a generic,
+  // not-yet-built placeholder label in Manager/Ops/Regional's own Reports
+  // section, so this must not become a global LABEL_ROUTES entry (that
+  // would hijack their sidebar item into this Loan Officer LoanBook page).
+  "Loan Officer": {
+    "Collection Report":{section:"loanbook", subtab:"Collection Report"},
   },
 };
 function resolveRoute(itemLabel){
@@ -5231,6 +5240,7 @@ function renderLoanBook(){
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
+  if(active==="Collection Report") return renderCollectionReport();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
   if(active==="Collection Reports") return tabsHtml + renderCollectionReports();
   if(active==="Collection Rates") return tabsHtml + renderCollectionRatesBranchPage();
@@ -5695,6 +5705,71 @@ function renderCollectionSheet(){
           <td>${r.period}/${r.totalPeriods}</td><td>${fmtNum(r.amount)}</td><td>${fmtNum(r.accumulated)}</td><td>${fmtNum(r.paid)}</td>
         </tr>`).join("") || `<tr><td colspan="8" class="empty">No installments due on this day.</td></tr>`}
         ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="5"></td><td>${fmtNum(d.totals.amount)}</td><td>${fmtNum(d.totals.accumulated)}</td><td>${fmtNum(d.totals.paid)}</td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
+
+// ---- Collection Report (Loan Officer): a real, per-client collection
+// summary across a real date range — chrome-free, matching the reference
+// design exactly. "Portfolio" here is the loan's real assigned officer
+// (not guarantor — see the backend route's own comment for why), which
+// for a Loan Officer's own report naturally shows their own name on every
+// row, exactly as the reference does. The top badge is always TODAY's
+// real collection percentage — the identical value/formula shown on the
+// Dashboard (computeStats().todayPct), never a value derived from the
+// selected date range, so the two can never disagree. ----
+function collectionReportMaxDate(){
+  return new Date(Date.now() + 3*86400000).toISOString().slice(0,10);
+}
+function defaultCollectionReportState(){
+  return { from: todayISO(), to: todayISO() };
+}
+function collectionPctBadgeClass(pct){
+  if(pct < 24) return 'red';
+  if(pct < 50) return 'purple';
+  return 'green';
+}
+async function loadCollectionReport(){
+  const st = session.collectionReportState;
+  return withRequest('load-collection-report:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ from: st.from, to: st.to });
+    const res = await api.get('/api/collections/client-report?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.collectionReport = res;
+  });
+}
+function exportCollectionReportCSV(){
+  const rows = DB.collectionReport ? DB.collectionReport.rows : [];
+  exportRowsToCsv('collection-report.csv', ['clientName','contact','portfolio','collection','arrears','paid','balance'], rows);
+}
+function renderCollectionReport(){
+  const st = session.collectionReportState || (session.collectionReportState = defaultCollectionReportState());
+  const maxDate = collectionReportMaxDate();
+  const pctSt = computeStats(DB.me.id);
+  const pctClass = collectionPctBadgeClass(pctSt.todayPct);
+  if(!DB.collectionReport || DB.collectionReport.stateKey !== JSON.stringify(st)){ loadCollectionReport(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.collectionReport;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Collection Report</span></span>
+        <span class="badge ${pctClass}">${pctSt.todayPct.toFixed(1)}%</span>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px;">
+        <input type="date" value="${st.from}" max="${maxDate}" onchange="session.collectionReportState.from=this.value; DB.collectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <span>~</span>
+        <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.collectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionReportCSV()">-- Generate --</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>#</th><th>Client</th><th>Contact</th><th>Portfolio</th><th>Collection</th><th>Arrears</th><th>Paid</th><th>Balance</th></tr>
+        ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openClient('${r.clientId}')">
+          <td>${i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${escapeHtml(r.portfolio||'—')}</td>
+          <td>${fmtNum(r.collection)}</td><td>${fmtNum(r.arrears)}</td><td>${fmtNum(r.paid)}</td><td>${fmtNum(r.balance)}</td>
+        </tr>`).join("") || `<tr><td colspan="8" class="empty">No collections due in this date range.</td></tr>`}
+        ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4"></td><td>${fmtNum(d.totals.collection)}</td><td>${fmtNum(d.totals.arrears)}</td><td>${fmtNum(d.totals.paid)}</td><td>${fmtNum(d.totals.balance)}</td></tr>` : ""}
       </table></div>
     </div>
   `;

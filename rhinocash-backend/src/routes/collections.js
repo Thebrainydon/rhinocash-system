@@ -699,6 +699,78 @@ function register(router) {
     res.json({ date, rows, totals, portfolios, periods });
   });
 
+  // ==================== Collection Report (Loan Officer): a real,
+  // per-client summary over a real date range — chrome-free, matching the
+  // reference design. "Portfolio" here is the loan's real assigned
+  // officer (loans.officer_id), not guarantor: for a per-client range
+  // report, guarantor would show identical text for unrelated clients
+  // purely from data-entry coincidence (the exact symptom the reference
+  // screenshot shows), where officer_id is the loan's actual real staff
+  // assignment. A client with multiple loans due in the same real window
+  // gets one real combined row. "Arrears" is the same real carried-over
+  // unpaid-balance concept as the Collection Sheet's "Accumulated" —
+  // unpaid periods due before the window starts. "Balance" is real
+  // Collection minus real Paid for the window itself (arrears kept as
+  // its own real column, never folded in). Front-dated requests are
+  // capped at 3 real days ahead of today — a Loan Officer should never
+  // be able to query collections against an arbitrarily distant future
+  // date; back dates are never limited. ====================
+  router.get('/api/collections/client-report', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const today = new Date().toISOString().slice(0, 10);
+    const maxFuture = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const from = req.query.from || today;
+    const to = req.query.to || from;
+    if (from > to) return res.status(400).json({ error: 'from date must not be after to date' });
+    if (to > maxFuture) return res.status(400).json({ error: 'Cannot filter more than 3 days ahead of today' });
+
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
+    const loanIds = loans.map(l => l.id);
+    if (!loanIds.length) return res.json({ from, to, rows: [], totals: { collection: 0, arrears: 0, paid: 0, balance: 0 } });
+
+    const idPh = loanIds.map(() => '?').join(',');
+    const inWindow = await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date BETWEEN (?)::date AND (?)::date`, [...loanIds, from, to]);
+
+    const arrearsByLoan = {};
+    (await all(`SELECT loan_id, SUM(total_due - paid_amount) as v FROM loan_schedule WHERE loan_id IN (${idPh}) AND (due_date)::date < (?)::date AND paid_amount < total_due - 0.01 GROUP BY loan_id`, [...loanIds, from])).forEach(r => { arrearsByLoan[r.loan_id] = r.v; });
+
+    const loanById = {}; loans.forEach(l => { loanById[l.id] = l; });
+    const clientIds = [...new Set(loans.map(l => l.client_id))];
+    const clientById = {};
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
+    const officerIds = [...new Set(loans.map(l => l.officer_id).filter(Boolean))];
+    const officerById = {};
+    if (officerIds.length) { const oPh = officerIds.map(() => '?').join(','); (await all(`SELECT id, name FROM users WHERE id IN (${oPh})`, officerIds)).forEach(u => { officerById[u.id] = u; }); }
+
+    const byClient = {};
+    inWindow.forEach(sched => {
+      const loan = loanById[sched.loan_id];
+      if (!byClient[loan.client_id]) byClient[loan.client_id] = { clientId: loan.client_id, officerId: loan.officer_id, collection: 0, arrears: 0, paid: 0, countedLoans: new Set() };
+      const c = byClient[loan.client_id];
+      c.collection += sched.total_due;
+      c.paid += sched.paid_amount;
+      if (!c.countedLoans.has(loan.id)) { c.countedLoans.add(loan.id); c.arrears += arrearsByLoan[loan.id] || 0; }
+    });
+
+    const rows = Object.values(byClient).map(c => {
+      const client = clientById[c.clientId] || { name: 'Unknown', phone: null };
+      const officer = officerById[c.officerId];
+      return {
+        clientId: c.clientId, clientName: client.name, contact: client.phone,
+        portfolio: officer ? officer.name : null,
+        collection: c.collection, arrears: c.arrears, paid: c.paid, balance: c.collection - c.paid,
+      };
+    }).sort((a, b) => a.clientName.localeCompare(b.clientName));
+
+    const totals = {
+      collection: rows.reduce((s, r) => s + r.collection, 0),
+      arrears: rows.reduce((s, r) => s + r.arrears, 0),
+      paid: rows.reduce((s, r) => s + r.paid, 0),
+      balance: rows.reduce((s, r) => s + r.balance, 0),
+    };
+    res.json({ from, to, rows, totals });
+  });
+
   // ==================== Collection MTD ====================
   router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);

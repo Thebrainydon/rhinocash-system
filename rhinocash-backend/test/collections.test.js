@@ -99,6 +99,48 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 1c. COLLECTION REPORT — real per-client range summary, real Portfolio
+  // (the loan's real assigned officer, deliberately NOT guarantor), real
+  // carried-over Arrears, and the real 3-day-ahead future-date cap
+  // =========================================================
+  {
+    const { get: dbGet2 } = require('../src/db');
+    const today = new Date().toISOString().slice(0, 10);
+    const officerMe = await api('GET', '/api/auth/me', { token: officerToken });
+    const officerName = officerMe.json.user.name;
+
+    const report = await api('GET', `/api/collections/client-report?from=${today}&to=${today}`, { token: officerToken });
+    assert(report.status === 200 && Array.isArray(report.json.rows), 'real Collection Report loads for the Loan Officer');
+    const row = report.json.rows.find(r => r.clientId === clientId);
+    assert(row, 'the real client with a real installment due today genuinely appears in the real report');
+    assert(row.portfolio === officerName, 'the real Portfolio column is genuinely the loan\'s real assigned officer name, not guarantor — even though this same loan\'s real guarantor field (set in 1b) is a different name entirely');
+
+    const period1Row = await dbGet2('SELECT * FROM loan_schedule WHERE loan_id = ? AND period = 1', [loanId]);
+    assert(Math.abs(row.collection - period1Row.total_due) < 0.01, 'the real Collection figure genuinely equals the real installment total due within the selected range');
+    assert(Math.abs(row.paid - period1Row.paid_amount) < 0.01, 'the real Paid figure genuinely equals the real amount already paid against that installment');
+    assert(Math.abs(row.balance - (row.collection - row.paid)) < 0.01, 'the real Balance is genuinely Collection minus Paid, not an independently fabricated figure');
+
+    const period2Row = await dbGet2('SELECT * FROM loan_schedule WHERE loan_id = ? AND period = 2', [loanId]);
+    assert(Math.abs(row.arrears - (period2Row.total_due - period2Row.paid_amount)) < 0.01, 'the real Arrears figure genuinely carries over the real unpaid balance from this loan\'s earlier, already-overdue period — the same real carry-over definition as the Collection Sheet\'s Accumulated column');
+
+    const rowsSum = report.json.rows.reduce((s, r) => s + r.collection, 0);
+    assert(Math.abs(report.json.totals.collection - rowsSum) < 0.01, 'the real Totals.collection genuinely sums the real rows, not a separately fabricated figure');
+
+    const plus3 = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const plus4 = new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10);
+    const okFuture = await api('GET', `/api/collections/client-report?from=${today}&to=${plus3}`, { token: officerToken });
+    assert(okFuture.status === 200, 'a real "to" date exactly 3 days ahead is genuinely allowed');
+    const rejectedFuture = await api('GET', `/api/collections/client-report?from=${today}&to=${plus4}`, { token: officerToken });
+    assert(rejectedFuture.status === 400, 'a real "to" date more than 3 days ahead is genuinely rejected — the officer can never file collections against an arbitrarily distant future date');
+
+    const farBack = await api('GET', `/api/collections/client-report?from=2020-01-01&to=2020-01-01`, { token: officerToken });
+    assert(farBack.status === 200, 'an arbitrarily far-back real date range is genuinely never rejected — only future dates are capped');
+
+    const badRange = await api('GET', `/api/collections/client-report?from=${today}&to=2020-01-01`, { token: officerToken });
+    assert(badRange.status === 400, 'a real "from" date after "to" is genuinely rejected');
+  }
+
+  // =========================================================
   // 2. COLLECTION MTD — real expected/collected/rate/target
   // =========================================================
   {
