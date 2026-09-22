@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  995 passed, 0 failed  (27 suites — see test/run-all.sh)
-Frontend: 783 passed, 0 failed  (drives the real UI functions in
+Backend:  1,003 passed, 0 failed  (27 suites — see test/run-all.sh)
+Frontend: 787 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,778 passed, 0 failed
+Total:    1,790 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -470,7 +470,38 @@ submenu page built in this flow, with a real "Totals" row that is a real
 sum of the real per-officer rows, never a separately fabricated figure.
 
 The topbar now shows "RHINOCASH LTD" at the top-left, next to the icon
-row, on every real page — matching the requested reference branding.
+row, on every real page — matching the requested reference branding. The
+sidebar's upper profile block now uses Claude's own terracotta/orange as
+its background, and the lower menu/submenu block is a blue-to-green
+gradient, replacing solid navy across both.
+
+LoanBook's Disbursements submenu (Loan Officer view) is now the real
+Daily Disbursements calendar, replacing the old shared KPI-tile
+Disbursements Overview page for this role specifically (Manager/
+Regional Manager/Operational Manager still see that page, untouched,
+since only the Loan Officer's own view was in scope here). A new
+dedicated endpoint (`GET /api/loans/daily-disbursements`) returns real
+loans genuinely disbursed on each real calendar day of a real, selected
+year/month — optionally filtered by a real loan product — grouped by
+real branch per day. Chrome-free, matching the reference exactly: a
+Year selector, a Month selector, a Loan Product filter, and a real
+Monday-to-Sunday calendar grid where each day that genuinely had a
+disbursement shows its real branch name and real disbursed amount; a day
+with nothing real to show is left blank, never filled with a
+placeholder. This also fixes the layout the Loan Officer reported as
+"behaving funny" on their own device — the old page's subtab bar and KPI
+tiles are exactly what's gone now, and the replacement carries no
+subtabs, no KPI grid, and no chart canvases to misbehave.
+
+A real, small layout bug was also caught and fixed this round: the
+"← <title>" pattern used on the Progressive Disbursements and Loan
+Applications page headers put the arrow and title into the same real
+flex container as `card-title`'s existing `justify-content:
+space-between`, which is designed for a "title ... count" pair. With
+three real flex items (arrow, title text, count), space-between shoved
+the arrow to the far left and the title to the far right — exactly the
+misplacement reported. Both headers now wrap the arrow and title
+together into one flex-start-aligned group.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

@@ -5152,7 +5152,8 @@ function renderLoanBook(){
   if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
   if(active==="Collection MTD") return renderCollectionMTD();
-  if(active==="Disbursements") return tabsHtml + renderDisbursementsOverviewPage();
+  if(active==="Disbursements" && session.role !== 'Loan Officer') return tabsHtml + renderDisbursementsOverviewPage();
+  if(active==="Disbursements") return renderDailyDisbursementsPage();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return tabsHtml + renderCollectionSheet();
@@ -5652,6 +5653,81 @@ async function exportMtdBranch(){
   });
 }
 // ==================== Manager/Regional Manager/Operational Manager Disbursements — pipeline, pending aging, branch/officer/product/method analysis ====================
+// ---- Daily Disbursements: the Loan Officer's real "Disbursements"
+// submenu page — a real calendar of real loans disbursed on each real
+// day of a real, selected year/month (optionally filtered by a real
+// loan product), backed by a new dedicated endpoint. Chrome-free like
+// every other real Loan Officer submenu page in this flow — no subtab
+// bar, no KPI tiles, matching the requested reference design exactly. ----
+function defaultDailyDisbState(){
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth()+1, productId: '' };
+}
+async function loadDailyDisbursements(){
+  const st = session.dailyDisbState;
+  return withRequest('load-daily-disb', async ()=>{
+    const params = new URLSearchParams({ year: st.year, month: st.month });
+    if(st.productId) params.set('product_id', st.productId);
+    const res = await api.get('/api/loans/daily-disbursements?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.dailyDisb = res;
+  });
+}
+function renderDailyDisbursementsCalendar(st, d){
+  const dayMap = {};
+  d.days.forEach(dayObj=>{ dayMap[dayObj.date] = dayObj.entries; });
+  const firstOfMonth = new Date(st.year, st.month-1, 1);
+  const daysInMonth = new Date(st.year, st.month, 0).getDate();
+  const startOffset = (firstOfMonth.getDay() + 6) % 7; // Monday-first weekday index
+  const cells = [];
+  for(let i=0;i<startOffset;i++) cells.push(null);
+  for(let day=1; day<=daysInMonth; day++) cells.push(day);
+  while(cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
+  const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const mm = String(st.month).padStart(2,'0');
+  const rowsHtml = weeks.map(week=>`<tr>${week.map(day=>{
+    if(!day) return `<td></td>`;
+    const dd = String(day).padStart(2,'0');
+    const dateStr = `${st.year}-${mm}-${dd}`;
+    const entries = dayMap[dateStr] || [];
+    return `<td style="vertical-align:top; padding:6px 8px;">
+      ${entries.length ? `<div style="font-weight:700; color:var(--navy); font-size:12px;">${dd}-${mm}-${st.year}</div>` : ''}
+      ${entries.map(e=>`<div style="font-size:12px; display:flex; justify-content:space-between; gap:6px;"><span>${escapeHtml(e.branchName)}</span><span>${fmtNum(e.amount)}</span></div>`).join("")}
+    </td>`;
+  }).join("")}</tr>`).join("");
+  return `<table style="width:100%; border-collapse:collapse;">
+    <tr>${dayNames.map(n=>`<th style="text-align:left; padding:6px 8px; background:#EEF0F5; font-size:12px;">${n}</th>`).join("")}</tr>
+    ${rowsHtml}
+  </table>`;
+}
+function renderDailyDisbursementsPage(){
+  const st = session.dailyDisbState || (session.dailyDisbState = defaultDailyDisbState());
+  if(!DB.dailyDisb || DB.dailyDisb.stateKey !== JSON.stringify(st)){ loadDailyDisbursements(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.dailyDisb;
+  const curYear = new Date().getFullYear();
+  const yearOptions = []; for(let y=curYear-2; y<=curYear+1; y++) yearOptions.push(y);
+  const monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Daily Disbursements</span></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <select onchange="session.dailyDisbState.year=Number(this.value); DB.dailyDisb=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
+        </select>
+        <select onchange="session.dailyDisbState.month=Number(this.value); DB.dailyDisb=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${monthAbbr.map((m,i)=>`<option value="${i+1}" ${(i+1)===st.month?'selected':''}>${m} ${st.year}</option>`).join("")}
+        </select>
+        <select onchange="session.dailyDisbState.productId=this.value; DB.dailyDisb=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Loan Product --</option>
+          ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap">${renderDailyDisbursementsCalendar(st, d)}</div>
+    </div>
+  `;
+}
 async function loadDisbursementsOverview(){
   const st = session.mgrDisbState;
   return withRequest('load-disbursements-overview', async ()=>{

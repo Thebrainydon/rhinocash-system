@@ -1834,6 +1834,19 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Page 1 of'), "Collection Sheet page renders real pagination controls");
 
+    // Disbursements (Loan Officer): the real Daily Disbursements calendar,
+    // chrome-free, backed by a real dedicated endpoint — replacing the
+    // old shared KPI-tile Disbursements Overview page (still used by
+    // Manager/Regional Manager/Operational Manager, untouched).
+    session.dailyDisbState = null; DB.dailyDisb = null;
+    goTo('loanbook','Disbursements');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Daily Disbursements page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Daily Disbursements') && !html.includes('Disbursed Loans</div>') && !html.includes('kpi-grid'), "the real Daily Disbursements page genuinely replaces the old KPI tiles with the real calendar view");
+    __assert(html.includes('Monday') && html.includes('Sunday') && html.includes('-- Loan Product --'), "the real calendar genuinely renders the requested weekday columns and the real Loan Product filter");
+    __assert(DB.dailyDisb && Array.isArray(DB.dailyDisb.days), "the real Daily Disbursements data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+
     // Loan Arrears: real ageing buckets, replacing the old local loanArrearsDays() computation.
     await loadArrears({}, 1);
     __assert(Array.isArray(DB.acctPages.arrears.buckets) && DB.acctPages.arrears.buckets.length === 6, "real ageing buckets loaded via the actual UI loader, reusing the enhanced backend endpoint");

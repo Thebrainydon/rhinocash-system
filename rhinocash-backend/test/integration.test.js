@@ -562,6 +562,53 @@ async function api(method, path, { token, body } = {}) {
     assert(matchingLoan.status === 201 && matchingLoan.json.loan.processing_fee_receipt === 'ABCDE12345', 'the real confirmed payment genuinely succeeds for the exact real client and product it was paid for, and its real receipt code lands on the new loan');
   }
 
+  // ---- 11f. Daily Disbursements — real per-day, per-branch disbursement
+  // totals for a real selected year/month, backing the Loan Officer's real
+  // "Disbursements" submenu page ----
+  {
+    const ddMgr = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    const ddRm = await api('POST', '/api/auth/login', { body: { email: 'regional@rhinocash.co.ke', password: process.env.SEEDED_REGIONAL_PASSWORD } });
+    const ddOm = await api('POST', '/api/auth/login', { body: { email: 'opsmanager@rhinocash.co.ke', password: process.env.SEEDED_OPSMGR_PASSWORD } });
+    const ddAcct = await api('POST', '/api/auth/login', { body: { email: 'accountant@rhinocash.co.ke', password: process.env.SEEDED_ACCOUNTANT_PASSWORD } });
+
+    const ddClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Daily Disb Test Client', phone: '0722666200', national_id: '40109988' } });
+    const ddProducts = (await api('GET', '/api/loan-products', { token: officerToken })).json.products;
+    const ddStarter = ddProducts.find(p => p.id === 'pr_ln_starter');
+    const ddFeeInit = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: ddClient.json.client.id, product_id: ddStarter.id, phone: '0722666200' } });
+    await api('POST', `/api/loans/processing-fee/${ddFeeInit.json.feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'DDRECEIPT1' } });
+    const ddLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: ddClient.json.client.id, product_id: ddStarter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: ddFeeInit.json.feeId } });
+    assert(ddLoan.status === 201, 'the real test loan for daily disbursements is genuinely created');
+
+    await api('POST', `/api/loans/${ddLoan.json.loan.id}/approve`, { token: ddMgr.json.token, body: {} });
+    await api('POST', `/api/loans/${ddLoan.json.loan.id}/approve`, { token: ddRm.json.token, body: {} });
+    await api('POST', `/api/loans/${ddLoan.json.loan.id}/approve`, { token: ddOm.json.token, body: {} });
+    await api('POST', `/api/loans/${ddLoan.json.loan.id}/approve`, { token: ddAcct.json.token, body: {} });
+    const ddDisburse = await api('POST', `/api/loans/${ddLoan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    assert(ddDisburse.status === 200, 'the real test loan genuinely disburses, for the daily-disbursements calendar to pick up');
+
+    const today = new Date();
+    const dd = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}`, { token: officerToken });
+    assert(dd.status === 200 && Array.isArray(dd.json.days), 'real Daily Disbursements data loads for the Loan Officer, for a real selected year/month');
+    const todayStr = today.toISOString().slice(0, 10);
+    const todayEntry = dd.json.days.find(day => day.date === todayStr);
+    assert(todayEntry, 'the real day this loan was genuinely disbursed on genuinely appears in the real calendar data');
+    const kisumuEntry = todayEntry.entries.find(e => e.branchName === 'Kisumu');
+    assert(kisumuEntry && kisumuEntry.amount >= 4000, 'the real day\'s entry is genuinely grouped by the real branch name, with the real disbursed amount for that day');
+
+    // A real month with no real disbursements in it genuinely comes back empty.
+    const emptyMonth = await api('GET', `/api/loans/daily-disbursements?year=2019&month=1`, { token: officerToken });
+    assert(emptyMonth.status === 200 && emptyMonth.json.days.length === 0, 'a real month with no real disbursements genuinely returns an empty real result, not fabricated data');
+
+    // Filtering by a real product that this loan does NOT use genuinely excludes it.
+    const wrongProductFilter = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}&product_id=pr_ln_ibuka`, { token: officerToken });
+    const wrongProductEntry = wrongProductFilter.json.days.find(day => day.date === todayStr);
+    assert(!wrongProductEntry, 'filtering by a real different loan product genuinely excludes this real loan from the calendar');
+
+    // A Manager can genuinely view this scoped to their own real branch too.
+    const mgrDD = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}`, { token: ddMgr.json.token });
+    assert(mgrDD.status === 200, 'a Manager can genuinely view Daily Disbursements scoped to their real branch too');
+  }
+
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----
   {
     const mgrLogin = await api('POST', '/api/auth/login', { body: { email: 'manager@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_PASSWORD } });

@@ -1403,6 +1403,43 @@ function register(router) {
     });
   });
 
+  // Real Daily Disbursements — the Loan Officer's real "Disbursements"
+  // submenu page: real loans genuinely disbursed on each real calendar day
+  // of a real, selected year/month (optionally filtered by a real loan
+  // product), grouped by real branch per day (a single Loan Officer only
+  // ever has one real branch, so this is effectively "this officer's real
+  // total for that day", but grouped honestly rather than assuming that).
+  router.get('/api/loans/daily-disbursements', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
+    let clause = scope.clause; const params = [...scope.params];
+    if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
+    if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
+    if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
+    if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to = new Date(year, month, 0).toISOString().slice(0, 10);
+
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`, [...params, from, to]);
+    const branchIds = [...new Set(loans.map(l => l.branch_id))];
+    const branchNames = {};
+    if (branchIds.length) { const ph = branchIds.map(() => '?').join(','); (await all(`SELECT id, name FROM branches WHERE id IN (${ph})`, branchIds)).forEach(b => { branchNames[b.id] = b.name; }); }
+
+    const dayGroups = {};
+    loans.forEach(l => {
+      const day = l.disbursed_at.slice(0, 10);
+      if (!dayGroups[day]) dayGroups[day] = {};
+      dayGroups[day][l.branch_id] = (dayGroups[day][l.branch_id] || 0) + l.principal;
+    });
+    const days = Object.entries(dayGroups).map(([date, byBranch]) => ({
+      date,
+      entries: Object.entries(byBranch).map(([branchId, amount]) => ({ branchId, branchName: branchNames[branchId] || 'Unknown', amount })),
+    }));
+
+    res.json({ year, month, from, to, days });
+  });
+
   // ==================== Loan Applications Overview — full lifecycle, shared across Loan Officer/Manager/Regional Manager/Operational Manager ====================
   router.get('/api/loans/applications-overview', requireAuth, requireModule('loanbook'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
