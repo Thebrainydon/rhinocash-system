@@ -2590,6 +2590,54 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders on the real Dashboard avatar (the same real data URI, not a second fabricated image)");
     __assert((html.match(new RegExp(DB.myAvatarDataUri.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'))||[]).length >= 2, "the real, just-uploaded photo genuinely renders in BOTH the Dashboard avatar and the topbar avatar (top-right)");
 
+    // Create a Ticket (System & Help): a real quick-action modal reached
+    // via the sidebar, not the full ticket-management dashboard other
+    // roles still get for the same label — real "Send To" recipient
+    // directory, real POST /api/support-tickets.
+    DB.ticketRecipients = null;
+    sidebarNavigate('Create a Ticket');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'create-support-ticket', "the real Loan Officer sidebar 'Create a Ticket' item genuinely opens the real quick-action modal, not the full ticket dashboard");
+    __assert(html.includes('Create a Ticket') && html.includes('Ticket subject') && html.includes('Message or Inquiry') && html.includes('Send To') && html.includes('>Send<'), "the real Create a Ticket modal genuinely renders with the requested fields and Send button");
+    __assert(TICKET_SUBJECT_OPTIONS.every(s=>html.includes(s)), "the real Ticket subject dropdown genuinely offers every requested option");
+    __assert(Array.isArray(DB.ticketRecipients) && DB.ticketRecipients.length > 0, "the real Send To recipients directory genuinely loaded from the real backend, not fabricated client-side");
+    __assert(html.includes('>Admin<'), "the real Admin account genuinely appears in the real Send To dropdown");
+
+    const realRecipient = DB.ticketRecipients.find(r=>r.role_id!=='admin');
+    let ticketForm = new Map([['subject','Bank Deposit'],['message','A real client deposit did not reflect on their account'],['assignedTo', realRecipient.id]]);
+    global.FormData = class { constructor(){ return ticketForm; } };
+    await submitCreateSupportTicket({ preventDefault(){}, target:{} });
+    __assert(modal === null, "a real, valid Create a Ticket submission genuinely closes the modal");
+    const createdTicket = (await api.get('/api/support-tickets?q=client deposit did not reflect')).tickets[0];
+    __assert(createdTicket && createdTicket.subject === 'Bank Deposit' && createdTicket.assigned_to === realRecipient.id, "the real, just-sent ticket genuinely persisted server-side with the real subject and the real Send To recipient — not fabricated client-side");
+
+    // Raised Ticket: a real, chrome-free "Support Tickets" PAGE (never a
+    // modal, never a redirect to the Dashboard), reached via its own
+    // real ROLE_ROUTE_OVERRIDES entry so the shared "Raised Ticket" label
+    // doesn't fall through to the full ticket-management dashboard other
+    // roles still get. Deliberately reuses the SAME real state/loader as
+    // the topbar chat-bubble icon's own real Tickets panel.
+    session.ticketsState = null; DB.ticketsBrowser = null; session.selectedTicketId = null;
+    sidebarNavigate('Raised Ticket');
+    __assert(modal === null, "the real Raised Ticket sidebar item genuinely opens a real page, never a modal");
+    __assert(session.section === 'support' && session.subtab === 'Raised Ticket', "the real Raised Ticket item genuinely navigates via real section/subtab state, never a silent fallback to the Dashboard");
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Raised Ticket page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
+    __assert(html.includes('Support Tickets'), "the real Raised Ticket page genuinely renders with the requested 'Support Tickets' title");
+    __assert(html.includes('Bank Deposit'), "the real, just-sent ticket genuinely appears in the real Raised Ticket page's own list, reusing the same real backend data as the topbar Tickets panel — not a second, independently-fabricated list");
+
+    const ticketRow = DB.ticketsBrowser.tickets.find(t=>t.subject==='Bank Deposit');
+    openTicketDetail(ticketRow.id);
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(session.selectedTicketId === ticketRow.id && html.includes('Back to Tickets'), "clicking a real row on the real Raised Ticket page genuinely opens the real ticket detail, reusing the existing real renderTicketDetail()");
+    closeTicketDetail();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(session.selectedTicketId === null && html.includes('Support Tickets'), "closing the real ticket detail genuinely returns to the real Raised Ticket list page, still without falling back to the Dashboard");
+
     // Real self-update: role/branch cannot change even if injected. (Only
     // phone is changed here — changing email would change the officer's
     // real login identifier and break every subsequent section in this

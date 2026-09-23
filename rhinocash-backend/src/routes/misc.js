@@ -24,6 +24,11 @@ async function canDecideOn(actor, requesterRecord) {
 // passed in rather than fetched here so this stays a plain synchronous
 // predicate usable directly inside .filter() over many tickets.
 function ticketVisibleTo(user, ticket, scope) {
+  // Whoever a ticket was real-sent to can always see it, regardless of
+  // role — the whole point of "Send To" (Create a Ticket) is that the
+  // real recipient can actually read it, not just whichever managerial
+  // scope happens to already cover it.
+  if (ticket.assigned_to === user.id) return true;
   if (user.role_id === 'admin') return true;
   if (['ceo', 'director'].includes(user.role_id)) return ticket.priority === 'Critical' || ticket.created_by === user.id;
   if (['manager', 'regional_manager', 'operational_manager'].includes(user.role_id)) {
@@ -161,6 +166,18 @@ function register(router) {
     res.json({ tickets: withSla.slice(0, 5000) });
   });
 
+  // Real, org-wide directory of who a new ticket can genuinely be
+  // addressed to (Create a Ticket -> "Send To") — organizational-
+  // directory-level data (name only), the same real visibility principle
+  // already established for staff avatars, not gated behind the
+  // 'staff' module a Loan Officer doesn't hold. Registered BEFORE the
+  // parameterized /:id route below, or the router would match
+  // "recipients" as an :id and this would never be reached.
+  router.get('/api/support-tickets/recipients', requireAuth, requireModule('support'), async (req, res) => {
+    const rows = await all(`SELECT id, name, role_id FROM users WHERE status = 'Active' AND id != ? ORDER BY name`, [req.user.id]);
+    res.json({ recipients: rows });
+  });
+
   router.get('/api/support-tickets/:id', requireAuth, requireModule('support'), async (req, res, next) => {
     const t = await get('SELECT * FROM support_tickets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Ticket not found' });
@@ -173,6 +190,8 @@ function register(router) {
     res.json({ ticket: t, sla: ticketSlaInfo(t), comments, activity });
   });
 
+  // Real, org-wide directory of who a new ticket can genuinely be
+  // addressed to (Create a Ticket -> "Send To") — organizational-
   router.post('/api/support-tickets', requireAuth, requireModule('support'), async (req, res, next) => {
     const b = req.body;
     if (!b.subject) return next({ status: 400, message: 'subject is required' });
@@ -194,10 +213,25 @@ function register(router) {
       loanId = loan.id;
       if (!clientId) clientId = loan.client_id;
     }
+    // Real "Send To" at creation time — genuinely distinct from the
+    // dedicated /assign endpoint's managerial-reassignment authority: any
+    // ticket creator may address their OWN new ticket to any real,
+    // active staff member (defaulting to Admin, matching the reference
+    // design), never someone else's already-open ticket.
+    let assignedTo = null;
+    if (b.assignedTo) {
+      const assignee = await get(`SELECT * FROM users WHERE id = ? AND status = 'Active'`, [b.assignedTo]);
+      if (!assignee) return next({ status: 400, message: 'assignedTo does not refer to a real, active user' });
+      assignedTo = assignee.id;
+    }
     const id = 'tix_' + crypto.randomUUID();
-    await run('INSERT INTO support_tickets (id, subject, message, category, priority, created_by, branch_id, client_id, loan_id) VALUES (?,?,?,?,?,?,?,?,?)',
-      [id, b.subject, b.message || '', b.category || 'General', b.priority || 'Medium', req.user.id, req.user.branch_id, clientId, loanId]);
+    await run('INSERT INTO support_tickets (id, subject, message, category, priority, created_by, branch_id, client_id, loan_id, assigned_to) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [id, b.subject, b.message || '', b.category || 'General', b.priority || 'Medium', req.user.id, req.user.branch_id, clientId, loanId, assignedTo]);
     await logAction(req, { action: 'Opened support ticket', module: 'support', recordType: 'Ticket', recordId: id, newValue: b.subject });
+    if (assignedTo && assignedTo !== req.user.id) {
+      await notify(assignedTo, 'system', 'New support ticket sent to you', `"${b.subject}" was sent to you by ${req.user.name}.`);
+      await notifyTicketParticipant(assignedTo, 'New support ticket sent to you', `"${b.subject}" was sent to you by ${req.user.name}.`, id, req.user.id);
+    }
     res.status(201).json({ ticket: await get('SELECT * FROM support_tickets WHERE id = ?', [id]) });
   });
 

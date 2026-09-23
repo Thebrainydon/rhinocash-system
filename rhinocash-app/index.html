@@ -879,6 +879,11 @@ const ROLE_ROUTE_OVERRIDES = {
     // Manager) — scoped here so only Loan Officer's own real single-
     // transaction lookup page picks it up, never hijacking theirs.
     "Validate Payments":{section:"payments", subtab:"Validate Payments"},
+    // "Raised Ticket" is also a shared, generic label every other role
+    // reuses for the full ticket-management dashboard (renderSupport()'s
+    // own "Tickets" tab) — scoped here so only the Loan Officer's own
+    // real, chrome-free "Support Tickets" page picks it up.
+    "Raised Ticket":{section:"support", subtab:"Raised Ticket"},
   },
 };
 function resolveRoute(itemLabel){
@@ -891,6 +896,12 @@ function sidebarNavigate(itemLabel){
   // — it opens the real Create Client Lead modal on top of whatever the
   // user is currently looking at, same as "Create Loan Application" etc.
   if(itemLabel === 'Create a Lead'){ session.sidebarOpen = false; openCreateLeadModal(); return; }
+  // For the Loan Officer, "Create a Ticket" is a real quick-action modal
+  // (matching the reference design) rather than the full ticket-management
+  // dashboard every other role still reaches via this same label —
+  // "Raised Ticket" still opens that dashboard for everyone, including
+  // the Loan Officer, since that list is exactly where a raised ticket lives.
+  if(itemLabel === 'Create a Ticket' && session.role === 'Loan Officer'){ session.sidebarOpen = false; openCreateSupportTicketModal(); return; }
   const route = resolveRoute(itemLabel);
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
@@ -10833,8 +10844,57 @@ async function deleteTicketPreset(id){
   await loadTicketPresets();
 }
 
+// A real, chrome-free "Support Tickets" page for the Loan Officer's own
+// "Raised Ticket" sidebar item — genuinely distinct from the full
+// ticket-management dashboard every other role still reaches via
+// renderTicketsListPage() below, but deliberately reusing the exact same
+// real state/loader/columns as the topbar chat-bubble icon's own real
+// Tickets panel (session.ticketsState, DB.ticketsBrowser,
+// loadTicketsBrowser(), TICKET_STATUS_FILTERS) — not a second,
+// independently-fabricated ticket list.
+function renderLoanOfficerRaisedTickets(){
+  if(session.selectedTicketId) return renderTicketDetail(session.selectedTicketId);
+  if(!session.ticketsState) session.ticketsState = { q:'', status:'All statuses', page:1 };
+  const st = session.ticketsState;
+  const header = `
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+      <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+      <h3 style="color:var(--navy); margin:0;">Support Tickets</h3>
+    </div>
+  `;
+  if(!DB.ticketsBrowser || DB.ticketsBrowser.stateKey !== JSON.stringify(st)){
+    loadTicketsBrowser();
+    return `<div class="card">${header}<div class="empty">Loading…</div></div>`;
+  }
+  const d = DB.ticketsBrowser;
+  const { page, totalPages, limit, total } = d.pagination;
+  return `
+    <div class="card">
+      ${header}
+      <div class="pill-row" style="margin-bottom:10px; flex-wrap:wrap;">
+        <select onchange="session.ticketsState.status=this.value; session.ticketsState.page=1; DB.ticketsBrowser=null; renderApp();">
+          ${TICKET_STATUS_FILTERS.map(s=>`<option ${s===st.status?'selected':''}>${s}</option>`).join("")}
+        </select>
+        <input placeholder="Search subject, message" value="${escapeHtml(st.q)}" oninput="session.ticketsState.q=this.value; session.ticketsState.page=1; DB.ticketsBrowser=null; renderApp();">
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>SLA</th><th>Created</th></tr>
+        ${d.tickets.map(t=>`<tr class="clickable" onclick="openTicketDetail('${t.id}')">
+          <td>${escapeHtml(t.subject)}</td>
+          <td>${escapeHtml(t.category)}</td>
+          <td>${escapeHtml(t.priority)}</td>
+          <td>${escapeHtml(t.status)}</td>
+          <td>${slaBadge(t.sla)}</td>
+          <td>${new Date(t.created_at).toLocaleDateString()}</td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">No Support Tickets Found</td></tr>`}
+      </table></div>
+      ${total>limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.ticketsState.page=${page-1}; DB.ticketsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.ticketsState.page=${page+1}; DB.ticketsBrowser=null; renderApp();">Next →</button></div>` : ""}
+    </div>
+  `;
+}
 function renderSupport(){
   if(session.role === "Investor") return renderInvestorSupport();
+  if(session.role === "Loan Officer" && session.subtab==="Raised Ticket") return renderLoanOfficerRaisedTickets();
   const tabs = ["Tickets","FAQ / Knowledge Base"];
   const active = session.subtab || "Tickets";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('support','${t}')">${t}</div>`).join("")}</div>`;
@@ -10919,6 +10979,55 @@ function submitTicket(ev){
     toast("Support ticket submitted");
     DB.ticketDashboard = null;
     await loadSupportTickets(DB.acctPages.tickets?DB.acctPages.tickets.filters:{}, 1);
+  });
+}
+// ==================== Create a Ticket — a real quick-action modal (the
+// Loan Officer's sidebar shortcut) over the exact same real POST
+// /api/support-tickets, plus a real "Send To" recipient directory
+// (GET /api/support-tickets/recipients — organizational-directory-level
+// data, not gated behind the 'staff' module a Loan Officer doesn't hold). ====
+const TICKET_SUBJECT_OPTIONS = ['Payments Support','Loans Support','Clientelle Support','Bank Withdrawal','Bank Deposit','Technical Support','System Support'];
+async function loadTicketRecipients(){
+  return withRequest('load-ticket-recipients', async ()=>{
+    const res = await api.get('/api/support-tickets/recipients');
+    DB.ticketRecipients = res.recipients;
+  });
+}
+function openCreateSupportTicketModal(){
+  if(!DB.ticketRecipients) loadTicketRecipients();
+  openModal('create-support-ticket');
+}
+function renderCreateSupportTicketModal(){
+  const recipients = DB.ticketRecipients || [];
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Create a Ticket</h3>
+      <form onsubmit="return submitCreateSupportTicket(event)">
+        <div class="field"><label>Ticket subject</label><select name="subject">${TICKET_SUBJECT_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join("")}</select></div>
+        <div class="field"><label>Message or Inquiry</label><textarea name="message" rows="6" required></textarea></div>
+        <div class="field">
+          <label>Send To</label>
+          <select name="assignedTo">
+            ${recipients.filter(r=>r.role_id==='admin').map(r=>`<option value="${r.id}">Admin</option>`).join("")}
+            ${recipients.filter(r=>r.role_id!=='admin').map(r=>`<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Send</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+function submitCreateSupportTicket(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.message || !f.message.trim()){ toast("Enter a message or inquiry"); return false; }
+  return withRequest('create-support-ticket', async ()=>{
+    await api.post('/api/support-tickets', { subject: f.subject, message: f.message.trim(), assignedTo: f.assignedTo || null });
+    toast("Ticket sent");
+    closeModal();
   });
 }
 function openTicketDetail(id){ session.selectedTicketId = id; DB.ticketDetail = null; renderApp(); loadTicketDetail(id); }
@@ -12764,6 +12873,7 @@ function renderModal(){
   else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
+  else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

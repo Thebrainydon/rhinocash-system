@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,154 backend tests and 926 frontend tests, all
+At last verification: **1,166 backend tests and 940 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -146,6 +146,11 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   profile photo upload (the pre-existing avatar backend, now actually
   wired up in the frontend) that shows on this page, the Dashboard
   avatar, and the topbar avatar.
+- **Loan Officer's System & Help -> Create a Ticket / Raised Ticket** —
+  complete: a real "Create a Ticket" quick-action modal (Ticket subject,
+  Message or Inquiry, a real "Send To" staff directory) and a real,
+  chrome-free "Raised Ticket" page reusing the same real ticket list as
+  the topbar Tickets panel.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

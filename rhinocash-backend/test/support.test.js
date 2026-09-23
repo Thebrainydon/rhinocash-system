@@ -281,6 +281,39 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(!logText.match(/password|secret|api[_-]?key/i), 'the real communication log never contains credential-shaped content');
   }
 
+  // =========================================================
+  // Create a Ticket (Loan Officer quick-action modal): real "Send To"
+  // recipient directory + real assignment at creation time, visible to
+  // the real recipient even when they hold no managerial scope over it.
+  // =========================================================
+  {
+    const acctToken = await login('accountant@rhinocash.co.ke', process.env.SEEDED_ACCOUNTANT_PASSWORD);
+    const acctMe = (await api('GET', '/api/auth/me', { token: acctToken })).json.user;
+    assert(!!acctToken, 'sanity: the real seeded Accountant account logs in');
+
+    const recipients = await api('GET', '/api/support-tickets/recipients', { token: officerToken });
+    assert(recipients.status === 200 && Array.isArray(recipients.json.recipients) && recipients.json.recipients.length > 0, 'a real GET returns a real, non-empty recipients directory — not gated behind the staff module a Loan Officer does not hold');
+    assert(!recipients.json.recipients.some(r => r.id === officerMe.id), 'the real caller never appears in their own real recipients list');
+    assert(recipients.json.recipients.some(r => r.role_id === 'admin'), 'the real Admin account genuinely appears in the real recipients directory');
+    assert(recipients.json.recipients.some(r => r.id === acctMe.id), 'a real, ordinary (non-managerial) staff member genuinely appears in the real recipients directory too, not just management');
+
+    const badAssignee = await api('POST', '/api/support-tickets', { token: officerToken, body: { subject: 'Bank Deposit', message: 'Test', assignedTo: 'not-a-real-user-id' } });
+    assert(badAssignee.status === 400, 'a real, invalid Send To recipient is genuinely rejected');
+
+    const sent = await api('POST', '/api/support-tickets', { token: officerToken, body: { subject: 'Bank Deposit', message: 'A real client deposit did not reflect', assignedTo: acctMe.id } });
+    assert(sent.status === 201 && sent.json.ticket.assigned_to === acctMe.id, 'a real ticket genuinely saves the real Send To recipient at creation time');
+
+    const acctSees = await api('GET', `/api/support-tickets/${sent.json.ticket.id}`, { token: acctToken });
+    assert(acctSees.status === 200, 'the real recipient — an ordinary, non-managerial staff member who did NOT create this ticket — can genuinely see it, because it was really sent to them');
+
+    const unrelatedManager = await api('GET', `/api/support-tickets/${sent.json.ticket.id}`, { token: nairobiManagerToken });
+    assert(unrelatedManager.status === 403, 'a real, unrelated Manager outside both the real sender\'s and the real recipient\'s scope still genuinely cannot see this ticket — the Send To fix only grants visibility to the real recipient, not everyone');
+
+    const commLog2 = await api('GET', '/api/communication-log', { token: adminToken });
+    const notifyEntry = commLog2.json.log.find(l => l.related_id === sent.json.ticket.id);
+    assert(notifyEntry && notifyEntry.status === 'NOT_CONFIGURED', 'a real notification attempt to the real Send To recipient is genuinely logged at creation time, honestly reporting NOT_CONFIGURED');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

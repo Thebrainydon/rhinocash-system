@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,154 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 926 passed, 0 failed  (drives the real UI functions in
+Backend:  1,166 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 940 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,080 passed, 0 failed
+Total:    2,106 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1075,6 +1075,28 @@ real plaintext value, so there is no real value to display or reveal —
 it renders a fixed, non-functional masked placeholder, and its "eye"
 icon points to the real Security & Login page's real change-password
 flow instead of fabricating a reveal that cannot exist.
+
+The Loan Officer's System & Help menu now has both real submenus. "Create
+a Ticket" is a real quick-action modal (reached directly from the
+sidebar, never a full page) over the existing, unchanged `POST
+/api/support-tickets`: Ticket subject, Message or Inquiry, and a real
+"Send To" recipient directory (`GET /api/support-tickets/recipients`,
+organizational-directory-level data — name only — not gated behind the
+`staff` module a Loan Officer doesn't hold). Setting a real recipient at
+creation required extending `ticketVisibleTo()` (the one real scoping
+predicate every ticket route already shares): a ticket's real assignee
+can now always see it, regardless of role, since a "sent" ticket the
+recipient can never actually read would defeat the entire real purpose
+of Send To — verified with a real, ordinary (non-managerial) staff
+account that did not create the ticket. A real notification is sent to
+the recipient at creation, the same honest, best-effort,
+NOT_CONFIGURED-when-unset pattern used everywhere else in this app.
+"Raised Ticket" is a real, chrome-free "Support Tickets" page — routed
+through its own `ROLE_ROUTE_OVERRIDES` entry so the label, shared with
+every other role's full ticket-management dashboard, doesn't fall
+through to that instead — deliberately reusing the exact same real
+state/loader/columns as the topbar chat-bubble icon's own Tickets panel,
+never a second, independently-fabricated list.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
