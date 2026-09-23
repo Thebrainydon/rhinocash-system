@@ -1201,6 +1201,7 @@ async function loadCoreData(){
     }
   }
   await Promise.all(calls);
+  await loadMyAvatarDataUri();
 }
 async function refreshNotifications(){
   try{ const r = await api.get('/api/notifications'); DB.notifications = r.notifications.map(adaptNotification); }catch(e){}
@@ -1853,7 +1854,7 @@ function renderApp(){
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
             ${(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')) ? `<div class="bell" onclick="openC2bPaymentsPanel()" title="Payments">💵${DB.c2bUnmatchedCount>0?`<span class="bell-dot">${DB.c2bUnmatchedCount}</span>`:""}</div>` : ""}
-            <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')">${session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+            <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')" style="${DB.myAvatarDataUri?'padding:0; overflow:hidden;':''}">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`:session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
         <div class="content">${renderSection()}</div>
@@ -2485,7 +2486,7 @@ function renderOfficerDashboard(){
     <div class="card">
       <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
       <div style="display:flex; gap:14px; align-items:flex-start;">
-        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0; overflow:hidden;">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
         <div style="flex:1; min-width:0;">
           <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft);">
             <div class="profile-info-row">💼 ${me.role}</div>
@@ -11070,6 +11071,7 @@ function renderAccount(){
   if(session.role === "Loan Officer" && (session.subtab||"View Details")==="View Details") return renderLoanOfficerViewDetails();
   if(session.role === "Loan Officer" && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
   if(session.role === "Loan Officer" && session.subtab==="Salary Advance") return renderLoanOfficerSalaryAdvance();
+  if(session.role === "Loan Officer" && session.subtab==="Update Details") return renderLoanOfficerUpdateDetails();
   const roleTabs = {
     "Loan Officer": ["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Manager": ["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
@@ -11631,6 +11633,69 @@ function submitUpdateOwnDetails(ev){
     DB.me = res.user;
     toast("Details updated");
   });
+}
+// ==================== Real profile photo — POST /api/uploads + POST
+// /api/users/me/avatar (both pre-existing, real endpoints). GET
+// /uploads/:name requires auth, which a plain <img src> can't send, so
+// the real bytes are fetched once with the real Bearer token and cached
+// as a data URI (DB.myAvatarDataUri) — read everywhere a real photo
+// needs to show: this page, the Dashboard avatar, and the topbar avatar. ====
+async function loadMyAvatarDataUri(){
+  const path = DB.me && DB.me.avatar_path;
+  if(!path){ DB.myAvatarDataUri = null; return; }
+  try{
+    const res = await fetch(API_BASE + path, { headers: authToken ? { Authorization: 'Bearer ' + authToken } : {} });
+    if(!res.ok){ DB.myAvatarDataUri = null; return; }
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let binary = '';
+    for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+    DB.myAvatarDataUri = `data:${contentType};base64,${btoa(binary)}`;
+  }catch(e){ DB.myAvatarDataUri = null; }
+}
+function triggerMyAvatarFilePicker(){
+  const el = document.getElementById('my-avatar-file-input');
+  if(el) el.click();
+}
+function handleMyAvatarFileChange(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  return withRequest('my-avatar-upload', async ()=>{
+    const uploaded = await uploadFile(file);
+    const res = await api.post('/api/users/me/avatar', { path: uploaded.path });
+    DB.me = { ...DB.me, avatar_path: res.avatar_path };
+    await loadMyAvatarDataUri();
+    toast("Profile photo updated");
+    renderApp();
+  });
+}
+function togglePasswordFieldHint(){ toast("For your security, change your password from Security & Login"); }
+function renderLoanOfficerUpdateDetails(){
+  const me = DB.me || {};
+  return `
+    <div class="card" style="max-width:420px; text-align:center;">
+      <input type="file" id="my-avatar-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" onchange="handleMyAvatarFileChange(event)">
+      <div onclick="triggerMyAvatarFilePicker()" style="width:140px; height:140px; border-radius:12px; margin:0 auto; background:#EFEFEF; overflow:hidden; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:40px; color:#B0B0B0;">👤</span>`}
+      </div>
+      <div class="hint" style="margin:8px 0 18px; font-style:italic;">** Click on Image to Update **</div>
+      <form onsubmit="return submitUpdateOwnDetails(event)" style="text-align:left;">
+        <div class="field"><label>E-mail</label><input name="email" type="email" value="${escapeHtml(me.email||'')}"></div>
+        <div class="field"><label>Contact</label><input name="phone" value="${escapeHtml(me.phone||'')}"></div>
+        <div class="field">
+          <label>Password</label>
+          <div style="position:relative;">
+            <input type="password" readonly value="••••••••••" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordFieldHint()" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Change your password from Security & Login">👁</span>
+          </div>
+        </div>
+        <div class="pill-row" style="justify-content:space-between; margin-top:18px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="doLogout()">⏻ Logout</button>
+          <button type="submit" class="btn btn-green btn-sm">⟳ Update</button>
+        </div>
+      </form>
+    </div>
+  `;
 }
 
 function renderSecurityLogin(){

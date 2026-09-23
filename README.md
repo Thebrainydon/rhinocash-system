@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,154 backend tests and 918 frontend tests, all
+At last verification: **1,154 backend tests and 926 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -142,6 +142,10 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   Apply salary Advance flow (shared with every role's Dashboard Request
   Advance link) that sends a real, short-lived SMS OTP on apply and a
   real approval/rejection SMS once a manager decides.
+- **Loan Officer's My Account -> Update Details** — complete: a real
+  profile photo upload (the pre-existing avatar backend, now actually
+  wired up in the frontend) that shows on this page, the Dashboard
+  avatar, and the topbar avatar.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

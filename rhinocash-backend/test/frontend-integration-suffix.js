@@ -2564,6 +2564,32 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.loSalaryAdvances.length === loAdvCountBefore + 1, "the real, just-submitted advance request genuinely appears in the real Salary Advance page's own data, reloaded fresh from the backend");
     __assert(html.includes('4,500') && html.includes('Frontend test advance') && html.includes('Waiting Account for Approval'), "the real, just-submitted request genuinely renders with its real amount/reason and the requested 'Waiting Account for Approval' status label for a real Pending request");
 
+    // Update Details (a real, chrome-free page reusing the existing real
+    // PATCH /api/auth/me for email/contact, plus a real profile photo
+    // upload over the existing real POST /api/uploads + POST
+    // /api/users/me/avatar endpoints) — the real uploaded photo must show
+    // on this page, the Dashboard avatar, and the topbar avatar.
+    goTo('account','Update Details');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Update Details page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
+    __assert(html.includes('Click on Image to Update') && html.includes('E-mail') && html.includes('Contact') && html.includes('Password') && html.includes('Logout') && html.includes('Update'), "the real Update Details page genuinely renders with the requested photo prompt, fields, and buttons");
+    __assert(!DB.myAvatarDataUri, "sanity: no real avatar photo is set for this officer yet");
+
+    const fakeAvatarFile = { arrayBuffer: async ()=> new TextEncoder().encode('fake avatar png bytes').buffer, type: 'image/png', name: 'my-avatar.png' };
+    await handleMyAvatarFileChange({ target: { files: [fakeAvatarFile] } });
+    __assert(DB.me.avatar_path && DB.me.avatar_path.startsWith('/uploads/'), "a real profile photo upload genuinely reaches the real backend and saves a real avatar_path on the officer's own real account");
+    __assert(DB.myAvatarDataUri && DB.myAvatarDataUri.startsWith('data:image/png;base64,'), "the real, just-uploaded photo's real bytes are genuinely fetched back (with real auth, since GET /uploads/:name requires it) and converted to a real data URI for display");
+
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders on the Update Details page itself");
+
+    goTo('dashboard');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders on the real Dashboard avatar (the same real data URI, not a second fabricated image)");
+    __assert((html.match(new RegExp(DB.myAvatarDataUri.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'))||[]).length >= 2, "the real, just-uploaded photo genuinely renders in BOTH the Dashboard avatar and the topbar avatar (top-right)");
+
     // Real self-update: role/branch cannot change even if injected. (Only
     // phone is changed here — changing email would change the officer's
     // real login identifier and break every subsequent section in this

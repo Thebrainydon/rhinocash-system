@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,154 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 918 passed, 0 failed  (drives the real UI functions in
+Frontend: 926 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,072 passed, 0 failed
+Total:    2,080 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1051,6 +1051,30 @@ requester, naming the real deciding manager — both SMS sends are
 best-effort and never undo the real, already-committed request/decision
 if delivery fails. Entering/confirming the OTP code is intentionally not
 built yet — this round only covers requesting and sending it.
+
+The Loan Officer's My Account -> Update Details page is now a real,
+chrome-free profile-editing page. No new backend was needed — the real
+avatar-upload backend (`POST /api/uploads`, `POST`/`DELETE
+/api/users/me/avatar`, the `users.avatar_path` column) already existed
+but was never actually wired up on the frontend; the topbar avatar and
+every dashboard's avatar box only ever rendered initials. Clicking the
+photo now opens a real file picker, uploads the real selected image
+through the existing real endpoints, and saves it as the caller's own
+real avatar. Since `GET /uploads/:name` genuinely requires
+authentication (confirmed via `test/uploads.test.js`) and a plain `<img
+src>` cannot send a real Bearer token, the real uploaded bytes are
+fetched once with the real token and converted to a data URI client-side
+(no `FileReader` — that isn't available in this project's Node-based
+test harness, so the conversion uses only `fetch`/`arrayBuffer`/`btoa`,
+which work identically in a real browser and in tests) — this same real
+data URI now renders on this page, the Dashboard avatar, and the topbar
+avatar. E-mail/Contact reuse the existing, unchanged `PATCH
+/api/auth/me`. The Password field is a real, honest constraint, not an
+oversight: this app hashes passwords and never stores or exposes the
+real plaintext value, so there is no real value to display or reveal —
+it renders a fixed, non-functional masked placeholder, and its "eye"
+icon points to the real Security & Login page's real change-password
+flow instead of fabricating a reveal that cannot exist.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

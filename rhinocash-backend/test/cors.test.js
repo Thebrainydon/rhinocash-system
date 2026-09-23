@@ -87,6 +87,25 @@ async function preflight(path, method) {
     assert(res.status === 404, 'a real nonexistent GET route still returns 404, unaffected by the OPTIONS-specific fix');
   }
 
+  // =========================================================
+  // 7. X-Filename — POST /api/uploads' real raw-binary contract reads the
+  //    real filename from this custom header. A real browser's preflight
+  //    for a cross-origin upload (frontend and API on different origins,
+  //    the exact deployment shape this app documents) blocks the whole
+  //    request unless the server explicitly allows this header — a real
+  //    gap the Node-based frontend test harness's fetch() never caught,
+  //    since Node's fetch doesn't enforce CORS at all.
+  // =========================================================
+  {
+    const res = await fetch(BASE + '/api/uploads', {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://localhost:8080', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'Content-Type, X-Filename' },
+    });
+    assert(res.status === 204 || res.status === 200, 'OPTIONS /api/uploads returns a real successful status');
+    const allowedHeaders = (res.headers.get('access-control-allow-headers') || '').toLowerCase();
+    assert(allowedHeaders.includes('x-filename'), 'the real Access-Control-Allow-Headers response genuinely includes X-Filename — a real browser upload would otherwise be silently blocked by its own preflight, exactly the bug this fixes');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

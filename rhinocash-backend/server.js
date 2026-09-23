@@ -31,7 +31,13 @@ router.use((req, res, next) => {
 // CORS (the frontend is served separately, e.g. as the existing static HTML app)
 router.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // X-Filename is real and required — POST /api/uploads' raw-binary
+  // contract reads the real filename from it (see the route below).
+  // Missing it here silently fails the browser's own CORS preflight for
+  // every real upload (avatars, client documents) whenever the frontend
+  // and API are served from different origins, which the Node test
+  // harness's fetch() never enforces and so never caught.
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Filename');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
   next();
