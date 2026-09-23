@@ -250,6 +250,8 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
   padding:13px; font-size:15px; font-weight:800; cursor:pointer; margin-top:6px; letter-spacing:0.2px;
 }
 .login-btn:hover{opacity:0.92;}
+.login-btn-spinner{display:inline-block; width:15px; height:15px; vertical-align:-3px; margin-right:7px; animation:loginSpin 0.8s linear infinite;}
+@keyframes loginSpin{ to{ transform:rotate(360deg); } }
 .login-forgot{text-align:right; margin-top:12px;}
 .login-forgot a{color:var(--lime); font-size:12.5px; text-decoration:none; cursor:pointer;}
 .login-demo-box{margin-top:18px; background:rgba(255,255,255,0.06); border:1px dashed rgba(184,230,46,0.3); border-radius:10px; padding:12px 14px;}
@@ -1872,7 +1874,7 @@ function renderLogin(){
                 <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${(session.loggingIn||session.loginSuccess)?'disabled':''}>
               </div>
             </div>
-            <button class="login-btn" type="submit" ${(session.loggingIn||session.loginSuccess)?'disabled':''}>${session.loginSuccess ? '✓ Login successful… redirecting' : session.loggingIn ? '⟳ Processing… please wait' : '▸ Login'}</button>
+            <button class="login-btn" type="submit" ${(session.loggingIn||session.loginSuccess)?'disabled':''}>${(session.loggingIn||session.loginSuccess) ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>${session.loginSuccess ? 'Login successful… redirecting' : 'Processing… please wait'}` : '▸ Login'}</button>
           </form>
           <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
           <div class="hint" style="margin-top:16px; color:#C7CBDA; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
