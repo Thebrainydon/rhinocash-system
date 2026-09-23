@@ -12850,10 +12850,11 @@ function renderLoanOfficerReceiptDayGrid(day){
           if(r.principal>0) lines.push({label:'Principal', amt:r.principal});
           if(r.penalty>0) lines.push({label:'Penalty', amt:r.penalty});
           if(r.fee>0) lines.push({label:'Processing fee', amt:r.fee});
-          return `<div style="position:relative; overflow:hidden; border:1px solid var(--border); border-radius:10px; padding:14px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          const cellStyle = "border:1px solid #999; padding:5px 8px;";
+          return `<div style="position:relative; overflow:hidden; border:1px solid #999; border-radius:10px; padding:14px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
             <img src="${LOGO_DATA_URI}" alt="" style="position:absolute; top:50%; left:50%; width:260px; height:auto; transform:translate(-50%,-50%) rotate(-18deg); opacity:0.09; pointer-events:none; z-index:0;">
             <div style="position:relative; z-index:1;">
-              <div style="text-align:center; padding-bottom:8px; border-bottom:1px solid var(--border); margin-bottom:8px;">
+              <div style="text-align:center; padding-bottom:8px; border-bottom:1px solid #999; margin-bottom:8px;">
                 <div style="font-weight:800; color:var(--navy); line-height:1.2;">RHINOCASH LTD</div>
                 <div class="hint" style="line-height:1.2;">Official Payment Receipt</div>
               </div>
@@ -12866,15 +12867,15 @@ function renderLoanOfficerReceiptDayGrid(day){
                 </div>
                 <div style="font-size:20px; font-weight:800; color:var(--red); white-space:nowrap;">${fmtNum(r.amount)}</div>
               </div>
-              <table style="margin-top:10px; width:100%; border:1px solid var(--border); border-collapse:collapse;">
-                <tr><th style="border:1px solid var(--border);">Description</th><th style="border:1px solid var(--border);">Transaction</th><th style="border:1px solid var(--border);">Total</th></tr>
-                ${lines.map(l=>`<tr><td style="border:1px solid var(--border);">${escapeHtml(l.label)}</td><td style="border:1px solid var(--border);">${escapeHtml(r.reference)}</td><td style="border:1px solid var(--border);">${fmtNum(l.amt)}</td></tr>`).join("")}
-                <tr style="font-weight:700;"><td style="border:1px solid var(--border);" colspan="2">TOTALS</td><td style="border:1px solid var(--border);">${fmtNum(r.amount)}</td></tr>
+              <table style="margin-top:10px; width:100%; border:1px solid #999; border-collapse:collapse;">
+                <tr><th style="${cellStyle}">Description</th><th style="${cellStyle}">Transaction</th><th style="${cellStyle}">Total</th></tr>
+                ${lines.map(l=>`<tr><td style="${cellStyle}">${escapeHtml(l.label)}</td><td style="${cellStyle}">${escapeHtml(r.reference)}</td><td style="${cellStyle}">${fmtNum(l.amt)}</td></tr>`).join("")}
+                <tr style="font-weight:700;"><td style="${cellStyle}" colspan="2">TOTALS</td><td style="${cellStyle}">${fmtNum(r.amount)}</td></tr>
               </table>
-              <table style="margin-top:6px; width:100%; border:1px solid var(--border); border-collapse:collapse;">
+              <table style="margin-top:6px; width:100%; border:1px solid #999; border-collapse:collapse;">
                 <tr>
-                  <td style="border:1px solid var(--border); padding:6px;">Confirmed By System<div class="hint">Signature ...........................</div></td>
-                  <td style="border:1px solid var(--border); padding:6px;">Posting Status ${escapeHtml(r.status)}<div class="hint">Signature ...........................</div></td>
+                  <td style="${cellStyle}">Confirmed By System<div class="hint">Signature ...........................</div></td>
+                  <td style="${cellStyle}">Posting Status ${escapeHtml(r.status)}<div class="hint">Signature ...........................</div></td>
                 </tr>
               </table>
             </div>
