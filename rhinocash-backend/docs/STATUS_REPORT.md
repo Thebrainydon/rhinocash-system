@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 862 passed, 0 failed  (drives the real UI functions in
+Frontend: 871 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,959 passed, 0 failed
+Total:    1,968 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -918,6 +918,29 @@ of this codebase's date handling assumes — so the calendar's per-day
 lookup silently matched nothing until the query was changed to
 `(created_at)::date::text`, returning the plain string every other date
 field in this codebase already expects.
+
+The Payments menu's seventh and final submenu, "Payments Report" (Loan
+Officer view), is now a real, chrome-free, monthly per-staff summary —
+genuinely one row for a Loan Officer, since `GET /api/payments` and the
+confirmed-fee endpoint are both already scoped to their own portfolio.
+Reuses the exact same real merge already established for Processed
+Payments and Payment Receipts (real posted/overpaid loan-schedule
+payments plus real confirmed processing-fee collections), fetched once
+per month and reused for both the summary row and three real per-bucket
+drill-down lists reached via the Principal/Interest/Processing Fee
+columns' own "View" links — matching the reference design's own three
+separate drill-down pages exactly, right down to their column set (Date/
+Transaction/Amount/Disbursement/Client/Id No/Branch/Receipt/Approval).
+"Total Income" is genuinely Interest + Processing Fee + Penalties (not
+Principal, which is a return of capital, not income); "Totals" is
+genuinely Principal + Total Income — both cross-checked directly in the
+frontend test suite's own arithmetic, not just visually. "Checkoff" has
+no real backing concept anywhere in this system (there is no such payment
+channel here) so it honestly always reads 0, never a fabricated nonzero
+figure. The "Receipt" column reuses the same real, compact
+last-8-characters-of-the-real-id convention already established for the
+topbar Pending Payments panel, rather than inventing a fake sequential
+receipt number this codebase has never tracked.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

@@ -8580,7 +8580,8 @@ function renderPayments(){
   if(active==="Receipts") return renderLoanOfficerReceipts();
   if(active==="Pay-in Summary" && session.role !== 'Loan Officer') return tabsHtml + renderPayinSummary();
   if(active==="Pay-in Summary") return renderLoanOfficerPayinSummary();
-  if(active==="Payments Report") return tabsHtml + renderPaymentsReport();
+  if(active==="Payments Report" && session.role !== 'Loan Officer') return tabsHtml + renderPaymentsReport();
+  if(active==="Payments Report") return renderLoanOfficerPaymentsReport();
   if(active==="M-Pesa Integration") return tabsHtml + renderMpesa();
   if(active==="M-Pesa Transactions") return tabsHtml + renderMpesaTransactions();
   if(active==="M-Pesa Reconciliation") return tabsHtml + renderMpesaReconciliation();
@@ -13039,6 +13040,167 @@ function renderLoanOfficerPayinSummary(){
   const key = JSON.stringify({ year: st.year, month: st.month });
   if(!DB.loPayinSummaryMonth || DB.loPayinSummaryMonth.stateKey !== key){ loadLoanOfficerPayinSummaryMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   return renderLoanOfficerPayinSummaryCalendar();
+}
+
+// ==================== Payments Report (Loan Officer Payments menu) ====================
+// A real, chrome-free, monthly per-staff summary — for a Loan Officer,
+// genuinely one row, since GET /api/payments and the confirmed-fee
+// endpoint are both already scoped to their own portfolio. Reuses the
+// exact same real merge already established for Processed Payments/
+// Payment Receipts: real posted+overpaid loan-schedule payments
+// (GET /api/payments) plus real confirmed processing-fee collections
+// (GET /api/loans/processing-fee/confirmed) — fetched once per month and
+// reused for both the summary row and the three real per-bucket
+// drill-down lists reached via each column's "View" link. "Checkoff" has
+// no real backing concept anywhere in this system (there is no such
+// payment channel) so it is honestly always 0, never fabricated.
+const LO_REPORT_BUCKET_LABELS = { principal:'Principal', interest:'Interest', fee:'Processing fee' };
+function defaultLoanOfficerPaymentsReportState(){
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth()+1, drillDown: null };
+}
+async function loadLoanOfficerPaymentsReportMonth(){
+  const st = session.loPaymentsReportState;
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  return withRequest('load-lo-payments-report:'+key, async ()=>{
+    const from = `${st.year}-${String(st.month).padStart(2,'0')}-01`;
+    const lastDay = new Date(st.year, st.month, 0).getDate();
+    const to = `${st.year}-${String(st.month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    const qs = (extra) => new URLSearchParams({ date_from: from, date_to: to, limit: 500, ...extra }).toString();
+    const [postedRes, overpayRes, feeRes] = await Promise.all([
+      api.get('/api/payments?'+qs({ status:'Posted' })),
+      api.get('/api/payments?'+qs({ status:'Overpayment' })),
+      api.get('/api/loans/processing-fee/confirmed?'+new URLSearchParams({ date_from:from, date_to:to }).toString()),
+    ]);
+    DB.loPaymentsReportMonth = {
+      paymentRows: postedRes.payments.concat(overpayRes.payments),
+      feeRows: feeRes.feePayments,
+      stateKey: key,
+    };
+  });
+}
+function loPaymentsReportSums(d){
+  let principal=0, interest=0, penalty=0, fee=0;
+  d.paymentRows.forEach(p=>{ principal+=Number(p.allocated_principal||0); interest+=Number(p.allocated_interest||0); penalty+=Number(p.allocated_penalty||0); });
+  d.feeRows.forEach(f=>{ fee+=Number(f.amount||0); });
+  const totalIncome = interest+fee+penalty;
+  return { principal, interest, checkoff:0, fee, penalty, totalIncome, totals: principal+totalIncome };
+}
+function loPaymentsReportTime(dateStr){
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d = new Date(dateStr);
+  return `${MONTH_ABBR[d.getMonth()]} ${String(d.getDate()).padStart(2,'0')},${dateStr.slice(11,16)}`;
+}
+function exportLoanOfficerPaymentsReportCSV(){
+  const d = DB.loPaymentsReportMonth;
+  if(!d) return;
+  const s = loPaymentsReportSums(d);
+  exportRowsToCsv('payments-report.csv', ['staff','principal','interest','checkoff','fee','penalty','totalIncome','totals'],
+    [{ staff: session.userName, principal:s.principal, interest:s.interest, checkoff:s.checkoff, fee:s.fee, penalty:s.penalty, totalIncome:s.totalIncome, totals:s.totals }]);
+}
+function renderLoanOfficerPaymentsReportSummary(){
+  const st = session.loPaymentsReportState;
+  const d = DB.loPaymentsReportMonth;
+  const s = loPaymentsReportSums(d);
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const curYear = new Date().getFullYear();
+  const yearOptions = [curYear, curYear-1, curYear-2];
+  const monthOptions = [];
+  for(let m=1;m<=12;m++) monthOptions.push({ value:m, label: MONTH_NAMES[m-1] + ' ' + st.year });
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Payments Report</span></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.loPaymentsReportState.year=Number(this.value); DB.loPaymentsReportMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
+        </select>
+        <select onchange="session.loPaymentsReportState.month=Number(this.value); DB.loPaymentsReportMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" onclick="exportLoanOfficerPaymentsReportCSV()">-- Generate --</button>
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>Staff</th><th>Principal</th><th>Interest</th><th>Checkoff</th><th>Processing Fee</th><th>Penalties</th><th>Total Income</th><th>Totals</th></tr>
+        <tr>
+          <td>${escapeHtml(session.userName)}</td>
+          <td>${fmtNum(s.principal)} <a href="#" onclick="session.loPaymentsReportState.drillDown='principal'; renderApp(); return false;">View</a></td>
+          <td>${fmtNum(s.interest)} <a href="#" onclick="session.loPaymentsReportState.drillDown='interest'; renderApp(); return false;">View</a></td>
+          <td>${fmtNum(s.checkoff)}</td>
+          <td>${fmtNum(s.fee)} <a href="#" onclick="session.loPaymentsReportState.drillDown='fee'; renderApp(); return false;">View</a></td>
+          <td>${fmtNum(s.penalty)}</td>
+          <td>${fmtNum(s.totalIncome)}</td>
+          <td>${fmtNum(s.totals)}</td>
+        </tr>
+        <tr style="font-weight:700; background:#F5F4F1;">
+          <td>Totals</td><td>${fmtNum(s.principal)}</td><td>${fmtNum(s.interest)}</td><td>${fmtNum(s.checkoff)}</td>
+          <td>${fmtNum(s.fee)}</td><td>${fmtNum(s.penalty)}</td><td>${fmtNum(s.totalIncome)}</td><td>${fmtNum(s.totals)}</td>
+        </tr>
+      </table></div>
+    </div>
+  `;
+}
+function loPaymentsReportBucketRows(bucket){
+  const d = DB.loPaymentsReportMonth;
+  let rows;
+  if(bucket === 'fee'){
+    rows = d.feeRows.map(f=>({
+      time: f.confirmed_at, reference: f.mpesa_receipt_number || f.id, amount: Number(f.amount),
+      disbursedAt: null, clientName: f.client_name, clientNationalId: f.client_national_id,
+      branchId: null, id: f.id, approvedBy: f.confirmed_by,
+    }));
+  } else {
+    rows = d.paymentRows.filter(p=>Number(p['allocated_'+bucket]||0) > 0).map(p=>{
+      const loan = DB.loans.find(l=>l.id===p.loan_id);
+      return {
+        time: p.created_at, reference: p.reference, amount: Number(p['allocated_'+bucket]),
+        disbursedAt: loan ? loan.disbursedAt : null, clientName: p.client_name, clientNationalId: p.client_national_id,
+        branchId: loan ? loan.branchId : null, id: p.id, approvedBy: p.recorded_by,
+      };
+    });
+  }
+  rows.sort((a,b)=> (a.time||'') < (b.time||'') ? -1 : (a.time||'') > (b.time||'') ? 1 : 0);
+  return rows;
+}
+function exportLoanOfficerPaymentsReportDrillDownCSV(bucket){
+  exportRowsToCsv(bucket+'-payments.csv', ['time','reference','amount','disbursedAt','clientName','clientNationalId'], loPaymentsReportBucketRows(bucket));
+}
+function renderLoanOfficerPaymentsReportDrillDown(bucket){
+  const st = session.loPaymentsReportState;
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const rows = loPaymentsReportBucketRows(bucket);
+  const total = rows.reduce((s,r)=>s+r.amount, 0);
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="session.loPaymentsReportState.drillDown=null; renderApp();" style="cursor:pointer;">←</span><span>${MONTH_NAMES[st.month-1]} ${st.year} ${LO_REPORT_BUCKET_LABELS[bucket]} Payments for ${escapeHtml(session.userName)}</span></span>
+        <span style="font-weight:800; color:var(--red);">Ksh ${fmtNum(total)}</span>
+      </div>
+      <div class="pill-row" style="justify-content:flex-end; margin-top:8px;">
+        <button class="btn btn-sm btn-outline" onclick="exportLoanOfficerPaymentsReportDrillDownCSV('${bucket}')">-- Generate --</button>
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>Date</th><th>Transaction</th><th>Amount</th><th>Disbursement</th><th>Client</th><th>Id No</th><th>Branch</th><th>Receipt</th><th>Approval</th></tr>
+        ${rows.map((r,i)=>`<tr>
+          <td>${loPaymentsReportTime(r.time)}</td>
+          <td>${escapeHtml(r.reference||'—')}</td>
+          <td>${fmtNum(r.amount)}</td>
+          <td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td>
+          <td>${escapeHtml(r.clientName||'—')}</td>
+          <td>${escapeHtml(r.clientNationalId||'—')}</td>
+          <td>${r.branchId?escapeHtml(branchName(r.branchId)):'—'}</td>
+          <td>${r.id.slice(-8).toUpperCase()}</td>
+          <td>${r.approvedBy?staffName(r.approvedBy):'System'}</td>
+        </tr>`).join("") || `<tr><td colspan="9" class="empty">No ${LO_REPORT_BUCKET_LABELS[bucket].toLowerCase()} payments this month.</td></tr>`}
+      </table></div>
+    </div>
+  `;
+}
+function renderLoanOfficerPaymentsReport(){
+  const st = session.loPaymentsReportState || (session.loPaymentsReportState = defaultLoanOfficerPaymentsReportState());
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  if(!DB.loPaymentsReportMonth || DB.loPaymentsReportMonth.stateKey !== key){ loadLoanOfficerPaymentsReportMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  return st.drillDown ? renderLoanOfficerPaymentsReportDrillDown(st.drillDown) : renderLoanOfficerPaymentsReportSummary();
 }
 
 /* ---------------- Init ---------------- */

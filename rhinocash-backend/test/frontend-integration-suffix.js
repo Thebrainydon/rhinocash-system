@@ -1114,8 +1114,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = renderPrepayments();
     __assert(html.includes('Potential Prepayment'), "Prepayments view genuinely evaluates real payments using the real allocation-based classification");
 
-    goTo('payments', 'Payments Report');
-    while(!DB.paymentsPages.report){ await new Promise(r=>setTimeout(r,20)); }
+    await loadPaymentsReport({}, 1); // a Loan Officer now sees a different real page under this label — load the generic renderer's data directly rather than relying on goTo's dispatch
     html = renderPaymentsReport();
     __assert(html.includes('Total Filtered Results') && html.includes(payment.reference), "Payments Report shows real filtered totals including the real payment just recorded");
 
@@ -1184,8 +1183,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Page 1 of'), "Processed Payments now uses real server-side pagination state, not the full local DB.payments array");
     __assert(DB.paymentsPages.processed.pagination.total >= 2, "the real pagination.total reflects the true count from the backend");
 
-    goTo('payments', 'Payments Report');
-    while(!DB.paymentsPages.report){ await new Promise(r=>setTimeout(r,20)); }
+    await loadPaymentsReport({}, 1); // a Loan Officer now sees a different real page under this label — load the generic renderer's data directly rather than relying on goTo's dispatch
     html = renderPaymentsReport();
     __assert(html.includes('Total Filtered Results') && html.includes('Total Transactions'), "Payments Report shows real full-dataset totals, correctly labeled, not a page-only sum");
     const reportTotalsBefore = DB.paymentsPages.report.totals;
@@ -2178,6 +2176,36 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('MPESA Payments') && html.includes('RHINOCASH LTD') && html.includes('Printed on') && html.includes(c2bTransId), "the real per-day printable statement genuinely shows the real transaction and letterhead");
     session.loPayinSummaryState.printDay = null;
+    renderApp();
+
+    // Payments Report (Loan Officer Payments menu): a real, chrome-free,
+    // monthly per-staff summary reusing the exact same real merge already
+    // established for Processed Payments/Payment Receipts, plus three
+    // real per-bucket drill-down lists reached via each column's View link.
+    session.loPaymentsReportState = null; DB.loPaymentsReportMonth = null;
+    goTo('payments','Payments Report');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Payments Report page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Payments Report') && html.includes('Staff') && html.includes('Principal') && html.includes('Interest') && html.includes('Checkoff') && html.includes('Processing Fee') && html.includes('Penalties') && html.includes('Total Income') && html.includes('Totals'), "the real Payments Report summary genuinely renders with the requested title and full column set");
+    __assert(DB.loPaymentsReportMonth && Array.isArray(DB.loPaymentsReportMonth.paymentRows), "the real Payments Report data genuinely loaded from the real backend endpoints, not fabricated client-side");
+    const reportSums = loPaymentsReportSums(DB.loPaymentsReportMonth);
+    __assert(Math.abs(reportSums.totalIncome - (reportSums.interest+reportSums.fee+reportSums.penalty)) < 0.01, "the real Total Income genuinely sums Interest+Processing Fee+Penalties, not a separately fabricated figure");
+    __assert(Math.abs(reportSums.totals - (reportSums.principal+reportSums.totalIncome)) < 0.01, "the real Totals genuinely sums Principal+Total Income, not a separately fabricated figure");
+
+    session.loPaymentsReportState.drillDown = 'principal';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Principal Payments for') && html.includes('Date') && html.includes('Transaction') && html.includes('Disbursement') && html.includes('Client') && html.includes('Id No') && html.includes('Branch') && html.includes('Receipt') && html.includes('Approval'), "the real Principal drill-down genuinely renders with the requested title and full column set");
+    __assert(html.includes(ppPayment.reference), "the real Principal drill-down genuinely shows a real just-recorded payment's real reference");
+
+    session.loPaymentsReportState.drillDown = 'fee';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Processing fee Payments for'), "the real Processing fee drill-down genuinely renders with its own real title");
+    __assert(DB.loPaymentsReportMonth.feeRows.length > 0, "the real Processing fee drill-down genuinely has real confirmed fee data to show, not fabricated client-side");
+
+    session.loPaymentsReportState.drillDown = null;
     renderApp();
 
     // Follow-Ups: real create through the actual UI function.
