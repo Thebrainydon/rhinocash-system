@@ -874,6 +874,11 @@ const ROLE_ROUTE_OVERRIDES = {
   // would hijack their sidebar item into this Loan Officer LoanBook page).
   "Loan Officer": {
     "Collection Report":{section:"loanbook", subtab:"Collection Report"},
+    // "Validate Payments" is also a real, generic label reused for other
+    // roles' own Unposted Payments listing (Manager, Admin, Operational
+    // Manager) — scoped here so only Loan Officer's own real single-
+    // transaction lookup page picks it up, never hijacking theirs.
+    "Validate Payments":{section:"payments", subtab:"Validate Payments"},
   },
 };
 function resolveRoute(itemLabel){
@@ -8582,6 +8587,7 @@ function renderPayments(){
   if(active==="Pay-in Summary") return renderLoanOfficerPayinSummary();
   if(active==="Payments Report" && session.role !== 'Loan Officer') return tabsHtml + renderPaymentsReport();
   if(active==="Payments Report") return renderLoanOfficerPaymentsReport();
+  if(active==="Validate Payments") return renderLoanOfficerValidatePayments();
   if(active==="M-Pesa Integration") return tabsHtml + renderMpesa();
   if(active==="M-Pesa Transactions") return tabsHtml + renderMpesaTransactions();
   if(active==="M-Pesa Reconciliation") return tabsHtml + renderMpesaReconciliation();
@@ -13201,6 +13207,61 @@ function renderLoanOfficerPaymentsReport(){
   const key = JSON.stringify({ year: st.year, month: st.month });
   if(!DB.loPaymentsReportMonth || DB.loPaymentsReportMonth.stateKey !== key){ loadLoanOfficerPaymentsReportMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   return st.drillDown ? renderLoanOfficerPaymentsReportDrillDown(st.drillDown) : renderLoanOfficerPaymentsReportSummary();
+}
+
+// ==================== Validate Payments (Loan Officer Payments menu) ====================
+// A real, chrome-free, single-transaction lookup — searching a real
+// M-Pesa payment code (or phone/account reference) to confirm a real
+// client's real payment actually exists. Reuses the exact same existing
+// GET /api/mpesa/c2b/transactions endpoint every other Payments-menu
+// page in this flow is already built on; no new backend needed.
+function defaultLoanOfficerValidatePaymentsState(){
+  return { q:'' };
+}
+async function loadLoanOfficerValidatePayments(){
+  const st = session.loValidatePaymentsState;
+  return withRequest('load-lo-validate-payments:'+st.q, async ()=>{
+    const res = await api.get('/api/mpesa/c2b/transactions?'+new URLSearchParams({ q: st.q, limit: 1 }).toString());
+    DB.loValidatePaymentsResult = { q: st.q, transaction: res.transactions[0] || null, shortcode: res.shortcode };
+  });
+}
+function renderLoanOfficerValidatePayments(){
+  const st = session.loValidatePaymentsState || (session.loValidatePaymentsState = defaultLoanOfficerValidatePaymentsState());
+  let body;
+  if(!st.q.trim()){
+    body = `<div class="section-note">Search payment code or transaction to see its details</div>`;
+  } else {
+    const r = DB.loValidatePaymentsResult;
+    if(!r || r.q !== st.q){
+      loadLoanOfficerValidatePayments();
+      body = `<div class="empty">Loading…</div>`;
+    } else if(!r.transaction){
+      body = `<div class="section-note">No payment found matching "${escapeHtml(st.q)}"</div>`;
+    } else {
+      const t = r.transaction;
+      const d = new Date(t.createdAt);
+      const timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true}).toLowerCase();
+      body = `
+        <table style="width:100%; max-width:520px; margin:20px auto;">
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Transaction :</td><td style="font-weight:700;">${escapeHtml(t.transId)}</td></tr>
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Amount :</td><td style="font-weight:700;">${fmtNum(t.amount)}</td></tr>
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Paybill :</td><td style="font-weight:700;">${escapeHtml(r.shortcode||'—')}</td></tr>
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Account :</td><td style="font-weight:700;">${escapeHtml(t.accountRef||'—')}</td></tr>
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Client Name :</td><td style="font-weight:700;">${escapeHtml(t.clientName||'Unmatched')}</td></tr>
+          <tr><td class="hint" style="text-align:right; padding:8px 16px;">Payment Date :</td><td style="font-weight:700;">${fmtDDMMYYYY(t.createdAt.slice(0,10))}, ${timeStr}</td></tr>
+        </table>
+      `;
+    }
+  }
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Validate Payment Transaction</span></span>
+        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.loValidatePaymentsState.q=this.value; DB.loValidatePaymentsResult=null; renderApp();" class="btn btn-sm btn-outline">
+      </div>
+      ${body}
+    </div>
+  `;
 }
 
 /* ---------------- Init ---------------- */

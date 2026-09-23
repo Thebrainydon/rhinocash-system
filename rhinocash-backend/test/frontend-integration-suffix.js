@@ -2208,6 +2208,37 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     session.loPaymentsReportState.drillDown = null;
     renderApp();
 
+    // Validate Payments (Loan Officer Payments menu, last submenu): a
+    // real, chrome-free single-transaction lookup over the exact same
+    // existing GET /api/mpesa/c2b/transactions endpoint. Navigated via
+    // sidebarNavigate() (not goTo() directly) so this also exercises the
+    // real Loan-Officer-scoped ROLE_ROUTE_OVERRIDES entry that keeps this
+    // label from being hijacked by the shared "Validate Payments" ->
+    // Unposted Payments mapping every other role still uses.
+    session.loValidatePaymentsState = null; DB.loValidatePaymentsResult = null;
+    sidebarNavigate('Validate Payments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Validate Payments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Validate Payment Transaction') && html.includes('Search payment code or transaction'), "the real Validate Payments page genuinely renders with the requested title and empty-state banner");
+
+    session.loValidatePaymentsState.q = c2bTransId;
+    DB.loValidatePaymentsResult = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Transaction :') && html.includes(c2bTransId) && html.includes('Amount :') && html.includes('Paybill :') && html.includes('Account :') && html.includes('Client Name :') && html.includes('Payment Date :'), "the real Validate Payments result genuinely renders with the requested fields for a real transaction");
+
+    session.loValidatePaymentsState.q = 'NO-SUCH-CODE-XYZ';
+    DB.loValidatePaymentsResult = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('No payment found'), "the real Validate Payments search genuinely reports no match for a real nonexistent code, rather than fabricating a result");
+    session.loValidatePaymentsState.q = '';
+    DB.loValidatePaymentsResult = null;
+    renderApp();
+
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];
     if(clientForFu){

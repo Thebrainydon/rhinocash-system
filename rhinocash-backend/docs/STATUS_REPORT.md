@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 871 passed, 0 failed  (drives the real UI functions in
+Frontend: 875 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,968 passed, 0 failed
+Total:    1,972 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -941,6 +941,29 @@ figure. The "Receipt" column reuses the same real, compact
 last-8-characters-of-the-real-id convention already established for the
 topbar Pending Payments panel, rather than inventing a fake sequential
 receipt number this codebase has never tracked.
+
+The Payments menu's eighth and final submenu, "Validate Payments" (Loan
+Officer view), is now a real, chrome-free single-transaction lookup —
+search a real M-Pesa payment code (or phone/account reference) to confirm
+a real client's real payment actually exists, over the exact same
+existing `GET /api/mpesa/c2b/transactions` endpoint every other page in
+this flow already reuses. No new backend endpoint was needed. This label
+is also reused, unrelated, by every other role's own generic Unposted
+Payments listing ("Payment Validation"/"Payment Queue" for Manager/
+Admin/Operational Manager) — rather than repointing that shared mapping
+(which would have hijacked their existing page), this was wired through
+the real, pre-existing `ROLE_ROUTE_OVERRIDES` mechanism, scoped to Loan
+Officer only, the same pattern already established for "Collection
+Report" earlier in this flow. A genuinely-absent match reports "No
+payment found" rather than fabricating a result, and an unmatched real
+transaction shows "Unmatched" for Client Name rather than inventing one.
+
+This completes every real submenu under the Loan Officer's Payments menu
+(Unposted Payments, Processed Payments, Prepayments, Overpayments,
+Receipts, Pay-in Summary, Payments Report, Validate Payments) — all
+built as real, chrome-free pages over real, already-existing or minimally
+and honestly extended backend data, matching each reference design
+exactly.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
