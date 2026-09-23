@@ -2148,7 +2148,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 
     viewLoanOfficerReceiptDay(todayStr);
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Payment Receipts —') && html.includes('Client Name') && html.includes('Client IDNO') && html.includes('Loan Officer') && html.includes('Description') && html.includes('Transaction') && html.includes('TOTALS') && html.includes('Confirmed By') && html.includes('Posting Status'), "the real per-day receipt-slip grid genuinely renders with the requested fields");
+    __assert(html.includes('Payment Receipts —') && html.includes('Client Name') && html.includes('Client ID NO.') && html.includes('Loan Officer') && html.includes('Description') && html.includes('Transaction') && html.includes('TOTALS') && html.includes('Confirmed By System') && html.includes('Posting Status'), "the real per-day receipt-slip grid genuinely renders with the requested fields");
     __assert(html.includes(ppPayment.reference), "the real day-grid genuinely shows the real transaction reference for a real payment");
     session.loReceiptsState.viewDay = null;
     renderApp();

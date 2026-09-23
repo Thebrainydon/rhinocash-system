@@ -12857,26 +12857,24 @@ function renderLoanOfficerReceiptDayGrid(day){
                 <div style="font-weight:800; color:var(--navy); line-height:1.2;">RHINOCASH LTD</div>
                 <div class="hint" style="line-height:1.2;">Official Payment Receipt</div>
               </div>
-              <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                <div>
-                  <div><strong>Client Name</strong> ${escapeHtml(r.clientName||'—')}</div>
-                  <div class="hint">Client IDNO ${escapeHtml(r.clientNationalId||'—')}</div>
-                  <div class="hint">Loan Officer ${escapeHtml(session.userName)}</div>
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                <div style="flex:1 1 auto;">
+                  <div style="display:flex; gap:6px; margin-bottom:3px;"><span class="hint">Client Name</span><span style="flex:1 1 auto; border-bottom:1px dotted #999; padding-left:4px;">${escapeHtml(r.clientName||'—')}</span></div>
+                  <div style="display:flex; gap:6px; margin-bottom:3px;"><span class="hint">Client ID NO.</span><span style="flex:1 1 auto; border-bottom:1px dotted #999; padding-left:4px;">${escapeHtml(r.clientNationalId||'—')}</span></div>
+                  <div style="display:flex; gap:6px; margin-bottom:3px;"><span class="hint">Loan Officer</span><span style="flex:1 1 auto; border-bottom:1px dotted #999; padding-left:4px;">${escapeHtml(session.userName)}</span></div>
+                  <div style="display:flex; gap:6px;"><span class="hint">Date</span><span style="flex:1 1 auto; border-bottom:1px dotted #999; padding-left:4px;">${fmtDDMMYYYY(day)}</span></div>
                 </div>
-                <div style="text-align:right;">
-                  <div class="hint">Date ${fmtDDMMYYYY(day)}</div>
-                  <div style="font-size:20px; font-weight:800; color:var(--red);">${fmtNum(r.amount)}</div>
-                </div>
+                <div style="font-size:20px; font-weight:800; color:var(--red); white-space:nowrap;">${fmtNum(r.amount)}</div>
               </div>
-              <table style="margin-top:8px; width:100%;">
-                <tr><th>Description</th><th>Transaction</th><th>Total</th></tr>
-                ${lines.map(l=>`<tr><td>${escapeHtml(l.label)}</td><td>${escapeHtml(r.reference)}</td><td>${fmtNum(l.amt)}</td></tr>`).join("")}
-                <tr style="font-weight:700;"><td colspan="2">TOTALS</td><td>${fmtNum(r.amount)}</td></tr>
+              <table style="margin-top:10px; width:100%; border:1px solid var(--border); border-collapse:collapse;">
+                <tr><th style="border:1px solid var(--border);">Description</th><th style="border:1px solid var(--border);">Transaction</th><th style="border:1px solid var(--border);">Total</th></tr>
+                ${lines.map(l=>`<tr><td style="border:1px solid var(--border);">${escapeHtml(l.label)}</td><td style="border:1px solid var(--border);">${escapeHtml(r.reference)}</td><td style="border:1px solid var(--border);">${fmtNum(l.amt)}</td></tr>`).join("")}
+                <tr style="font-weight:700;"><td style="border:1px solid var(--border);" colspan="2">TOTALS</td><td style="border:1px solid var(--border);">${fmtNum(r.amount)}</td></tr>
               </table>
-              <table style="margin-top:8px; width:100%;">
+              <table style="margin-top:6px; width:100%; border:1px solid var(--border); border-collapse:collapse;">
                 <tr>
-                  <td>Confirmed By ${escapeHtml(r.approvedBy?staffName(r.approvedBy):'System')}<div class="hint">Signature ...........................</div></td>
-                  <td>Posting Status ${escapeHtml(r.status)}<div class="hint">Signature ...........................</div></td>
+                  <td style="border:1px solid var(--border); padding:6px;">Confirmed By System<div class="hint">Signature ...........................</div></td>
+                  <td style="border:1px solid var(--border); padding:6px;">Posting Status ${escapeHtml(r.status)}<div class="hint">Signature ...........................</div></td>
                 </tr>
               </table>
             </div>
