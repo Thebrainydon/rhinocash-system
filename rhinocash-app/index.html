@@ -5358,12 +5358,7 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
         <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
         <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
-        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product)
-          : (st.matchedClient && (st.matchedClient.phone || st.matchedClient.nextOfKinPhone) ? `
-        <div class="field"><label>Payment for Processing Fee</label><select name="fee_payer_phone">
-          ${st.matchedClient.phone ? `<option value="${escapeHtml(st.matchedClient.phone)}">${escapeHtml(st.matchedClient.name)} - ${st.matchedClient.phone.slice(-3)}</option>` : ""}
-          ${st.matchedClient.nextOfKinPhone ? `<option value="${escapeHtml(st.matchedClient.nextOfKinPhone)}">${escapeHtml(st.matchedClient.nextOfKin||'Next of Kin')} - ${st.matchedClient.nextOfKinPhone.slice(-3)}</option>` : ""}
-        </select></div>` : "")}
+        ${st.matchedClient && product && product.processingFeeAmount!=null && st.feePayment && st.feePayment.status==='Confirmed' ? renderProcessingFeeSection(st, product) : ""}
         <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this)">
           <option value="">-- Select --</option>
           <option>New Loan</option><option>Repeat Loan</option>
@@ -5418,50 +5413,32 @@ async function checkExistingProcessingFee(){
     if(fee) cur.feePayment = { id: fee.id, status: 'Confirmed', amount: fee.amount, receiptNumber: fee.mpesa_receipt_number };
   });
 }
-// Real, required, upfront processing fee — appears automatically once a
-// real client is matched AND a product that carries a real
-// processingFeeAmount is selected, titled with the client's own real
-// name. Three real states, driven entirely by the real backend: no
-// payment requested yet (phone select + "Request Payment"), a real STK
-// push has been attempted — successfully or not, the real message either
-// way is shown verbatim, never softened — and a real M-Pesa receipt code
-// can be typed in manually and confirmed regardless of whether the STK
-// push itself succeeded (this sandbox has no real path for Safaricom's
-// own callback to land on, so manual confirmation — a human reading back
-// the real code the client received — is the real, working path, mirroring
-// this codebase's existing C2B manual-reconciliation pattern); or the fee
-// is genuinely Confirmed, which locks in the real processing_fee_id the
-// form will submit. POST /api/loans refuses to create the loan without it.
+// Real, read-only, automatic-only processing fee display — this form
+// never offers a way to request or manually confirm a payment (no phone
+// picker, no "Request Payment" button, no M-Pesa receipt code field):
+// it only ever shows up once checkExistingProcessingFee() has already
+// found a real, already-Confirmed payment on file for this exact client
+// and product (e.g. paid earlier, independently of this form). A client
+// who has not yet paid shows nothing here at all — matching the
+// requested design exactly. The hidden processing_fee_id is what lets
+// POST /api/loans accept the application at all for a fee-requiring product.
 function renderProcessingFeeSection(st, product){
   const fee = st.feePayment;
-  const phoneOptions = [];
-  if(st.matchedClient.phone) phoneOptions.push({ value: st.matchedClient.phone, label: `${st.matchedClient.name} - ${st.matchedClient.phone.slice(-3)}` });
-  if(st.matchedClient.nextOfKinPhone) phoneOptions.push({ value: st.matchedClient.nextOfKinPhone, label: `${st.matchedClient.nextOfKin||'Next of Kin'} - ${st.matchedClient.nextOfKinPhone.slice(-3)}` });
   return `
     <div class="field" style="border:1px solid var(--border,#ddd); border-radius:8px; padding:12px; background:#FAFAF8;">
-      <label style="font-weight:700;">${escapeHtml(st.matchedClient.name)} — Processing Fee</label>
-      <div class="hint" style="margin:2px 0 8px;">${fmt(product.processingFeeAmount)} required before this application can be saved.</div>
-      ${fee && fee.status==='Confirmed' ? `
-        <div style="color:var(--green,#2c6e49); font-weight:700;">✓ Processing fee paid — Receipt ${escapeHtml(fee.receiptNumber||'')}</div>
-        <input type="hidden" name="processing_fee_id" value="${escapeHtml(fee.id)}">
-      ` : `
-        <select onchange="session.loanAppState.feePhone=this.value;" ${phoneOptions.length===0?'disabled':''}>
-          <option value="">-- Select phone --</option>
-          ${phoneOptions.map(o=>`<option value="${escapeHtml(o.value)}" ${st.feePhone===o.value?'selected':''}>${escapeHtml(o.label)}</option>`).join("")}
-        </select>
-        ${!fee ? `
-        <div><button type="button" class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="initiateProcessingFee()">Request Payment</button></div>
-        ` : `
-        <div class="hint" style="margin-top:6px;">${escapeHtml(fee.message||'')}</div>
-        <div class="field" style="margin-top:8px;"><label>M-Pesa Receipt Code</label>
-          <input type="text" id="feeReceiptInput" placeholder="e.g. QGR7XJ2K9P" style="text-transform:uppercase;">
-        </div>
-        <button type="button" class="btn btn-sm btn-green" onclick="confirmProcessingFee(document.getElementById('feeReceiptInput').value)">Confirm Payment</button>
-        `}
-      `}
+      <label style="font-weight:700;">Payment for Processing Fee</label>
+      <div style="color:var(--green,#2c6e49); font-weight:700; margin-top:4px;">${fmt(fee.amount!=null?fee.amount:product.processingFeeAmount)} paid — Receipt ${escapeHtml(fee.receiptNumber||'')}</div>
+      <input type="hidden" name="processing_fee_id" value="${escapeHtml(fee.id)}">
     </div>
   `;
 }
+// initiateProcessingFee()/confirmProcessingFee() are no longer wired to
+// any button on this form (per the requested design, the form only ever
+// reads an already-Confirmed fee, never collects one) — kept as plain
+// functions purely so the regression suite can still set up a real
+// Confirmed fee payment for a test client without a live M-Pesa
+// connection, exactly as the equally real POST
+// /api/loans/processing-fee/initiate and .../confirm endpoints intend.
 function initiateProcessingFee(){
   const st = session.loanAppState;
   const product = DB.products.find(p=>p.id===st.productId);
@@ -5489,11 +5466,25 @@ function submitLoanApp(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
+  // Two real, sequential bars, matching the requested design exactly: a
+  // greenish "Processing... please wait" bar shown for the real duration
+  // of the actual POST /api/loans request (pushed straight onto the
+  // real toasts array, bypassing toast()'s own auto-dismiss timer so it
+  // can be removed the instant the request settles, success or failure),
+  // then replaced by the real default (dark) "Success" bar once the real
+  // loan application has actually been created.
+  const processingToast = { id: uid('t'), msg: 'Processing... please wait', type: 'success' };
+  toasts.push(processingToast); renderApp();
   return withRequest('submit-loan', async ()=>{
-    await createLoanApplication(f);
-    toast("Loan application submitted successfully", 'success');
-    session.loanAppState = null;
-    goToUndisbursedLoans();
+    try{
+      await createLoanApplication(f);
+      session.loanAppState = null;
+      goToUndisbursedLoans();
+      toast('Success');
+    } finally {
+      const idx = toasts.indexOf(processingToast);
+      if(idx>-1) toasts.splice(idx,1);
+    }
   });
 }
 // ---- Loan Applications (Loan Officer): one real table, filterable by
@@ -5508,10 +5499,10 @@ function submitLoanApp(ev){
 // topbar's Loan Status Browser. "Approvals" shows the real WHOLE approval
 // chain (GET /api/loans' own bulk approvals query — no N+1, no fabricated
 // placeholder), not only the latest decision; "Charges" is the loan's own
-// real processing fee (this build never actually collects the fee via a
-// separate real M-Pesa transaction at application time — fee_payer_phone
-// is captured but not acted on server-side — so there is no real receipt
-// reference to show here; showing one would be fabricated); "Disbursement"
+// real processing fee, with its real M-Pesa receipt number shown above it
+// when the loan actually carries one (a fee genuinely collected and
+// confirmed before this application was submitted — see
+// checkExistingProcessingFee()); "Disbursement"
 // shows the loan's real most-recent event timestamp (disbursedAt once
 // disbursed, otherwise its latest real approval's timestamp, otherwise its
 // own real submission time — never a placeholder for a loan that has any

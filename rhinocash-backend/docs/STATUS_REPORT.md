@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,170 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 954 passed, 0 failed  (drives the real UI functions in
+Frontend: 960 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,124 passed, 0 failed
+Total:    2,130 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1143,6 +1143,25 @@ backed by three new optional filters — `client_id`, `product_id`,
 and reuses a real, already-Confirmed, not-yet-spent processing-fee
 payment for the exact selected client and product the moment both are
 picked, so a client who paid earlier is never asked to pay again.
+
+A follow-up correction to the same page: the Processing Fee section
+initially still carried the phone picker, "Request Payment" button, and
+manual M-Pesa receipt code field from the pre-existing STK-push flow —
+wrong, because the reference design calls for a purely automatic,
+read-only display (`renderProcessingFeeSection()` rewritten accordingly)
+that shows a paid fee's real amount and receipt number the moment
+`checkExistingProcessingFee()` finds one, and shows nothing at all
+otherwise — no manual "pay now" control of any kind belongs on this
+form. `initiateProcessingFee()`/`confirmProcessingFee()` remain as plain
+functions (no longer wired to any button here) purely so the regression
+suite can still set up a real Confirmed fee payment for a test client
+without a live M-Pesa connection. Saving the form was also corrected to
+match the requested two-bar sequence exactly: a real greenish
+"Processing... please wait" bar, pushed directly onto the real toasts
+array (bypassing `toast()`'s own auto-dismiss timer) for the real
+duration of the actual `POST /api/loans` request, is replaced — the
+instant that request settles — by a second, real default-styled
+"Success" bar, before the existing real redirect to Undisbursed Loans.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

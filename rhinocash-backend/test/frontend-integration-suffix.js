@@ -3560,8 +3560,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 
     renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Payment for Processing Fee'), "the real 'Payment for Processing Fee' field genuinely appears automatically once the real client is found — matching the exact requested behavior");
-    __assert(html.includes(lookupClient.phone.slice(-3)), "the real fee-payer option is genuinely populated from the real client's own real phone number, not a placeholder name");
+    __assert(!html.includes('Payment for Processing Fee'), "the real 'Payment for Processing Fee' section genuinely stays hidden with a real client matched but no product selected yet, and — since this real client has not paid anything yet — genuinely has no manual 'pay now' controls of any kind to fall back on");
 
     // Real Loan Duration options populate from the real selected product's real term range.
     session.loanAppState.productId = DB.products[0].id;
@@ -3584,6 +3583,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('<option value="1" selected>28 days</option>'), "selecting a real weekly product genuinely auto-fills Loan Duration with its own single real term expressed in real days (4 weeks = 28 days, matching the reference wording), pre-selected");
+    __assert(!html.includes('Payment for Processing Fee'), "a real fee-requiring product is now selected but this real client has not paid for it yet, so the Processing Fee section genuinely still shows nothing — never a 'pay now' prompt of any kind");
 
     // Real "Repeat Loan" prefill: DB.loans already has a real prior loan
     // for this client (createLoanApplication further below reuses
@@ -3610,6 +3610,15 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     session.loanAppState = { idNumber: lookupClient.idNumber||'', matchedClient: lookupClient, productId: starterProduct.id, notFound:false, feePhone: '', feePayment: null };
     await checkExistingProcessingFee();
     __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.status === 'Confirmed' && session.loanAppState.feePayment.receiptNumber === 'FEEDETECT1', "opening Create Application fresh for the same real client and product genuinely auto-detects the real already-Confirmed fee payment, without the officer re-paying");
+
+    // The rendered form now genuinely shows the paid fee read-only — and,
+    // per the requested design, genuinely has NO manual "pay now" controls
+    // of any kind: no phone picker, no Request Payment button, no M-Pesa
+    // receipt code field.
+    renderApp();
+    const paidFeeHtml = document.getElementById('root').innerHTML;
+    __assert(paidFeeHtml.includes('Payment for Processing Fee') && paidFeeHtml.includes('FEEDETECT1'), "the real, already-Confirmed fee payment genuinely appears automatically, with its real receipt number, once both the real client and real product are set");
+    __assert(!paidFeeHtml.includes('Request Payment') && !paidFeeHtml.includes('Confirm Payment') && !paidFeeHtml.includes('feeReceiptInput') && !paidFeeHtml.includes('-- Select phone --'), "the real Processing Fee section genuinely offers no manual payment controls of any kind — no Request Payment button, no Confirm Payment button, no M-Pesa receipt code field, no phone picker");
 
     // A DIFFERENT, still-unpaid product for the very same real client
     // genuinely does NOT show a fee payment — it only ever reflects a
@@ -3670,18 +3679,23 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.loans.length === loansBeforeNoFee, "no real loan was created for an application missing its real, required processing fee payment — enforced server-side");
     __assert(toasts.length > toastsBeforeNoFee && /processing fee/i.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing processing fee) genuinely surfaces to the officer as a real toast");
 
-    // The real processing fee section appears automatically once a real
-    // client is matched and a real fee-requiring product is selected,
-    // titled with the client's own real name — driven through the real
-    // initiateProcessingFee()/confirmProcessingFee() functions, the same
-    // ones the real "Request Payment"/"Confirm Payment" buttons call.
+    // The real Processing Fee section genuinely shows nothing at all
+    // before the fee is actually paid — no manual controls of any kind —
+    // and only appears, read-only, once initiateProcessingFee()/
+    // confirmProcessingFee() (real functions the regression suite calls
+    // directly, standing in for a real independent payment this sandbox
+    // has no live M-Pesa connection to complete any other way) have
+    // actually produced a real Confirmed fee payment on file.
     session.loanAppState = { idNumber: wkFrontendClient.idNumber||'', matchedClient: wkFrontendClient, productId: 'pr_ln_starter', notFound:false, feePhone: wkFrontendClient.phone, feePayment: null };
     let feeSectionHtml = renderLoanApplicationForm();
-    __assert(feeSectionHtml.includes(escapeHtml(wkFrontendClient.name)) && feeSectionHtml.includes('Processing Fee') && feeSectionHtml.includes('600'), "the real Processing Fee section genuinely appears automatically, titled with the real client's own name, showing the real KES 600 fee once a real fee-requiring product is selected");
+    __assert(!feeSectionHtml.includes('Payment for Processing Fee'), "the real Processing Fee section genuinely shows nothing at all before this real client has actually paid — no manual 'pay now' prompt of any kind");
     await initiateProcessingFee();
     __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.id, "the real initiate call genuinely creates a real fee payment record, even though the real STK push itself cannot complete in this sandbox");
     await confirmProcessingFee('QGX9TT61SV');
-    __assert(session.loanAppState.feePayment.status === 'Confirmed' && session.loanAppState.feePayment.receiptNumber === 'QGX9TT61SV', "the real manual confirmation genuinely marks the fee Confirmed with the real receipt code, exactly like a real officer typing in the code the client read them");
+    __assert(session.loanAppState.feePayment.status === 'Confirmed' && session.loanAppState.feePayment.receiptNumber === 'QGX9TT61SV', "the real manual confirmation genuinely marks the fee Confirmed with the real receipt code");
+    const paidFeeSectionHtml = renderLoanApplicationForm();
+    __assert(paidFeeSectionHtml.includes('Payment for Processing Fee') && paidFeeSectionHtml.includes('600') && paidFeeSectionHtml.includes('QGX9TT61SV'), "the real Processing Fee section genuinely appears automatically, read-only, showing the real KES 600 fee and its real receipt number, once the fee is genuinely Confirmed");
+    __assert(!paidFeeSectionHtml.includes('Request Payment') && !paidFeeSectionHtml.includes('Confirm Payment') && !paidFeeSectionHtml.includes('feeReceiptInput'), "the real Processing Fee section genuinely never offers a manual 'pay now' control, even once a real payment is on file");
 
     // With a real guarantor AND a real confirmed processing fee, the real
     // weekly-product application succeeds and genuinely redirects to the
@@ -3689,10 +3703,12 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333'],['processing_fee_id',session.loanAppState.feePayment.id]]);
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
-    const toastsBeforeSuccess = toasts.length;
-    await submitLoanApp({ preventDefault(){}, target:{} });
+    const submitPromise = submitLoanApp({ preventDefault(){}, target:{} });
+    __assert(toasts.some(t=>t.msg==='Processing... please wait' && t.type==='success'), "clicking Save genuinely shows a real greenish 'Processing... please wait' bar for the real duration of the actual submit request");
+    await submitPromise;
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
-    __assert(toasts.length > toastsBeforeSuccess && toasts[toasts.length-1].type === 'success' && /submitted successfully/i.test(toasts[toasts.length-1].msg), "a real successful submission genuinely shows the reference's greenish success toast, not the app's default navy one");
+    __assert(!toasts.some(t=>t.msg==='Processing... please wait'), "the real greenish 'Processing... please wait' bar genuinely disappears the instant the real request settles");
+    __assert(toasts.some(t=>t.msg==='Success' && t.type!=='success'), "a real successful submission genuinely shows a second, real default (dark) 'Success' bar, replacing the 'Processing... please wait' one — never the same greenish style");
     const wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");

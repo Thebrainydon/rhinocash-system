@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,170 backend tests and 954 frontend tests, all
+At last verification: **1,170 backend tests and 960 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -153,12 +153,17 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   the topbar Tickets panel.
 - **Loan Officer's LoanBook -> Create Loan Application** — complete: a
   real form connected to the client/product/processing-fee backend (the
-  full real product catalog, real client-ID lookup, real STK-push/
-  manual-confirm processing fee, and real server-side New Loan/Repeat
-  Loan enforcement all already existed), with real Loan Duration in days,
-  a real green success toast, a real live "Waiting {Role}"/disbursed-date
+  full real product catalog, real client-ID lookup, and real server-side
+  New Loan/Repeat Loan enforcement all already existed), with real Loan
+  Duration in days, a real live "Waiting {Role}"/disbursed-date
   Disbursement column tracking the real 4-step approval chain, and a
-  real auto-detected already-paid processing fee.
+  purely automatic, read-only Processing Fee display — no phone picker,
+  no "Request Payment" button, no manual M-Pesa receipt code field —
+  that shows a real already-paid fee's amount and receipt the moment one
+  is found, and nothing at all otherwise. Saving shows the requested
+  two-bar sequence: a real greenish "Processing... please wait" bar
+  while the request is in flight, replaced by a real "Success" bar,
+  then a real redirect to Undisbursed Loans.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide
