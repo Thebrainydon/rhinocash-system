@@ -3332,6 +3332,17 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('You have been securely logged out'), "the real success message renders on the login page after logout");
 
+    // A real, deliberate, blocking second step — never drops straight to
+    // the login screen. All the real logout work above (session already
+    // revoked server-side, DB already cleared) is genuinely done by this
+    // point; this is purely a professional acknowledgement step.
+    __assert(modal && modal.type === 'logged-out', "the real end of the logout flow genuinely opens a blocking acknowledgement modal, not an immediate drop to the login screen");
+    __assert(html.includes("You've Been Logged Out") || html.includes('Your session has been securely ended'), "the real acknowledgement modal genuinely renders with the requested wording");
+    closeModal();
+    __assert(modal === null, "clicking 'Sign In Again' on the real acknowledgement modal genuinely closes it, finally revealing the plain login screen");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('You have been securely logged out'), "the login screen underneath is still the real, correct login screen after the acknowledgement modal closes");
+
     // The real revoked session genuinely cannot authenticate again — verified directly against the backend, not assumed.
     let revokedCheck = false;
     try {

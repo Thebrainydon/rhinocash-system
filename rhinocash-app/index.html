@@ -2040,6 +2040,12 @@ async function doLogin(ev){
   if(!f.username || !f.password){ loginError = "Please enter your email and password."; renderApp(); return false; }
   loginError = "";
   session.loggingIn = true;
+  // A fresh login attempt must never carry over a stale modal from the
+  // previous real session (e.g. the "You've Been Logged Out"
+  // acknowledgement left open by confirmLogout() until its own button is
+  // clicked) — real UI usage always dismisses it first, but nothing else
+  // guarantees that, so this is a real, defensive reset.
+  modal = null;
   renderApp();
   try{
     let result, isInvestor = false;
@@ -2122,7 +2128,12 @@ async function confirmLogout(){
   session.userId = null; session.investorId = null;
   session.selectedClientId = null; session.selectedLoanId = null; session.selectedStaffId = null;
   session.role = "Admin"; session.userName = ""; session.section = "dashboard"; session.subtab = null;
-  DB = null; modal = null;
+  DB = null;
+  // A deliberate, blocking second step (matching the requested design)
+  // instead of dropping straight back to the login screen — the real
+  // logout work above is already fully done by this point; this modal is
+  // purely a professional acknowledgement, not something the user waits on.
+  modal = { type:'logged-out' };
   session.justLoggedOut = true;
   renderApp();
   setTimeout(()=>{ session.justLoggedOut = false; renderApp(); }, 4000);
@@ -12874,9 +12885,11 @@ function renderModal(){
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
+  else if(modal.type === "logged-out") body = renderLoggedOutModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
-  return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
+  const blockingTypes = ['session-expired','logged-out'];
+  return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
   return `
@@ -12898,6 +12911,22 @@ function renderSessionExpiredModal(){
     <div class="hint" style="margin-bottom:16px;">Your security session has expired. Please sign in again to continue.</div>
     <div class="pill-row">
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Sign In Again</button>
+    </div>
+  `;
+}
+// A deliberate, real second step after a genuine logout completes — the
+// requested design (confirm -> a blocking acknowledgement -> only then
+// the login screen). Deliberately worded as a real completed logout, not
+// "expired" (that stays reserved for a genuine timeout, see
+// renderSessionExpiredModal above) — never claim an event that didn't
+// happen just to match a reference screenshot's wording.
+function renderLoggedOutModal(){
+  return `
+    <div style="text-align:center;">
+      <div style="width:56px; height:56px; border-radius:50%; background:#EAF7EF; color:#1BAF7A; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">✓</div>
+      <h3 style="color:var(--navy); margin:0 0 8px;">You've Been Logged Out</h3>
+      <div class="hint" style="margin-bottom:20px;">Your session has been securely ended. Sign in again to continue.</div>
+      <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
     </div>
   `;
 }

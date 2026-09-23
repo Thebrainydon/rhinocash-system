@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,166 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 940 passed, 0 failed  (drives the real UI functions in
+Frontend: 944 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,106 passed, 0 failed
+Total:    2,110 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1097,6 +1097,23 @@ every other role's full ticket-management dashboard, doesn't fall
 through to that instead — deliberately reusing the exact same real
 state/loader/columns as the topbar chat-bubble icon's own Tickets panel,
 never a second, independently-fabricated list.
+
+The app-wide logout flow now has a real, deliberate second step —
+previously confirming logout dropped straight to the login screen; now a
+blocking acknowledgement modal (`renderLoggedOutModal()`) sits between
+the two, matching the requested 3-step design (confirm -> acknowledge ->
+login screen) while staying honest about what actually happened: it's
+worded as a real completed logout ("You've Been Logged Out"), never
+"expired" — that wording stays reserved for `renderSessionExpiredModal()`,
+which fires on a genuine session timeout, a real, structurally different
+event. All the real logout work (server-side session revocation, clearing
+`DB`/`authToken`) is already fully done by the time this modal opens — it
+is a pure acknowledgement, never something the user waits on. `doLogin()`
+now also defensively clears any leftover modal at the start of a fresh
+attempt, so a dismissed-late (or programmatically skipped, as in the
+regression suite's many role-switching `confirmLogout(); doLogin(...)`
+sequences) acknowledgement modal never survives into the next real
+session.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
