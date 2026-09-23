@@ -2498,14 +2498,39 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     global.FormData = class { constructor(){ return of8; } };
     await doLogin({ preventDefault(){}, target:{} });
 
-    goTo('account');
+    goTo('account','Leave & Attendance');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Work Plan') && html.includes('Salary Advance'), "Loan Officer's My Account shows the real role-specific tab set");
+    __assert(html.includes('My Work Plan') && html.includes('Salary Advance'), "Loan Officer's My Account tab bar shows the real role-specific tab set");
 
+    // My Work Plan (a real, chrome-free Daily Workplan — src/routes/workplans.js).
+    session.loWorkPlanState = null; DB.loWorkPlan = null;
     goTo('account','My Work Plan');
-    while(!DB.myWorkPlan){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    await new Promise(r=>setTimeout(r,80)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Targets') && html.includes('Pending Follow-Ups'), "My Work Plan reuses the real targets and follow-ups engines — not a duplicate calculation");
+    __assert(!html.includes('class="subtabs"'), "the real My Work Plan page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
+    __assert(html.includes('My Workplan') && html.includes('Re-Appraisal Clients') && html.includes('Collection Clients') && html.includes('Onboarding Clients') && html.includes('Prospect Clients') && html.includes('Comments') && html.includes('No Comments'), "the real My Work Plan page genuinely renders with the requested title, all 4 visitation categories, and the honest empty Comments section");
+    __assert(DB.loWorkPlan && DB.loWorkPlan.reAppraisal.achieved === 0, "Re-Appraisal Clients genuinely has no real tracked activity signal, so Achieved honestly shows 0, never fabricated");
+
+    openLoWorkPlanSetupModal();
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'lo-workplan-setup' && html.includes('Daily Workplan Setup') && html.includes('No of Clients') && html.includes('Visiting Locations') && html.includes('Plan Date'), "the real Create button genuinely opens the real Daily Workplan Setup modal with the requested fields");
+
+    const wpDate = session.loWorkPlanState.date;
+    let wpForm = new Map([
+      ['reAppraisalTarget','2'], ['reAppraisalLocations','Town Centre'],
+      ['collectionTarget','6'], ['collectionLocations','Manyatta, Kondele'],
+      ['onboardingTarget','3'], ['onboardingLocations','Nyalenda'],
+      ['prospectTarget','4'], ['prospectLocations','Mamboleo'],
+      ['date', wpDate],
+    ]);
+    global.FormData = class { constructor(){ return wpForm; } };
+    await submitLoWorkPlanSetup({ preventDefault(){}, target:{} });
+    __assert(modal === null, "a real, valid Daily Workplan Setup submission genuinely closes the modal");
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Town Centre') && html.includes('Manyatta, Kondele') && html.includes('Nyalenda') && html.includes('Mamboleo'), "the real, just-saved targets and visiting locations genuinely appear in the real My Work Plan table, not fabricated client-side");
+    __assert(DB.loWorkPlan.collection.target === 6 && DB.loWorkPlan.prospect.target === 4, "the real saved targets genuinely round-trip through the real backend");
 
     // Real self-update: role/branch cannot change even if injected. (Only
     // phone is changed here — changing email would change the officer's

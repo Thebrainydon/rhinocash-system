@@ -510,6 +510,30 @@ CREATE TABLE IF NOT EXISTS staff_interactions (
 );
 CREATE INDEX IF NOT EXISTS idx_staff_interactions_user ON staff_interactions(user_id);
 
+-- A staff member's own real Daily Workplan — a per-day target (and real
+-- planned visiting locations) for each of the 4 real visitation
+-- categories the reference design specifies. One row per (user, date);
+-- "Achieved"/clients-visited are never stored here — they are always
+-- computed fresh from real activity (clients/leads/payments) at read
+-- time, never a second, driftable source of truth.
+CREATE TABLE IF NOT EXISTS daily_workplans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  plan_date TEXT NOT NULL,
+  re_appraisal_target INTEGER NOT NULL DEFAULT 0,
+  re_appraisal_locations TEXT,
+  collection_target INTEGER NOT NULL DEFAULT 0,
+  collection_locations TEXT,
+  onboarding_target INTEGER NOT NULL DEFAULT 0,
+  onboarding_locations TEXT,
+  prospect_target INTEGER NOT NULL DEFAULT 0,
+  prospect_locations TEXT,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_at TEXT,
+  UNIQUE(user_id, plan_date)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_workplans_user_date ON daily_workplans(user_id, plan_date);
+
 -- ===================== Loans =====================
 CREATE TABLE IF NOT EXISTS loan_products (
   id TEXT PRIMARY KEY,

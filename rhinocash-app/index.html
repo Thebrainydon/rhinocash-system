@@ -11068,6 +11068,7 @@ async function deleteFaqArticle(id){
 function renderAccount(){
   if(session.role === "Investor") return renderInvestorAccount();
   if(session.role === "Loan Officer" && (session.subtab||"View Details")==="View Details") return renderLoanOfficerViewDetails();
+  if(session.role === "Loan Officer" && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
   const roleTabs = {
     "Loan Officer": ["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Manager": ["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
@@ -11083,8 +11084,7 @@ function renderAccount(){
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('account','${t}')">${t}</div>`).join("")}</div>`;
 
   let body;
-  if(active==="My Work Plan") body = renderMyWorkPlan();
-  else if(active==="Branch Responsibilities") body = renderBranchResponsibilities();
+  if(active==="Branch Responsibilities") body = renderBranchResponsibilities();
   else if(active==="Regional Responsibilities") body = renderRegionalResponsibilities();
   else if(active==="Operational Responsibilities") body = renderOperationalResponsibilities();
   else if(active==="Financial Responsibilities") body = renderFinancialResponsibilities();
@@ -11737,35 +11737,103 @@ function renderMyTargetsPerformance(){
   </div>`;
 }
 
-// ==================== My Work Plan (Loan Officer) — reuses targets + follow-ups + loan applications ====================
-async function loadMyWorkPlan(){
-  return withRequest('load-workplan', async ()=>{
-    const [targets, followups] = await Promise.all([
-      api.get('/api/targets?mine=1'), api.get('/api/collections/follow-ups?status=Pending'),
-    ]);
-    DB.myWorkPlan = { targets: targets.targets, followups: followups.followUps };
+// ==================== My Work Plan (Loan Officer) — a real, chrome-free
+// Daily Workplan: a real per-day target + planned visiting locations for
+// 4 real visitation categories (src/routes/workplans.js), with
+// Achieved/Clients Visited always computed fresh server-side from real
+// activity — never a second, driftable client-side source of truth. ====
+const LO_WORKPLAN_CATEGORIES = [
+  { key:'reAppraisal', label:'Re-Appraisal Clients' },
+  { key:'collection', label:'Collection Clients' },
+  { key:'onboarding', label:'Onboarding Clients' },
+  { key:'prospect', label:'Prospect Clients' },
+];
+function defaultLoWorkPlanState(){ return { date: todayISO(), collapsed: false }; }
+async function loadLoWorkPlan(date){
+  return withRequest('load-lo-workplan:'+date, async ()=>{
+    const res = await api.get('/api/workplans/me?date='+date);
+    DB.loWorkPlan = res;
   });
 }
-function renderMyWorkPlan(){
-  if(!DB.myWorkPlan) loadMyWorkPlan();
-  const state = DB.myWorkPlan;
-  const myPendingApps = DB.loans.filter(l=>l.officerId===(DB.me&&DB.me.id) && l.status && l.status.startsWith('Waiting'));
+function openLoWorkPlanSetupModal(){ openModal('lo-workplan-setup'); }
+function submitLoWorkPlanSetup(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  return withRequest('lo-workplan-setup', async ()=>{
+    await api.post('/api/workplans/me', {
+      date: f.date,
+      reAppraisalTarget: f.reAppraisalTarget, reAppraisalLocations: f.reAppraisalLocations,
+      collectionTarget: f.collectionTarget, collectionLocations: f.collectionLocations,
+      onboardingTarget: f.onboardingTarget, onboardingLocations: f.onboardingLocations,
+      prospectTarget: f.prospectTarget, prospectLocations: f.prospectLocations,
+    });
+    session.loWorkPlanState.date = f.date;
+    DB.loWorkPlan = null;
+    toast("Workplan saved");
+    closeModal();
+  });
+}
+function renderLoWorkPlanSetupModal(){
+  const st = session.loWorkPlanState || defaultLoWorkPlanState();
+  const d = DB.loWorkPlan;
+  const field = (cat) => d ? d[cat] : { target:0, locations:'' };
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Daily Workplan Setup</h3>
+      <form onsubmit="return submitLoWorkPlanSetup(event)">
+        ${LO_WORKPLAN_CATEGORIES.map(c=>{ const f = field(c.key); return `
+          <div class="card-title" style="background:var(--blue-bg); margin-top:14px;">${c.label}</div>
+          <div class="field"><label>No of Clients</label><input type="number" min="0" name="${c.key}Target" value="${f.target||0}"></div>
+          <div class="field"><label>Visiting Locations</label><textarea name="${c.key}Locations" rows="2" placeholder="Separate with comma(,)">${escapeHtml(f.locations||'')}</textarea></div>
+        `; }).join("")}
+        <div class="field" style="margin-top:14px;"><label>Plan Date</label><input type="date" name="date" value="${st.date}"></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">💾 Save</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+function renderLoanOfficerWorkPlan(){
+  const st = session.loWorkPlanState || (session.loWorkPlanState = defaultLoWorkPlanState());
+  if(!DB.loWorkPlan || DB.loWorkPlan.date !== st.date) loadLoWorkPlan(st.date);
+  const d = DB.loWorkPlan && DB.loWorkPlan.date === st.date ? DB.loWorkPlan : null;
   return `
     <div class="card">
-      <div class="card-title">My Targets</div>
-      ${state ? `<div class="table-wrap"><table><tr><th>Metric</th><th>Period</th><th>Target</th><th>Achievement</th></tr>
-      ${state.targets.map(t=>`<tr><td>${t.metric}</td><td>${t.period}</td><td>${fmt(t.target_value)}</td><td>${fmt(t.achieved)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No targets assigned.</td></tr>`}</table></div>` : `<div class="empty">Loading…</div>`}
-    </div>
-    <div class="card">
-      <div class="card-title">Pending Follow-Ups <small>${state?state.followups.length:'—'}</small></div>
-      ${state ? `<div class="table-wrap"><table><tr><th>Client</th><th>Date</th><th>Reason</th></tr>
-      ${state.followups.map(f=>`<tr><td>${clientName(f.client_id)}</td><td>${f.follow_up_date}</td><td class="hint">${escapeHtml(f.reason||'—')}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">Nothing pending.</td></tr>`}</table></div>` : ""}
-      <a href="#" onclick="goTo('loanbook','Follow-Ups'); return false;" class="btn btn-sm btn-outline" style="margin-top:8px;">Manage Follow-Ups →</a>
-    </div>
-    <div class="card">
-      <div class="card-title">My Pending Loan Applications <small>${myPendingApps.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Status</th></tr>
-      ${myPendingApps.map(l=>`<tr><td>${l.id}</td><td>${clientName(l.clientId)}</td><td>${statusBadge(l.status)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">Nothing pending.</td></tr>`}</table></div>
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">My Workplan</h3>
+      </div>
+      <div class="pill-row" style="align-items:center; gap:8px; margin-bottom:14px;">
+        <input type="date" value="${st.date}" onchange="session.loWorkPlanState.date=this.value; DB.loWorkPlan=null; renderApp();">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-outline btn-sm" onclick="openLoWorkPlanSetupModal()">➕ Create</button>
+      </div>
+      <div class="card-title" style="background:#EFEAFB; color:#6B4FA0; cursor:pointer; justify-content:space-between;" onclick="session.loWorkPlanState.collapsed=!session.loWorkPlanState.collapsed; renderApp();">
+        <span>👤 ${escapeHtml(session.userName)}</span>
+        <span>${st.collapsed ? '▸' : '▾'}</span>
+      </div>
+      ${!st.collapsed ? `
+      <div class="table-wrap"><table>
+        <tr>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Visitation</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Target</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Locations</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Clients Visited</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Achieved</th>
+        </tr>
+        ${!d ? `<tr><td colspan="5" class="empty">Loading…</td></tr>` : LO_WORKPLAN_CATEGORIES.map(c=>{ const f = d[c.key]; return `<tr>
+          <td>${c.label}</td>
+          <td>${f.target||0}</td>
+          <td>${f.locations ? escapeHtml(f.locations) : 'None'}</td>
+          <td>${f.clientsVisited && f.clientsVisited.length ? escapeHtml(f.clientsVisited.join(', ')) : 'None'}</td>
+          <td>${f.achieved||0}</td>
+        </tr>`; }).join("")}
+      </table></div>
+      <div class="card-title" style="background:var(--blue-bg); margin-top:14px;">Comments</div>
+      <div class="empty">No Comments</div>
+      ` : ``}
     </div>
   `;
 }
@@ -12579,6 +12647,7 @@ function renderModal(){
   else if(modal.type === "staff-account-type") body = renderStaffAccountTypeModal();
   else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
+  else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

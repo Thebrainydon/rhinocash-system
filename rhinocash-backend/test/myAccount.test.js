@@ -170,6 +170,49 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(managerPayroll.json.months.length === 0, 'a different real staff member with no real Basic Salary of their own genuinely sees an empty real payroll list — never the officer\'s real salary');
   }
 
+  // Real Daily Workplan (My Account -> My Work Plan) — a real per-day
+  // target/locations for 4 real visitation categories, with a real,
+  // freshly-computed Achieved/Clients Visited, never a fabricated one.
+  {
+    const emptyDate = '2027-01-15';
+    const empty = await api('GET', `/api/workplans/me?date=${emptyDate}`, { token: officerToken });
+    assert(empty.status === 200 && empty.json.date === emptyDate, 'a real GET for a date with no saved plan yet genuinely succeeds');
+    assert(empty.json.reAppraisal.target === 0 && empty.json.collection.target === 0 && empty.json.onboarding.target === 0 && empty.json.prospect.target === 0, 'with no real plan saved yet, every real target is honestly 0 — never fabricated');
+    assert(empty.json.reAppraisal.achieved === 0 && empty.json.reAppraisal.clientsVisited.length === 0, 'Re-Appraisal Clients has no real tracked activity signal in this app, so it honestly always reports 0/none, never fabricated');
+
+    const badDate = await api('GET', '/api/workplans/me?date=not-a-date', { token: officerToken });
+    assert(badDate.status === 400, 'an invalid real date format is genuinely rejected');
+
+    const saved = await api('POST', '/api/workplans/me', { token: officerToken, body: {
+      date: emptyDate, reAppraisalTarget: 3, reAppraisalLocations: 'Kisumu CBD, Nyalenda',
+      collectionTarget: 5, collectionLocations: 'Manyatta',
+      onboardingTarget: 2, onboardingLocations: 'Kondele',
+      prospectTarget: 4, prospectLocations: 'Mamboleo, Kibuye',
+    } });
+    assert(saved.status === 201 && saved.json.plan.reAppraisal.target === 3 && saved.json.plan.reAppraisal.locations === 'Kisumu CBD, Nyalenda', 'a real, valid Daily Workplan Setup submission genuinely saves the real target and locations');
+    assert(saved.json.plan.collection.target === 5 && saved.json.plan.onboarding.target === 2 && saved.json.plan.prospect.target === 4, 'every real category genuinely saved its own real target');
+
+    const reload = await api('GET', `/api/workplans/me?date=${emptyDate}`, { token: officerToken });
+    assert(reload.json.prospect.target === 4 && reload.json.prospect.locations === 'Mamboleo, Kibuye', 'the real saved plan genuinely persists and reloads correctly');
+
+    const resave = await api('POST', '/api/workplans/me', { token: officerToken, body: { date: emptyDate, reAppraisalTarget: 9, collectionTarget: 0, onboardingTarget: 0, prospectTarget: 0 } });
+    assert(resave.json.plan.reAppraisal.target === 9, 'saving a real plan for the SAME date again genuinely updates it in place (upsert), not a duplicate row');
+
+    const managerPlan = await api('GET', `/api/workplans/me?date=${emptyDate}`, { token: managerToken });
+    assert(managerPlan.json.reAppraisal.target === 0, 'a different real staff member genuinely never sees the officer\'s own saved plan — scoped structurally to the caller');
+
+    // Real Onboarding Achieved — a genuinely new client this officer just
+    // created today must appear, computed fresh, never fabricated.
+    const today = new Date().toISOString().slice(0, 10);
+    const beforeToday = await api('GET', `/api/workplans/me?date=${today}`, { token: officerToken });
+    const onboardingBefore = beforeToday.json.onboarding.achieved;
+    const newClient = await api('POST', '/api/clients', { token: officerToken, body: { name: '[TEST] Workplan Onboarding Client', phone: '0700' + Math.floor(Math.random() * 900000 + 100000) } });
+    assert(newClient.status === 201, 'real setup: a real client is genuinely created by the officer today');
+    const afterToday = await api('GET', `/api/workplans/me?date=${today}`, { token: officerToken });
+    assert(afterToday.json.onboarding.achieved === onboardingBefore + 1, 'the real, just-created client genuinely increments the real Onboarding Achieved count for today — computed fresh, not fabricated');
+    assert(afterToday.json.onboarding.clientsVisited.includes('[TEST] Workplan Onboarding Client'), 'the real, just-created client\'s real name genuinely appears in Clients Visited');
+  }
+
   // Confirm no self-approval loophole exists for leave/salary-advance (already-existing engine, re-verified here in this module's context).
   {
     const leave = await api('POST', '/api/leave-requests', { token: officerToken, body: { leave_type: 'Annual', start_date: '2026-12-01', end_date: '2026-12-03' } });

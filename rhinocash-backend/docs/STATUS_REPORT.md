@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,137 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 905 passed, 0 failed  (drives the real UI functions in
+Backend:  1,149 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 911 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,042 passed, 0 failed
+Total:    2,060 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1014,6 +1014,21 @@ picker and a "Notes" button):
   app) with a real Earnings/Deductions breakdown, a real computed
   amount-in-words line, and blank Employee/HR signature lines for a human
   to actually sign.
+
+The Loan Officer's My Account -> My Work Plan page is now a real,
+chrome-free Daily Workplan (`src/routes/workplans.js`,
+`daily_workplans` table): a real per-day target + planned visiting
+locations for each of 4 real visitation categories (Re-Appraisal/
+Collection/Onboarding/Prospect Clients), saved through a "Daily Workplan
+Setup" modal. Achieved/Clients Visited are never stored — they are
+always computed fresh at read time from real activity (real clients this
+officer created that day for Onboarding, real leads for Prospect, real
+distinct clients with a real posted payment that day for Collection);
+Re-Appraisal has no real tracked activity signal anywhere in this app
+yet, so it honestly always reports 0/None rather than fabricating one —
+the same "no real metric, no fabricated Target" principle already
+established for the View Details Performance table's Repeat Loans/
+Performing/Arrears rows.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,137 backend tests and 905 frontend tests, all
+At last verification: **1,149 backend tests and 911 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -135,6 +135,9 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   ACC BALANCES tile into a new staff wallet subsystem, and a filter-driven
   Performance/Interactions/Staff Loans/Leaves & Payroll panel, the latter
   including a real Kenyan-statutory (NSSF/SHIF/PAYE) computed payslip.
+- **Loan Officer's My Account -> My Work Plan** — complete: a real Daily
+  Workplan (4 real visitation categories, each with a real saved target/
+  locations and a real, freshly-computed Achieved/Clients Visited).
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide
