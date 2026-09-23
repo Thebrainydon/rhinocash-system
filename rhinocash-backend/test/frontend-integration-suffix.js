@@ -1086,8 +1086,12 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     route = resolveRoute('Prepayments');
     __assert(route.subtab === 'Prepayments', "the 'Prepayments' sidebar label routes to its own real page");
 
-    goTo('payments', 'Processed Payments'); // triggers the render's own auto-load; wait for it to actually finish
-    while(!DB.paymentsPages.processed){ await new Promise(r=>setTimeout(r,20)); }
+    // A Loan Officer now sees a different, real chrome-free page under this
+    // exact same sidebar label (see the "Processed Payments (Loan Officer)"
+    // section below) — goTo() would dispatch there instead of to this
+    // generic renderer, so load the generic renderer's own real data
+    // directly rather than relying on goTo's dispatch to trigger it.
+    await loadProcessedPayments({}, 1);
     let html = renderProcessedPayments();
     __assert(html.includes(payment.reference), "Processed Payments shows the real just-recorded payment by its real reference number");
     const htmlNoLogo9 = html.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/g, '');
@@ -1173,8 +1177,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Potential Prepayment'), "the UI uses the required 'Potential Prepayment' label, not an unqualified 'Prepayment'");
     __assert(!html.includes('average installment') && !html.includes('meaningfully larger'), "the old size-based heuristic language is gone — replaced by real allocation-based classification");
 
-    goTo('payments', 'Processed Payments');
-    while(!DB.paymentsPages.processed){ await new Promise(r=>setTimeout(r,20)); }
+    await loadProcessedPayments({}, 1); // a Loan Officer now sees a different real page under this label — load the generic renderer's data directly, same as above
     html = renderProcessedPayments();
     __assert(html.includes('Page 1 of'), "Processed Payments now uses real server-side pagination state, not the full local DB.payments array");
     __assert(DB.paymentsPages.processed.pagination.total >= 2, "the real pagination.total reflects the true count from the backend");
@@ -1963,6 +1966,59 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(DB.c2bPaymentsBrowser === upBrowserBefore, "the real topbar Payments panel genuinely reused the exact same cached data the Unposted Payments submenu just loaded, rather than re-fetching");
     closeModal();
     renderApp();
+
+    // Processed Payments (Loan Officer Payments menu): a real, chrome-free
+    // merge of real posted loan-schedule payments (GET /api/payments) and
+    // real confirmed processing-fee collections
+    // (GET /api/loans/processing-fee/confirmed) — two genuinely distinct
+    // real cash streams, merged client-side rather than fabricated as one.
+    const ppClient = await api.post('/api/clients', { name:'[TEST] Processed Payments Client', phone:'0722'+Math.floor(Math.random()*900000+100000) });
+    const ppProducts = await api.get('/api/loan-products');
+    const ppLoan = await api.post('/api/loans', { client_id: ppClient.client.id, product_id: ppProducts.products[0].id, principal: 12000, term_months: 3 });
+    let ppMgr = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppMgr; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.loan.id);
+    let ppReg = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppReg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.loan.id);
+    let ppOps = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppOps; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.loan.id);
+    let ppAcc = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppAcc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(ppLoan.loan.id);
+    let ppAdm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppAdm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(ppLoan.loan.id, 'Cash');
+
+    let ppOfc = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ppOfc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const ppPayment = await recordPayment(ppLoan.loan.id, 2000, 'M-Pesa', true);
+
+    const ppFeeProduct = ppProducts.products.find(p=>p.processing_fee_amount!=null);
+    let ppFeeClient = null;
+    if(ppFeeProduct){
+      ppFeeClient = await api.post('/api/clients', { name:'[TEST] Processed Payments Fee Client', phone:'0722'+Math.floor(Math.random()*900000+100000) });
+      const ppFeeInit = await api.post('/api/loans/processing-fee/initiate', { client_id: ppFeeClient.client.id, product_id: ppFeeProduct.id, phone: ppFeeClient.client.phone });
+      await api.post(`/api/loans/processing-fee/${ppFeeInit.feeId}/confirm`, { mpesa_receipt_number: 'PPFEE00001' });
+    }
+
+    session.loProcessedPaymentsState = null; DB.loProcessedPayments = null;
+    goTo('payments','Processed Payments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Processed Payments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Processed pays from') && html.includes('(Ksh') && html.includes('Pay Mode') && html.includes('Print'), "the real Processed Payments page genuinely renders with the requested title, Ksh-prefixed total, Pay Mode filter and Print button");
+    __assert(html.includes(ppPayment.reference), "the real, just-recorded loan payment genuinely appears by its real reference number");
+    __assert(html.includes('Principal') || html.includes('Interest'), "the real Payment Details bullets genuinely reflect the real allocated_principal/allocated_interest buckets");
+    if(ppFeeClient) __assert(html.includes('Processing fee') && html.includes(ppFeeClient.client.name), "a real confirmed processing-fee collection genuinely appears merged into the same real list, not just loan-schedule payments");
+    __assert(DB.loProcessedPayments && Array.isArray(DB.loProcessedPayments.rows), "the real Processed Payments data genuinely loaded from the real backend endpoints, not fabricated client-side");
 
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];

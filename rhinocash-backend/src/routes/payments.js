@@ -256,7 +256,7 @@ function register(router) {
     // Total count/amount over the FULL filtered set, independent of page —
     // a report total must never be silently just "sum of this page".)
     const aggRow = await get(`SELECT COUNT(*) as cnt, COALESCE(SUM(p.amount),0) as total FROM payments p JOIN loans l ON l.id = p.loan_id LEFT JOIN clients c ON c.id = p.client_id LEFT JOIN branches br ON br.id = l.branch_id ${where}`, params);
-    const rows = await all(`SELECT p.* ${from} ${where} ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    const rows = await all(`SELECT p.*, c.name as client_name, c.phone as client_phone ${from} ${where} ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]);
     const enriched = await Promise.all(rows.map(async p => ({ ...p, classification: await classifyPayment(p.id) })));
 
     res.json({

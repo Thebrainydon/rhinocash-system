@@ -8561,7 +8561,8 @@ function renderPayments(){
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('payments','${t}')">${t}</div>`).join("")}</div>`;
   if(active==="Unposted Payments" && session.role !== 'Loan Officer') return tabsHtml + renderUnposted();
   if(active==="Unposted Payments") return renderLoanOfficerUnpostedPayments();
-  if(active==="Processed Payments") return tabsHtml + renderProcessedPayments();
+  if(active==="Processed Payments" && session.role !== 'Loan Officer') return tabsHtml + renderProcessedPayments();
+  if(active==="Processed Payments") return renderLoanOfficerProcessedPayments();
   if(active==="Prepayments") return tabsHtml + renderPrepayments();
   if(active==="Overpayments") return tabsHtml + renderOverpayments();
   if(active==="Receipts") return tabsHtml + (session.selectedReceiptId ? renderReceiptDetail(session.selectedReceiptId) : renderReceiptsList());
@@ -12505,6 +12506,108 @@ function renderLoanOfficerUnpostedPayments(){
         </tr>`).join("") || `<tr><td colspan="7" class="empty">No payments match the selected filters.</td></tr>`}
       </table></div>
       ${total>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.c2bPaymentsState.page=${page-1}; DB.c2bPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.c2bPaymentsState.page=${page+1}; DB.c2bPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
+    </div>
+  `;
+}
+
+// ==================== Processed Payments (Loan Officer Payments menu) ====================
+// A real, chrome-free, date-windowed merge of every real cash collection
+// actually confirmed for this officer's own portfolio: real posted
+// loan-schedule payments from GET /api/payments (status=Posted) merged
+// with real confirmed processing-fee payments from the dedicated
+// GET /api/loans/processing-fee/confirmed endpoint. These are genuinely
+// two distinct real collection events (a loan installment payment vs. an
+// upfront product processing fee) — merged client-side rather than
+// fabricating a single combined backend row shape, and paginated
+// client-side since this is scoped to one officer's own, date-windowed
+// activity, realistically small enough that a second server-side
+// pagination layer over the union would be needless complexity.
+function defaultLoanOfficerProcessedPaymentsState(){
+  const to = todayISO();
+  const from = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+  return { from, to, payMode:'', q:'', page:1 };
+}
+async function loadLoanOfficerProcessedPayments(){
+  const st = session.loProcessedPaymentsState;
+  return withRequest('load-lo-processed-payments:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ status:'Posted', date_from:st.from, date_to:st.to, limit:500 });
+    if(st.payMode) params.set('channel', st.payMode);
+    if(st.q) params.set('q', st.q);
+    const feeParams = new URLSearchParams({ date_from:st.from, date_to:st.to });
+    if(st.q) feeParams.set('q', st.q);
+    const [paymentsRes, feeRes] = await Promise.all([
+      api.get('/api/payments?'+params.toString()),
+      api.get('/api/loans/processing-fee/confirmed?'+feeParams.toString()),
+    ]);
+    const paymentRows = paymentsRes.payments.map(p=>({
+      kind:'payment', id:p.id, reference:p.reference, amount:Number(p.amount),
+      clientName:p.client_name, clientPhone:p.client_phone,
+      principal:Number(p.allocated_principal||0), interest:Number(p.allocated_interest||0), penalty:Number(p.allocated_penalty||0), fee:0,
+      approvedBy:p.recorded_by, time:p.created_at,
+    }));
+    // Pay Mode only applies to real loan-schedule payments — a processing
+    // fee collection is always M-Pesa in this system (see the real STK
+    // push flow in POST /api/loans/processing-fee/initiate), so fee rows
+    // genuinely don't qualify when a different specific mode is selected.
+    const feeRows = (st.payMode && st.payMode!=='M-Pesa') ? [] : feeRes.feePayments.map(f=>({
+      kind:'fee', id:f.id, reference:f.mpesa_receipt_number||f.id, amount:Number(f.amount),
+      clientName:f.client_name, clientPhone:f.client_phone,
+      principal:0, interest:0, penalty:0, fee:Number(f.amount),
+      approvedBy:f.confirmed_by, time:f.confirmed_at,
+    }));
+    const merged = paymentRows.concat(feeRows).sort((a,b)=> a.time < b.time ? 1 : a.time > b.time ? -1 : 0);
+    DB.loProcessedPayments = { rows: merged, total: merged.reduce((s,r)=>s+r.amount,0), stateKey: JSON.stringify(st) };
+  });
+}
+function renderLoanOfficerProcessedPayments(){
+  const st = session.loProcessedPaymentsState || (session.loProcessedPaymentsState = defaultLoanOfficerProcessedPaymentsState());
+  if(!DB.loProcessedPayments || DB.loProcessedPayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerProcessedPayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.loProcessedPayments;
+  const pageSize = 25;
+  const totalPages = Math.max(1, Math.ceil(d.rows.length/pageSize));
+  const page = Math.min(st.page||1, totalPages);
+  const pageRows = d.rows.slice((page-1)*pageSize, page*pageSize);
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Processed pays from ${fmtDDMMYYYY(st.from)} to ${fmtDDMMYYYY(st.to)}</span></span>
+        <span>(Ksh ${fmtNum(d.total)})</span>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <input type="date" value="${st.from}" onchange="session.loProcessedPaymentsState.from=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <span>To:</span>
+        <input type="date" value="${st.to}" onchange="session.loProcessedPaymentsState.to=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.loProcessedPaymentsState.payMode=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline">
+          <option value="" ${st.payMode===''?'selected':''}>-- Pay Mode --</option>
+          ${["M-Pesa","Bank","Cash"].map(c=>`<option value="${c}" ${st.payMode===c?'selected':''}>${c}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.loProcessedPaymentsState.q=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>Transaction</th><th>Amount</th><th>Payment Details</th><th>Client</th><th>Approval</th><th>Time</th></tr>
+        ${pageRows.map(r=>{
+          const bullets = [];
+          if(r.principal>0) bullets.push(`Principal - ${fmtNum(r.principal)}`);
+          if(r.interest>0) bullets.push(`Interest - ${fmtNum(r.interest)}`);
+          if(r.penalty>0) bullets.push(`Penalty - ${fmtNum(r.penalty)}`);
+          if(r.fee>0) bullets.push(`Processing fee - ${fmtNum(r.fee)}`);
+          const clickable = r.kind==='payment';
+          return `<tr ${clickable?`class="clickable" onclick="goTo('payments','Receipts'); openReceipt('${r.id}')"`:''}>
+            <td>${escapeHtml(r.reference||'—')}</td>
+            <td>${fmtNum(r.amount)}</td>
+            <td><ul style="margin:0; padding-left:16px;">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
+            <td>${escapeHtml(r.clientName||'—')}<br><span class="hint">${escapeHtml(r.clientPhone||'—')}</span></td>
+            <td>${r.approvedBy ? staffName(r.approvedBy) : 'System'}</td>
+            <td>${r.time ? `${fmtDDMMYYYY(r.time.slice(0,10))},${r.time.slice(11,16)}` : '—'}</td>
+          </tr>`;
+        }).join("") || `<tr><td colspan="6" class="empty">No processed payments in this period.</td></tr>`}
+      </table></div>
+      ${d.rows.length>pageSize ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.loProcessedPaymentsState.page=${page-1}; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${d.rows.length})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.loProcessedPaymentsState.page=${page+1}; renderApp();">Next →</button></div>` : ""}
     </div>
   `;
 }

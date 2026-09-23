@@ -2037,6 +2037,40 @@ function register(router) {
     res.json({ fee: await get('SELECT * FROM loan_fee_payments WHERE id = ?', [fee.id]) });
   });
 
+  // Real, confirmed processing-fee collections — a genuinely distinct cash
+  // stream from GET /api/payments (loan installment payments), scoped and
+  // filtered the same way so a Processed Payments view can merge both into
+  // one real, unified list of everything actually collected, rather than
+  // fabricating a single combined table that doesn't exist. Registered
+  // BEFORE the parameterized /:id route below, or Express would match
+  // "confirmed" as an :id and this would never be reached.
+  router.get('/api/loans/processing-fee/confirmed', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const q = req.query;
+    const { branchIdsInScope } = require('./../rbac');
+    const clauses = [`lfp.status = 'Confirmed'`];
+    const params = [];
+    const scope = await branchIdsInScope(req.user);
+    if (scope !== null) {
+      if (scope.length === 0) clauses.push('1=0');
+      else { clauses.push(`c.branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
+    }
+    if (req.user.role_id === 'loan_officer') { clauses.push('lfp.initiated_by = ?'); params.push(req.user.id); }
+    if (q.date_from) { clauses.push('(lfp.confirmed_at)::date >= (?)::date'); params.push(q.date_from); }
+    if (q.date_to) { clauses.push('(lfp.confirmed_at)::date <= (?)::date'); params.push(q.date_to); }
+    if (q.q) {
+      clauses.push('(c.name LIKE ? OR c.phone LIKE ? OR lfp.mpesa_receipt_number LIKE ?)');
+      const like = `%${q.q}%`; params.push(like, like, like);
+    }
+    const where = `WHERE ${clauses.join(' AND ')}`;
+    const rows = await all(
+      `SELECT lfp.*, c.name as client_name, c.phone as client_phone
+       FROM loan_fee_payments lfp JOIN clients c ON c.id = lfp.client_id
+       ${where} ORDER BY lfp.confirmed_at DESC`,
+      params
+    );
+    res.json({ feePayments: rows });
+  });
+
   router.get('/api/loans/processing-fee/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [req.params.id]);
     if (!fee) return next({ status: 404, message: 'Processing fee payment not found' });

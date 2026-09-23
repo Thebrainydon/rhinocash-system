@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 832 passed, 0 failed  (drives the real UI functions in
+Frontend: 838 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,929 passed, 0 failed
+Total:    1,935 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -750,6 +750,52 @@ purple/red accent colors and Loan Arrears' Fall Date. The Manager/
 Accountant-only "Assign to loan" control on the topbar panel (`canAssign`)
 is untouched and simply doesn't apply to the Loan Officer's new page, since
 Loan Officers were never eligible for it to begin with.
+
+The Payments menu's second submenu, "Processed Payments" (Loan Officer
+view), is now a real, chrome-free, date-windowed page merging two
+genuinely distinct real cash-collection streams: real posted loan-schedule
+payments (the existing `GET /api/payments`, `status=Posted`) and real
+confirmed processing-fee collections (a new, dedicated
+`GET /api/loans/processing-fee/confirmed`, added specifically for this).
+These are real, separate financial events in this system — a loan
+installment payment and an upfront product processing fee — so they are
+merged client-side into one sorted, paginated list rather than fabricating
+a single combined backend row shape that doesn't exist; merging server-side
+into the shared `/api/payments` endpoint was deliberately avoided since
+that endpoint's row shape and totals are also used once per login to prime
+dashboard aggregate math, and quietly changing what it returns there would
+have been a real, hard-to-notice risk. The new confirmed-fee endpoint
+reuses the exact same real scoping as every other Loan Officer list in
+this codebase (a Loan Officer sees only fee payments they themselves
+initiated; other roles see their real branch/region scope), and had to be
+registered *before* the pre-existing `GET /api/loans/processing-fee/:id`
+route — Express would otherwise match the literal path segment
+"confirmed" as that route's `:id` parameter, a real routing bug caught
+during this build's own visual verification (it surfaced as a repeating
+"Processing fee payment not found" toast) and fixed before it shipped.
+`GET /api/payments` also gained two small, purely additive fields on each
+row (`client_name`, `client_phone`, from the join it already performs for
+scoping) — nothing existing reads or asserts an exact row shape, so this
+was safe to extend directly rather than duplicating the query. The Payment
+Details column bullets each non-zero real bucket
+(Principal/Interest/Penalty from `payments`, or a single "Processing fee"
+line from a fee row) rather than a fixed set, matching the reference
+design's own selective bullet style; bullet order is fixed
+(Principal/Interest/Penalty) rather than reflecting the real
+per-installment application order recorded in `payment_allocations`, a
+minor, deliberate simplification since the real totals are identical
+either way. The Approval column shows a real staff name when one exists
+(`recorded_by` for a payment, always set for a manually-confirmed fee) or
+"System" only when it's genuinely null (an auto-matched M-Pesa payment) —
+shown honestly rather than forcing every row to read "System" to match the
+reference screenshot's own (evidently more automated) sample data. Adding
+this submenu required a small fix to two pre-existing frontend test
+assertions that called `goTo('payments','Processed Payments')` while
+logged in as a Loan Officer and then polled for `DB.paymentsPages.processed`
+to populate — that dispatch now correctly routes a Loan Officer to this
+new page instead, so the generic page's own loader never fires that way
+any more; both were changed to load the generic renderer's data directly,
+which is what they actually needed.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
