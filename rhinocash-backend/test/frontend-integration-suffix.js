@@ -1867,6 +1867,21 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const maxDateInHtml = html.match(/type="date"[^>]*max="([\d-]+)"/g) || [];
     __assert(maxDateInHtml.length === 2 && maxDateInHtml.every(m => m.includes(collectionReportMaxDate())), "both real date inputs genuinely cap future selection at exactly 3 days ahead of today");
 
+    // Collection Rates (Loan Officer): the real single-month per-officer
+    // summary, chrome-free, backed by a real dedicated endpoint — the
+    // SAME "Collection Rates" label the generic Manager/RM/OM branch page
+    // already used, now split by role at the dispatch level (no new
+    // route-map entry needed, since no other role's label collides).
+    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
+    goTo('loanbook','Collection Rates');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Collection Rates page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Collection Rates') && html.includes('Loan Officer') && html.includes('Disbursed Loan') && html.includes('Loan+Charges') && html.includes('OTC') && html.includes('OC') && html.includes('DD7') && html.includes('CG7') && html.includes('Arrears') && html.includes('GC%'), "the real Collection Rates page genuinely renders with the requested title and full column set");
+    __assert(DB.collectionRatesOfficer && Array.isArray(DB.collectionRatesOfficer.rows), "the real Collection Rates data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+    const ratesMonthSelect = (html.match(/<select[^>]*>[\s\S]*?<\/select>/g) || []).find(s => /\b\d{4}\b/.test(s) && /Sep|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Oct|Nov|Dec/.test(s));
+    __assert(!!ratesMonthSelect, "the real Collection Rates page genuinely offers a real Month/Year selector, matching the reference design");
+
     // Disbursements (Loan Officer): the real Daily Disbursements calendar,
     // chrome-free, backed by a real dedicated endpoint — replacing the
     // old shared KPI-tile Disbursements Overview page (still used by

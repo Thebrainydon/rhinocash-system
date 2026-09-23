@@ -539,6 +539,95 @@ function register(router) {
     res.json({ from, to, rows, totals });
   });
 
+  // ==================== Officer Collection Rates (Loan Officer's real
+  // "Collection Rates" submenu page) — a real, single-month, per-officer
+  // summary matching the reference design's own column set: Loan Officer /
+  // Disbursed Loan / Loan+Charges / OTC / OC / DD7 / CG7 / Arrears / OTC% /
+  // OC% / GC%. The cohort is the same real "loans disbursed within the
+  // selected month" scope Progressive Disbursements already uses, and
+  // "Disbursed Loan"/"Loan+Charges"/"Arrears"/"GC%" reuse that route's own
+  // exact real definitions verbatim (principal / principal + full lifetime
+  // interest + actual confirmed processing fee / lifetime unpaid overdue
+  // balance / Paid-lifetime ÷ Loan+Charges) so the same loan never shows a
+  // disagreeing figure across the two pages. The remaining four columns
+  // have no prior definition anywhere in this codebase (this is a new
+  // reference design with no visible backend of its own) — inferred as
+  // real, computable, industry-standard MFI figures rather than fabricated
+  // placeholders: "OTC" (On Time Collection) is the real amount collected
+  // against installments actually due within the selected month; "OC"
+  // (Overall Collection) is the real total cash collected in the month
+  // regardless of which installment it was applied to (so OC only exceeds
+  // OTC when a client pays down older arrears in the same month); "DD7" is
+  // the real slice of Arrears that has been overdue for 7 or more real
+  // days as of today (a PAR7-style ageing bucket); "CG7" is the real
+  // amount collected in the last 7 real days. OTC%/OC% divide by the same
+  // Loan+Charges denominator GC% already uses, for one consistent scale
+  // across every percentage column on this page.
+  router.get('/api/collections/officer-rates', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const { clause, params } = await loanScopeClause(req);
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : new Date().toISOString().slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    const monthStart = new Date(y, m - 1, 1).toISOString().slice(0, 10);
+    const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const sevenDaysAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const sevenDaysCutoff = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`, [...params, monthStart, monthEnd]);
+    const loanIds = loans.map(l => l.id);
+
+    const scheduleByLoan = {};
+    const paymentsByLoan = {};
+    if (loanIds.length) {
+      const idPh = loanIds.map(() => '?').join(',');
+      (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { (scheduleByLoan[r.loan_id] || (scheduleByLoan[r.loan_id] = [])).push(r); });
+      (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Unposted'`, loanIds)).forEach(p => { (paymentsByLoan[p.loan_id] || (paymentsByLoan[p.loan_id] = [])).push(p); });
+    }
+
+    const officerGroups = {};
+    loans.forEach(l => {
+      const sched = scheduleByLoan[l.id] || [];
+      const pays = paymentsByLoan[l.id] || [];
+      const interest = sched.reduce((s, r) => s + r.interest_due, 0);
+      const paid = sched.reduce((s, r) => s + r.paid_amount, 0);
+      const arrearsRows = sched.filter(r => r.due_date < today && r.paid_amount < r.total_due - 0.01);
+      const arrears = arrearsRows.reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
+      const dd7 = arrearsRows.filter(r => r.due_date <= sevenDaysCutoff).reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
+      const otc = sched.filter(r => r.due_date >= monthStart && r.due_date <= monthEnd).reduce((s, r) => s + Math.min(r.paid_amount, r.total_due), 0);
+      const oc = pays.filter(p => (p.created_at || '').slice(0, 10) >= monthStart && (p.created_at || '').slice(0, 10) <= monthEnd).reduce((s, p) => s + p.amount, 0);
+      const cg7 = pays.filter(p => (p.created_at || '').slice(0, 10) >= sevenDaysAgo && (p.created_at || '').slice(0, 10) <= today).reduce((s, p) => s + p.amount, 0);
+      const loanPlusCharges = l.principal + interest + (l.processing_fee || 0);
+      if (!officerGroups[l.officer_id]) officerGroups[l.officer_id] = { officerId: l.officer_id, disbursedAmount: 0, loanPlusCharges: 0, otc: 0, oc: 0, dd7: 0, cg7: 0, arrears: 0, paid: 0 };
+      const g = officerGroups[l.officer_id];
+      g.disbursedAmount += l.principal; g.loanPlusCharges += loanPlusCharges; g.otc += otc; g.oc += oc;
+      g.dd7 += dd7; g.cg7 += cg7; g.arrears += arrears; g.paid += paid;
+    });
+
+    const officerIds = Object.keys(officerGroups);
+    const officerNames = {};
+    if (officerIds.length) { const ph = officerIds.map(() => '?').join(','); (await all(`SELECT id, name FROM users WHERE id IN (${ph})`, officerIds)).forEach(u => { officerNames[u.id] = u.name; }); }
+
+    const rows = Object.values(officerGroups).map(g => ({
+      officerId: g.officerId, officerName: officerNames[g.officerId] || 'Unknown',
+      disbursedAmount: g.disbursedAmount, loanPlusCharges: g.loanPlusCharges,
+      otc: g.otc, oc: g.oc, dd7: g.dd7, cg7: g.cg7, arrears: g.arrears, paid: g.paid,
+      otcPct: g.loanPlusCharges > 0 ? (g.otc / g.loanPlusCharges * 100) : 0,
+      ocPct: g.loanPlusCharges > 0 ? (g.oc / g.loanPlusCharges * 100) : 0,
+      gcPct: g.loanPlusCharges > 0 ? (g.paid / g.loanPlusCharges * 100) : 0,
+    })).sort((a, b) => b.disbursedAmount - a.disbursedAmount);
+
+    const totals = rows.reduce((acc, r) => ({
+      disbursedAmount: acc.disbursedAmount + r.disbursedAmount, loanPlusCharges: acc.loanPlusCharges + r.loanPlusCharges,
+      otc: acc.otc + r.otc, oc: acc.oc + r.oc, dd7: acc.dd7 + r.dd7, cg7: acc.cg7 + r.cg7,
+      arrears: acc.arrears + r.arrears, paid: acc.paid + r.paid,
+    }), { disbursedAmount: 0, loanPlusCharges: 0, otc: 0, oc: 0, dd7: 0, cg7: 0, arrears: 0, paid: 0 });
+    totals.otcPct = totals.loanPlusCharges > 0 ? (totals.otc / totals.loanPlusCharges * 100) : 0;
+    totals.ocPct = totals.loanPlusCharges > 0 ? (totals.oc / totals.loanPlusCharges * 100) : 0;
+    totals.gcPct = totals.loanPlusCharges > 0 ? (totals.paid / totals.loanPlusCharges * 100) : 0;
+
+    res.json({ month, monthStart, monthEnd, rows, totals });
+  });
+
   router.get('/api/collections/sheet-branch', requireAuth, requireModule('loanbook'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);
     let loanClause = clause; const loanParams = [...params];

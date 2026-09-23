@@ -192,6 +192,35 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     // A Manager can genuinely view this for their own real branch scope too.
     const mgrView = await api('GET', `/api/collections/progressive-disbursements?from=${monthStart}&to=${today}`, { token: managerToken });
     assert(mgrView.status === 200, 'a Manager can genuinely view Progressive Disbursements scoped to their real branch too');
+
+    // =========================================================
+    // 2c. OFFICER COLLECTION RATES — real single-month per-officer summary
+    // backing the Loan Officer's real "Collection Rates" submenu page
+    // (Loan Officer/Disbursed Loan/Loan+Charges/OTC/OC/DD7/CG7/Arrears/
+    // OTC%/OC%/GC%). Reuses the exact same cohort/loan and the same
+    // Loan+Charges/GC% definitions as Progressive Disbursements above —
+    // cross-checked directly against that endpoint's own real figures for
+    // the identical loan, so the two pages can never silently disagree.
+    // =========================================================
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const rates = await api('GET', `/api/collections/officer-rates?month=${thisMonth}`, { token: officerToken });
+    assert(rates.status === 200 && Array.isArray(rates.json.rows), 'real Officer Collection Rates data loads for the Loan Officer');
+    const myRatesRow = rates.json.rows.find(r => r.officerId);
+    assert(myRatesRow, 'the real officer row genuinely appears for the current month');
+    assert(myRatesRow.disbursedAmount >= 4000, 'the real Disbursed Loan figure genuinely includes this real loan\'s real principal');
+    assert(Math.abs(myRatesRow.loanPlusCharges - myRow.loanPlusCharges) < 0.01, 'Loan+Charges on the real Collection Rates page genuinely matches the exact same figure Progressive Disbursements computes for the same real cohort — the two pages never silently disagree');
+    assert(Math.abs(myRatesRow.gcPct - myRow.gcPct) < 0.01, 'GC% on the real Collection Rates page genuinely matches Progressive Disbursements\' own GC% for the same real cohort');
+    assert(myRatesRow.oc >= myRatesRow.otc - 0.01, 'the real Overall Collection (OC) is genuinely never less than On-Time Collection (OTC) — OC only exceeds OTC when older arrears are caught up on within the same real month');
+    assert(Math.abs(myRatesRow.otcPct - (myRatesRow.loanPlusCharges > 0 ? myRatesRow.otc / myRatesRow.loanPlusCharges * 100 : 0)) < 0.01, 'OTC% is genuinely OTC / Loan+Charges, not a separately fabricated figure');
+    assert(Math.abs(myRatesRow.ocPct - (myRatesRow.loanPlusCharges > 0 ? myRatesRow.oc / myRatesRow.loanPlusCharges * 100 : 0)) < 0.01, 'OC% is genuinely OC / Loan+Charges, not a separately fabricated figure');
+    assert(myRatesRow.dd7 <= myRatesRow.arrears + 0.01, 'DD7 (7+ days overdue) is genuinely a subset of the total real Arrears figure, never larger than it');
+    assert(rates.json.totals.disbursedAmount === rates.json.rows.reduce((s, r) => s + r.disbursedAmount, 0), 'the real Totals row genuinely sums the real per-officer rows');
+
+    const emptyMonth = await api('GET', `/api/collections/officer-rates?month=2019-01`, { token: officerToken });
+    assert(emptyMonth.status === 200 && emptyMonth.json.rows.length === 0, 'a real month with no real disbursements genuinely returns an empty real result, not fabricated rows');
+
+    const noParam = await api('GET', '/api/collections/officer-rates', { token: officerToken });
+    assert(noParam.status === 200 && noParam.json.month === thisMonth, 'omitting the month param genuinely defaults to the real current month');
   }
 
   // =========================================================

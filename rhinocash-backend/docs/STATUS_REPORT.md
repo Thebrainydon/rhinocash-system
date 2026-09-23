@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,037 passed, 0 failed  (28 suites — see test/run-all.sh)
-Frontend: 811 passed, 0 failed  (drives the real UI functions in
+Backend:  1,049 passed, 0 failed  (28 suites — see test/run-all.sh)
+Frontend: 815 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,848 passed, 0 failed
+Total:    1,864 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -606,6 +606,40 @@ label map, since "Collection Report" (singular) is also an existing,
 not-yet-built placeholder label in Manager/Regional/Operational
 Manager's own Reports section — a global route-map entry would have
 hijacked their sidebar item too.
+
+LoanBook's Collection Rates submenu (Loan Officer view) is now a real,
+chrome-free, single-month, per-officer summary — backed by a new
+dedicated endpoint, `GET /api/collections/officer-rates`. The label
+"Collection Rates" already existed and was already reachable for every
+role, unconditionally showing the generic Manager/Regional/Operational
+Manager branch page (`renderCollectionRatesBranchPage()`, a due-
+installment/Strong-Normal-Needs-Attention classification view, entirely
+different in shape from this reference design); it now splits at the
+dispatch level exactly like every other Loan-Officer-specific page in
+this flow, with no new label or route-map entry needed since nothing
+else claims this exact label for Loan Officer specifically. Four of
+this page's eleven columns already had real, established definitions
+elsewhere in the codebase and were reused verbatim rather than
+recomputed: "Disbursed Loan," "Loan+Charges" (principal + the loan's
+full lifetime scheduled interest + its actual confirmed processing fee),
+"Arrears," and "GC%" (Paid ÷ Loan+Charges) are the exact same figures
+Progressive Disbursements already established for the identical "loans
+disbursed within a window" cohort — cross-checked directly in the test
+suite against that endpoint's own output for the same loan, so the two
+pages can never silently disagree. The remaining four columns (OTC, OC,
+DD7, CG7) had no prior definition anywhere in this codebase — this is a
+new reference design with no visible backend of its own to copy, so
+they were inferred as real, computable, industry-standard MFI figures
+rather than fabricated placeholders: OTC (On Time Collection) is the
+real amount collected against installments genuinely due within the
+selected month; OC (Overall Collection) is the real total cash
+collected that month regardless of which installment it was applied to
+(so OC only exceeds OTC when a client catches up on older arrears in
+the same month); DD7 is the real slice of Arrears overdue by 7 or more
+real days (a PAR7-style ageing bucket); CG7 is the real amount collected
+in the last 7 real days. OTC% and OC% divide by the same Loan+Charges
+denominator GC% already uses, so every percentage column on the page
+sits on one consistent scale.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

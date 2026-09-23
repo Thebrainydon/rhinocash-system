@@ -5245,7 +5245,8 @@ function renderLoanBook(){
   if(active==="Collection Report") return renderCollectionReport();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
   if(active==="Collection Reports") return tabsHtml + renderCollectionReports();
-  if(active==="Collection Rates") return tabsHtml + renderCollectionRatesBranchPage();
+  if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
+  if(active==="Collection Rates") return renderCollectionRatesOfficer();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
   if(active==="Loan Arrears") return tabsHtml + renderArrears();
   if(active==="View Loans") return tabsHtml + renderViewLoansPage();
@@ -5772,6 +5773,57 @@ function renderCollectionReport(){
           <td>${fmtNum(r.collection)}</td><td>${fmtNum(r.arrears)}</td><td>${fmtNum(r.paid)}</td><td>${fmtNum(r.balance)}</td>
         </tr>`).join("") || `<tr><td colspan="8" class="empty">No collections due in this date range.</td></tr>`}
         ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="4"></td><td>${fmtNum(d.totals.collection)}</td><td>${fmtNum(d.totals.arrears)}</td><td>${fmtNum(d.totals.paid)}</td><td>${fmtNum(d.totals.balance)}</td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
+
+// ---- Collection Rates (Loan Officer): a real, single-month, per-officer
+// summary — chrome-free, matching the reference design exactly. Reuses
+// the same "loans disbursed in the selected month" cohort and the same
+// real Disbursed Loan/Loan+Charges/Arrears/GC% definitions Progressive
+// Disbursements already established (see the backend route's own
+// comment for the full real definitions, including the inferred
+// OTC/OC/DD7/CG7 figures this reference design needed that had no prior
+// definition anywhere in this codebase). ----
+function defaultCollectionRatesOfficerState(){
+  return { month: new Date().toISOString().slice(0,7) };
+}
+async function loadCollectionRatesOfficer(){
+  const st = session.collectionRatesOfficerState;
+  return withRequest('load-collection-rates-officer:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ month: st.month });
+    const res = await api.get('/api/collections/officer-rates?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.collectionRatesOfficer = res;
+  });
+}
+function exportCollectionRatesOfficerCSV(){
+  const rows = DB.collectionRatesOfficer ? DB.collectionRatesOfficer.rows : [];
+  exportRowsToCsv('collection-rates.csv', ['officerName','disbursedAmount','loanPlusCharges','otc','oc','dd7','cg7','arrears','otcPct','ocPct','gcPct'], rows);
+}
+function renderCollectionRatesOfficer(){
+  const st = session.collectionRatesOfficerState || (session.collectionRatesOfficerState = defaultCollectionRatesOfficerState());
+  if(!DB.collectionRatesOfficer || DB.collectionRatesOfficer.stateKey !== JSON.stringify(st)){ loadCollectionRatesOfficer(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.collectionRatesOfficer;
+  const monthOptions = collSheetDayMonthOptions();
+  const [ry,rm] = st.month.split('-').map(Number);
+  const monthLabel = new Date(ry, rm-1, 1).toLocaleString('en-KE',{month:'short'}) + '-' + ry;
+  const rowHtml = r => `<tr><td>${escapeHtml(r.officerName)}</td><td>${fmtNum(r.disbursedAmount)}</td><td>${fmtNum(r.loanPlusCharges)}</td><td>${fmtNum(r.otc)}</td><td>${fmtNum(r.oc)}</td><td>${fmtNum(r.dd7)}</td><td>${fmtNum(r.cg7)}</td><td>${fmtNum(r.arrears)}</td><td>${r.otcPct.toFixed(1)}%</td><td>${r.ocPct.toFixed(1)}%</td><td>${r.gcPct.toFixed(1)}%</td></tr>`;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${monthLabel} Collection Rates</span></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <select onchange="session.collectionRatesOfficerState.month=this.value; DB.collectionRatesOfficer=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionRatesOfficerCSV()">-- Generate --</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Loan Officer</th><th>Disbursed Loan</th><th>Loan+Charges</th><th>OTC</th><th>OC</th><th>DD7</th><th>CG7</th><th>Arrears</th><th>OTC%</th><th>OC%</th><th>GC%</th></tr>
+        ${d.rows.map(rowHtml).join("") || `<tr><td colspan="11" class="empty">No loans disbursed in this month.</td></tr>`}
+        ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Totals</td><td>${fmtNum(d.totals.disbursedAmount)}</td><td>${fmtNum(d.totals.loanPlusCharges)}</td><td>${fmtNum(d.totals.otc)}</td><td>${fmtNum(d.totals.oc)}</td><td>${fmtNum(d.totals.dd7)}</td><td>${fmtNum(d.totals.cg7)}</td><td>${fmtNum(d.totals.arrears)}</td><td>${d.totals.otcPct.toFixed(1)}%</td><td>${d.totals.ocPct.toFixed(1)}%</td><td>${d.totals.gcPct.toFixed(1)}%</td></tr>` : ""}
       </table></div>
     </div>
   `;
