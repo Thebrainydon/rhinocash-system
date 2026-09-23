@@ -1844,13 +1844,13 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     // summary, chrome-free, backed by a real dedicated endpoint. The top
     // badge must be the exact same real "today's collection %" value the
     // Dashboard shows — both call the same computeStats().todayPct.
-    session.collectionReportState = null; DB.collectionReport = null;
+    session.collectionReportState = null; DB.officerCollectionReport = null;
     goTo('loanbook','Collection Report');
     await new Promise(r=>setTimeout(r,50)); renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Collection Report page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
     __assert(html.includes('Collection Report') && html.includes('Portfolio') && html.includes('Collection') && html.includes('Arrears') && html.includes('Balance'), "the real Collection Report page genuinely renders with the requested title and column set");
-    __assert(DB.collectionReport && Array.isArray(DB.collectionReport.rows), "the real Collection Report data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+    __assert(DB.officerCollectionReport && Array.isArray(DB.officerCollectionReport.rows), "the real Collection Report data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
     const dashboardPct = computeStats(DB.me.id).todayPct;
     __assert(html.includes(`${dashboardPct.toFixed(1)}%`), "the real percentage badge on the Collection Report page genuinely matches the exact same real value shown on the Dashboard — both derive from the identical computeStats().todayPct");
     const reportDateInputs = (html.match(/type="date"/g) || []).length;

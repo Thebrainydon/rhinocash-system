@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,025 passed, 0 failed  (28 suites — see test/run-all.sh)
-Frontend: 802 passed, 0 failed  (drives the real UI functions in
+Backend:  1,037 passed, 0 failed  (28 suites — see test/run-all.sh)
+Frontend: 811 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,827 passed, 0 failed
+Total:    1,848 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -562,6 +562,50 @@ reset instructions have been sent.") — a request for a non-existent or
 Suspended account is genuinely indistinguishable from the outside, and
 a Suspended account's password is verified (by hash comparison) to be
 left completely untouched.
+
+LoanBook's Collection Report submenu (Loan Officer view), right after
+Collection Sheet, is now a real, chrome-free, per-client summary over a
+real date range — backed by a new dedicated endpoint,
+`GET /api/collections/client-report`. "Portfolio" here is deliberately
+the loan's real assigned officer (`loans.officer_id`), not guarantor:
+for a per-client range report, guarantor would show identical text for
+unrelated clients purely from free-text data-entry coincidence (exactly
+the symptom the reference screenshot showed, every row reading the same
+name) — the assigned officer is the loan's actual real staff
+relationship, so for a Loan Officer's own report it naturally shows
+their own name on every row, matching the reference exactly. "Arrears"
+reuses the identical carried-over-unpaid-balance definition as the
+Collection Sheet's "Accumulated" column (periods due before the range
+starts, still unpaid); "Balance" is real Collection minus real Paid for
+the range itself, kept as its own column rather than folding arrears
+in. The percentage badge above the table is always TODAY's real
+collection percentage, never a value derived from whatever date range
+happens to be selected — it calls the exact same `computeStats().
+todayPct` formula the Dashboard already uses, so the two figures can
+never diverge (verified directly in the frontend suite by comparing
+both rendered values in the same test run). It is colored red below
+24%, light purple from 24% up to (not including) 50%, and green at 50%
+and above, exactly as requested. Both date inputs cap future selection
+at exactly 3 real days ahead of today (enforced both as the HTML5
+`max` attribute and as a real 400 on the backend for anything further
+out); back dates are never restricted in either direction.
+
+A real naming collision was caught and fixed before this shipped: an
+existing, unrelated `/api/collections/report` endpoint and an existing
+`loadCollectionReport()`/`DB.collectionReport` pair already existed,
+backing the generic (unbuilt-list-item-turned-real) "Collection
+Reports" page other roles see in their own Reports section. Reusing
+those exact names silently shadowed the pre-existing function (JavaScript's last-declaration-wins
+behavior for duplicate function names in the same scope) and caused a
+real infinite reload loop the first time this was tested end-to-end.
+Fixed by giving every new symbol a distinct name
+(`/api/collections/client-report`, `loadOfficerCollectionReport()`,
+`DB.officerCollectionReport`) and by keying the sidebar route through a
+Loan-Officer-scoped `ROLE_ROUTE_OVERRIDES` entry rather than the global
+label map, since "Collection Report" (singular) is also an existing,
+not-yet-built placeholder label in Manager/Regional/Operational
+Manager's own Reports section — a global route-map entry would have
+hijacked their sidebar item too.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

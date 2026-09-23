@@ -5730,17 +5730,17 @@ function collectionPctBadgeClass(pct){
   if(pct < 50) return 'purple';
   return 'green';
 }
-async function loadCollectionReport(){
+async function loadOfficerCollectionReport(){
   const st = session.collectionReportState;
-  return withRequest('load-collection-report:'+JSON.stringify(st), async ()=>{
+  return withRequest('load-officer-collection-report:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ from: st.from, to: st.to });
     const res = await api.get('/api/collections/client-report?'+params.toString());
     res.stateKey = JSON.stringify(st);
-    DB.collectionReport = res;
+    DB.officerCollectionReport = res;
   });
 }
 function exportCollectionReportCSV(){
-  const rows = DB.collectionReport ? DB.collectionReport.rows : [];
+  const rows = DB.officerCollectionReport ? DB.officerCollectionReport.rows : [];
   exportRowsToCsv('collection-report.csv', ['clientName','contact','portfolio','collection','arrears','paid','balance'], rows);
 }
 function renderCollectionReport(){
@@ -5748,8 +5748,8 @@ function renderCollectionReport(){
   const maxDate = collectionReportMaxDate();
   const pctSt = computeStats(DB.me.id);
   const pctClass = collectionPctBadgeClass(pctSt.todayPct);
-  if(!DB.collectionReport || DB.collectionReport.stateKey !== JSON.stringify(st)){ loadCollectionReport(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
-  const d = DB.collectionReport;
+  if(!DB.officerCollectionReport || DB.officerCollectionReport.stateKey !== JSON.stringify(st)){ loadOfficerCollectionReport(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.officerCollectionReport;
   return `
     <div class="card">
       <div class="card-title" style="justify-content:space-between; gap:8px;">
@@ -5757,9 +5757,9 @@ function renderCollectionReport(){
         <span class="badge ${pctClass}">${pctSt.todayPct.toFixed(1)}%</span>
       </div>
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px;">
-        <input type="date" value="${st.from}" max="${maxDate}" onchange="session.collectionReportState.from=this.value; DB.collectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <input type="date" value="${st.from}" max="${maxDate}" onchange="session.collectionReportState.from=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span>~</span>
-        <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.collectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span style="flex:1 1 auto;"></span>
         <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionReportCSV()">-- Generate --</button>
       </div>
