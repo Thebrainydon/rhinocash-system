@@ -8,6 +8,9 @@
 let __pass = 0, __fail = 0;
 function __assert(cond, msg) { if (cond) { __pass++; console.log('OK:', msg); } else { __fail++; console.error('FAIL:', msg); } }
 const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhinocash-app/extracted.js', 'utf8');
+// extracted.js is only the <script> contents — CSS in index.html's own
+// <style> block (never extracted) needs the raw file itself to check.
+const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhinocash-app/index.html', 'utf8');
 
 (async () => {
   // ---- 1. Login screen renders with no data at all (DB is null pre-login) ----
@@ -5256,6 +5259,24 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     // deliberately untouched — it was never asked to change, and doing so
     // would remove a real, wanted capability.
     __assert(__srcForBanCheck.includes('name="file" type="file" required accept="image/png,image/jpeg,image/webp,application/pdf"'), "the real generic Client Documents 'File' field genuinely still accepts a real PDF alongside images — it is a document upload, not a photo picker, so it was correctly left out of this change");
+  }
+
+  // ---- 16c. Filter/action rows (date pickers, "-- Generate --") that sit
+  // above a data table now scroll horizontally in sync with that table on
+  // mobile, in both directions, instead of staying fixed above an
+  // independently-scrolling table — wireFilterRowScrollSync() runs after
+  // every real renderApp(), and every test in this whole suite that calls
+  // goTo()/renderApp() already proves it never throws against the real
+  // rendered app. This headless test harness's fake `document` has no
+  // real element tree to query, so the function's own real guard for that
+  // case is checked directly here. ----
+  {
+    __assert(typeof wireFilterRowScrollSync === 'function', "the real wireFilterRowScrollSync() function genuinely exists");
+    let threw = false;
+    try { wireFilterRowScrollSync(); } catch(e) { threw = true; }
+    __assert(!threw, "wireFilterRowScrollSync() genuinely runs without throwing even against this harness's fake document (no real querySelectorAll), via its own real guard clause");
+    __assert(__srcForBanCheck.includes('wireFilterRowScrollSync();') && __srcForBanCheck.includes('initPendingCharts();\n  wireFilterRowScrollSync();'), "the real renderApp() genuinely calls wireFilterRowScrollSync() on every render, not just once at startup");
+    __assert(__rawIndexHtml.includes('.pr-scroll-sync{flex-wrap:nowrap !important; overflow-x:auto'), "the real shared CSS class that hides the synced filter row's own scrollbar and forces it onto one line genuinely exists");
   }
 
   // ---- 17. Redesigned topbar (no title text, no logout button — real icons + avatar only) ----

@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,020 frontend tests,
+At last verification: **1,199 backend tests and 1,024 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -198,6 +198,18 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   the sidebar's "Notifications" entry is gone — the real topbar bell
   (now shown for every role, Investor included) is the one real way to
   reach notifications.
+- **App-wide: mobile filter-row/table scroll sync** — complete: on every
+  page with a data table wide enough to need horizontal scrolling on a
+  phone, the filter row above it (date pickers, dropdowns, the real "--
+  Generate --" control) now scrolls in sync with the table itself,
+  swiping either one moves both together — matching the reference
+  design, where swiping right reveals the Generate button as the
+  table's own rightmost columns come into view, rather than the filter
+  row staying fixed in place while only the table underneath it
+  scrolls. Wired generically for every real page at once
+  (`wireFilterRowScrollSync()`, run after every render) by pairing each
+  real `.table-wrap` with its own real preceding `.pill-row`, rather
+  than needing a change in each individual page's own markup.
 - **Loan Officer's Undisbursed Loans — real weekly installments, Edit,
   Print** — complete: every real `term_weeks` product (Starter, Jijenge,
   Ibuka, Mavuno, Fly and their "Special" variants) now genuinely repays

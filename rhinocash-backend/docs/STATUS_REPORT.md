@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,020 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,024 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,219 passed, 0 failed
+Total:    2,223 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1343,6 +1343,32 @@ finished; and `renderAccount()`'s Loan-Officer branch only special-cased
 now-removed subtab (like the just-removed "Leave & Attendance") instead
 silently rendered the wrong, generic `renderViewDetails()` page. Both
 now correctly fall back to this role's own real View Details page.
+
+A follow-up, genuinely app-wide round fixed a real mobile layout bug
+affecting every page with a filter row (date pickers, dropdowns, the
+real "-- Generate --" control) sitting above a wide data table: on a
+phone, the filter row and the table were two independently-scrolling
+regions — one, both, or neither would move on a given swipe, and on
+several pages (any whose filter row happened to fit on one line, like
+Collection Report) the row didn't scroll at all, meaning the Generate
+button positioned at its far end could end up permanently unreachable
+off-screen. The reference design instead scrolls the filter row and
+the table together, in lockstep, so swiping to the table's rightmost
+columns simultaneously reveals whatever was at the filter row's own
+right edge. Fixed generically, for every page at once, rather than
+editing each page's own markup: a new `wireFilterRowScrollSync()`
+runs after every real `renderApp()`, finds every real `.table-wrap`
+in the current page, walks back to its own nearest preceding real
+`.pill-row` sibling (stopping if it hits another table first, so a
+filter row is never paired with the wrong table), forces that row
+onto one line with its own native scrollbar hidden, and wires a real,
+bidirectional, proportional `scrollLeft` mirror between the two —
+swiping either one now moves both, each staying at the same relative
+scroll fraction of its own (generally different) total width. No
+change was needed to any individual page's own render function, since
+every one of them already emits a `.pill-row` immediately followed by
+a `.table-wrap` in the same real DOM structure this generic wiring
+already expects.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

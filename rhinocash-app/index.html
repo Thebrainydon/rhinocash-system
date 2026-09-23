@@ -156,6 +156,15 @@ td{padding:10px 10px; border-bottom:1px solid var(--line); color:var(--ink);}
 tr:last-child td{border-bottom:none;}
 tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .table-wrap{overflow-x:auto;}
+/* A filter/action row (date pickers, dropdowns, the Generate button) that
+   sits directly above a .table-wrap gets this class added at render time
+   (see wireFilterRowScrollSync()) so it scrolls horizontally in lockstep
+   with the table below it — swiping either one moves both together,
+   matching the reference design, instead of the row staying fixed while
+   only the table scrolls underneath it. The scrollbar itself is hidden
+   since the table's own scrollbar is the one visual scroll indicator. */
+.pr-scroll-sync{flex-wrap:nowrap !important; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none;}
+.pr-scroll-sync::-webkit-scrollbar{display:none;}
 
 /* ---- Badges ---- */
 .badge{display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700;}
@@ -1854,6 +1863,33 @@ function el(html){ const t=document.createElement('template'); t.innerHTML=html.
 window.__pendingCharts = [];
 window.__chartInstances = {};
 function registerChart(id, config){ window.__pendingCharts.push({ id, config }); return `<div style="position:relative; height:260px; margin-top:10px;"><canvas id="${id}" role="img" aria-label="Chart"></canvas></div>`; }
+// A filter/action row (date pickers, dropdowns, the "-- Generate --"
+// control) immediately above a .table-wrap is made to scroll horizontally
+// in sync with that table, in both directions — so on mobile, swiping the
+// wide table also pans the filter row past it (revealing e.g. a Generate
+// button that was off-screen to the right), rather than the filter row
+// staying fixed in place while only the table underneath scrolls. Synced
+// proportionally (by scroll fraction, not raw pixels) since the filter
+// row and the table are generally different total widths.
+function wireFilterRowScrollSync(){
+  if(typeof document.querySelectorAll !== 'function') return; // the headless frontend test harness's fake DOM has no real element tree to query
+  document.querySelectorAll('.table-wrap').forEach(tw=>{
+    let sib = tw.previousElementSibling;
+    while(sib && !sib.classList.contains('pill-row') && !sib.classList.contains('table-wrap')) sib = sib.previousElementSibling;
+    if(!sib || !sib.classList.contains('pill-row')) return;
+    const pill = sib;
+    pill.classList.add('pr-scroll-sync');
+    let syncing = false;
+    const mirror = (from, to) => {
+      const fromMax = from.scrollWidth - from.clientWidth;
+      const toMax = to.scrollWidth - to.clientWidth;
+      if(fromMax <= 0 || toMax <= 0) return;
+      to.scrollLeft = (from.scrollLeft / fromMax) * toMax;
+    };
+    tw.addEventListener('scroll', ()=>{ if(syncing) return; syncing=true; mirror(tw, pill); syncing=false; });
+    pill.addEventListener('scroll', ()=>{ if(syncing) return; syncing=true; mirror(pill, tw); syncing=false; });
+  });
+}
 function initPendingCharts(){
   const pending = window.__pendingCharts; window.__pendingCharts = [];
   pending.forEach(({id, config})=>{
@@ -1932,6 +1968,7 @@ function renderApp(){
     ${modal ? renderModal() : ""}
   `;
   initPendingCharts();
+  wireFilterRowScrollSync();
 }
 
 function renderLogin(){
