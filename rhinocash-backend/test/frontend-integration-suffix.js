@@ -1895,12 +1895,23 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Monday') && html.includes('Sunday') && html.includes('-- Loan Product --'), "the real calendar genuinely renders the requested weekday columns and the real Loan Product filter");
     __assert(DB.dailyDisb && Array.isArray(DB.dailyDisb.days), "the real Daily Disbursements data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
-    // Loan Arrears: real ageing buckets, replacing the old local loanArrearsDays() computation.
+    // Loan Arrears: the shared real ageing-buckets loader/endpoint is
+    // still real and still directly callable (used elsewhere) — this
+    // just confirms it, independent of what the Loan Officer's own
+    // "Loan Arrears" submenu now renders.
     await loadArrears({}, 1);
-    __assert(Array.isArray(DB.acctPages.arrears.buckets) && DB.acctPages.arrears.buckets.length === 6, "real ageing buckets loaded via the actual UI loader, reusing the enhanced backend endpoint");
+    __assert(Array.isArray(DB.acctPages.arrears.buckets) && DB.acctPages.arrears.buckets.length === 6, "real ageing buckets still load via the actual standalone UI loader, reusing the enhanced backend endpoint");
+
+    // The Loan Officer's real "Loan Arrears" submenu page is now the
+    // real, per-loan arrears sheet filtered by a real Fall Date window,
+    // chrome-free, matching the reference design exactly.
+    session.loanArrearsSheetState = null; DB.loanArrearsSheet = null;
     goTo('loanbook','Loan Arrears');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Ageing Summary'), "Loan Arrears page renders the real ageing bucket summary");
+    __assert(!html.includes('class="subtabs"'), "the real Loan Arrears page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Loan Arrears from') && html.includes('Select Period') && html.includes('Cycles') && html.includes('P.Arrears') && html.includes('Accumulated') && html.includes('Fall Date') && html.includes('T.Bal'), "the real Loan Arrears page genuinely renders with the requested title format and full column set");
+    __assert(DB.loanArrearsSheet && Array.isArray(DB.loanArrearsSheet.rows), "the real Loan Arrears sheet data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
 
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];

@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,049 passed, 0 failed  (28 suites — see test/run-all.sh)
-Frontend: 815 passed, 0 failed  (drives the real UI functions in
+Backend:  1,062 passed, 0 failed  (28 suites — see test/run-all.sh)
+Frontend: 817 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,864 passed, 0 failed
+Total:    1,879 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -640,6 +640,30 @@ real days (a PAR7-style ageing bucket); CG7 is the real amount collected
 in the last 7 real days. OTC% and OC% divide by the same Loan+Charges
 denominator GC% already uses, so every percentage column on the page
 sits on one consistent scale.
+
+LoanBook's Loan Arrears submenu (Loan Officer view) is now a real,
+chrome-free, per-loan arrears sheet filtered by a real "Fall Date"
+window — backed by a new dedicated endpoint,
+`GET /api/loans/arrears-sheet`, matching the reference design's own
+column set exactly: Client / Contact / Loan / Disbursement / Cycles /
+P.Arrears / Accumulated / Installment / Fall Date / Days / T.Bal. "Fall
+Date" is the due date of the loan's real CURRENT (most recent, not
+oldest) overdue-and-unpaid period — the installment the client is
+presently behind on; "P.Arrears" is that single real period's own real
+shortfall, while "Accumulated" is the real sum of every real
+overdue-and-unpaid period (the same carried-over-arrears concept the
+Collection Sheet already established); "Days" counts the Fall Date
+itself as day 1 (today − fallDate + 1), matching the reference design's
+own counting exactly; "T.Bal" is the loan's real total outstanding
+balance across every real period — past, current, and not yet due,
+including real unpaid penalties — the same definition the frontend's
+own `loanBalance()` helper already uses; "Cycles" is the real count of
+this client's own real disbursed loans (their real loan cycle number),
+genuinely independent of this specific loan's own installment count.
+This replaces the old KPI-bucket "Ageing Summary" page for this role
+specifically — `renderArrears()`/`loadArrears()`/`GET /api/loans/arrears`
+are untouched and still real and independently tested, just no longer
+wired to this particular submenu.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

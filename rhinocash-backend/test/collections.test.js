@@ -245,6 +245,45 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 4b. LOAN ARREARS SHEET — real per-loan arrears sheet backing the
+  // Loan Officer's real "Loan Arrears" submenu page, filtered by a real
+  // Fall Date window (Client/Contact/Loan/Disbursement/Cycles/
+  // P.Arrears/Accumulated/Installment/Fall Date/Days/T.Bal). Reuses the
+  // exact same real loan/schedule state set up in 1b above (period 2
+  // genuinely overdue, unpaid, due yesterday).
+  // =========================================================
+  {
+    const { get: dbGet3 } = require('../src/db');
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const period2 = await dbGet3('SELECT * FROM loan_schedule WHERE loan_id = ? AND period = 2', [loanId]);
+    const totalPeriods = (await require('../src/db').all('SELECT * FROM loan_schedule WHERE loan_id = ?', [loanId])).length;
+
+    const sheet = await api('GET', `/api/loans/arrears-sheet?from=${yesterday}&to=${today}`, { token: officerToken });
+    assert(sheet.status === 200 && Array.isArray(sheet.json.rows), 'real Loan Arrears sheet loads for the Loan Officer');
+    const row = sheet.json.rows.find(r => r.loanId === loanId);
+    assert(row, 'the real loan with a real overdue, unpaid period genuinely appears on the real arrears sheet within its real Fall Date window');
+    assert(row.fallDate === period2.due_date, 'the real Fall Date is genuinely the due date of this loan\'s real current (most recent) overdue, unpaid period');
+    assert(row.period === 2 && row.totalPeriods === totalPeriods, 'the real Installment column is genuinely period/totalPeriods for that same real current period');
+    assert(Math.abs(row.pArrears - (period2.total_due - period2.paid_amount)) < 0.01, 'the real P.Arrears is genuinely that single real period\'s own real shortfall');
+    assert(row.accumulated >= row.pArrears - 0.01, 'the real Accumulated figure is genuinely never smaller than the single-period P.Arrears — it sums every real overdue period, which includes at least this one');
+    const expectedDays = Math.floor((new Date(today) - new Date(period2.due_date)) / 86400000) + 1;
+    assert(row.days === expectedDays, 'the real Days figure genuinely counts the Fall Date itself as day 1 (today - fallDate + 1), matching the reference design\'s own counting');
+    assert(row.tbal >= row.accumulated - 0.01, 'the real T.Bal genuinely covers at least the real Accumulated arrears (it also includes real not-yet-due periods)');
+    assert(Number.isInteger(row.cycles) && row.cycles >= 1, 'the real Cycles figure is genuinely a real positive integer (this client\'s own real disbursed-loan count), not a fabricated placeholder');
+
+    const outsideWindow = await api('GET', `/api/loans/arrears-sheet?from=2020-01-01&to=2020-01-31`, { token: officerToken });
+    assert(outsideWindow.status === 200 && !outsideWindow.json.rows.some(r => r.loanId === loanId), 'a real Fall Date window that genuinely excludes this loan\'s real current overdue period correctly excludes it');
+
+    const wrongProduct = await api('GET', `/api/loans/arrears-sheet?from=${yesterday}&to=${today}&product_id=pr_ln_starter_wrong_id`, { token: officerToken });
+    assert(wrongProduct.status === 200 && !wrongProduct.json.rows.some(r => r.loanId === loanId), 'filtering by a real product this loan does not genuinely belong to correctly excludes it');
+
+    const totals = sheet.json.totals;
+    assert(Math.abs(totals.pArrears - sheet.json.rows.reduce((s, r) => s + r.pArrears, 0)) < 0.01, 'the real Totals.pArrears genuinely sums the real rows, not a separately fabricated figure');
+    assert(Math.abs(totals.tbal - sheet.json.rows.reduce((s, r) => s + r.tbal, 0)) < 0.01, 'the real Totals.tbal genuinely sums the real rows');
+  }
+
+  // =========================================================
   // 5. COLLECTION ACTIVITIES — real, database-backed, scoped
   // =========================================================
   let activityId;

@@ -5248,7 +5248,7 @@ function renderLoanBook(){
   if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
   if(active==="Collection Rates") return renderCollectionRatesOfficer();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
-  if(active==="Loan Arrears") return tabsHtml + renderArrears();
+  if(active==="Loan Arrears") return renderLoanArrearsSheet();
   if(active==="View Loans") return tabsHtml + renderViewLoansPage();
   if(active==="Operational Loan Portfolio") return tabsHtml + renderOperationalPortfolioPage();
   if(active==="Regional Loan Portfolio") return tabsHtml + renderBranchPortfolioPage();
@@ -5824,6 +5824,72 @@ function renderCollectionRatesOfficer(){
         <tr><th>Loan Officer</th><th>Disbursed Loan</th><th>Loan+Charges</th><th>OTC</th><th>OC</th><th>DD7</th><th>CG7</th><th>Arrears</th><th>OTC%</th><th>OC%</th><th>GC%</th></tr>
         ${d.rows.map(rowHtml).join("") || `<tr><td colspan="11" class="empty">No loans disbursed in this month.</td></tr>`}
         ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Totals</td><td>${fmtNum(d.totals.disbursedAmount)}</td><td>${fmtNum(d.totals.loanPlusCharges)}</td><td>${fmtNum(d.totals.otc)}</td><td>${fmtNum(d.totals.oc)}</td><td>${fmtNum(d.totals.dd7)}</td><td>${fmtNum(d.totals.cg7)}</td><td>${fmtNum(d.totals.arrears)}</td><td>${d.totals.otcPct.toFixed(1)}%</td><td>${d.totals.ocPct.toFixed(1)}%</td><td>${d.totals.gcPct.toFixed(1)}%</td></tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
+
+// ---- Loan Arrears (Loan Officer): a real, per-loan arrears sheet
+// filtered by a real "Fall Date" window — chrome-free, matching the
+// reference design exactly. See the backend route's own comment for
+// the full real definitions of Fall Date/P.Arrears/Accumulated/Days/
+// T.Bal/Cycles. Replaces the old KPI-bucket "Ageing Summary" page for
+// this role specifically (renderArrears()/loadArrears()/
+// /api/loans/arrears are untouched and still real/tested — just no
+// longer wired to this submenu). ----
+function fmtDDMMYYYY(dateStr){
+  const [y,m,d] = dateStr.split('-');
+  return `${d}-${m}-${y}`;
+}
+function defaultLoanArrearsSheetState(){
+  const to = todayISO();
+  const from = new Date(Date.now() - 6*86400000).toISOString().slice(0,10);
+  return { from, to, productId: '' };
+}
+async function loadLoanArrearsSheet(){
+  const st = session.loanArrearsSheetState;
+  return withRequest('load-loan-arrears-sheet:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ from: st.from, to: st.to });
+    if(st.productId) params.set('product_id', st.productId);
+    const res = await api.get('/api/loans/arrears-sheet?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.loanArrearsSheet = res;
+  });
+}
+function exportLoanArrearsSheetCSV(){
+  const rows = DB.loanArrearsSheet ? DB.loanArrearsSheet.rows : [];
+  exportRowsToCsv('loan-arrears.csv', ['clientName','contact','loan','disbursedAt','cycles','pArrears','accumulated','period','totalPeriods','fallDate','days','tbal'], rows);
+}
+function renderLoanArrearsSheet(){
+  const st = session.loanArrearsSheetState || (session.loanArrearsSheetState = defaultLoanArrearsSheetState());
+  if(!DB.loanArrearsSheet || DB.loanArrearsSheet.stateKey !== JSON.stringify(st)){ loadLoanArrearsSheet(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.loanArrearsSheet;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Loan Arrears from ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}</span></div>
+      <div class="hint" style="margin:10px 0 4px;">Select Period</div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px;">
+        <input type="date" value="${st.from}" onchange="session.loanArrearsSheetState.from=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <span>To:</span>
+        <input type="date" value="${st.to}" onchange="session.loanArrearsSheetState.to=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; margin-top:8px;">
+        <select onchange="session.loanArrearsSheetState.productId=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Filter Loans --</option>
+          ${DB.products.map(p=>`<option value="${p.id}" ${st.productId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanArrearsSheetCSV()">-- Generate --</button>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>#</th><th>Client</th><th>Contact</th><th>Loan</th><th>Disbursement</th><th>Cycles</th><th>P.Arrears</th><th>Accumulated</th><th>Installment</th><th>Fall Date</th><th>Days</th><th>T.Bal</th></tr>
+        ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openLoan('${r.loanId}')">
+          <td>${i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${fmtNum(r.loan)}</td>
+          <td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td><td>${r.cycles}</td>
+          <td>${fmtNum(r.pArrears)}</td><td>${fmtNum(r.accumulated)}</td><td>${r.period}/${r.totalPeriods}</td>
+          <td>${fmtDDMMYYYY(r.fallDate)}</td><td>${r.days}</td><td>${fmtNum(r.tbal)}</td>
+        </tr>`).join("") || `<tr><td colspan="12" class="empty">No loans in arrears within this period.</td></tr>`}
+        ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="6">Totals</td><td>${fmtNum(d.totals.pArrears)}</td><td>${fmtNum(d.totals.accumulated)}</td><td colspan="3"></td><td>${fmtNum(d.totals.tbal)}</td></tr>` : ""}
       </table></div>
     </div>
   `;

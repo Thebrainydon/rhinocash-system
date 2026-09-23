@@ -1715,6 +1715,81 @@ function register(router) {
     res.json({ arrears: pageRows, buckets, totalOverdueLoans: result.length, totalOverdueAmount: result.reduce((s, r) => s + r.balance, 0), pagination: { page, limit, total: result.length, totalPages: Math.max(1, Math.ceil(result.length / limit)) } });
   });
 
+  // ==================== Loan Arrears sheet (Loan Officer's real "Loan
+  // Arrears" submenu page) — a real, per-loan arrears sheet filtered by
+  // a real "Fall Date" window, matching the reference design's own
+  // column set exactly: Client / Contact / Loan / Disbursement / Cycles
+  // / P.Arrears / Accumulated / Installment / Fall Date / Days / T.Bal.
+  // "Fall Date" is the real due date of this loan's CURRENT (most
+  // recent, not oldest) overdue-and-unpaid period — the installment the
+  // client is presently behind on; "Installment" is that same real
+  // period's period/totalPeriods; "P.Arrears" is that same single real
+  // period's own real shortfall (total_due - paid_amount); "Accumulated"
+  // is the real SUM of every real overdue-and-unpaid period's shortfall
+  // (the same carried-over-arrears concept used elsewhere in this app);
+  // "Days" is real days-late counting the fall date itself as day 1
+  // (today - fallDate + 1), matching the reference's own counting
+  // exactly; "T.Bal" is the loan's real total outstanding balance across
+  // every real period (past, current, and not-yet-due), including real
+  // unpaid penalties — the same definition the frontend's own
+  // loanBalance() helper already uses; "Cycles" is the real count of
+  // this client's own real disbursed loans (their real loan cycle
+  // number), not this loan's own installment count. This is a new
+  // reference design with no visible backend of its own — these are
+  // inferred, real, computable definitions, not fabricated placeholders.
+  router.get('/api/loans/arrears-sheet', requireAuth, requireModule('loanbook'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
+    let clause = scope.clause; const params = [...scope.params];
+    if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
+    if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
+    if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
+    if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
+    const today = new Date().toISOString().slice(0, 10);
+    const from = req.query.from || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const to = req.query.to || today;
+
+    const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
+    const loanIds = loans.map(l => l.id);
+    if (!loanIds.length) return res.json({ from, to, rows: [], totals: { pArrears: 0, accumulated: 0, tbal: 0 } });
+
+    const idPh = loanIds.map(() => '?').join(',');
+    const scheduleByLoan = {};
+    (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh}) ORDER BY period`, loanIds)).forEach(r => { (scheduleByLoan[r.loan_id] || (scheduleByLoan[r.loan_id] = [])).push(r); });
+
+    const clientIds = [...new Set(loans.map(l => l.client_id))];
+    const clientById = {};
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT id, name, phone FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientById[c.id] = c; }); }
+    const cyclesByClient = {};
+    if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT client_id, COUNT(*) as cnt FROM loans WHERE client_id IN (${cPh}) AND disbursed_at IS NOT NULL GROUP BY client_id`, clientIds)).forEach(r => { cyclesByClient[r.client_id] = Number(r.cnt); }); }
+
+    let rows = loans.map(loan => {
+      const sched = scheduleByLoan[loan.id] || [];
+      const overdue = sched.filter(r => r.due_date < today && r.paid_amount < r.total_due - 0.01);
+      if (!overdue.length) return null;
+      const current = overdue.reduce((a, b) => a.due_date > b.due_date ? a : b);
+      const pArrears = current.total_due - current.paid_amount;
+      const accumulated = overdue.reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
+      const tbal = sched.reduce((s, r) => s + Math.max(0, r.total_due - r.paid_amount) + Math.max(0, (r.penalty_due || 0) - (r.penalty_paid || 0)), 0);
+      const days = Math.floor((new Date(today) - new Date(current.due_date)) / 86400000) + 1;
+      const client = clientById[loan.client_id] || { name: 'Unknown', phone: null };
+      return {
+        loanId: loan.id, clientId: loan.client_id, clientName: client.name, contact: client.phone,
+        loan: loan.principal, disbursedAt: loan.disbursed_at, cycles: cyclesByClient[loan.client_id] || 1,
+        pArrears, accumulated, period: current.period, totalPeriods: sched.length,
+        fallDate: current.due_date, days, tbal,
+      };
+    }).filter(Boolean).filter(r => r.fallDate >= from && r.fallDate <= to);
+
+    rows.sort((a, b) => a.fallDate < b.fallDate ? -1 : a.fallDate > b.fallDate ? 1 : 0);
+
+    const totals = {
+      pArrears: rows.reduce((s, r) => s + r.pArrears, 0),
+      accumulated: rows.reduce((s, r) => s + r.accumulated, 0),
+      tbal: rows.reduce((s, r) => s + r.tbal, 0),
+    };
+    res.json({ from, to, rows, totals });
+  });
+
   router.get('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
