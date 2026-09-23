@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,149 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 911 passed, 0 failed  (drives the real UI functions in
+Backend:  1,154 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 918 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,060 passed, 0 failed
+Total:    2,072 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1029,6 +1029,28 @@ yet, so it honestly always reports 0/None rather than fabricating one —
 the same "no real metric, no fabricated Target" principle already
 established for the View Details Performance table's Repeat Loans/
 Performing/Arrears rows.
+
+The Loan Officer's My Account -> Salary Advance page is now a real,
+chrome-free "{year} Salary Advances" list over the existing, unchanged
+`GET /api/salary-advances?mine=1` endpoint — "Pending" is shown here as
+"Waiting Account for Approval" (a page-local label only, never a second
+real backend status). Its "Apply" button opens the exact same "Apply
+salary Advance" modal every role's Dashboard "Request Advance" link now
+opens (unified — previously two separate, differently-worded forms):
+Requesting Amount, Reason For Advance, a real dynamic legal disclosure
+(the real current payroll month, real company name), a required "I
+accept Terms & Conditions" checkbox, and a real dynamic "Att:" window
+banner (the 15th-18th of the real current month). Submitting now also
+triggers a real, short-lived SMS OTP (`salary_advance_otps` table,
+`src/integrations/sms.js`'s `salary_advance_otp` template) — the exact
+same real, honest "NOT_CONFIGURED returns the real code inline since it
+can't otherwise be delivered" pattern the existing requisition OTP flow
+already uses, never a fabricated success. Once a manager decides, a real
+`salary_advance_approved`/`salary_advance_rejected` SMS is sent to the
+requester, naming the real deciding manager — both SMS sends are
+best-effort and never undo the real, already-committed request/decision
+if delivery fails. Entering/confirming the OTP code is intentionally not
+built yet — this round only covers requesting and sending it.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

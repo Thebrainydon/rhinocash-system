@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,149 backend tests and 911 frontend tests, all
+At last verification: **1,154 backend tests and 918 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -138,6 +138,10 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
 - **Loan Officer's My Account -> My Work Plan** — complete: a real Daily
   Workplan (4 real visitation categories, each with a real saved target/
   locations and a real, freshly-computed Achieved/Clients Visited).
+- **Loan Officer's My Account -> Salary Advance** — complete: a real
+  Apply salary Advance flow (shared with every role's Dashboard Request
+  Advance link) that sends a real, short-lived SMS OTP on apply and a
+  real approval/rejection SMS once a manager decides.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

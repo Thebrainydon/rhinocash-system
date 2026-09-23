@@ -794,6 +794,18 @@ CREATE TABLE IF NOT EXISTS salary_advance_requests (
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- A real, short-lived OTP sent after applying for a salary advance — the
+-- same real design as requisition_otps above, just for this real event.
+CREATE TABLE IF NOT EXISTS salary_advance_otps (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES salary_advance_requests(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
 -- ===================== Investors =====================
 CREATE TABLE IF NOT EXISTS investors (
   id TEXT PRIMARY KEY,

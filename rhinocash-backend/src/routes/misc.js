@@ -3,6 +3,7 @@ const { all, get, run } = require('./../db');
 const { requireAuth, requireModule, requirePermission } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, hasPermission, assertRecordInScope } = require('./../rbac');
+const { tokenHash } = require('./../crypto');
 const crypto = require('node:crypto');
 
 function nowIso() { return new Date().toISOString(); }
@@ -430,7 +431,31 @@ function register(router) {
     const id = 'sa_' + crypto.randomUUID();
     await run('INSERT INTO salary_advance_requests (id, user_id, amount, reason) VALUES (?,?,?,?)', [id, req.user.id, b.amount, b.reason || null]);
     await logAction(req, { action: 'Applied for salary advance', module: 'staff', recordType: 'SalaryAdvance', recordId: id, newValue: b.amount });
-    res.status(201).json({ salaryAdvance: await get('SELECT * FROM salary_advance_requests WHERE id = ?', [id]) });
+
+    // Real, short-lived OTP sent right after applying — never blocks
+    // creation of the real request itself (best-effort: a missing phone
+    // or an SMS failure never undoes the real request that was just
+    // created). SMS delivery honestly reports NOT_CONFIGURED where no
+    // real provider is set up, same as the requisition OTP flow — in
+    // that case the real generated code is returned here directly,
+    // since there is no other channel to deliver it through.
+    let otpResult = { status: 'SKIPPED' };
+    if (req.user.phone) {
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const expiresAt = new Date(Date.now() + 15 * 60000);
+      await run(`INSERT INTO salary_advance_otps (id, request_id, user_id, code_hash, expires_at) VALUES (?,?,?,?, iso_offset(interval '15 minutes'))`,
+        ['saotp_' + crypto.randomUUID(), id, req.user.id, tokenHash(code)]);
+      const sms = require('./../integrations/sms');
+      const expiresAtLabel = expiresAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      let sendResult;
+      try { sendResult = await sms.send('salary_advance_otp', req.user.phone, { name: req.user.name, code, expiresAt: expiresAtLabel }); }
+      catch (e) { sendResult = { status: 'FAILED' }; }
+      otpResult = { status: sendResult.status, ...(sendResult.status === 'NOT_CONFIGURED' ? { otpForTesting: code, message: sendResult.message } : {}) };
+    }
+    res.status(201).json({
+      salaryAdvance: await get('SELECT * FROM salary_advance_requests WHERE id = ?', [id]),
+      otp: otpResult,
+    });
   });
   router.post('/api/salary-advances/:id/decide', requireAuth, async (req, res, next) => {
     const { decision } = req.body;
@@ -442,6 +467,16 @@ function register(router) {
     await run('UPDATE salary_advance_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', [decision, req.user.id, nowIso(), req.params.id]);
     await logAction(req, { action: `Salary advance ${decision}`, module: 'staff', recordType: 'SalaryAdvance', recordId: req.params.id });
     await notify(request.user_id, 'system', `Salary advance ${decision}`, `Your salary advance request of ${request.amount} was ${decision.toLowerCase()}.`);
+
+    // Real SMS to the requester, same best-effort principle as above —
+    // never lets an SMS failure undo the real decision that was just made.
+    const requester = await get('SELECT * FROM users WHERE id = ?', [request.user_id]);
+    if (requester && requester.phone) {
+      const sms = require('./../integrations/sms');
+      const template = decision === 'Approved' ? 'salary_advance_approved' : 'salary_advance_rejected';
+      try { await sms.send(template, requester.phone, { name: requester.name, amount: request.amount, deciderName: req.user.name }); }
+      catch (e) { /* real decision already committed above — an SMS failure never undoes it */ }
+    }
     res.json({ salaryAdvance: await get('SELECT * FROM salary_advance_requests WHERE id = ?', [req.params.id]) });
   });
 

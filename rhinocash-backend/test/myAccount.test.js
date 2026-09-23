@@ -112,6 +112,24 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(thisMonth.newLoans.target === 12, 'the real New Loans target the Manager just set for this exact month genuinely appears in the performance table — not fabricated, not stuck at 0');
   }
 
+  // Real salary advance OTP (My Account -> Salary Advance -> Apply) — a
+  // real, short-lived SMS OTP sent right after applying, and a real SMS
+  // to the requester once their manager decides. SMS isn't configured in
+  // this test environment, so the real generated code is honestly
+  // returned inline instead of being silently unreachable.
+  {
+    const officerMeSA = (await api('GET', '/api/auth/me', { token: officerToken })).json.user;
+    assert(!!officerMeSA.phone, 'sanity: the real seeded officer account has a real phone number on file');
+
+    const applied = await api('POST', '/api/salary-advances', { token: officerToken, body: { amount: 4000, reason: 'Salary advance OTP test' } });
+    assert(applied.status === 201 && applied.json.salaryAdvance.status === 'Pending', 'a real salary advance request is genuinely created, starting Pending');
+    assert(applied.json.otp && applied.json.otp.status === 'NOT_CONFIGURED', 'the real OTP send genuinely reaches the real SMS integration, honestly reporting NOT_CONFIGURED (no real provider in this test environment)');
+    assert(/^\d{6}$/.test(applied.json.otp.otpForTesting || ''), 'a real 6-digit OTP code is genuinely generated and returned inline since it could not actually be delivered');
+
+    const decided = await api('POST', `/api/salary-advances/${applied.json.salaryAdvance.id}/decide`, { token: managerToken, body: { decision: 'Approved' } });
+    assert(decided.status === 200 && decided.json.salaryAdvance.status === 'Approved', 'the real manager decision genuinely succeeds even though the real approval SMS could not actually be delivered (best-effort, never blocks the real decision)');
+  }
+
   // Real staff Interactions log (My Account -> View Details -> Interactions -> Notes).
   {
     const before = await api('GET', '/api/users/me/interactions', { token: officerToken });

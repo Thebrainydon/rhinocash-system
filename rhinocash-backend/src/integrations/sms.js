@@ -21,6 +21,9 @@ const TEMPLATES = {
   arrears_reminder: (ctx) => `Rhinocash: Your loan ${ctx.loanId} has an overdue payment of KES ${ctx.amount}. Please settle it to avoid further action.`,
   password_reset: (ctx) => `Rhinocash: Your temporary password is ${ctx.tempPassword}. You will be asked to change it on login.`,
   requisition_otp: (ctx) => `Rhinocash: Your requisition confirmation code is ${ctx.code}. It expires in 5 minutes. Do not share this code.`,
+  salary_advance_otp: (ctx) => `Dear ${ctx.name}, Use code ${ctx.code} as your system OTP before ${ctx.expiresAt} STOP *456*9*5#`,
+  salary_advance_approved: (ctx) => `Hi ${ctx.name}, your advance request of KES ${ctx.amount} has been Approved KES ${ctx.amount} by ${ctx.deciderName} STOP *456*9*5#`,
+  salary_advance_rejected: (ctx) => `Hi ${ctx.name}, your advance request of KES ${ctx.amount} has been Rejected by ${ctx.deciderName} STOP *456*9*5#`,
   system_notification: (ctx) => ctx.body,
 };
 

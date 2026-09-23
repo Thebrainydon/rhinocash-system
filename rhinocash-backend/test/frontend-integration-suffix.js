@@ -587,7 +587,13 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     // Request Advance — same real pattern.
     openModal('request-advance');
     __assert(modal && modal.type === 'request-advance', "openModal really opens the advance modal");
-    const advForm = new Map([['amount','3000'],['reason','Emergency']]);
+    const advFormNoTerms = new Map([['amount','3000'],['reason','Emergency']]);
+    global.FormData = class { constructor(){ return advFormNoTerms; } };
+    const advBeforeTerms = DB.salaryAdvances.length;
+    await submitRequestAdvance({ preventDefault(){}, target:{} });
+    __assert(DB.salaryAdvances.length === advBeforeTerms, "a real advance request without accepting Terms & Conditions is genuinely rejected client-side, never silently created");
+
+    const advForm = new Map([['amount','3000'],['reason','Emergency'],['terms','on']]);
     global.FormData = class { constructor(){ return advForm; } };
     const advBefore = DB.salaryAdvances.length;
     await submitRequestAdvance({ preventDefault(){}, target:{} });
@@ -803,7 +809,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let f4 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return f4; } };
     await doLogin({ preventDefault(){}, target:{} });
-    const advForm2 = new Map([['amount','2500'],['reason','Director queue test']]);
+    const advForm2 = new Map([['amount','2500'],['reason','Director queue test'],['terms','on']]);
     global.FormData = class { constructor(){ return advForm2; } };
     await submitRequestAdvance({ preventDefault(){}, target:{} });
 
@@ -2531,6 +2537,32 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Town Centre') && html.includes('Manyatta, Kondele') && html.includes('Nyalenda') && html.includes('Mamboleo'), "the real, just-saved targets and visiting locations genuinely appear in the real My Work Plan table, not fabricated client-side");
     __assert(DB.loWorkPlan.collection.target === 6 && DB.loWorkPlan.prospect.target === 4, "the real saved targets genuinely round-trip through the real backend");
+
+    // Salary Advance (a real, chrome-free page reusing the exact same
+    // Apply salary Advance modal as every Dashboard's Request Advance
+    // link) — real OTP-on-apply, real "Waiting Account for Approval"
+    // label for a real Pending request.
+    DB.loSalaryAdvances = null;
+    goTo('account','Salary Advance');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Salary Advance page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
+    __assert(html.includes('Salary Advances') && html.includes('Apply') && html.includes('Request') && html.includes('Reason for Advance') && html.includes('Accepted') && html.includes('Status'), "the real Salary Advance page genuinely renders with the requested title and full column set");
+
+    openModal('request-advance');
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'request-advance' && html.includes('Apply salary Advance') && html.includes('Requesting Amount') && html.includes('Reason For Advance') && html.includes('I accept Terms') && html.includes('Att:'), "the real Apply button genuinely opens the real Apply salary Advance modal with the requested fields, legal text, and Att banner — the exact same modal as every Dashboard's Request Advance link");
+
+    const loAdvCountBefore = (DB.loSalaryAdvances||[]).length;
+    let loAdvForm = new Map([['amount','4500'],['reason','Frontend test advance'],['terms','on']]);
+    global.FormData = class { constructor(){ return loAdvForm; } };
+    await submitRequestAdvance({ preventDefault(){}, target:{} });
+    __assert(modal === null, "a real, valid Apply salary Advance submission genuinely closes the modal");
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(DB.loSalaryAdvances.length === loAdvCountBefore + 1, "the real, just-submitted advance request genuinely appears in the real Salary Advance page's own data, reloaded fresh from the backend");
+    __assert(html.includes('4,500') && html.includes('Frontend test advance') && html.includes('Waiting Account for Approval'), "the real, just-submitted request genuinely renders with its real amount/reason and the requested 'Waiting Account for Approval' status label for a real Pending request");
 
     // Real self-update: role/branch cannot change even if injected. (Only
     // phone is changed here — changing email would change the officer's
