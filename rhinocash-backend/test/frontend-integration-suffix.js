@@ -1106,8 +1106,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const fakeReceipt = renderReceiptDetail('does-not-exist');
     __assert(fakeReceipt.includes('Receipt not found'), "no receipt is ever fabricated for a nonexistent payment id");
 
-    goTo('payments', 'Prepayments');
-    while(!DB.paymentsPages.prepayments){ await new Promise(r=>setTimeout(r,20)); }
+    await loadPrepayments({}, 1); // a Loan Officer now sees a different real page under this label — load the generic renderer's data directly rather than relying on goTo's dispatch
     html = renderPrepayments();
     __assert(html.includes('Potential Prepayment'), "Prepayments view genuinely evaluates real payments using the real allocation-based classification");
 
@@ -1171,8 +1170,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await recordPayment(loan.loan.id, firstDue, 'Cash', true); // exact current installment — NOT a prepayment
     const bigPay = await recordPayment(loan.loan.id, firstDue > 0 ? secondDue + 500 : secondDue, 'Cash', true); // reaches into a future installment
 
-    goTo('payments', 'Prepayments');
-    while(!DB.paymentsPages.prepayments){ await new Promise(r=>setTimeout(r,20)); }
+    await loadPrepayments({}, 1); // a Loan Officer now sees a different real page under this label — load the generic renderer's data directly rather than relying on goTo's dispatch
     let html = renderPrepayments();
     __assert(html.includes('Potential Prepayment'), "the UI uses the required 'Potential Prepayment' label, not an unqualified 'Prepayment'");
     __assert(!html.includes('average installment') && !html.includes('meaningfully larger'), "the old size-based heuristic language is gone — replaced by real allocation-based classification");
@@ -2019,6 +2017,58 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Principal') || html.includes('Interest'), "the real Payment Details bullets genuinely reflect the real allocated_principal/allocated_interest buckets");
     if(ppFeeClient) __assert(html.includes('Processing fee') && html.includes(ppFeeClient.client.name), "a real confirmed processing-fee collection genuinely appears merged into the same real list, not just loan-schedule payments");
     __assert(DB.loProcessedPayments && Array.isArray(DB.loProcessedPayments.rows), "the real Processed Payments data genuinely loaded from the real backend endpoints, not fabricated client-side");
+
+    // Prepayments (Loan Officer Payments menu): a real, chrome-free,
+    // PER-LOAN aggregate — reuses the exact same real
+    // classifyPayment()/futureAmount data the generic Prepayments page
+    // already computes per-payment, just summed per loan.
+    const lopClient = await api.post('/api/clients', { name:'[TEST] LO Prepayments Client', phone:'0722'+Math.floor(Math.random()*900000+100000) });
+    const lopLoan = await api.post('/api/loans', { client_id: lopClient.client.id, product_id: ppProducts.products[0].id, principal: 12000, term_months: 3 });
+    let lopMgr = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopMgr; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lopLoan.loan.id);
+    let lopReg = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopReg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lopLoan.loan.id);
+    let lopOps = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopOps; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lopLoan.loan.id);
+    let lopAcc = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopAcc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(lopLoan.loan.id);
+    let lopAdm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopAdm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(lopLoan.loan.id, 'Cash');
+
+    let lopOfc = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return lopOfc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const lopDetail = await api.get(`/api/loans/${lopLoan.loan.id}`);
+    const lopFirstDue = lopDetail.schedule[0].total_due;
+    const lopSecondDue = lopDetail.schedule[1].total_due;
+    await recordPayment(lopLoan.loan.id, lopFirstDue, 'Cash', true); // exact current installment — not a prepayment
+    await recordPayment(lopLoan.loan.id, lopSecondDue + 500, 'Cash', true); // reaches into a future installment — a real prepayment
+
+    session.loPrepaymentsState = null; DB.loPrepayments = null;
+    goTo('payments','Prepayments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Prepayments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Loan Prepayments') && html.includes('Client') && html.includes('Branch') && html.includes('Product') && html.includes('Officer') && html.includes('Disbursement') && html.includes('Prepayment'), "the real Prepayments page genuinely renders with the requested title and full column set");
+    __assert(html.includes('[TEST] LO Prepayments Client'), "a real loan with a real future-allocated payment genuinely appears, aggregated by loan");
+    __assert(DB.loPrepayments && DB.loPrepayments.byLoan[lopLoan.loan.id] > 0, "the real per-loan prepayment total genuinely came from the real classifyPayment() futureAmount data, not fabricated client-side");
+
+    session.loPrepaymentsState.q = 'Nonexistent Name XYZ';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('[TEST] LO Prepayments Client'), "the real Search Client filter genuinely excludes a non-matching client");
+    session.loPrepaymentsState.q = '';
+    renderApp();
 
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];

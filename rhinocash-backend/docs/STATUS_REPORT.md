@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 838 passed, 0 failed  (drives the real UI functions in
+Frontend: 843 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,935 passed, 0 failed
+Total:    1,940 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -796,6 +796,31 @@ to populate — that dispatch now correctly routes a Loan Officer to this
 new page instead, so the generic page's own loader never fires that way
 any more; both were changed to load the generic renderer's data directly,
 which is what they actually needed.
+
+The Payments menu's third submenu, "Prepayments" (Loan Officer view), is
+now a real, chrome-free, PER-LOAN aggregate view — deliberately a
+different shape from the generic per-payment Prepayments page (which
+stays untouched for every other role): it reuses the exact same real
+`classifyPayment()`/`futureAmount` data (the real amount of a payment
+applied to an installment not yet due) already established for that
+generic page, just summed per loan rather than listed per payment,
+matching the reference design's own single "Prepayment" total column per
+row. A loan appears here only when its real accumulated future-allocated
+amount is greater than zero — computed by fetching this officer's own
+posted payments (already scoped server-side) and grouping their real
+`classification.futureAmount` by `loan_id` client-side, then joining
+against the already-loaded `DB.loans` for the real Branch/Product/Officer/
+Disbursement columns. No new backend endpoint was needed for this one —
+every field it needs was already real and already being returned.
+
+Building this and the two submenus before it also surfaced a subtler
+correctness issue worth recording: two pre-existing frontend tests for
+"Prepayments" itself had the identical `goTo(...)` + poll-loop hang
+pattern already fixed for Processed Payments, and were fixed the same way
+(loading the generic renderer's data directly) for the same reason — a
+Loan Officer now genuinely gets a different real page under that label,
+so the dispatch a test relied on to trigger the generic page's own loader
+no longer does that for this role.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
