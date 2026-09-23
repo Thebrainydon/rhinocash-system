@@ -12851,14 +12851,11 @@ function renderLoanOfficerReceiptDayGrid(day){
           if(r.penalty>0) lines.push({label:'Penalty', amt:r.penalty});
           if(r.fee>0) lines.push({label:'Processing fee', amt:r.fee});
           return `<div style="position:relative; overflow:hidden; border:1px solid var(--border); border-radius:10px; padding:14px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
-            <img src="${LOGO_DATA_URI}" alt="" style="position:absolute; top:50%; left:50%; width:180px; height:auto; transform:translate(-50%,-50%); opacity:0.06; pointer-events:none;">
+            <img src="${LOGO_DATA_URI}" alt="" style="position:absolute; top:50%; left:50%; width:260px; height:auto; transform:translate(-50%,-50%) rotate(-18deg); opacity:0.09; pointer-events:none; z-index:0;">
             <div style="position:relative; z-index:1;">
-              <div style="display:flex; align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--border); margin-bottom:8px;">
-                <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:28px; height:28px; object-fit:contain;">
-                <div>
-                  <div style="font-weight:800; color:var(--navy); line-height:1.1;">RHINOCASH LTD</div>
-                  <div class="hint" style="line-height:1.1;">Official Payment Receipt</div>
-                </div>
+              <div style="text-align:center; padding-bottom:8px; border-bottom:1px solid var(--border); margin-bottom:8px;">
+                <div style="font-weight:800; color:var(--navy); line-height:1.2;">RHINOCASH LTD</div>
+                <div class="hint" style="line-height:1.2;">Official Payment Receipt</div>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div>
