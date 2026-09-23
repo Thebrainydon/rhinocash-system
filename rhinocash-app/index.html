@@ -8578,7 +8578,8 @@ function renderPayments(){
   if(active==="Receipts" && session.selectedReceiptId) return tabsHtml + renderReceiptDetail(session.selectedReceiptId);
   if(active==="Receipts" && session.role !== 'Loan Officer') return tabsHtml + renderReceiptsList();
   if(active==="Receipts") return renderLoanOfficerReceipts();
-  if(active==="Pay-in Summary") return tabsHtml + renderPayinSummary();
+  if(active==="Pay-in Summary" && session.role !== 'Loan Officer') return tabsHtml + renderPayinSummary();
+  if(active==="Pay-in Summary") return renderLoanOfficerPayinSummary();
   if(active==="Payments Report") return tabsHtml + renderPaymentsReport();
   if(active==="M-Pesa Integration") return tabsHtml + renderMpesa();
   if(active==="M-Pesa Transactions") return tabsHtml + renderMpesaTransactions();
@@ -12890,6 +12891,154 @@ function renderLoanOfficerReceipts(){
   const key = JSON.stringify({ year: st.year, month: st.month });
   if(!DB.loReceiptsMonth || DB.loReceiptsMonth.stateKey !== key){ loadLoanOfficerReceiptsMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   return st.viewDay ? renderLoanOfficerReceiptDayGrid(st.viewDay) : renderLoanOfficerReceiptsList();
+}
+
+// ==================== Pay-in Summary / "Daily Paybill Collection" (Loan Officer Payments menu) ====================
+// A real calendar of daily M-Pesa/Paybill collection totals for a
+// selected Year/Month, backed by the new GET /api/mpesa/c2b/daily-summary
+// endpoint (a lightweight GROUP BY, not client-side summed from every
+// individual transaction). This raw paybill feed has never been scoped
+// per Loan Officer anywhere in this codebase — a collection isn't
+// attributable to any one officer until it's actually matched to a real
+// loan — so, like the topbar cash icon this reuses the same real backend
+// for, this is genuinely company-wide data, just presented as its own
+// chrome-free page under this role's Payments menu.
+function buildMonthCalendarWeeks(year, month){
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstWeekday = (new Date(year, month-1, 1).getDay() + 6) % 7; // 0=Mon..6=Sun
+  const weeks = [];
+  let week = new Array(7).fill(null);
+  let col = firstWeekday;
+  for(let dayNum=1; dayNum<=daysInMonth; dayNum++){
+    week[col] = dayNum;
+    col++;
+    if(col === 7){ weeks.push(week); week = new Array(7).fill(null); col = 0; }
+  }
+  if(week.some(d=>d!==null)) weeks.push(week);
+  return weeks;
+}
+function fmtReceiptDayLabel(dateStr){
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [y,m,d] = dateStr.split('-');
+  return `${MONTH_ABBR[Number(m)-1]} ${d},${y}`;
+}
+function defaultLoanOfficerPayinSummaryState(){
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth()+1, printDay: null };
+}
+async function loadLoanOfficerPayinSummaryMonth(){
+  const st = session.loPayinSummaryState;
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  return withRequest('load-lo-payin-summary:'+key, async ()=>{
+    const from = `${st.year}-${String(st.month).padStart(2,'0')}-01`;
+    const lastDay = new Date(st.year, st.month, 0).getDate();
+    const to = `${st.year}-${String(st.month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    const res = await api.get('/api/mpesa/c2b/daily-summary?'+new URLSearchParams({from,to}).toString());
+    const byDay = {};
+    res.days.forEach(d=>{ byDay[d.date] = d; });
+    DB.loPayinSummaryMonth = { byDay, shortcode: res.shortcode, stateKey: key };
+  });
+}
+async function loadLoanOfficerPayinSummaryDay(day){
+  return withRequest('load-lo-payin-summary-day:'+day, async ()=>{
+    const res = await api.get('/api/mpesa/c2b/transactions?'+new URLSearchParams({from:day, to:day, limit:100}).toString());
+    DB.loPayinSummaryDay = { day, transactions: res.transactions, totals: res.totals, shortcode: res.shortcode };
+  });
+}
+function printLoanOfficerPayinSummaryDay(day){
+  session.loPayinSummaryState.printDay = day;
+  DB.loPayinSummaryDay = null;
+  renderApp();
+  setTimeout(()=>{ window.print && window.print(); }, 400);
+}
+function renderLoanOfficerPayinSummaryCalendar(){
+  const st = session.loPayinSummaryState;
+  const d = DB.loPayinSummaryMonth;
+  const weeks = buildMonthCalendarWeeks(st.year, st.month);
+  const curYear = new Date().getFullYear();
+  const yearOptions = [curYear, curYear-1, curYear-2];
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthOptions = [];
+  for(let m=1;m<=12;m++) monthOptions.push({ value:m, label: MONTH_NAMES[m-1] + ' ' + st.year });
+  const WEEKDAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <span>Daily Paybill Collection</span>
+        <div class="pill-row" style="gap:8px;">
+          <select onchange="session.loPayinSummaryState.year=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
+            ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
+          </select>
+          <select onchange="session.loPayinSummaryState.month=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
+            ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr>${WEEKDAY_NAMES.map(w=>`<th>${w}</th>`).join("")}</tr>
+        ${weeks.map(week=>`<tr>
+          ${week.map(dayNum=>{
+            if(dayNum===null) return `<td></td>`;
+            const dateStr = `${st.year}-${String(st.month).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`;
+            const info = d.byDay[dateStr];
+            return `<td style="vertical-align:top; min-width:110px;">
+              <div class="hint" style="font-weight:700;">${fmtDDMMYYYY(dateStr)}</div>
+              ${info ? `<div style="margin-top:4px;">
+                <div class="hint">Corporate</div>
+                <div>${escapeHtml(d.shortcode||'—')}</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:2px;">
+                  <span style="font-weight:700;">${fmtNum(info.amount)}</span>
+                  <span class="clickable" style="cursor:pointer;" title="Print" onclick="printLoanOfficerPayinSummaryDay('${dateStr}')">🖨</span>
+                </div>
+              </div>` : ''}
+            </td>`;
+          }).join("")}
+        </tr>`).join("")}
+      </table></div>
+    </div>
+  `;
+}
+function renderLoanOfficerPayinSummaryDayPrint(day){
+  const dd = DB.loPayinSummaryDay;
+  if(!dd || dd.day !== day){ loadLoanOfficerPayinSummaryDay(day); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const now = new Date();
+  const printedAt = `${fmtReceiptDayLabel(now.toISOString().slice(0,10))} - ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true}).toLowerCase()}`;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="session.loPayinSummaryState.printDay=null; renderApp();" style="cursor:pointer;">←</span><span>${fmtReceiptDayLabel(day)} MPESA Payments</span></span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+      </div>
+      <div style="text-align:center; margin-top:10px;">
+        <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:56px; height:56px; object-fit:contain;">
+        <div style="font-weight:800; color:var(--navy); font-size:18px;">RHINOCASH LTD</div>
+        <div class="hint">${fmtReceiptDayLabel(day)} MPESA Payments</div>
+        <div style="font-size:20px; font-weight:800; color:var(--red);">${fmtNum(dd.totals.amount)}</div>
+        <div class="hint" style="margin-top:4px;">Printed on ${printedAt} by ${escapeHtml(session.userName)}</div>
+      </div>
+      <div class="table-wrap" style="margin-top:12px;"><table>
+        <tr><th>No</th><th>Paybill</th><th>Transaction</th><th>Name</th><th>Phone</th><th>Account</th><th>Amount</th><th>Approval</th></tr>
+        ${dd.transactions.map((t,i)=>`<tr>
+          <td>${i+1}</td>
+          <td>${escapeHtml(dd.shortcode||'—')}</td>
+          <td>${escapeHtml(t.transId)}</td>
+          <td>${escapeHtml(t.clientName||'Unassigned')}</td>
+          <td>${escapeHtml(t.phone||'—')}</td>
+          <td>${escapeHtml(t.accountRef||'—')}</td>
+          <td>${fmtNum(t.amount)}</td>
+          <td>${t.matched?'Approved':'Unmatched'}</td>
+        </tr>`).join("") || `<tr><td colspan="8" class="empty">No M-Pesa payments on this day.</td></tr>`}
+      </table></div>
+      <div class="hint" style="text-align:center; margin-top:10px;">${fmtReceiptDayLabel(day)} MPESA Payments: Page 1</div>
+    </div>
+  `;
+}
+function renderLoanOfficerPayinSummary(){
+  const st = session.loPayinSummaryState || (session.loPayinSummaryState = defaultLoanOfficerPayinSummaryState());
+  if(st.printDay) return renderLoanOfficerPayinSummaryDayPrint(st.printDay);
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  if(!DB.loPayinSummaryMonth || DB.loPayinSummaryMonth.stateKey !== key){ loadLoanOfficerPayinSummaryMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  return renderLoanOfficerPayinSummaryCalendar();
 }
 
 /* ---------------- Init ---------------- */

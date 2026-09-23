@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 857 passed, 0 failed  (drives the real UI functions in
+Frontend: 862 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,954 passed, 0 failed
+Total:    1,959 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -888,6 +888,36 @@ view made the gap visible. Fixed by having `goTo()` itself always clear
 `selectedReceiptId`; `openReceipt()` re-sets it immediately afterward on
 the one real call path that genuinely wants a specific receipt shown, so
 existing click-through behavior for every role is unchanged.
+
+The Payments menu's sixth submenu, "Pay-in Summary" (Loan Officer view,
+labeled "Payi Summary" in the sidebar), is now a real "Daily Paybill
+Collection" calendar — a full Monday-through-Sunday month grid of real
+daily M-Pesa/Paybill collection totals, backed by a new, lightweight
+`GET /api/mpesa/c2b/daily-summary` endpoint (a real SQL `GROUP BY`, not
+every individual transaction summed client-side, since a full month can
+genuinely exceed the existing transactions endpoint's own page-size
+ceiling). This raw paybill feed has never been scoped per Loan Officer
+anywhere in this codebase — a collection isn't attributable to any one
+officer until it's actually matched to a real loan — so, like the topbar
+cash icon this reuses the same real backend for, the data here is
+genuinely company-wide, just presented as its own chrome-free page under
+this role's Payments menu. Clicking a day's print icon opens a real,
+letterhead-branded daily statement (reusing the existing
+`GET /api/mpesa/c2b/transactions`, filtered to that single day) and
+immediately triggers the browser's own print dialog — the same
+`window.print()` convention already established for the single-receipt
+detail page and the Payment Receipts submenu, not a new mechanism.
+"Approval" on that statement reflects the real `matched` state of each
+transaction (`Approved` vs `Unmatched`), not a fabricated constant.
+
+A real bug surfaced and was fixed while building the calendar's own data
+loader: Postgres returns a `GROUP BY (created_at)::date` column through
+node-postgres as a full timestamp object (e.g.
+`2026-09-01T00:00:00.000Z`), not the plain `YYYY-MM-DD` string the rest
+of this codebase's date handling assumes — so the calendar's per-day
+lookup silently matched nothing until the query was changed to
+`(created_at)::date::text`, returning the plain string every other date
+field in this codebase already expects.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

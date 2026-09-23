@@ -210,6 +210,29 @@ function register(router) {
     });
   });
 
+  // Real, per-day totals over a date range — backs the "Daily Paybill
+  // Collection" calendar view. A lightweight GROUP BY rather than paging
+  // through every individual transaction just to sum them client-side,
+  // since a full month can genuinely exceed the /transactions endpoint's
+  // own page-size ceiling.
+  router.get('/api/mpesa/c2b/daily-summary', requireAuth, requireMpesaViewAuth, async (req, res) => {
+    const clauses = ['1=1']; const params = [];
+    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
+    const where = clauses.join(' AND ');
+    const rows = await all(
+      `SELECT (created_at)::date::text as day, COUNT(*) as cnt, COALESCE(SUM(amount),0) as amt
+       FROM mpesa_c2b_transactions WHERE ${where} GROUP BY (created_at)::date ORDER BY day`,
+      params
+    );
+    const activeEnv = await mpesa.getActiveEnvironment();
+    const activeConfig = activeEnv ? await mpesa.getMaskedConfig(activeEnv) : null;
+    res.json({
+      days: rows.map(r => ({ date: r.day, count: r.cnt, amount: r.amt })),
+      shortcode: activeConfig ? activeConfig.shortcode : null,
+    });
+  });
+
   // Manual match + post — resolving a real unmatched Paybill payment (most
   // often one where the client typed the wrong account reference) by
   // pointing it at the correct real loan, then posting it through the

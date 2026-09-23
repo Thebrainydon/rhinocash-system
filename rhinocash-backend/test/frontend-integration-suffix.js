@@ -2153,6 +2153,33 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     session.loReceiptsState.viewDay = null;
     renderApp();
 
+    // Pay-in Summary / "Daily Paybill Collection" (Loan Officer Payments
+    // menu): a real calendar of daily M-Pesa/Paybill totals, backed by the
+    // new GET /api/mpesa/c2b/daily-summary endpoint (a real GROUP BY, not
+    // client-side summed), with a per-day printable statement over the
+    // existing GET /api/mpesa/c2b/transactions. Seeded through the real
+    // C2B Confirmation webhook, the same real entry point Safaricom itself
+    // would call.
+    const c2bTransId = 'QGT' + Math.floor(Math.random()*90000000+10000000);
+    const c2bConfirm = await api.post('/api/mpesa/c2b/confirmation/sandbox', { TransID: c2bTransId, TransAmount: '2500', MSISDN: '254722900888', BillRefNumber: 'nonexistent-ref-xyz' });
+    __assert(c2bConfirm.ResultCode === '0', "the real C2B Confirmation webhook genuinely accepted the simulated payment");
+
+    session.loPayinSummaryState = null; DB.loPayinSummaryMonth = null;
+    goTo('payments','Pay-in Summary');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Pay-in Summary page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Daily Paybill Collection') && html.includes('Monday') && html.includes('Sunday') && html.includes('Corporate'), "the real Daily Paybill Collection calendar genuinely renders with the requested title and full weekday columns, including Saturday and Sunday");
+    const todayC2bStr = new Date().toISOString().slice(0,10);
+    __assert(DB.loPayinSummaryMonth && DB.loPayinSummaryMonth.byDay[todayC2bStr] && DB.loPayinSummaryMonth.byDay[todayC2bStr].amount >= 2500, "the real, just-confirmed C2B payment genuinely appears in today's real daily total, not fabricated client-side");
+
+    printLoanOfficerPayinSummaryDay(todayC2bStr);
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('MPESA Payments') && html.includes('RHINOCASH LTD') && html.includes('Printed on') && html.includes(c2bTransId), "the real per-day printable statement genuinely shows the real transaction and letterhead");
+    session.loPayinSummaryState.printDay = null;
+    renderApp();
+
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];
     if(clientForFu){
