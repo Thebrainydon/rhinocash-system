@@ -1092,8 +1092,21 @@ async function ensureConstraint(name, ddl) {
   if (!exists) await rawRun(ddl);
 }
 
+// A database that already existed before a column was added to SCHEMA
+// never gets that column from CREATE TABLE IF NOT EXISTS alone — Postgres
+// does nothing to an existing table on a repeated CREATE. This
+// retroactively adds any column this codebase expects but an older,
+// already-initialized database might still be missing (e.g. a real
+// deployment cloned and seeded before allocated_penalty was added to the
+// payments table), using Postgres's own native ADD COLUMN IF NOT EXISTS —
+// safe and idempotent, a genuine no-op on a database that already has it.
+async function ensureColumn(table, ddl) {
+  await rawRun(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${ddl}`);
+}
+
 async function initSchema() {
   await rawQuery(SCHEMA);
+  await ensureColumn('payments', 'allocated_penalty NUMERIC(14,2) NOT NULL DEFAULT 0');
   await ensureConstraint('branches_manager_fk',
     'ALTER TABLE branches ADD CONSTRAINT branches_manager_fk FOREIGN KEY (manager_id) REFERENCES users(id)');
   await ensureConstraint('branch_proposals_manager_fk',
