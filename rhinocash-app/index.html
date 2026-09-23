@@ -511,7 +511,7 @@ const SIDEBAR_MENUS = {
     {section:"Payments", icon:"💳", items:["Payment Queue","Unposted Payments","Processed Payments","Failed Payments","Payment Validation","Reversals","Receipts"]},
     {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Cashflow","Expenses","Revenue","Financial Transactions"]},
     {section:"Branches & Operations", icon:"🏢", items:["Branch Overview","Branch Staff","Branch Performance","Branch Targets","Operating Locations","Branch Configuration"]},
-    {section:"System Operations", icon:"🖥️", items:["System Health","Integrations","API Status","SMS Status","Email Status","Notifications","Backup Status","Database Status"]},
+    {section:"System Operations", icon:"🖥️", items:["System Health","Integrations","API Status","SMS Status","Email Status","Backup Status","Database Status"]},
     {section:"Security & Audit", icon:"🛡️", items:["Audit Logs","Login Activity","Security Events","Permission Changes","Data Changes","Failed Login Attempts","Active Sessions"]},
     {section:"Reports", icon:"📑", items:["Operational Reports","User Reports","Branch Reports","System Reports","Audit Reports","Export Center"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket","Help Center","Knowledge Base","System Documentation","System Announcements","Release Notes","Maintenance Schedule","System Status","Support Contacts","Emergency Support","Feature Requests","Report a Bug","Service Availability","Data Recovery Center","Disaster Recovery","Developer/API Documentation"]},
@@ -573,8 +573,6 @@ const SIDEBAR_MENUS = {
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket","Investor Help Center","FAQs","Support Contacts"]},
   ],
 };
-/* Investor also gets a standalone "Notifications" item (not nested), per spec. */
-const SIDEBAR_STANDALONE = { "Investor": ["Notifications"] };
 
 /* ---------------- Label → real destination routing ----------------
    Every leaf item above resolves through here. Where we have a real page
@@ -955,6 +953,21 @@ function exportRowsToCsv(filename, columns, rows){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   toast(`Exported ${(rows||[]).length} row(s) to ${filename}`);
+}
+// Shared "-- Generate --" dropdown — PDF Printout (a real window.print(),
+// this dependency-free build has no PDF library) and Excel File (the
+// page's own already-real CSV export function, labeled "Excel File" the
+// same honest way every other export in this build already is — no
+// binary .xlsx writer here either). csvCallJs is the exact real JS call
+// to make for the Excel option (e.g. "exportLoanArrearsSheetCSV()"),
+// inlined as-is since it may need to reference the row's own real data
+// (a bucket key, a client id) that only the caller's own scope has.
+function generateDropdownHtml(csvCallJs){
+  return `<select onchange="if(this.value==='pdf'){ window.print(); } else if(this.value==='excel'){ ${csvCallJs}; } this.value='';" class="btn btn-sm btn-outline" style="flex-shrink:0; min-width:110px;">
+    <option value="" selected>-- Generate --</option>
+    <option value="pdf">PDF Printout</option>
+    <option value="excel">Excel File</option>
+  </select>`;
 }
 
 // log()/notify() used to write directly into a local, client-side DB.
@@ -1817,12 +1830,9 @@ function renderApp(){
   if(!session.loggedIn){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
   if(!DB){ root.innerHTML = `<div class="loading-screen">Loading your Rhinocash data…</div>`; return; }
   const menu = SIDEBAR_MENUS[session.role] || [];
-  // Every role except Admin (which already has "Notifications" nested
-  // under System Operations) and Investor (which already has its own
-  // SIDEBAR_STANDALONE entry) needs a real, working way to reach
-  // Notifications now that the topbar bell is gone — added here rather
-  // than duplicated in SIDEBAR_MENUS for every role.
-  const standalone = SIDEBAR_STANDALONE[session.role] || (session.role === "Admin" ? [] : ["Notifications"]);
+  // Notifications live only in the real topbar bell now — no sidebar
+  // entry, standalone or nested, for any role. The bell itself is
+  // rendered for every role (Investor included) below.
   const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read).length;
 
   const sectionsHtml = menu.map(sec=>{
@@ -1838,13 +1848,6 @@ function renderApp(){
       </div>
       <div class="side-subitems">${itemsHtml}</div>
     </div>`;
-  }).join("");
-
-  const standaloneHtml = standalone.map(item=>{
-    const route = resolveRoute(item);
-    const isActive = route && route.section===session.section;
-    const badge = (item==="Notifications" && unread>0) ? `<span class="count-badge" style="margin-left:auto;">${unread}</span>` : "";
-    return `<div class="nav-item ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')" style="display:flex; align-items:center;"><span class="side-section-icon">🔔</span><div>${item}</div>${badge}</div>`;
   }).join("");
 
   root.innerHTML = `
@@ -1863,7 +1866,6 @@ function renderApp(){
         <div class="nav">
           <div class="nav-item ${session.section==='dashboard'?'active':''}" onclick="sidebarNavigate('Dashboard')"><span class="side-section-icon">🏠</span><div>Dashboard</div></div>
           ${sectionsHtml}
-          ${standaloneHtml}
           <div class="nav-item" onclick="doLogout()"><span class="side-section-icon">⏻</span><div>Logout</div></div>
         </div>
         <div class="sidebar-foot">Connected to ${API_BASE}<br>Signed in as ${session.role}</div>
@@ -1876,7 +1878,7 @@ function renderApp(){
           </div>
           <div class="topbar-right">
             ${session.role!=="Investor" ? `<div class="bell" onclick="openTicketsPanel()" title="Tickets">💬</div>` : ""}
-            ${session.role!=="Investor" ? `<div class="bell" onclick="openNotificationsPanel()" title="Notifications">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>` : ""}
+            <div class="bell" onclick="openNotificationsPanel()" title="Notifications">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
             ${(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')) ? `<div class="bell" onclick="openC2bPaymentsPanel()" title="Payments">💵${DB.c2bUnmatchedCount>0?`<span class="bell-dot">${DB.c2bUnmatchedCount}</span>`:""}</div>` : ""}
@@ -4351,10 +4353,10 @@ function renderAddClientForm(){
         <div class="field"><label>Location</label><input name="address" placeholder="Town, area"></div>
         <div class="field"><label>Kin Contact</label><input name="nextOfKinPhone" placeholder="Next of kin's phone"></div>
         <div class="field"><label>Next Of Kin</label><input name="nextOfKin" placeholder="Next of kin's name"></div>
-        <div class="field"><label>Client Photo</label><input name="clientPhoto" type="file" accept="image/png,image/jpeg,image/webp"></div>
+        <div class="field"><label>Client Photo</label><input name="clientPhoto" type="file" accept="image/*"></div>
         <div class="field"><label>Business Type</label><input name="businessType" placeholder="e.g. Retail shop, Boda boda"></div>
-        <div class="field"><label>Id Photo Front</label><input name="idPhotoFront" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></div>
-        <div class="field"><label>Id Photo Back</label><input name="idPhotoBack" type="file" accept="image/png,image/jpeg,image/webp,application/pdf"></div>
+        <div class="field"><label>Id Photo Front</label><input name="idPhotoFront" type="file" accept="image/*"></div>
+        <div class="field"><label>Id Photo Back</label><input name="idPhotoBack" type="file" accept="image/*"></div>
         <div class="hint" style="margin:4px 0 14px;">Photos/ID scans are optional — uploaded to real server-side storage and attached as real client documents once you save.</div>
         <div style="text-align:right; margin-top:16px;">
           <button class="btn btn-green" type="submit">Save</button>
@@ -5624,7 +5626,7 @@ function renderLoanApplications(){
         </select>
         <input type="text" placeholder="Search" value="${escapeHtml(st.search)}" oninput="session.loanAppFilterState.search=this.value; renderApp();" style="flex-shrink:0; width:160px;">
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanApplicationsCSV()">↓ Generate</button>
+        ${generateDropdownHtml('exportLoanApplicationsCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>Approvals</th><th>Disbursement</th></tr>
@@ -5791,7 +5793,7 @@ function renderCollectionSheet(){
           ${d.periods.map(p=>`<option value="${p}" ${String(st.period)===String(p)?'selected':''}>Installment ${p}</option>`).join("")}
         </select>
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionSheetDayCSV()">↓ Generate</button>
+        ${generateDropdownHtml('exportCollectionSheetDayCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Client</th><th>Contact</th><th>Portfolio</th><th>Installment</th><th>Amount</th><th>Accumulated</th><th>Paid</th></tr>
@@ -5856,7 +5858,7 @@ function renderCollectionReport(){
         <span>~</span>
         <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionReportCSV()">-- Generate --</button>
+        ${generateDropdownHtml('exportCollectionReportCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Client</th><th>Contact</th><th>Portfolio</th><th>Collection</th><th>Arrears</th><th>Paid</th><th>Balance</th></tr>
@@ -5910,7 +5912,7 @@ function renderCollectionRatesOfficer(){
           ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
         </select>
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportCollectionRatesOfficerCSV()">-- Generate --</button>
+        ${generateDropdownHtml('exportCollectionRatesOfficerCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>Loan Officer</th><th>Disbursed Loan</th><th>Loan+Charges</th><th>OTC</th><th>OC</th><th>DD7</th><th>CG7</th><th>Arrears</th><th>OTC%</th><th>OC%</th><th>GC%</th></tr>
@@ -5979,7 +5981,7 @@ function renderLoanArrearsSheet(){
           <option value="running" ${st.status==='running'?'selected':''}>Running Loans</option>
         </select>
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanArrearsSheetCSV()">-- Generate --</button>
+        ${generateDropdownHtml('exportLoanArrearsSheetCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Client</th><th>Contact</th><th>Loan</th><th>Disbursement</th><th>Cycles</th><th>P.Arrears</th><th>Accumulated</th><th>Installment</th><th>Fall Date</th><th>Days</th><th>T.Bal</th></tr>
@@ -6095,7 +6097,7 @@ function renderLoanOfficerViewLoans(){
         </select>
         <span style="flex:1 1 auto;"></span>
         <input placeholder="Search client" value="${escapeHtml(st.q)}" oninput="session.loViewLoansState.q=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanOfficerViewLoansCSV()">-- Generate --</button>
+        ${generateDropdownHtml('exportLoanOfficerViewLoansCSV()')}
       </div>
       ${st.filterDatesOpen ? `
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
@@ -6169,7 +6171,7 @@ function renderCollectionMTD(){
         <span>To</span>
         <input type="date" value="${st.to}" onchange="session.progressiveDisbState.to=this.value; DB.progressiveDisb=null; renderApp();" style="flex-shrink:0;">
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportProgressiveDisbursements()">↓ Generate</button>
+        ${generateDropdownHtml('exportProgressiveDisbursements()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>Loan Officer</th><th>Disbursed Amount</th><th>Total Loans</th><th>Loan+Charges</th><th>Paid</th><th>Arrears</th><th>GC%</th></tr>
@@ -11839,7 +11841,7 @@ function renderLoanOfficerUpdateDetails(){
   const me = DB.me || {};
   return `
     <div class="card" style="max-width:420px; text-align:center;">
-      <input type="file" id="my-avatar-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" onchange="handleMyAvatarFileChange(event)">
+      <input type="file" id="my-avatar-file-input" accept="image/*" style="display:none;" onchange="handleMyAvatarFileChange(event)">
       <div onclick="triggerMyAvatarFilePicker()" style="width:140px; height:140px; border-radius:12px; margin:0 auto; background:#EFEFEF; overflow:hidden; cursor:pointer; display:flex; align-items:center; justify-content:center;">
         ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:40px; color:#B0B0B0;">👤</span>`}
       </div>
@@ -12693,7 +12695,7 @@ function renderImageViewerModal(){
         ? `<img src="${iv.url}" alt="${escapeHtml(iv.title)}" style="max-width:none; max-height:40vh; transition:transform 0.15s ease; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">`
         : `<div style="width:140px; height:140px; border-radius:50%; background:#E4E1DA; display:flex; align-items:center; justify-content:center; font-size:64px; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">👤</div>`}
     </div>
-    <input type="file" id="image-viewer-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" onchange="handleImageViewerFileChange(event)">
+    <input type="file" id="image-viewer-file-input" accept="image/*" style="display:none;" onchange="handleImageViewerFileChange(event)">
     <div class="pill-row" style="margin-top:14px; justify-content:center;">
       <button class="btn btn-sm btn-outline" onclick="triggerImageViewerFilePicker()" title="Replace photo">📷</button>
       <button class="btn btn-sm btn-outline" onclick="zoomImageViewer(0.25)" title="Zoom in">🔍+</button>
@@ -13261,7 +13263,13 @@ async function loadNotificationsPanel(){
 }
 function openNotificationsPanel(){
   openModal('notifications');
-  loadNotificationsPanel();
+  // An Investor session authenticates through a real, separate
+  // req.investor realm (requireInvestorAuth) — GET /api/notifications is
+  // requireAuth/req.user only, so it's never called for one; Investor
+  // notifications are the same real, already-loaded investorNotifications()
+  // data the full Notifications page already uses, computed client-side
+  // with no extra fetch needed.
+  if(session.role !== 'Investor') loadNotificationsPanel();
 }
 function notifCardTimestamp(d){
   const month = d.toLocaleString('en-KE',{month:'long'});
@@ -13269,6 +13277,21 @@ function notifCardTimestamp(d){
   return `${month} ${d.getDate()},${d.getFullYear()} - ${time}`;
 }
 function renderNotificationsModal(){
+  if(session.role === 'Investor'){
+    const list = investorNotifications(session.investorId);
+    return `
+      <div class="modal-head"><h3>Previous Notifications</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+      <div class="section-note">Scoped to your own investment only — you never see other investors' activity or internal operational alerts.</div>
+      <div style="max-height:460px; overflow-y:auto;">
+        ${list.length ? list.map(n=>`
+          <div class="notif-card">
+            <div class="notif-card-head">${notifCardTimestamp(new Date(n.date))}${!n.read?' 🔴':''}</div>
+            <div class="notif-card-body">${escapeHtml(n.message||n.title||'')}</div>
+          </div>
+        `).join("") : `<div class="notif-card"><div class="notif-card-head">${notifCardTimestamp(new Date())}</div><div class="notif-card-body">You have no notifications</div></div>`}
+      </div>
+    `;
+  }
   const list = (DB.notifications||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
   return `
     <div class="modal-head"><h3>Previous Notifications</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
@@ -14000,7 +14023,7 @@ function renderLoanOfficerPaymentsReportSummary(){
           ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
         </select>
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" onclick="exportLoanOfficerPaymentsReportCSV()">-- Generate --</button>
+        ${generateDropdownHtml('exportLoanOfficerPaymentsReportCSV()')}
       </div>
       <div class="table-wrap" style="margin-top:10px;"><table>
         <tr><th>Staff</th><th>Principal</th><th>Interest</th><th>Checkoff</th><th>Processing Fee</th><th>Penalties</th><th>Total Income</th><th>Totals</th></tr>
@@ -14059,7 +14082,7 @@ function renderLoanOfficerPaymentsReportDrillDown(bucket){
         <span style="font-weight:800; color:var(--red);">Ksh ${fmtNum(total)}</span>
       </div>
       <div class="pill-row" style="justify-content:flex-end; margin-top:8px;">
-        <button class="btn btn-sm btn-outline" onclick="exportLoanOfficerPaymentsReportDrillDownCSV('${bucket}')">-- Generate --</button>
+        ${generateDropdownHtml(`exportLoanOfficerPaymentsReportDrillDownCSV('${bucket}')`)}
       </div>
       <div class="table-wrap" style="margin-top:10px;"><table>
         <tr><th>Date</th><th>Transaction</th><th>Amount</th><th>Disbursement</th><th>Client</th><th>Id No</th><th>Branch</th><th>Receipt</th><th>Approval</th></tr>

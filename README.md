@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,171 backend tests and 967 frontend tests, all
+At last verification: **1,171 backend tests and 982 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -172,6 +172,16 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   category — genuinely showing the just-added client, since a freshly
   registered client now real-starts with a `Dormant` status rather than
   `Active`, matching the real reference design.
+- **App-wide: image pickers, Generate dropdowns, Notifications** —
+  complete: every real photo "Choose file" field (Client Photo, Id
+  Photo Front/Back, avatar upload, image viewer) opens the real Photos/
+  Gallery picker directly (a plain `image/*` accept, not a mixed list
+  that biases toward a generic Files browser); every real "-- Generate
+  --" report control app-wide now offers real PDF Printout / Excel File
+  options via one shared dropdown, not a single bare CSV button; and
+  the sidebar's "Notifications" entry is gone — the real topbar bell
+  (now shown for every role, Investor included) is the one real way to
+  reach notifications.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

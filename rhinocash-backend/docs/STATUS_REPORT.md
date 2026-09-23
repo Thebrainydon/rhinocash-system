@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,171 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 967 passed, 0 failed  (drives the real UI functions in
+Frontend: 982 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,138 passed, 0 failed
+Total:    2,153 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1200,6 +1200,39 @@ default — this change is scoped to the single Add Client form only, per
 what was actually asked.) No backend code anywhere gates on
 `clients.status`, so this was safe to change outright — confirmed by
 grep before making the change.
+
+Three smaller, app-wide corrections in the same round. Every real
+"Choose file" input whose actual purpose is picking a photo (Client
+Photo, Id Photo Front/Back, the profile avatar upload, the image
+viewer's replace-photo upload) now uses a plain `accept="image/*"`
+instead of an enumerated MIME list — some of the ID-photo fields also
+listed `application/pdf`, which biases a mobile browser's file chooser
+toward a generic Files app instead of opening straight into Photos/
+Gallery. The one field left untouched on purpose is the generic
+Client Documents "File" upload, which is genuinely a document field
+(a client's scanned certificate, a PDF ID copy), not a photo picker.
+Every real "-- Generate --" control across the app — Loan Applications,
+Collection Sheet, Collection Report, Collection Rates, Loan Arrears
+Sheet, View Loans, Progressive Disbursements, and both Payments Report
+views — was a bare button wired straight to that page's own CSV export
+function; only the Clients page's own Generate control already offered
+a real choice. All nine now share one real `generateDropdownHtml()`
+helper offering "PDF Printout" (a real `window.print()`, this
+dependency-free build has no PDF library) and "Excel File" (the page's
+own already-real CSV export, unchanged), matching the Clients page's
+own pattern exactly rather than duplicating it nine times over.
+Finally, the sidebar's standalone/nested "Notifications" entry — added
+for every role except Admin in an earlier round, back when the topbar
+bell had genuinely been removed — is gone now that the bell is back
+for good; notifications live exclusively in the real bell icon. Since
+Investor was previously the one role with a sidebar entry but no bell
+(and every other role had both, duplicated), the bell itself now
+renders for every role, and `renderNotificationsModal()` was made
+Investor-aware the same way the older full-page `renderNotifications()`
+already was — Investor sessions authenticate through a structurally
+separate `req.investor` realm, so `GET /api/notifications` was never
+reachable for one; the bell panel now branches to the same real,
+already-loaded `investorNotifications()` data instead.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

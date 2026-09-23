@@ -888,6 +888,16 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const notifs = investorNotifications(session.investorId);
     __assert(Array.isArray(notifs), "investorNotifications() returns a real array (was previously always [] due to the same DB.investors lookup bug)");
 
+    // The real topbar bell is now the Investor's real one and only way to
+    // reach Notifications (the sidebar never had a real Notifications page
+    // of its own for Investor beyond the old standalone item, now removed).
+    __assert(html.includes('openNotificationsPanel()') && html.includes('title="Notifications"'), "an Investor session genuinely gets the real bell icon too — no role is excluded from it anymore");
+    openNotificationsPanel();
+    __assert(modal && modal.type === 'notifications', "the real bell icon genuinely opens the real Notifications panel for an Investor session too");
+    const investorNotifHtml = renderModal();
+    __assert(investorNotifHtml.includes('Previous Notifications') && investorNotifHtml.includes('Scoped to your own investment only'), "the real Investor bell panel genuinely shows the real investor-scoped notifications, not the empty/wrong staff DB.notifications list");
+    closeModal();
+
     // Isolation: cannot reach staff-only endpoints at all (structurally different token).
     let staffBlocked = false;
     try { await api.get('/api/users'); } catch(e){ staffBlocked = (e.status === 401); }
@@ -3740,6 +3750,12 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(undisbHtml.includes(escapeHtml(wkFrontendClient.name)) && undisbHtml.includes('Starter') && undisbHtml.includes('Schedule') && undisbHtml.includes('28 Days'), "the real new loan genuinely appears with its real client name, product, a real Schedule link, and its real 28-day (4-week) duration");
     __assert(undisbHtml.includes(escapeHtml(session.userName)), "the real Loan officer column genuinely resolves to the officer's real name (staffName() falls back to the logged-in user's own session identity), not a dash — a Loan Officer's own nav scope never loads the full DB.staff directory, so this was a real display bug the reference screenshot's populated column exposed");
 
+    // Every real "-- Generate --" control across the app is now a real
+    // PDF Printout / Excel File dropdown, not a single bare CSV-only
+    // button — this page's own is one of them.
+    __assert(undisbHtml.includes('-- Generate --') && undisbHtml.includes('>PDF Printout<') && undisbHtml.includes('>Excel File<'), "the real Loan Applications page's own 'Generate' control genuinely offers both real PDF Printout and Excel File options, matching the reference design");
+    __assert(undisbHtml.includes("if(this.value==='pdf'){ window.print(); }") && undisbHtml.includes('exportLoanApplicationsCSV()'), "the real dropdown genuinely wires PDF to a real window.print() and Excel to this page's own real CSV export function");
+
     // Before any real approval exists, the real Approvals column genuinely
     // shows a plain dash (never a fabricated approver), and the real
     // Disbursement column genuinely shows a real, live "Waiting {Role}"
@@ -5046,6 +5062,37 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(esc('"quoted"') === '"""quoted"""', "the real CSV export genuinely escapes embedded double-quotes correctly");
   }
 
+  // ---- 16a. Shared "-- Generate --" dropdown: every real report page in
+  // the app now offers real PDF Printout / Excel File options, not a
+  // single bare CSV-only button ----
+  {
+    const ddHtml = generateDropdownHtml('someRealPageExportFn()');
+    __assert(ddHtml.includes('-- Generate --') && ddHtml.includes('>PDF Printout<') && ddHtml.includes('>Excel File<'), "generateDropdownHtml() genuinely offers both real PDF Printout and Excel File options");
+    __assert(ddHtml.includes("if(this.value==='pdf'){ window.print(); }"), "the real PDF option genuinely triggers a real window.print() — this dependency-free build has no PDF library, matching the same honest pattern used everywhere else");
+    __assert(ddHtml.includes("else if(this.value==='excel'){ someRealPageExportFn(); }"), "the real Excel option genuinely calls the exact real CSV export function the caller passed in — the page's own already-real data, not a fabricated generic export");
+
+    // Every real page that used to render a bare CSV-only Generate button
+    // now genuinely uses the shared dropdown instead — confirmed directly
+    // against the frontend's own real source, not just one rendered page.
+    __assert(!__srcForBanCheck.includes('>-- Generate --</button>') && !__srcForBanCheck.includes('>↓ Generate</button>'), "no real bare, CSV-only 'Generate' button remains anywhere in the frontend source — every one was genuinely converted to the real PDF/Excel dropdown");
+  }
+
+  // ---- 16b. Every real "Choose file" input that selects a photo/image
+  // now uses the plain image/* accept — the mobile OS's own real Photos/
+  // Gallery picker opens directly, rather than a mixed picker biased
+  // toward a generic Files browser by also listing application/pdf ----
+  {
+    ['name="clientPhoto" type="file" accept="image/*"', 'name="idPhotoFront" type="file" accept="image/*"', 'name="idPhotoBack" type="file" accept="image/*"',
+     'id="my-avatar-file-input" accept="image/*"', 'id="image-viewer-file-input" accept="image/*"'].forEach(needle=>{
+      __assert(__srcForBanCheck.includes(needle), `the real image-selection input genuinely uses a plain image/* accept, opening the real Photos/Gallery picker directly: "${needle}"`);
+    });
+    // The generic, document-oriented "File" field (client document uploads,
+    // which may genuinely be a scanned PDF, not only a photo) is
+    // deliberately untouched — it was never asked to change, and doing so
+    // would remove a real, wanted capability.
+    __assert(__srcForBanCheck.includes('name="file" type="file" required accept="image/png,image/jpeg,image/webp,application/pdf"'), "the real generic Client Documents 'File' field genuinely still accepts a real PDF alongside images — it is a document upload, not a photo picker, so it was correctly left out of this change");
+  }
+
   // ---- 17. Redesigned topbar (no title text, no logout button — real icons + avatar only) ----
   {
     let of129 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
@@ -5058,10 +5105,10 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 
     // Logout is still real and still reachable — just moved to the sidebar, never removed.
     __assert(html.includes('doLogout()'), "a real, working Logout control still exists in the sidebar even though the topbar button is gone");
-    // Notifications is still real and still reachable for a role (Loan Officer) that has no nested Notifications page of its own.
-    __assert(html.includes(">Notifications<"), "Loan Officer genuinely gets a real standalone Notifications entry now that the topbar bell is gone");
-    sidebarNavigate('Notifications');
-    __assert(session.section === 'notifications', "that real sidebar Notifications entry genuinely routes to the real Notifications page");
+    // Notifications genuinely has no sidebar entry of any kind — the real
+    // bell icon is the one and only way to reach them now.
+    __assert(!html.includes('>Notifications<'), "the real sidebar genuinely has no standalone or nested Notifications entry — removed in favor of the real bell icon");
+    __assert(html.includes('openNotificationsPanel()') && html.includes('title="Notifications"'), "the real topbar bell icon genuinely remains the one real way to reach Notifications");
     goTo('dashboard');
   }
 
