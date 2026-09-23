@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,062 passed, 0 failed  (28 suites — see test/run-all.sh)
-Frontend: 817 passed, 0 failed  (drives the real UI functions in
+Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 827 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,879 passed, 0 failed
+Total:    1,924 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -664,6 +664,67 @@ This replaces the old KPI-bucket "Ageing Summary" page for this role
 specifically — `renderArrears()`/`loadArrears()`/`GET /api/loans/arrears`
 are untouched and still real and independently tested, just no longer
 wired to this particular submenu.
+
+The same submenu's "Filter Loans" dropdown offers a real two-mode split,
+added after a follow-up request: "Overdue Loans" (the default, and the
+sheet described above unchanged) versus "Running Loans" — every loan with
+no real overdue-and-unpaid period at all, i.e. genuinely on track today,
+listed instead by real disbursement date within the selected window (Fall
+Date has no meaning for a loan that isn't behind, so P.Arrears/Accumulated
+read real zero and Days reads zero for that mode). The page title switches
+accordingly ("Loan Arrears from…" vs. "Running Loans disbursed…"), and the
+backend endpoint echoes back which mode actually ran (`status: "overdue"`
+or `"running"`) so the two can never be silently confused.
+
+LoanBook's View Loans submenu (Loan Officer view) — the last item in this
+role's LoanBook menu — is now a real, chrome-free loan listing reusing the
+existing, already-comprehensive `GET /api/loans/view` endpoint rather than
+building a parallel one: every filter on the reference design (category,
+loan product, rating, cycles, a date-range/order-by/search row) maps onto
+real query parameters that endpoint already accepted, extended only where
+a real gap existed. Three categories reuse real, pre-existing actions
+verbatim rather than inventing new state: "Rescheduled Loans" is the real
+`Restructured` status set by the existing loan-restructuring action,
+"WrittenOff Loans" is the real `Written Off` status set by the existing
+write-off action, and "Overdue Loans"/"Non Performing" are the real
+`Active`/`Disbursed` loans post-filtered by real days-past-due (`dpd>0` and
+`dpd>=90` respectively) — the same DPD figure computed elsewhere in this
+codebase, not a new definition. A real, previously-missing gap was fixed
+along the way: the "All Loans" category's own status list had never
+included `Restructured`, so a restructured loan silently dropped out of
+the one category that's supposed to show everything. The Rating filter
+reuses the real, existing Tag/Rate Client Loan feature
+(`POST /api/loans/:id/rate`, `LOAN_RATINGS`) directly — the dropdown's
+shorter reference-style labels ("Good Payer," "Bad Luck," etc.) are purely
+a display mapping over the same real stored values, plus a real
+`unrated`/"Untagged" filter for loans with no rating set at all. Two new
+per-row fields were added to the endpoint's response: `maturityDate` (the
+loan's own real final schedule period due date, computed independent of
+array ordering) and `displayStatus` — a finer-grained Active / Overdue /
+InDues Today / In Arrears classification distinct from the pre-existing
+`liveStatus` field (left untouched for backward compatibility), where
+"Overdue" specifically means the loan's own maturity date has passed while
+still carrying a balance, and "In Arrears" means it has a real
+overdue-and-unpaid period but hasn't yet reached maturity — the two are
+genuinely different states and were cross-checked against separate
+fixtures rather than assumed. The table's Status badge and Maturity dot
+colors are driven directly by `displayStatus`. Four new sort keys
+(`balanceasc/desc`, `amountasc/desc`, `disbursementasc/desc`,
+`maturityasc/desc`) were added alongside the endpoint's existing sort
+options, which were left untouched.
+
+Two cleanup items shipped in the same pass, both at the user's explicit
+request: the Loan Officer LoanBook sidebar is trimmed so View Loans is
+genuinely the last submenu (Regional Loan Portfolio, Regional Loan
+Portfolio Quality, Loan Approval Monitoring, and Loan Maturity Pipeline —
+none of them Loan-Officer-specific pages to begin with — no longer appear
+there); and the duplicate "Collection Reports" (plural) entry, a
+generic-branch-page holdover that still showed its own subtabs bar and had
+no genuine Loan Officer-specific purpose, was removed along with its
+now-orphaned `renderCollectionReports()`/`exportCollectionReportsCSV()`
+functions. This is a distinct label from the real, still-live "Collection
+Report" (singular) submenu built earlier — the two were never meant to
+coexist for this role.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

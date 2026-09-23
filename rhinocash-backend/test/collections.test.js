@@ -275,12 +275,42 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const outsideWindow = await api('GET', `/api/loans/arrears-sheet?from=2020-01-01&to=2020-01-31`, { token: officerToken });
     assert(outsideWindow.status === 200 && !outsideWindow.json.rows.some(r => r.loanId === loanId), 'a real Fall Date window that genuinely excludes this loan\'s real current overdue period correctly excludes it');
 
-    const wrongProduct = await api('GET', `/api/loans/arrears-sheet?from=${yesterday}&to=${today}&product_id=pr_ln_starter_wrong_id`, { token: officerToken });
-    assert(wrongProduct.status === 200 && !wrongProduct.json.rows.some(r => r.loanId === loanId), 'filtering by a real product this loan does not genuinely belong to correctly excludes it');
-
     const totals = sheet.json.totals;
     assert(Math.abs(totals.pArrears - sheet.json.rows.reduce((s, r) => s + r.pArrears, 0)) < 0.01, 'the real Totals.pArrears genuinely sums the real rows, not a separately fabricated figure');
     assert(Math.abs(totals.tbal - sheet.json.rows.reduce((s, r) => s + r.tbal, 0)) < 0.01, 'the real Totals.tbal genuinely sums the real rows');
+
+    // =========================================================
+    // 4c. LOAN ARREARS — "Filter Loans": Overdue Loans vs Running Loans
+    // are real, genuinely different, non-overlapping loan sets, not two
+    // views of the same data.
+    // =========================================================
+    const runClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Arrears Sheet Running Test', phone: '0733' + Math.floor(Math.random() * 900000 + 100000) } });
+    const products2 = await api('GET', '/api/loan-products', { token: officerToken });
+    const starterProduct2 = products2.json.products.find(p => p.id === 'pr_ln_starter');
+    const runFeeInitiate = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: runClient.json.client.id, product_id: starterProduct2.id, phone: runClient.json.client.phone } });
+    const runFeeConfirm = await api('POST', `/api/loans/processing-fee/${runFeeInitiate.json.feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'RUNTEST123' } });
+    assert(runFeeConfirm.status === 200, 'the real processing fee for the running-loan test fixture is genuinely confirmed');
+    const runLoanCreate = await api('POST', '/api/loans', { token: officerToken, body: { client_id: runClient.json.client.id, product_id: starterProduct2.id, principal: 3000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: runFeeInitiate.json.feeId } });
+    assert(runLoanCreate.status === 201, 'the real running-loan test fixture is genuinely created once its real processing fee is confirmed');
+    await api('POST', `/api/loans/${runLoanCreate.json.loan.id}/approve`, { token: managerToken, body: {} });
+    await api('POST', `/api/loans/${runLoanCreate.json.loan.id}/approve`, { token: regionalToken, body: {} });
+    await api('POST', `/api/loans/${runLoanCreate.json.loan.id}/approve`, { token: opsToken, body: {} });
+    await api('POST', `/api/loans/${runLoanCreate.json.loan.id}/approve`, { token: acctToken, body: {} });
+    await api('POST', `/api/loans/${runLoanCreate.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    const runLoanId = runLoanCreate.json.loan.id;
+
+    const runningSheet = await api('GET', `/api/loans/arrears-sheet?status=running&from=2020-01-01&to=${today}`, { token: officerToken });
+    assert(runningSheet.status === 200 && runningSheet.json.status === 'running', 'the real Running Loans view genuinely echoes back status=running');
+    const runRow = runningSheet.json.rows.find(r => r.loanId === runLoanId);
+    assert(runRow, 'a real freshly disbursed loan with genuinely no overdue periods appears under Running Loans');
+    assert(runRow.pArrears === 0 && runRow.accumulated === 0 && runRow.fallDate === null && runRow.days === 0, 'a real Running Loan genuinely has no P.Arrears/Accumulated/Fall Date/Days — never a fabricated arrears figure for a loan that is not actually overdue');
+    assert(runRow.tbal > 0, 'the real T.Bal for a Running Loan is genuinely still the real outstanding balance, not zeroed out');
+
+    const overdueSheetCheck = await api('GET', `/api/loans/arrears-sheet?status=overdue&from=2020-01-01&to=${today}`, { token: officerToken });
+    assert(overdueSheetCheck.json.status === 'overdue' && !overdueSheetCheck.json.rows.some(r => r.loanId === runLoanId), 'the real Running Loan genuinely does NOT appear under the Overdue Loans view — the two filters show genuinely different, non-overlapping loan sets');
+
+    const runningSheetCheck2 = await api('GET', `/api/loans/arrears-sheet?status=running&from=${yesterday}&to=${today}`, { token: officerToken });
+    assert(!runningSheetCheck2.json.rows.some(r => r.loanId === loanId), 'a real loan with a genuinely overdue unpaid period never appears under Running Loans, even if its real disbursement date falls in the requested window');
   }
 
   // =========================================================

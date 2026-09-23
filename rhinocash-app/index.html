@@ -154,6 +154,17 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .badge.blue{background:var(--blue-bg); color:var(--blue);}
 .badge.purple{background:var(--purple-bg); color:var(--purple);}
 .badge.grey{background:#EFEDE7; color:var(--ink-soft);}
+.status-badge{display:inline-block; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:700; color:#fff; text-align:center; white-space:nowrap;}
+.status-badge.active{background:#2E9E44;}
+.status-badge.overdue{background:#D9622B;}
+.status-badge.indues-today{background:#127D74;}
+.status-badge.in-arrears{background:#E0A62E;}
+.status-badge.completed{background:#5B6B8C;}
+.status-badge.written-off{background:#8B897F;}
+.status-badge.restructured{background:#2E5C8A;}
+.maturity-dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px;}
+.maturity-dot.green{background:#2E9E44;}
+.maturity-dot.red{background:#C1121F;}
 
 /* ---- Buttons ---- */
 .btn{
@@ -439,7 +450,7 @@ const SIDEBAR_MENUS = {
   "Loan Officer": [
     {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Cashflow"]},
     {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Reports","Collection Rates","Loan Arrears","View Loans","Regional Loan Portfolio","Regional Loan Portfolio Quality","Loan Approval Monitoring","Loan Maturity Pipeline"]},
+    {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Rates","Loan Arrears","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
@@ -5244,12 +5255,12 @@ function renderLoanBook(){
   if(active==="Collection Sheet") return renderCollectionSheet();
   if(active==="Collection Report") return renderCollectionReport();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
-  if(active==="Collection Reports") return tabsHtml + renderCollectionReports();
   if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
   if(active==="Collection Rates") return renderCollectionRatesOfficer();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
   if(active==="Loan Arrears") return renderLoanArrearsSheet();
-  if(active==="View Loans") return tabsHtml + renderViewLoansPage();
+  if(active==="View Loans" && session.role !== 'Loan Officer') return tabsHtml + renderViewLoansPage();
+  if(active==="View Loans") return renderLoanOfficerViewLoans();
   if(active==="Operational Loan Portfolio") return tabsHtml + renderOperationalPortfolioPage();
   if(active==="Regional Loan Portfolio") return tabsHtml + renderBranchPortfolioPage();
   if(active==="Regional Loan Portfolio Quality") return tabsHtml + renderPortfolioQualityBranchPage();
@@ -5829,11 +5840,16 @@ function renderCollectionRatesOfficer(){
   `;
 }
 
-// ---- Loan Arrears (Loan Officer): a real, per-loan arrears sheet
-// filtered by a real "Fall Date" window — chrome-free, matching the
-// reference design exactly. See the backend route's own comment for
-// the full real definitions of Fall Date/P.Arrears/Accumulated/Days/
-// T.Bal/Cycles. Replaces the old KPI-bucket "Ageing Summary" page for
+// ---- Loan Arrears (Loan Officer): a real, per-loan sheet — chrome-free,
+// matching the reference design exactly. The "Filter Loans" dropdown
+// switches between two genuinely different real loan sets, not two
+// views of the same data: "Overdue Loans" (default) filters by real
+// Fall Date; "Running Loans" shows the officer's other real
+// Active/Disbursed loans that are genuinely NOT currently overdue,
+// filtered by real Disbursement date instead (since a running loan has
+// no Fall Date). See the backend route's own comment for the full real
+// definitions of Fall Date/P.Arrears/Accumulated/Days/T.Bal/Cycles in
+// both views. Replaces the old KPI-bucket "Ageing Summary" page for
 // this role specifically (renderArrears()/loadArrears()/
 // /api/loans/arrears are untouched and still real/tested — just no
 // longer wired to this submenu). ----
@@ -5844,13 +5860,13 @@ function fmtDDMMYYYY(dateStr){
 function defaultLoanArrearsSheetState(){
   const to = todayISO();
   const from = new Date(Date.now() - 6*86400000).toISOString().slice(0,10);
-  return { from, to, productId: '' };
+  return { from, to, status: '' };
 }
 async function loadLoanArrearsSheet(){
   const st = session.loanArrearsSheetState;
   return withRequest('load-loan-arrears-sheet:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ from: st.from, to: st.to });
-    if(st.productId) params.set('product_id', st.productId);
+    if(st.status) params.set('status', st.status);
     const res = await api.get('/api/loans/arrears-sheet?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.loanArrearsSheet = res;
@@ -5864,9 +5880,11 @@ function renderLoanArrearsSheet(){
   const st = session.loanArrearsSheetState || (session.loanArrearsSheetState = defaultLoanArrearsSheetState());
   if(!DB.loanArrearsSheet || DB.loanArrearsSheet.stateKey !== JSON.stringify(st)){ loadLoanArrearsSheet(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
   const d = DB.loanArrearsSheet;
+  const isRunning = d.status === 'running';
+  const title = isRunning ? `Running Loans disbursed ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}` : `Loan Arrears from ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}`;
   return `
     <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Loan Arrears from ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}</span></div>
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${title}</span></div>
       <div class="hint" style="margin:10px 0 4px;">Select Period</div>
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px;">
         <input type="date" value="${st.from}" onchange="session.loanArrearsSheetState.from=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
@@ -5874,9 +5892,10 @@ function renderLoanArrearsSheet(){
         <input type="date" value="${st.to}" onchange="session.loanArrearsSheetState.to=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
       </div>
       <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; margin-top:8px;">
-        <select onchange="session.loanArrearsSheetState.productId=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-          <option value="">-- Filter Loans --</option>
-          ${DB.products.map(p=>`<option value="${p.id}" ${st.productId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
+        <select onchange="session.loanArrearsSheetState.status=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="" ${st.status===''?'selected':''}>-- Filter Loans --</option>
+          <option value="overdue" ${st.status==='overdue'?'selected':''}>Overdue Loans</option>
+          <option value="running" ${st.status==='running'?'selected':''}>Running Loans</option>
         </select>
         <span style="flex:1 1 auto;"></span>
         <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanArrearsSheetCSV()">-- Generate --</button>
@@ -5887,10 +5906,136 @@ function renderLoanArrearsSheet(){
           <td>${i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${fmtNum(r.loan)}</td>
           <td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td><td>${r.cycles}</td>
           <td>${fmtNum(r.pArrears)}</td><td>${fmtNum(r.accumulated)}</td><td>${r.period}/${r.totalPeriods}</td>
-          <td>${fmtDDMMYYYY(r.fallDate)}</td><td>${r.days}</td><td>${fmtNum(r.tbal)}</td>
-        </tr>`).join("") || `<tr><td colspan="12" class="empty">No loans in arrears within this period.</td></tr>`}
+          <td>${r.fallDate?fmtDDMMYYYY(r.fallDate):'—'}</td><td>${r.days||'—'}</td><td>${fmtNum(r.tbal)}</td>
+        </tr>`).join("") || `<tr><td colspan="12" class="empty">${isRunning?'No running loans in this period.':'No loans in arrears within this period.'}</td></tr>`}
         ${d.rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td colspan="6">Totals</td><td>${fmtNum(d.totals.pArrears)}</td><td>${fmtNum(d.totals.accumulated)}</td><td colspan="3"></td><td>${fmtNum(d.totals.tbal)}</td></tr>` : ""}
       </table></div>
+    </div>
+  `;
+}
+
+// ---- View Loans (Loan Officer): a real, filterable per-loan sheet —
+// chrome-free, matching the reference design exactly. Reuses the
+// existing, already-comprehensive GET /api/loans/view endpoint (the
+// same one the Manager/Regional/Operational Manager KPI-tile version
+// already uses) rather than a new backend route — extended with a few
+// real, additive fields/categories this reference design needed:
+// "displayStatus"/maturityDate (see the backend route's own comment),
+// the "Overdue Loans"/"Rescheduled Loans"/"WrittenOff Loans"/"Non
+// Performing" categories, the real existing loan Rating (Tag/Rate
+// Client Loan) as a filter, and Balance/Amount/Disbursement/Maturity
+// sort keys. "Loan Officer" column shows the officer's own real name on
+// every row, since this view is already scoped to the Loan Officer's
+// own real loans. "Percent" (the real collection rate, paid/toPay*100)
+// is red when genuinely near-zero (<1%), purple otherwise — this
+// reference design's own accent color, distinct from this app's usual
+// green/red convention elsewhere. The Maturity dot is red when the loan
+// is genuinely not current (Overdue or In Arrears), green otherwise. ----
+const VIEW_LOANS_CATEGORIES = ['Current Loans','Completed Loans','Overdue Loans','Rescheduled Loans','WrittenOff Loans','Non Performing','All Loans'];
+const VIEW_LOANS_RATING_OPTIONS = [
+  { value:'', label:'-- Rating --' },
+  { value:'unrated', label:'Untagged' },
+  { value:'Good paying client', label:'Good Payer' },
+  { value:'Bad Luck Client', label:'Bad Luck' },
+  { value:'Bad Faith Client', label:'Bad Faith' },
+  { value:'Control Failure', label:'Control Failure' },
+];
+const VIEW_LOANS_SORT_OPTIONS = [
+  { value:'', label:'-- Order By --' },
+  { value:'balanceasc', label:'Balance Asc' }, { value:'balancedesc', label:'Balance Desc' },
+  { value:'amountasc', label:'Amount Asc' }, { value:'amountdesc', label:'Amount Desc' },
+  { value:'disbursementasc', label:'Disbursement Asc' }, { value:'disbursementdesc', label:'Disbursement Desc' },
+  { value:'maturityasc', label:'Maturity Asc' }, { value:'maturitydesc', label:'Maturity Desc' },
+];
+function defaultLoanOfficerViewLoansState(){
+  return { category:'Current Loans', productId:'', rating:'', cycles:'', filterDatesOpen:false, disbursedFrom:'', disbursedTo:'', sort:'', q:'', page:1 };
+}
+function loanOfficerViewLoansParams(st){
+  const params = new URLSearchParams({ category: st.category });
+  if(st.productId) params.set('product_id', st.productId);
+  if(st.rating) params.set('rating', st.rating);
+  if(st.cycles) params.set('cycles', st.cycles);
+  if(st.disbursedFrom) params.set('disbursed_from', st.disbursedFrom);
+  if(st.disbursedTo) params.set('disbursed_to', st.disbursedTo);
+  if(st.sort) params.set('sort', st.sort);
+  if(st.q) params.set('q', st.q);
+  params.set('page', st.page||1);
+  params.set('page_size', 20);
+  return params;
+}
+async function loadLoanOfficerViewLoans(){
+  const st = session.loViewLoansState;
+  return withRequest('load-lo-view-loans:'+JSON.stringify(st), async ()=>{
+    const res = await api.get('/api/loans/view?'+loanOfficerViewLoansParams(st).toString());
+    res.stateKey = JSON.stringify(st);
+    DB.loViewLoans = res;
+  });
+}
+function exportLoanOfficerViewLoansCSV(){
+  return withRequest('export-lo-view-loans', async ()=>{
+    const params = loanOfficerViewLoansParams(session.loViewLoansState);
+    params.set('export', 'true');
+    const full = await api.get('/api/loans/view?'+params.toString());
+    exportRowsToCsv('view-loans.csv', ['clientName','clientPhone','officerId','disbursedAt','principal','toPay','paid','collectionRate','balance','displayStatus','maturityDate'], full.rows);
+  });
+}
+function loanOfficerViewLoansStatusClass(s){
+  const map = { 'Active':'active', 'Overdue':'overdue', 'InDues Today':'indues-today', 'In Arrears':'in-arrears', 'Completed':'completed', 'Written Off':'written-off', 'Restructured':'restructured' };
+  return map[s] || 'active';
+}
+function renderLoanOfficerViewLoans(){
+  const st = session.loViewLoansState || (session.loViewLoansState = defaultLoanOfficerViewLoansState());
+  if(!DB.loViewLoans || DB.loViewLoans.stateKey !== JSON.stringify(st)){ loadLoanOfficerViewLoans(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.loViewLoans;
+  const reload = () => { DB.loViewLoans=null; renderApp(); };
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${escapeHtml(st.category)}</span></div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px;">
+        <select onchange="session.loViewLoansState.category=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          ${VIEW_LOANS_CATEGORIES.map(c=>`<option value="${c}" ${st.category===c?'selected':''}>${c}</option>`).join("")}
+        </select>
+        <select onchange="session.loViewLoansState.productId=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">-- Loan Product --</option>
+          ${DB.products.map(p=>`<option value="${p.id}" ${st.productId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
+        </select>
+        <select onchange="session.loViewLoansState.rating=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          ${VIEW_LOANS_RATING_OPTIONS.map(o=>`<option value="${o.value}" ${st.rating===o.value?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+        <select onchange="session.loViewLoansState.cycles=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">Cycles</option>
+          ${['1','2','3','4+'].map(c=>`<option value="${c}" ${st.cycles===c?'selected':''}>${c}</option>`).join("")}
+        </select>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <button class="btn btn-sm btn-outline" onclick="session.loViewLoansState.filterDatesOpen=!session.loViewLoansState.filterDatesOpen; renderApp();">☰ Filter Dates</button>
+        <select onchange="session.loViewLoansState.sort=this.value; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          ${VIEW_LOANS_SORT_OPTIONS.map(o=>`<option value="${o.value}" ${st.sort===o.value?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <input placeholder="Search client" value="${escapeHtml(st.q)}" oninput="session.loViewLoansState.q=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <button class="btn btn-sm btn-outline" style="flex-shrink:0;" onclick="exportLoanOfficerViewLoansCSV()">-- Generate --</button>
+      </div>
+      ${st.filterDatesOpen ? `
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <span class="hint">Disbursed:</span>
+        <input type="date" value="${st.disbursedFrom}" onchange="session.loViewLoansState.disbursedFrom=this.value; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+        <span>to</span>
+        <input type="date" value="${st.disbursedTo}" onchange="session.loViewLoansState.disbursedTo=this.value; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+      </div>` : ""}
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>#</th><th>Client</th><th>Contact</th><th>Loan Officer</th><th>Disbursement</th><th>Loan</th><th>To-Pay</th><th>Paid</th><th>Percent</th><th>Balance</th><th>Status</th><th>Maturity</th></tr>
+        ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openLoan('${r.loanId}')">
+          <td>${(d.pagination.page-1)*d.pagination.pageSize+i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.clientPhone||'—')}</td>
+          <td>${staffName(r.officerId)}</td><td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td>
+          <td>${fmtNum(r.principal)}</td><td>${fmtNum(r.toPay)}</td><td>${fmtNum(r.paid)}</td>
+          <td style="color:${r.collectionRate<1?'var(--red)':'var(--purple)'}; font-weight:700;">${r.collectionRate.toFixed(2)}%</td>
+          <td>${fmtNum(r.balance)}</td>
+          <td><span class="status-badge ${loanOfficerViewLoansStatusClass(r.displayStatus)}">${r.displayStatus}</span></td>
+          <td><span class="maturity-dot ${(r.displayStatus==='Overdue'||r.displayStatus==='In Arrears')?'red':'green'}"></span>${r.maturityDate?fmtDDMMYYYY(r.maturityDate):'—'}</td>
+        </tr>`).join("") || `<tr><td colspan="12" class="empty">No loans found for this filter.</td></tr>`}
+      </table></div>
+      ${d.pagination.totalPages>1 ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${d.pagination.page<=1?'disabled':''} onclick="session.loViewLoansState.page=${d.pagination.page-1}; DB.loViewLoans=null; renderApp();">← Prev</button><span>Page ${d.pagination.page} of ${d.pagination.totalPages}</span><button class="btn btn-sm btn-outline" ${d.pagination.page>=d.pagination.totalPages?'disabled':''} onclick="session.loViewLoansState.page=${d.pagination.page+1}; DB.loViewLoans=null; renderApp();">Next →</button></div>` : ""}
     </div>
   `;
 }
@@ -5902,10 +6047,6 @@ function exportArrearsCSV(){
     exportCSV('loan_arrears', ['Loan','Client','Officer','Balance','Days Overdue','Bucket'],
       res.arrears.map(x=>[x.loanId, clientName(x.clientId), staffName(x.officerId), x.balance, x.daysOverdue, x.bucket]));
   });
-}
-function exportCollectionReportsCSV(){
-  const rows = DB.payments.filter(p=>p.status!=="Unposted");
-  exportCSV('collection_report', ['Date','Loan','Amount','Channel','Status'], rows.map(p=>[p.date, p.loanId, p.amount, p.channel, p.status]));
 }
 async function loadCollectionMTD(){
   return withRequest('load-mtd', async ()=>{ DB.acctPages.mtd = await api.get('/api/collections/mtd'); });
@@ -8215,37 +8356,6 @@ function renderSheetBranchPage(){
 
 async function loadCollectionRate(period){
   return withRequest('load-rate', async ()=>{ DB.acctPages.collrate = await api.get('/api/collections/rate?period='+(period||'monthly')); });
-}
-function renderCollectionReports(){
-  loadCollectionRate('monthly');
-  const rate = DB.acctPages.collrate;
-  const byMonth = {};
-  DB.payments.filter(p=>p.status!=="Unposted").forEach(p=>{
-    const m = monthLabel(p.date); byMonth[m] = (byMonth[m]||0) + p.amount;
-  });
-  const max = Math.max(1,...Object.values(byMonth));
-  const byChannel = {};
-  DB.payments.filter(p=>p.status!=="Unposted").forEach(p=>{ byChannel[p.channel]=(byChannel[p.channel]||0)+p.amount; });
-  return `
-    ${rate ? `<div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Collection Rate (${rate.period})</div><div class="kpi-value">${rate.rate.toFixed(1)}%</div></div>
-      <div class="kpi"><div class="kpi-label">Expected</div><div class="kpi-value">${fmt(rate.expected)}</div></div>
-      <div class="kpi"><div class="kpi-label">Collected</div><div class="kpi-value">${fmt(rate.collected)}</div></div>
-    </div>` : `<div class="card"><div class="empty">Loading collection rate…</div></div>`}
-    <button class="btn btn-sm btn-outline" onclick="exportCollectionReportsCSV()">Export CSV</button>
-    <div class="grid2">
-      <div class="card">
-        <div class="card-title">Collections by Month</div>
-        ${Object.entries(byMonth).slice(-8).map(([m,v])=>`<div class="bar-row"><div class="bar-label">${m}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%"></div></div><div class="bar-val">${kFmt(v)}</div></div>`).join("") || `<div class="empty">No data</div>`}
-      </div>
-      <div class="card">
-        <div class="card-title">Collections by Channel</div>
-        ${Object.entries(byChannel).map(([c,v])=>`<div class="bar-row"><div class="bar-label">${c}</div>
-          <div class="bar-track"><div class="bar-fill rust" style="width:${(v/Math.max(1,...Object.values(byChannel))*100).toFixed(0)}%"></div></div><div class="bar-val">${kFmt(v)}</div></div>`).join("") || `<div class="empty">No data</div>`}
-      </div>
-    </div>
-  `;
 }
 async function loadArrears(filters, page){
   return withRequest('load-arrears', async ()=>{

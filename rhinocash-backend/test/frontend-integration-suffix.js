@@ -1912,6 +1912,31 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(!html.includes('class="subtabs"'), "the real Loan Arrears page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
     __assert(html.includes('Loan Arrears from') && html.includes('Select Period') && html.includes('Cycles') && html.includes('P.Arrears') && html.includes('Accumulated') && html.includes('Fall Date') && html.includes('T.Bal'), "the real Loan Arrears page genuinely renders with the requested title format and full column set");
     __assert(DB.loanArrearsSheet && Array.isArray(DB.loanArrearsSheet.rows), "the real Loan Arrears sheet data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+    __assert(html.includes('-- Filter Loans --') && html.includes('Overdue Loans') && html.includes('Running Loans'), "the real Filter Loans dropdown genuinely offers both Overdue Loans and Running Loans, not just the default view");
+
+    session.loanArrearsSheetState.status = 'running'; DB.loanArrearsSheet = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Running Loans disbursed'), "switching the real Filter Loans dropdown to Running Loans genuinely re-titles the page and reloads real data for the other, non-overdue view");
+    __assert(DB.loanArrearsSheet && DB.loanArrearsSheet.status === 'running', "the real Running Loans data genuinely came from the same dedicated endpoint with status=running, not fabricated client-side");
+
+    // View Loans (Loan Officer): the real, filterable per-loan sheet,
+    // chrome-free, reusing the same real GET /api/loans/view endpoint
+    // the Manager/Regional/Operational Manager KPI-tile page already
+    // uses — this is the LAST real submenu in the Loan Officer's
+    // LoanBook menu.
+    session.loViewLoansState = null; DB.loViewLoans = null;
+    goTo('loanbook','View Loans');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real View Loans page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Current Loans') && html.includes('Loan Officer') && html.includes('To-Pay') && html.includes('Percent') && html.includes('Balance') && html.includes('Status') && html.includes('Maturity'), "the real View Loans page genuinely renders with the requested title and full column set");
+    __assert(DB.loViewLoans && Array.isArray(DB.loViewLoans.rows), "the real View Loans data genuinely loaded from the real (reused, extended) backend endpoint, not fabricated client-side");
+    __assert(html.includes('Overdue Loans') && html.includes('Rescheduled Loans') && html.includes('WrittenOff Loans') && html.includes('Non Performing') && html.includes('All Loans'), "the real category dropdown genuinely offers every requested category, not just the default");
+    __assert(html.includes('Untagged') && html.includes('Good Payer') && html.includes('Bad Luck') && html.includes('Bad Faith') && html.includes('Control Failure'), "the real Rating dropdown genuinely offers every requested rating option, reusing the existing real Tag/Rate Client Loan values");
+    __assert(html.includes('Balance Asc') && html.includes('Maturity Desc'), "the real Order By dropdown genuinely offers the requested Balance/Amount/Disbursement/Maturity sort options");
+    __assert(!html.includes('>Regional Loan Portfolio<') && !html.includes('>Loan Approval Monitoring<') && !html.includes('>Loan Maturity Pipeline<') && !html.includes('>Collection Reports<'), "the real Loan Officer sidebar genuinely no longer lists any submenu beyond View Loans, nor the duplicate Collection Reports entry");
 
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];

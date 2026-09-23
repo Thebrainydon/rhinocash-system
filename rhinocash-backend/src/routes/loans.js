@@ -1044,11 +1044,21 @@ function register(router) {
     if (req.query.officer_id && req.user.role_id !== 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
     if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
 
+    // Real category set, extended for the Loan Officer's real "View
+    // Loans" submenu page. "Overdue Loans" and "Non Performing" are not
+    // real loans.status values — they're real, computed DPD conditions
+    // (dpd > 0, and the same dpd >= 90 threshold already used for
+    // riskStatus === 'Default' elsewhere), so those two are filtered
+    // below once dpd is actually computed, not at the SQL status level.
     const category = req.query.category || 'All Loans';
     let statusFilter;
     if (category === 'Current Loans') statusFilter = ['Active', 'Disbursed'];
     else if (category === 'Completed Loans') statusFilter = ['Completed'];
-    else statusFilter = ['Active', 'Disbursed', 'Completed', 'Written Off'];
+    else if (category === 'Overdue Loans') statusFilter = ['Active', 'Disbursed'];
+    else if (category === 'Non Performing') statusFilter = ['Active', 'Disbursed'];
+    else if (category === 'Rescheduled Loans') statusFilter = ['Restructured'];
+    else if (category === 'WrittenOff Loans') statusFilter = ['Written Off'];
+    else statusFilter = ['Active', 'Disbursed', 'Completed', 'Written Off', 'Restructured'];
     const placeholders = statusFilter.map(() => '?').join(',');
     const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN (${placeholders})`, [...params, ...statusFilter]);
 
@@ -1080,18 +1090,44 @@ function register(router) {
       const nextDue = sched.find(r => r.paid_amount < r.total_due - 0.01);
       const lastPayment = lastPaymentByLoan[l.id];
       const client = clientById[l.client_id] || { name: 'Unknown', phone: '' };
+      // Real loan maturity — the due date of this loan's real LAST
+      // schedule period (its full-term repayment date), independent of
+      // schedule row ordering. "displayStatus" is a real, finer-grained
+      // status specifically for the Loan Officer's View Loans reference
+      // design (Active/Overdue/InDues Today/In Arrears) — distinct from
+      // the existing 2-value liveStatus used elsewhere in this app:
+      // "Overdue" here means the loan has genuinely passed its own real
+      // maturity date while still owing a real balance; "In Arrears"
+      // means a real installment is genuinely overdue-and-unpaid but the
+      // loan's own maturity hasn't been reached yet; "InDues Today"
+      // means the real next unpaid installment is genuinely due today
+      // (dpd is still 0). This is a new reference design with no visible
+      // backend of its own — an inferred, real, computable definition.
+      const maturityDate = sched.length ? sched.reduce((mx, r) => r.due_date > mx ? r.due_date : mx, sched[0].due_date) : null;
+      let displayStatus = liveStatus;
+      if (l.status === 'Active' || l.status === 'Disbursed') {
+        if (maturityDate && today > maturityDate && balance > 0.01) displayStatus = 'Overdue';
+        else if (dpd > 0) displayStatus = 'In Arrears';
+        else if (nextDue && nextDue.due_date === today) displayStatus = 'InDues Today';
+        else displayStatus = 'Active';
+      }
       return {
         loanId: l.id, clientId: l.client_id, clientName: client.name, clientPhone: client.phone,
         officerId: l.officer_id, branchId: l.branch_id, productId: l.product_id, cycle: cycleByLoan[l.id] || 1,
-        principal: l.principal, toPay, paid, balance, arrearsAmount, dpd, liveStatus, riskStatus,
+        principal: l.principal, toPay, paid, balance, arrearsAmount, dpd, liveStatus, riskStatus, displayStatus,
+        rating: l.rating || null, maturityDate,
         disbursedAt: l.disbursed_at, appliedAt: l.created_at, nextDueDate: nextDue ? nextDue.due_date : null,
         lastPaymentDate: lastPayment ? lastPayment.created_at : null, collectionRate: toPay > 0 ? (paid / toPay * 100) : 0,
       };
     });
+    if (category === 'Overdue Loans') rows = rows.filter(r => r.dpd > 0);
+    if (category === 'Non Performing') rows = rows.filter(r => r.dpd >= 90);
     if (req.query.q) { const q = req.query.q.toLowerCase(); rows = rows.filter(r => r.clientName.toLowerCase().includes(q) || r.loanId.toLowerCase().includes(q)); }
     if (req.query.risk_status) rows = rows.filter(r => r.riskStatus === req.query.risk_status);
     if (req.query.min_dpd) rows = rows.filter(r => r.dpd >= Number(req.query.min_dpd));
     if (req.query.cycles) rows = rows.filter(r => String(r.cycle) === req.query.cycles || (req.query.cycles === '4+' && r.cycle >= 4));
+    if (req.query.rating === 'unrated') rows = rows.filter(r => !r.rating);
+    else if (req.query.rating) rows = rows.filter(r => r.rating === req.query.rating);
     if (req.query.disbursed_from) rows = rows.filter(r => r.disbursedAt && r.disbursedAt.slice(0, 10) >= req.query.disbursed_from);
     if (req.query.disbursed_to) rows = rows.filter(r => r.disbursedAt && r.disbursedAt.slice(0, 10) <= req.query.disbursed_to);
     if (req.query.applied_from) rows = rows.filter(r => r.appliedAt.slice(0, 10) >= req.query.applied_from);
@@ -1108,6 +1144,10 @@ function register(router) {
       arrears: (a, b) => b.arrearsAmount - a.arrearsAmount, dpd: (a, b) => b.dpd - a.dpd,
       collectionrate: (a, b) => a.collectionRate - b.collectionRate, lastpayment: (a, b) => new Date(b.lastPaymentDate || 0) - new Date(a.lastPaymentDate || 0),
       nextdue: (a, b) => new Date(a.nextDueDate || '9999-12-31') - new Date(b.nextDueDate || '9999-12-31'), amount: (a, b) => b.principal - a.principal,
+      balanceasc: (a, b) => a.balance - b.balance, balancedesc: (a, b) => b.balance - a.balance,
+      amountasc: (a, b) => a.principal - b.principal, amountdesc: (a, b) => b.principal - a.principal,
+      disbursementasc: (a, b) => new Date(a.disbursedAt || 0) - new Date(b.disbursedAt || 0), disbursementdesc: (a, b) => new Date(b.disbursedAt || 0) - new Date(a.disbursedAt || 0),
+      maturityasc: (a, b) => new Date(a.maturityDate || '9999-12-31') - new Date(b.maturityDate || '9999-12-31'), maturitydesc: (a, b) => new Date(b.maturityDate || '0001-01-01') - new Date(a.maturityDate || '0001-01-01'),
     };
     rows.sort(sortFns[sortKey] || ((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt)));
 
@@ -1716,23 +1756,32 @@ function register(router) {
   });
 
   // ==================== Loan Arrears sheet (Loan Officer's real "Loan
-  // Arrears" submenu page) — a real, per-loan arrears sheet filtered by
-  // a real "Fall Date" window, matching the reference design's own
-  // column set exactly: Client / Contact / Loan / Disbursement / Cycles
-  // / P.Arrears / Accumulated / Installment / Fall Date / Days / T.Bal.
-  // "Fall Date" is the real due date of this loan's CURRENT (most
-  // recent, not oldest) overdue-and-unpaid period — the installment the
-  // client is presently behind on; "Installment" is that same real
-  // period's period/totalPeriods; "P.Arrears" is that same single real
-  // period's own real shortfall (total_due - paid_amount); "Accumulated"
-  // is the real SUM of every real overdue-and-unpaid period's shortfall
-  // (the same carried-over-arrears concept used elsewhere in this app);
-  // "Days" is real days-late counting the fall date itself as day 1
-  // (today - fallDate + 1), matching the reference's own counting
-  // exactly; "T.Bal" is the loan's real total outstanding balance across
-  // every real period (past, current, and not-yet-due), including real
-  // unpaid penalties — the same definition the frontend's own
-  // loanBalance() helper already uses; "Cycles" is the real count of
+  // Arrears" submenu page) — a real, per-loan sheet matching the
+  // reference design's own column set exactly: Client / Contact / Loan
+  // / Disbursement / Cycles / P.Arrears / Accumulated / Installment /
+  // Fall Date / Days / T.Bal. The real "Filter Loans" toggle switches
+  // between two real, genuinely different loan sets, not two views of
+  // the same data:
+  //   - "overdue" (default): loans with a real CURRENT (most recent, not
+  //     oldest) overdue-and-unpaid period — the installment the client
+  //     is presently behind on. The date range filters by that period's
+  //     real "Fall Date". "P.Arrears" is that single real period's own
+  //     real shortfall; "Accumulated" is the real SUM of every real
+  //     overdue-and-unpaid period (the same carried-over-arrears concept
+  //     used elsewhere in this app); "Days" counts the fall date itself
+  //     as day 1 (today - fallDate + 1), matching the reference's own
+  //     counting exactly.
+  //   - "running": the officer's other real Active/Disbursed loans that
+  //     are genuinely NOT currently overdue (on track). These have no
+  //     real Fall Date, so the SAME date inputs instead filter by real
+  //     Disbursement date; P.Arrears/Accumulated/Days are genuinely 0/—
+  //     rather than fabricated, and Installment is the real first
+  //     not-yet-fully-paid period (the one currently being worked
+  //     through).
+  // "T.Bal" is the loan's real total outstanding balance across every
+  // real period (past, current, and not-yet-due), including real unpaid
+  // penalties — the same definition the frontend's own loanBalance()
+  // helper already uses, in both views. "Cycles" is the real count of
   // this client's own real disbursed loans (their real loan cycle
   // number), not this loan's own installment count. This is a new
   // reference design with no visible backend of its own — these are
@@ -1743,14 +1792,14 @@ function register(router) {
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
     if (req.query.officer_id) { clause += ' AND officer_id = ?'; params.push(req.query.officer_id); }
-    if (req.query.product_id) { clause += ' AND product_id = ?'; params.push(req.query.product_id); }
+    const statusFilter = req.query.status === 'running' ? 'running' : 'overdue';
     const today = new Date().toISOString().slice(0, 10);
     const from = req.query.from || new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
     const to = req.query.to || today;
 
     const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params);
     const loanIds = loans.map(l => l.id);
-    if (!loanIds.length) return res.json({ from, to, rows: [], totals: { pArrears: 0, accumulated: 0, tbal: 0 } });
+    if (!loanIds.length) return res.json({ from, to, status: statusFilter, rows: [], totals: { pArrears: 0, accumulated: 0, tbal: 0 } });
 
     const idPh = loanIds.map(() => '?').join(',');
     const scheduleByLoan = {};
@@ -1762,32 +1811,51 @@ function register(router) {
     const cyclesByClient = {};
     if (clientIds.length) { const cPh = clientIds.map(() => '?').join(','); (await all(`SELECT client_id, COUNT(*) as cnt FROM loans WHERE client_id IN (${cPh}) AND disbursed_at IS NOT NULL GROUP BY client_id`, clientIds)).forEach(r => { cyclesByClient[r.client_id] = Number(r.cnt); }); }
 
-    let rows = loans.map(loan => {
-      const sched = scheduleByLoan[loan.id] || [];
-      const overdue = sched.filter(r => r.due_date < today && r.paid_amount < r.total_due - 0.01);
-      if (!overdue.length) return null;
-      const current = overdue.reduce((a, b) => a.due_date > b.due_date ? a : b);
-      const pArrears = current.total_due - current.paid_amount;
-      const accumulated = overdue.reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
-      const tbal = sched.reduce((s, r) => s + Math.max(0, r.total_due - r.paid_amount) + Math.max(0, (r.penalty_due || 0) - (r.penalty_paid || 0)), 0);
-      const days = Math.floor((new Date(today) - new Date(current.due_date)) / 86400000) + 1;
-      const client = clientById[loan.client_id] || { name: 'Unknown', phone: null };
-      return {
-        loanId: loan.id, clientId: loan.client_id, clientName: client.name, contact: client.phone,
-        loan: loan.principal, disbursedAt: loan.disbursed_at, cycles: cyclesByClient[loan.client_id] || 1,
-        pArrears, accumulated, period: current.period, totalPeriods: sched.length,
-        fallDate: current.due_date, days, tbal,
-      };
-    }).filter(Boolean).filter(r => r.fallDate >= from && r.fallDate <= to);
+    const tbalOf = sched => sched.reduce((s, r) => s + Math.max(0, r.total_due - r.paid_amount) + Math.max(0, (r.penalty_due || 0) - (r.penalty_paid || 0)), 0);
 
-    rows.sort((a, b) => a.fallDate < b.fallDate ? -1 : a.fallDate > b.fallDate ? 1 : 0);
+    let rows;
+    if (statusFilter === 'overdue') {
+      rows = loans.map(loan => {
+        const sched = scheduleByLoan[loan.id] || [];
+        const overdue = sched.filter(r => r.due_date < today && r.paid_amount < r.total_due - 0.01);
+        if (!overdue.length) return null;
+        const current = overdue.reduce((a, b) => a.due_date > b.due_date ? a : b);
+        const pArrears = current.total_due - current.paid_amount;
+        const accumulated = overdue.reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
+        const days = Math.floor((new Date(today) - new Date(current.due_date)) / 86400000) + 1;
+        const client = clientById[loan.client_id] || { name: 'Unknown', phone: null };
+        return {
+          loanId: loan.id, clientId: loan.client_id, clientName: client.name, contact: client.phone,
+          loan: loan.principal, disbursedAt: loan.disbursed_at, cycles: cyclesByClient[loan.client_id] || 1,
+          pArrears, accumulated, period: current.period, totalPeriods: sched.length,
+          fallDate: current.due_date, days, tbal: tbalOf(sched),
+        };
+      }).filter(Boolean).filter(r => r.fallDate >= from && r.fallDate <= to);
+      rows.sort((a, b) => a.fallDate < b.fallDate ? -1 : a.fallDate > b.fallDate ? 1 : 0);
+    } else {
+      rows = loans.map(loan => {
+        const sched = scheduleByLoan[loan.id] || [];
+        const overdue = sched.some(r => r.due_date < today && r.paid_amount < r.total_due - 0.01);
+        if (overdue) return null;
+        if (!loan.disbursed_at || loan.disbursed_at.slice(0, 10) < from || loan.disbursed_at.slice(0, 10) > to) return null;
+        const current = sched.find(r => r.paid_amount < r.total_due - 0.01) || sched[sched.length - 1];
+        const client = clientById[loan.client_id] || { name: 'Unknown', phone: null };
+        return {
+          loanId: loan.id, clientId: loan.client_id, clientName: client.name, contact: client.phone,
+          loan: loan.principal, disbursedAt: loan.disbursed_at, cycles: cyclesByClient[loan.client_id] || 1,
+          pArrears: 0, accumulated: 0, period: current ? current.period : 0, totalPeriods: sched.length,
+          fallDate: null, days: 0, tbal: tbalOf(sched),
+        };
+      }).filter(Boolean);
+      rows.sort((a, b) => (a.disbursedAt || '') < (b.disbursedAt || '') ? -1 : (a.disbursedAt || '') > (b.disbursedAt || '') ? 1 : 0);
+    }
 
     const totals = {
       pArrears: rows.reduce((s, r) => s + r.pArrears, 0),
       accumulated: rows.reduce((s, r) => s + r.accumulated, 0),
       tbal: rows.reduce((s, r) => s + r.tbal, 0),
     };
-    res.json({ from, to, rows, totals });
+    res.json({ from, to, status: statusFilter, rows, totals });
   });
 
   router.get('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
