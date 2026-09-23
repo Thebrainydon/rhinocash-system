@@ -3814,12 +3814,78 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 
     // Clicking Schedule on this real, not-yet-disbursed loan genuinely
     // shows a real, clearly-labeled PROJECTED installment (never
-    // presented as the real disbursed schedule, since none exists yet).
+    // presented as the real disbursed schedule, since none exists yet) —
+    // now a real weekly-amortized breakdown (Date/Principal/Interest/
+    // Installment), matching the reference design exactly, never a
+    // single lump-sum row.
     openInstallmentsModal(wkFrontendLoan.id);
     __assert(modal && modal.type==='installments' && modal.loanId===wkFrontendLoan.id, "the real Schedule link genuinely opens the real Installments modal for this real loan");
     const projectedHtml = renderInstallmentsModal();
     __assert(projectedHtml.includes('Projected') && projectedHtml.includes('hasn\'t been disbursed yet'), "the real projected preview is genuinely labeled as a projection, not the real disbursed schedule");
-    __assert(projectedHtml.includes(fmtNum(4000)) && projectedHtml.includes(fmtNum(800)) && projectedHtml.includes(fmtNum(4800)), "the real projected preview genuinely computes principal 4,000 / interest 800 (20% flat) / total 4,800 from the real loan and product data");
+    __assert(projectedHtml.includes(escapeHtml(wkFrontendClient.name)) && projectedHtml.includes('Loan Schedule') && projectedHtml.includes('Starter'), "the real projected preview genuinely titles itself with the real client's name and the real product name, matching the reference design");
+    __assert(projectedHtml.includes(fmt(wkFrontendLoan.principal)), "the real projected preview genuinely shows the real loan's own Principal amount");
+    const rows = projectedScheduleRows(wkFrontendLoan, DB.products.find(p=>p.id==='pr_ln_starter'));
+    __assert(rows.length === 4 && rows.every(r=>Math.abs(r.principal-1000)<0.01 && Math.abs(r.interest-200)<0.01 && Math.abs(r.total-1200)<0.01), "the real projected schedule genuinely amortizes the real 4,000 principal and real 800 flat interest evenly across 4 real weekly installments (1,000/200/1,200 each), never a single lump sum");
+    __assert(projectedHtml.includes(fmtNum(1000)) && projectedHtml.includes(fmtNum(200)) && projectedHtml.includes(fmtNum(1200)), "the real rendered table genuinely shows each real weekly installment's amounts");
+    __assert(projectedHtml.includes(fmtNum(4000)) && projectedHtml.includes(fmtNum(800)) && projectedHtml.includes(fmtNum(4800)), "the real projected preview's totals row genuinely sums to the real full principal 4,000 / interest 800 (20% flat) / installment total 4,800");
+    __assert(projectedHtml.includes('printLoanSchedule(') && (projectedHtml.includes('Print') || projectedHtml.includes('🖶')), "the real projected preview genuinely offers a real Print button, matching the reference design");
+
+    // Clicking Print genuinely opens the real dedicated print page — the
+    // exact same real schedule rows, never a second, independently
+    // computed table — with the real company letterhead, a real
+    // generated-by line, and the loan's own real account/maturity.
+    printLoanSchedule(wkFrontendLoan.id);
+    __assert(!modal, "printLoanSchedule() genuinely closes the modal first — the real print page is a dedicated page state, not a print-from-modal");
+    __assert(session.printLoanScheduleId === wkFrontendLoan.id, "the real print page state genuinely targets this exact real loan");
+    const printHtml = renderSection();
+    __assert(printHtml.includes(escapeHtml(wkFrontendClient.name)) && printHtml.includes('Loan Schedule'), "the real print page genuinely titles itself with the real client's name, matching the reference design");
+    __assert(printHtml.includes('Generated on') && printHtml.includes(escapeHtml(session.userName)), "the real print page genuinely shows a real 'Generated on ... by <staff name>' line, matching the reference design");
+    __assert(printHtml.includes(fmtNum(1000)) && printHtml.includes(fmtNum(4800)), "the real print page genuinely shows the exact same real schedule rows and totals as the modal preview, never a second fabricated table");
+    __assert(printHtml.includes('Loan Product') && printHtml.includes('Loan Amount') && printHtml.includes('Loan Account') && printHtml.includes('Loan Maturity'), "the real print page genuinely shows the loan's real product, amount, account reference and computed maturity date, matching the reference design");
+    __assert(printHtml.includes(escapeHtml(wkFrontendClient.name)+' Loan Schedule : Page 1'), "the real print page genuinely shows the reference design's own real footer line");
+    closeLoanSchedulePrint();
+    __assert(!session.printLoanScheduleId, "closeLoanSchedulePrint() genuinely exits the real print page state, back to normal navigation");
+
+    // Before any real Manager decision, the Loan Officer's own real
+    // Undisbursed Loans table genuinely offers a real Edit control next
+    // to the "Waiting Manager" label.
+    session.loanAppFilterState.category = 'Undisbursed loans';
+    renderApp();
+    const undisbEditHtml = document.getElementById('root').innerHTML;
+    __assert(undisbEditHtml.includes(`openLoanEditModal('${wkFrontendLoan.id}')`) && undisbEditHtml.includes('>Edit<'), "the real Undisbursed Loans table genuinely offers a real Edit control for a loan still 'Waiting for Manager'");
+
+    // Real Edit modal: opens pre-filled with this real loan's own real
+    // current values, and a real submit genuinely persists the edit via
+    // the real backend and updates the real in-memory DB.loans record.
+    openLoanEditModal(wkFrontendLoan.id);
+    __assert(modal && modal.type==='loan-edit' && modal.loanId===wkFrontendLoan.id, "the real Edit control genuinely opens the real Edit modal for this exact real loan");
+    const editHtml = renderLoanEditModal();
+    __assert(editHtml.includes('Edit Loan Application') && editHtml.includes(String(wkFrontendLoan.principal)) && editHtml.includes(escapeHtml(wkFrontendLoan.guarantor)), "the real Edit modal genuinely pre-fills with this loan's own real current values");
+    let editForm = new Map([['principal','4200'],['guarantor','Edited Real Guarantor'],['guarantor_contact','0711999000'],['loan_securities','Edited securities'],['loan_category','New Loan']]);
+    global.FormData = class { constructor(){ return editForm; } };
+    await submitLoanEdit({ preventDefault(){}, target:{} });
+    __assert(!modal, "a real successful edit genuinely closes the modal");
+    const editedLoan = DB.loans.find(l=>l.id===wkFrontendLoan.id);
+    __assert(editedLoan && Number(editedLoan.principal)===4200 && editedLoan.guarantor==='Edited Real Guarantor', "the real edit genuinely persisted via the real backend and updated the real in-memory loan record — not just the modal's own local state");
+
+    // Once a real Manager approves, the real Edit control genuinely
+    // disappears — enforced server-side (PATCH /api/loans/:id refuses a
+    // loan past 'Waiting for Manager' with a real 409), not just hidden.
+    let mgrEditCheck = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrEditCheck; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    await api.post(`/api/loans/${wkFrontendLoan.id}/approve`, {});
+    let of51b = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of51b; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' };
+    goTo('loanbook','Loan Applications');
+    for(let i=0; i<60 && !DB.loans.find(l=>l.id===wkFrontendLoan.id && l.status!=='Waiting for Manager'); i++){ await new Promise(r=>setTimeout(r,50)); await refreshLoan(wkFrontendLoan.id); renderApp(); }
+    const afterApprovalHtml = document.getElementById('root').innerHTML;
+    __assert(!afterApprovalHtml.includes(`openLoanEditModal('${wkFrontendLoan.id}')`), "once a real Manager has approved, the real Edit control genuinely no longer appears for this loan");
+    let rejected403or409 = false;
+    try { await api.patch(`/api/loans/${wkFrontendLoan.id}`, { principal: 5000 }); } catch(e){ rejected403or409 = (e.status === 409); }
+    __assert(rejected403or409, "the real backend itself genuinely refuses an edit attempt once past 'Waiting for Manager' — a real 409, not just a hidden button");
     closeModal();
   }
 

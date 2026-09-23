@@ -19,24 +19,47 @@ function addDays(dateStr, n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Splits a real total amount into `periods` real whole-shilling
+// installments — each period rounded to the nearest shilling except the
+// last, which absorbs whatever rounding remainder is left, so the real
+// installments always sum to exactly `total` (never a few cents short
+// or over from a naive float division). Matches the real reference
+// schedule's own whole-shilling amounts exactly (a real 7,000 principal
+// over 6 weeks: 1,167 x 5 + 1,165 — never six equal 1,166.67 fractions).
+function splitWithRemainder(total, periods) {
+  const per = Math.round(total / periods);
+  const amounts = [];
+  for (let i = 1; i < periods; i++) amounts.push(per);
+  amounts.push(total - per * (periods - 1));
+  return amounts;
+}
+
 // termWeeks (real per-product setting — see seed.js's weeklyProducts and
-// POST /api/loan-products) switches this from the original multi-period
-// monthly-installment schedule to a single real installment due
-// termWeeks*7 days after disbursement — the real short-term product
-// catalog (Starter/Jijenge/Ibuka/Mavuno/Fly and their "Special" 6-week
-// variants) is repaid once, in full, not spread over monthly
-// installments. ratePct in that case is the real FLAT rate for the
-// loan's whole real term (e.g. 20% for 4 weeks), not a per-month rate —
-// the math below (principal * ratePct/100 * 1 period) already produces
-// exactly that when term is forced to 1.
+// POST /api/loan-products) switches this from the monthly-installment
+// schedule to a real weekly one: termWeeks real installments, one every
+// 7 days, principal and interest evenly amortized across all of them —
+// the real short-term product catalog (Starter/Jijenge/Ibuka/Mavuno/Fly
+// and their "Special" 6-week variants) is repaid in real equal weekly
+// installments, matching the reference design exactly, never a single
+// lump sum at the end. ratePct in that case is the real FLAT rate for
+// the loan's whole real term (e.g. 20% for 4 weeks), not a per-week
+// rate — the total interest below is principal * ratePct/100 for the
+// whole term, then amortized evenly across every real week exactly
+// like the principal.
 async function buildSchedule(loanId, principal, ratePct, term, startDate, termWeeks) {
   if (termWeeks) {
-    const interest = principal * (ratePct / 100);
-    await run(
-      `INSERT INTO loan_schedule (loan_id, period, due_date, principal_due, interest_due, total_due, paid_amount, status)
-       VALUES (?,?,?,?,?,?,0,'Pending')`,
-      [loanId, 1, addDays(startDate, termWeeks * 7), principal, interest, principal + interest]
-    );
+    const totalInterest = principal * (ratePct / 100);
+    const principalPeriods = splitWithRemainder(principal, termWeeks);
+    const interestPeriods = splitWithRemainder(totalInterest, termWeeks);
+    for (let i = 1; i <= termWeeks; i++) {
+      const principalDue = principalPeriods[i - 1];
+      const interestDue = interestPeriods[i - 1];
+      await run(
+        `INSERT INTO loan_schedule (loan_id, period, due_date, principal_due, interest_due, total_due, paid_amount, status)
+         VALUES (?,?,?,?,?,?,0,'Pending')`,
+        [loanId, i, addDays(startDate, i * 7), principalDue, interestDue, principalDue + interestDue]
+      );
+    }
     return;
   }
   const totalInterest = principal * (ratePct / 100) * term;
@@ -2098,10 +2121,12 @@ function register(router) {
     // A real term_weeks product (the real Starter/Jijenge/Ibuka/Mavuno/Fly
     // catalog — see seed.js) has exactly one real valid term: itself. The
     // client never chooses a duration for these — the server is
-    // authoritative on term_months (always 1 real period; buildSchedule()
-    // uses the product's own term_weeks for the real due date), the same
-    // way it's already authoritative on rate_pct just below. A legacy
-    // monthly product still requires a genuine client-supplied term_months.
+    // authoritative on term_months (forced to 1, a loans-table legacy
+    // field unrelated to the real schedule's own row count; buildSchedule()
+    // separately builds one real weekly installment per real week of the
+    // product's own term_weeks), the same way it's already authoritative
+    // on rate_pct just below. A legacy monthly product still requires a
+    // genuine client-supplied term_months.
     let termMonths = product.term_weeks ? 1 : b.term_months;
     if (!termMonths) return next({ status: 400, message: 'term_months is required for this product' });
     if (b.principal < product.min_amount || b.principal > product.max_amount) {
@@ -2169,6 +2194,51 @@ function register(router) {
     if (feePayment) await run('UPDATE loan_fee_payments SET loan_id = ? WHERE id = ?', [id, feePayment.id]);
     await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
     res.status(201).json({ loan: await get('SELECT * FROM loans WHERE id = ?', [id]) });
+  });
+
+  // Real edit, for the exact real window the reference design calls
+  // for: only the loan's own real Loan Officer, and only while it is
+  // still genuinely at the very first real approval step. The instant a
+  // real Manager decision lands — Approved, Rejected or Returned — this
+  // is refused (409), never silently allowed to slip through and
+  // invalidate what that approver already reviewed. client_id,
+  // product_id and processing_fee_id are deliberately never editable
+  // here — the confirmed processing fee is already tied to that exact
+  // real client+product pair, and swapping either would orphan it.
+  router.patch('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
+    if (!loan) return next({ status: 404, message: 'Loan not found' });
+    if (loan.officer_id !== req.user.id) return next({ status: 403, message: 'You can only edit a loan application you created yourself' });
+    if (loan.status !== 'Waiting for Manager') return next({ status: 409, message: 'This loan can no longer be edited — it has already moved past the first real approval step' });
+    const b = req.body;
+    const product = await get('SELECT * FROM loan_products WHERE id = ?', [loan.product_id]);
+    if (!product) return next({ status: 400, message: 'Unknown loan product' });
+    const principal = b.principal != null ? Number(b.principal) : Number(loan.principal);
+    if (!(principal > 0)) return next({ status: 400, message: 'principal must be a positive number' });
+    if (principal < product.min_amount || principal > product.max_amount) {
+      return next({ status: 400, message: `Principal must be between ${product.min_amount} and ${product.max_amount} for this product` });
+    }
+    // Same real New Loan / Repeat Loan enforcement as creation — a real
+    // edit can genuinely change loan_category too, so it must be
+    // re-validated exactly the same way, not grandfathered in.
+    const loanCategory = b.loan_category !== undefined ? (b.loan_category || null) : loan.loan_category;
+    let guarantor = b.guarantor !== undefined ? (b.guarantor || null) : loan.guarantor;
+    let guarantorContact = b.guarantor_contact !== undefined ? (b.guarantor_contact || null) : loan.guarantor_contact;
+    if (loanCategory === 'Repeat Loan') {
+      const priorLoan = await get('SELECT guarantor, guarantor_contact FROM loans WHERE client_id = ? AND id != ? ORDER BY created_at DESC LIMIT 1', [loan.client_id, loan.id]);
+      if (!priorLoan) return next({ status: 400, message: 'This client has no prior loan — a Repeat Loan application requires a real prior loan on record' });
+      if (!guarantor) guarantor = priorLoan.guarantor;
+      if (!guarantorContact) guarantorContact = priorLoan.guarantor_contact;
+    } else if (loanCategory === 'New Loan') {
+      if (!guarantor || !guarantorContact) return next({ status: 400, message: 'Guarantor name and contact are required for a New Loan application' });
+    }
+    const loanSecurities = b.loan_securities !== undefined ? (b.loan_securities || null) : loan.loan_securities;
+    await run(
+      `UPDATE loans SET principal = ?, guarantor = ?, guarantor_contact = ?, loan_securities = ?, loan_category = ? WHERE id = ?`,
+      [principal, guarantor, guarantorContact, loanSecurities, loanCategory, loan.id]
+    );
+    await logAction(req, { action: 'Edited loan application', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: { principal: loan.principal, guarantor: loan.guarantor, loan_category: loan.loan_category }, newValue: { principal, guarantor, loan_category: loanCategory } });
+    res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
   // ---- Sequential approval workflow ----

@@ -180,11 +180,24 @@ for suite in $SUITES; do
     continue
   fi
 
+  # integration.test.js alone now makes enough real requests (the real
+  # weekly-installment rounding coverage and the real PATCH /api/loans/:id
+  # edit-window coverage both added a genuine handful more) to bump into
+  # the real per-IP rate limiter's default 180/60s within its own single
+  # continuous run — raised here, for this one suite's own server process
+  # only, exactly like run-frontend.sh already does for the same real
+  # reason. Every other suite keeps the real default (180) explicitly, so
+  # v2.test.js's own real "returns 429" test — a separate server process —
+  # is completely untouched.
+  RATE_LIMIT_PER_MINUTE_VAL=180
+  if [ "$suite" = "integration" ]; then RATE_LIMIT_PER_MINUTE_VAL=2000; fi
+
   SERVER_LOG="$TMP_DIR/server-$suite.log"
   DATABASE_URL="$TEST_DATABASE_URL" \
   SESSION_SECRET="$SESSION_SECRET_VAL" \
   MPESA_ENCRYPTION_KEY="$MPESA_KEY_VAL" \
   PORT="$PORT" \
+  RATE_LIMIT_PER_MINUTE="$RATE_LIMIT_PER_MINUTE_VAL" \
     node server.js > "$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
 

@@ -103,6 +103,17 @@ body{
 .bell{position:relative; cursor:pointer; font-size:18px; color:var(--ink-soft);}
 .bell-dot{position:absolute; top:-3px; right:-4px; background:var(--rust); color:#fff; font-size:9px; font-weight:800; border-radius:8px; padding:1px 4px; min-width:14px; text-align:center;}
 .content{padding:24px 26px 60px; flex:1;}
+/* Every real "Print" button in this app calls window.print() directly —
+   this is the one shared rule that makes that print an actual clean
+   letterhead page (matching the real reference design) instead of the
+   whole app chrome: sidebar, topbar and toast bars never appear on a
+   printed page, and the printable card fills it edge to edge. */
+@media print{
+  .sidebar, .sidebar-backdrop, .topbar, .toast-wrap, .toast-wrap-center, .no-print{display:none !important;}
+  .app{display:block !important;}
+  .main{display:block !important;}
+  .content{padding:0 !important;}
+}
 
 /* ---- Cards / KPIs ---- */
 .kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:20px;}
@@ -2178,6 +2189,7 @@ function toggleSideSection(label){ session.sidebarExpanded[label] = !session.sid
 
 
 function renderSection(){
+  if(session.printLoanScheduleId) return renderLoanSchedulePrint(session.printLoanScheduleId);
   switch(session.section){
     case "dashboard": return renderDashboard();
     case "clients": return renderClients();
@@ -3066,7 +3078,7 @@ function renderAdminDashboard(){
     <div class="card">
       <div class="card-title">System Configuration — Loan Products</div>
       <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Processing Fee (upfront)</th><th>Penalty</th></tr>
-      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (single repayment)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.processingFeeAmount!=null?fmt(p.processingFeeAmount):'—'}</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
+      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (weekly installments)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.processingFeeAmount!=null?fmt(p.processingFeeAmount):'—'}</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
       ${CAN_MANAGE_SETTINGS(session.role) ? `
       <form onsubmit="return submitAddProduct(event)" style="margin-top:14px;">
         <div class="form-grid">
@@ -3076,9 +3088,9 @@ function renderAdminDashboard(){
           <div class="field"><label>Max Amount</label><input name="maxAmt" type="number" required></div>
           <div class="field"><label>Min Term (months)</label><input name="minTerm" type="number"></div>
           <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number"></div>
-          <div class="field"><label>Duration (weeks — for a real single-repayment product like Starter/Jijenge; overrides the month range above)</label><input name="termWeeks" type="number"></div>
+          <div class="field"><label>Duration (weeks — for a real weekly-installment product like Starter/Jijenge; overrides the month range above)</label><input name="termWeeks" type="number"></div>
           <div class="field"><label>Processing Fee (%)</label><input name="fee" type="number" step="0.1" required></div>
-          <div class="field"><label>Processing Fee (KES, upfront — for a real single-repayment product; required and collected via M-Pesa before the application can be submitted)</label><input name="processingFeeAmount" type="number"></div>
+          <div class="field"><label>Processing Fee (KES, upfront — for a real weekly-installment product; required and collected via M-Pesa before the application can be submitted)</label><input name="processingFeeAmount" type="number"></div>
           <div class="field"><label>Late Payment Penalty (% per overdue installment)</label><input name="penalty" type="number" step="0.1" value="0"></div>
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Add Loan Product</button>
@@ -4726,37 +4738,124 @@ function openInstallmentsModal(loanId){
   openModal('installments', { loanId });
   return withRequest('installments-'+loanId, async ()=>{ await refreshLoan(loanId); });
 }
-// A real, non-fabricated preview for a loan that hasn't been disbursed
-// yet — there is genuinely no stored schedule until disbursement, but
-// the officer can still see what they're about to disburse, computed
-// with the exact same real math buildSchedule() itself uses server-side
-// (a real term_weeks product: one lump-sum installment at principal *
-// rate/100 interest; a legacy monthly product: the usual flat-rate
-// split over loan.term periods) — clearly labeled "Projected", never
-// presented as if it were the real, disbursed schedule.
+// Splits a real total into `periods` real whole-shilling amounts — each
+// period rounded to the nearest shilling except the last, which absorbs
+// the rounding remainder, so they always sum to exactly `total`. Mirrors
+// the real backend's own splitWithRemainder() in loans.js exactly (a
+// real 7,000 principal over 6 weeks: 1,167 x5 + 1,165, never six equal
+// 1,166.67 fractions), so this real projection matches what buildSchedule()
+// will genuinely create at disbursement, shilling for shilling.
+function splitWithRemainder(total, periods){
+  const per = Math.round(total/periods);
+  const amounts = [];
+  for(let i=1;i<periods;i++) amounts.push(per);
+  amounts.push(total - per*(periods-1));
+  return amounts;
+}
+// Real, non-fabricated projected schedule rows for a loan that hasn't
+// been disbursed yet — computed with the exact same real weekly-
+// amortization math buildSchedule() uses server-side (a real term_weeks
+// product: termWeeks real equal weekly installments, principal and
+// interest both evenly amortized; a legacy monthly product: the usual
+// flat-rate split over loan.term monthly periods). Shared by the modal
+// preview and the real print page so they can never drift apart.
+function projectedScheduleRows(loan, product){
+  if(!product) return [];
+  const startDate = todayISO();
+  const rows = [];
+  if(product.termWeeks){
+    const totalInterest = loan.principal * (product.rate/100);
+    const principalPeriods = splitWithRemainder(loan.principal, product.termWeeks);
+    const interestPeriods = splitWithRemainder(totalInterest, product.termWeeks);
+    for(let i=1;i<=product.termWeeks;i++){
+      const principal = principalPeriods[i-1], interest = interestPeriods[i-1];
+      rows.push({ date: addDays(startDate, i*7), principal, interest, total: principal+interest });
+    }
+  } else {
+    const totalInterest = loan.principal * (product.rate/100) * loan.term;
+    const principalPeriods = splitWithRemainder(loan.principal, loan.term);
+    const interestPeriods = splitWithRemainder(totalInterest, loan.term);
+    for(let i=1;i<=loan.term;i++){
+      const principal = principalPeriods[i-1], interest = interestPeriods[i-1];
+      rows.push({ date: addMonths(startDate, i), principal, interest, total: principal+interest });
+    }
+  }
+  return rows;
+}
 function renderProjectedInstallmentsPreview(loan){
   const product = DB.products.find(p=>p.id===loan.productId);
-  const rows = [];
-  if(product && product.termWeeks){
-    const interest = loan.principal * (product.rate/100);
-    rows.push({ label:`Due ${product.termWeeks*7} days after disbursement`, principal:loan.principal, interest, total:loan.principal+interest });
-  } else if(product){
-    const totalInterest = loan.principal * (product.rate/100) * loan.term;
-    const principalPerPeriod = loan.principal/loan.term;
-    const interestPerPeriod = totalInterest/loan.term;
-    for(let i=1;i<=loan.term;i++) rows.push({ label:`Period ${i}`, principal:principalPerPeriod, interest:interestPerPeriod, total:principalPerPeriod+interestPerPeriod });
-  }
+  const rows = projectedScheduleRows(loan, product);
   const totalP = rows.reduce((s,r)=>s+r.principal,0), totalI = rows.reduce((s,r)=>s+r.interest,0), totalT = rows.reduce((s,r)=>s+r.total,0);
   return `
     <div style="position:relative;">
       <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 8px;">Loan ${loan.id.slice(-8).toUpperCase()} Installments</h3>
-      <div class="hint" style="text-align:center; margin-bottom:16px;">Projected — this loan hasn't been disbursed yet. The real schedule is created at disbursement.</div>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 2px;">${escapeHtml(clientName(loan.clientId))} Loan Schedule</h3>
+      <div style="text-align:center; font-weight:700; color:var(--navy); margin-bottom:12px;">${escapeHtml(product?product.name:loan.productName||'')}</div>
+      <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:8px;">
+        <div><div class="hint">Principal</div><div style="font-weight:800; font-size:16px;">${fmt(loan.principal)}</div></div>
+        <button class="btn btn-sm btn-outline" type="button" onclick="printLoanSchedule('${loan.id}')">🖶 Print</button>
+      </div>
+      <div class="hint" style="margin-bottom:8px;">Projected — this loan hasn't been disbursed yet. The real schedule is created at disbursement.</div>
       <div class="table-wrap"><table>
-        <tr><th>Schedule</th><th>Principal</th><th>Interest</th><th>Total</th></tr>
-        ${rows.length ? rows.map(r=>`<tr><td>${escapeHtml(r.label)}</td><td>${fmtNum(r.principal)}</td><td>${fmtNum(r.interest)}</td><td>${fmtNum(r.total)}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">This loan's real product could not be found.</td></tr>`}
-        ${rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td>Total</td><td>${fmtNum(totalP)}</td><td>${fmtNum(totalI)}</td><td>${fmtNum(totalT)}</td></tr>` : ""}
+        <tr><th>Date</th><th>Principal</th><th>Interest</th><th>Installment</th></tr>
+        ${rows.length ? rows.map(r=>`<tr><td>${fmtLoanDetailDate(r.date)}</td><td>${fmtNum(r.principal)}</td><td>${fmtNum(r.interest)}</td><td>${fmtNum(r.total)}</td></tr>`).join("") : `<tr><td colspan="4" class="empty">This loan's real product could not be found.</td></tr>`}
+        ${rows.length ? `<tr style="font-weight:700; background:#F5F4F1;"><td></td><td>${fmtNum(totalP)}</td><td>${fmtNum(totalI)}</td><td>${fmtNum(totalT)}</td></tr>` : ""}
       </table></div>
+    </div>
+  `;
+}
+// Real print page — a dedicated page state (session.printLoanScheduleId),
+// never a fabricated new tab this build can't actually open, matching
+// the real reference letterhead exactly: company mark, watermark, real
+// generated-by line, the real same schedule rows the modal preview
+// shows (never a second, independently-computed table), and the real
+// loan's own account reference and computed maturity date. Reached only
+// from the real Print button above, and only for an undisbursed loan —
+// intentionally out of scope for the already-real, already-disbursed
+// schedule modal, which has its own richer, already-correct design.
+function printLoanSchedule(loanId){
+  closeModal();
+  session.printLoanScheduleId = loanId;
+  renderApp();
+  setTimeout(()=>{ window.print && window.print(); }, 300);
+}
+function closeLoanSchedulePrint(){ session.printLoanScheduleId = null; renderApp(); }
+function renderLoanSchedulePrint(loanId){
+  const loan = DB.loans.find(l=>l.id===loanId);
+  if(!loan) return `<div class="card"><div class="empty">Loan not found.</div><div class="pill-row" style="margin-top:10px;"><span class="btn btn-outline btn-sm" onclick="closeLoanSchedulePrint()">← Back</span></div></div>`;
+  const product = DB.products.find(p=>p.id===loan.productId);
+  const rows = projectedScheduleRows(loan, product);
+  const totalP = rows.reduce((s,r)=>s+r.principal,0), totalI = rows.reduce((s,r)=>s+r.interest,0), totalT = rows.reduce((s,r)=>s+r.total,0);
+  const now = new Date();
+  const generatedStr = `${now.toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'})} - ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true}).toLowerCase()}`;
+  const clientNm = clientName(loan.clientId);
+  const maturity = rows.length ? rows[rows.length-1].date : null;
+  return `
+    <div class="card" style="max-width:720px; margin:0 auto;">
+      <div class="pill-row no-print" style="justify-content:space-between;">
+        <span class="btn btn-outline btn-sm" onclick="closeLoanSchedulePrint()">← Back</span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖶 Print</button>
+      </div>
+      <div style="border:1px solid #999; padding:20px; margin-top:10px; position:relative;">
+        <img src="${LOGO_DATA_URI}" style="position:absolute; top:50%; left:50%; width:220px; transform:translate(-50%,-50%) rotate(-18deg); opacity:0.08; pointer-events:none;">
+        <div style="text-align:center;">
+          <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:70px; height:70px; object-fit:contain;">
+          <div style="font-weight:800; color:var(--navy); font-size:16px; margin-top:6px;">${escapeHtml(clientNm)} Loan Schedule</div>
+        </div>
+        <div class="hint" style="margin:10px 0 14px;">Generated on ${generatedStr} by ${escapeHtml(session.userName)}</div>
+        <div class="table-wrap"><table style="width:100%; border-collapse:collapse;">
+          <tr><th style="background:#3E77A8; color:#fff;">Date</th><th style="background:#3E77A8; color:#fff;">Principal</th><th style="background:#3E77A8; color:#fff;">Interest</th><th style="background:#3E77A8; color:#fff;">Installment</th></tr>
+          ${rows.map((r,i)=>`<tr style="background:${i%2?'#F2F2F2':'#fff'};"><td>${fmtLoanDetailDate(r.date)}</td><td>${fmtNum(r.principal)}</td><td>${fmtNum(r.interest)}</td><td>${fmtNum(r.total)}</td></tr>`).join("")}
+          <tr style="background:#DADADA; font-weight:700;"><td></td><td>${fmtNum(totalP)}</td><td>${fmtNum(totalI)}</td><td>${fmtNum(totalT)}</td></tr>
+        </table></div>
+        <table style="margin-top:18px;">
+          <tr><td class="hint" style="padding:3px 10px 3px 0;">Loan Product</td><td>:</td><td style="font-weight:700; padding:3px 10px;">${escapeHtml(product?product.name:loan.productName||'—')}</td></tr>
+          <tr><td class="hint" style="padding:3px 10px 3px 0;">Loan Amount</td><td>:</td><td style="font-weight:700; padding:3px 10px;">${fmt(loan.principal)}</td></tr>
+          <tr><td class="hint" style="padding:3px 10px 3px 0;">Loan Account</td><td>:</td><td style="font-weight:700; padding:3px 10px;">${loan.id.slice(-8).toUpperCase()}</td></tr>
+          <tr><td class="hint" style="padding:3px 10px 3px 0;">Loan Maturity</td><td>:</td><td style="font-weight:700; padding:3px 10px;">${maturity?fmtLoanDetailDate(maturity):'—'}</td></tr>
+        </table>
+        <div class="hint" style="text-align:center; font-style:italic; margin-top:24px; border-top:1px solid #ccc; padding-top:8px;">${escapeHtml(clientNm)} Loan Schedule : Page 1</div>
+      </div>
     </div>
   `;
 }
@@ -5565,6 +5664,59 @@ function loanDisbursementCellLabel(loan){
 function approvalDecisionLabel(decision){
   return decision === 'Approved' ? 'Ok' : decision;
 }
+// Real, narrow edit window: only the loan's own real Loan Officer, only
+// while it is still genuinely "Waiting for Manager" — the instant a
+// real Manager decision lands, PATCH /api/loans/:id refuses it (409),
+// enforced server-side, never just a hidden frontend button. client_id/
+// productId/the confirmed processing fee are deliberately not editable
+// here (see the backend route's own comment for why).
+function openLoanEditModal(loanId){
+  const loan = DB.loans.find(l=>l.id===loanId);
+  if(!loan) return;
+  openModal('loan-edit', { loanId, editState: {
+    principal: loan.principal, guarantor: loan.guarantor||'', guarantorContact: loan.guarantorContact||'',
+    loanSecurities: loan.loanSecurities||'', loanCategory: loan.loanCategory||'',
+  } });
+}
+function renderLoanEditModal(){
+  const loan = DB.loans.find(l=>l.id===modal.loanId);
+  if(!loan) return `<div class="empty">Loan not found.</div>`;
+  const st = modal.editState;
+  const product = DB.products.find(p=>p.id===loan.productId);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Edit Loan Application</h3>
+      <form onsubmit="return submitLoanEdit(event)">
+        <div class="section-note">${escapeHtml(clientName(loan.clientId))} — ${escapeHtml(product?product.name:loan.productName||'')}</div>
+        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required value="${st.principal}" placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
+        <div class="field"><label>Guarantor Name</label><input name="guarantor" value="${escapeHtml(st.guarantor)}" placeholder="Guarantor name"></div>
+        <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" value="${escapeHtml(st.guarantorContact)}" placeholder="Guarantor phone"></div>
+        <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed">${escapeHtml(st.loanSecurities)}</textarea></div>
+        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category">
+          <option value="" ${!st.loanCategory?'selected':''}>-- Select --</option>
+          <option ${st.loanCategory==='New Loan'?'selected':''}>New Loan</option>
+          <option ${st.loanCategory==='Repeat Loan'?'selected':''}>Repeat Loan</option>
+        </select></div>
+        <div style="text-align:right; margin-top:16px;">
+          <button class="btn btn-green" type="submit">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+function submitLoanEdit(ev){
+  ev.preventDefault();
+  const loanId = modal.loanId;
+  const f = Object.fromEntries(new FormData(ev.target));
+  return withRequest('edit-loan-'+loanId, async ()=>{
+    const res = await api.patch(`/api/loans/${loanId}`, f);
+    const idx = DB.loans.findIndex(l=>l.id===loanId);
+    if(idx>-1) DB.loans[idx] = adaptLoan(res.loan);
+    closeModal();
+    toast('Loan application updated');
+  });
+}
 function loanApplicationsFiltered(st){
   let rows = DB.loans;
   if(st.category === 'Undisbursed loans') rows = rows.filter(isUndisbursedLoan);
@@ -5607,7 +5759,7 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
       <td>${l.processingFeeReceipt ? `${escapeHtml(l.processingFeeReceipt)}<br>` : ''}${fmt(l.processingFee||0)}</td>
       <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(approvalDecisionLabel(a.decision))}</em>`).join('<br>') : '—'}</td>
-      <td>${loanDisbursementCellLabel(l)}</td>
+      <td>${loanDisbursementCellLabel(l)}${l.status==='Waiting for Manager' ? `<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanEditModal('${l.id}')">Edit</span>` : ''}</td>
     </tr>`).join("");
   return `
     <div class="card">
@@ -12908,6 +13060,7 @@ function renderModal(){
   else if(modal.type === "pending-payments") body = renderPendingPaymentsModal();
   else if(modal.type === "tickets") body = renderTicketsModal();
   else if(modal.type === "notifications") body = renderNotificationsModal();
+  else if(modal.type === "loan-edit") body = renderLoanEditModal();
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
   else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
   else if(modal.type === "create-lead") body = renderCreateLeadModal();

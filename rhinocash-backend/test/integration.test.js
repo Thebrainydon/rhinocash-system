@@ -468,6 +468,32 @@ async function api(method, path, { token, body } = {}) {
     assert(repeatLoanBulk && repeatLoanBulk.last_approval === null, 'a real loan with no real approval decisions yet genuinely has a null last_approval, not a fabricated one');
     assert(Array.isArray(repeatLoanBulk.approvals) && repeatLoanBulk.approvals.length === 0, 'a real loan with no real approval decisions yet genuinely has an empty approvals array, not a fabricated one');
 
+    // ---- Real PATCH /api/loans/:id — the real Edit button's own backend,
+    // reachable only for the loan's own real Loan Officer, only while it
+    // is still genuinely "Waiting for Manager" ----
+    {
+      const otherUserEdit = await api('PATCH', `/api/loans/${repeatLoan.json.loan.id}`, { token: mgrLoginWk.json.token, body: { principal: 9000 } });
+      assert(otherUserEdit.status === 403, 'a real different user (not this loan\'s own real Loan Officer) genuinely cannot edit it, even a Manager who could otherwise approve it');
+
+      const badPrincipalEdit = await api('PATCH', `/api/loans/${repeatLoan.json.loan.id}`, { token: officerToken, body: { principal: 999999 } });
+      assert(badPrincipalEdit.status === 400, 'a real edited principal outside the product\'s real min/max range is genuinely rejected, exactly like creation');
+
+      const badCategoryEdit = await api('PATCH', `/api/loans/${repeatLoan.json.loan.id}`, { token: officerToken, body: { loan_category: 'New Loan', guarantor: '', guarantor_contact: '' } });
+      assert(badCategoryEdit.status === 400, 'a real edit that switches loan_category to "New Loan" without a real guarantor is genuinely rejected, exactly like creation');
+
+      const goodEdit = await api('PATCH', `/api/loans/${repeatLoan.json.loan.id}`, { token: officerToken, body: { principal: 8500, guarantor: 'Edited Guarantor', guarantor_contact: '0799888777', loan_securities: 'Edited securities note' } });
+      assert(goodEdit.status === 200 && Number(goodEdit.json.loan.principal) === 8500 && goodEdit.json.loan.guarantor === 'Edited Guarantor' && goodEdit.json.loan.guarantor_contact === '0799888777' && goodEdit.json.loan.loan_securities === 'Edited securities note', 'a real edit by the loan\'s own real Loan Officer, while still genuinely "Waiting for Manager", genuinely persists every real edited field');
+      assert(goodEdit.json.loan.client_id === repeatLoan.json.loan.client_id && goodEdit.json.loan.product_id === repeatLoan.json.loan.product_id, 'the real edit genuinely never touches client_id or product_id — those stay fixed, exactly as designed');
+
+      // Once a real Manager decision lands, the real edit window closes —
+      // enforced server-side, never just a hidden frontend button.
+      await api('POST', `/api/loans/${repeatLoan.json.loan.id}/approve`, { token: mgrLoginWk.json.token, body: {} });
+      const editAfterApproval = await api('PATCH', `/api/loans/${repeatLoan.json.loan.id}`, { token: officerToken, body: { principal: 8600 } });
+      assert(editAfterApproval.status === 409, 'once the real Manager has approved, the real Loan Officer genuinely can no longer edit this loan application — the real backend refuses it, not just a hidden Edit button');
+      const unchangedAfterApproval = await api('GET', `/api/loans/${repeatLoan.json.loan.id}`, { token: officerToken });
+      assert(Number(unchangedAfterApproval.json.loan.principal) === 8500, 'the real refused edit genuinely never touched the loan\'s real principal — it stays exactly what it was before the attempt');
+    }
+
     // Full real approval chain + disbursement of the first (Starter, 4-week) loan.
     await api('POST', `/api/loans/${wkLoanId}/approve`, { token: mgrLoginWk.json.token, body: {} });
 
@@ -491,14 +517,49 @@ async function api(method, path, { token, body } = {}) {
     const wkDisburse = await api('POST', `/api/loans/${wkLoanId}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
     assert(wkDisburse.status === 200, 'the real weekly-product loan disburses');
     assert(Number(wkDisburse.json.loan.processing_fee) === 600 && wkDisburse.json.loan.processing_fee_receipt === 'QGX7TT61SV', 'disbursement genuinely never overwrites the real upfront processing fee already confirmed at application time — a real regression this exact assertion catches');
-    assert(wkDisburse.json.schedule.length === 1, 'a real term_weeks product genuinely builds exactly ONE schedule row — a single real repayment, not monthly installments');
-    const wkRow = wkDisburse.json.schedule[0];
-    assert(Math.abs(wkRow.principal_due - 4000) < 0.01, 'the single real installment\'s principal_due genuinely equals the full real principal');
-    assert(Math.abs(wkRow.interest_due - 800) < 0.01, 'the single real installment\'s interest_due genuinely equals the real flat 20% of principal (4000 * 0.20 = 800), not a per-month rate');
-    assert(Math.abs(wkRow.total_due - 4800) < 0.01, 'total_due genuinely equals principal + the real flat interest');
-    const expectedDueDate = new Date(wkDisburse.json.loan.disbursed_at);
-    expectedDueDate.setDate(expectedDueDate.getDate() + 28);
-    assert(wkRow.due_date === expectedDueDate.toISOString().slice(0, 10), 'the single real installment is genuinely due exactly 4 real weeks (28 days) after disbursement, not 1 month later');
+    // A real term_weeks product genuinely builds termWeeks real weekly
+    // installments — principal and interest both evenly amortized across
+    // every real week, never a single lump-sum repayment at the end.
+    assert(wkDisburse.json.schedule.length === 4, 'a real 4-week term_weeks product genuinely builds exactly 4 real weekly installments, not monthly installments and not a single lump sum');
+    const wkRows = wkDisburse.json.schedule;
+    wkRows.forEach((r, i) => {
+      assert(Math.abs(r.principal_due - 1000) < 0.01, `week ${i + 1}'s principal_due genuinely equals the real principal evenly amortized (4,000 / 4 = 1,000)`);
+      assert(Math.abs(r.interest_due - 200) < 0.01, `week ${i + 1}'s interest_due genuinely equals the real flat 20% of principal evenly amortized ((4,000 * 0.20) / 4 = 200), not a per-month rate`);
+      assert(Math.abs(r.total_due - 1200) < 0.01, `week ${i + 1}'s total_due genuinely equals that week's real principal + interest (1,200)`);
+    });
+    const wkTotalPrincipal = wkRows.reduce((s, r) => s + Number(r.principal_due), 0);
+    const wkTotalInterest = wkRows.reduce((s, r) => s + Number(r.interest_due), 0);
+    assert(Math.abs(wkTotalPrincipal - 4000) < 0.01 && Math.abs(wkTotalInterest - 800) < 0.01, 'the real 4 weekly installments genuinely sum to exactly the real principal (4,000) and real flat interest (800) — no rounding drift lost or gained across periods');
+    const expectedBaseDate = new Date(wkDisburse.json.loan.disbursed_at);
+    wkRows.forEach((r, i) => {
+      const expectedDueDate = new Date(expectedBaseDate);
+      expectedDueDate.setDate(expectedDueDate.getDate() + (i + 1) * 7);
+      assert(r.due_date === expectedDueDate.toISOString().slice(0, 10), `week ${i + 1}'s real installment is genuinely due exactly ${(i + 1) * 7} real days after disbursement, one real week apart from the last`);
+    });
+
+    // A real principal that doesn't divide evenly across its real weeks
+    // genuinely rounds each period to the nearest real shilling, with the
+    // very last real period absorbing the rounding remainder — so the
+    // real schedule always sums to exactly the real principal and real
+    // interest, matching the reference design's own whole-shilling rows
+    // exactly (a real 7,000 principal over 6 real weeks: 1,167 x5 + 1,165).
+    const roundingClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Rounding Schedule Test Client', phone: '0722555277', national_id: '30112277' } });
+    const roundingFeeId = await payProcessingFee(officerToken, roundingClient.json.client.id, jijengeSpecial.id, 'QGXROUND01');
+    const roundingLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: roundingClient.json.client.id, product_id: jijengeSpecial.id, principal: 7000, loan_category: 'New Loan', guarantor: 'Rounding Guarantor', guarantor_contact: '0700555088', processing_fee_id: roundingFeeId } });
+    assert(roundingLoan.status === 201, 'a real Jijenge Special (6-week, 30%) loan application genuinely succeeds');
+    await api('POST', `/api/loans/${roundingLoan.json.loan.id}/approve`, { token: mgrLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${roundingLoan.json.loan.id}/approve`, { token: rmLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${roundingLoan.json.loan.id}/approve`, { token: omLoginWk.json.token, body: {} });
+    await api('POST', `/api/loans/${roundingLoan.json.loan.id}/approve`, { token: acctLoginWk.json.token, body: {} });
+    const roundingDisburse = await api('POST', `/api/loans/${roundingLoan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+    assert(roundingDisburse.status === 200 && roundingDisburse.json.schedule.length === 6, 'the real 6-week Jijenge Special loan genuinely builds exactly 6 real weekly installments');
+    const roundingRows = roundingDisburse.json.schedule;
+    assert(roundingRows.slice(0, 5).every(r => Math.abs(r.principal_due - 1167) < 0.01), 'the real first 5 weeks each genuinely round the real principal to the nearest shilling (7,000 / 6 = 1,166.67 → 1,167)');
+    assert(Math.abs(roundingRows[5].principal_due - 1165) < 0.01, 'the real last week genuinely absorbs the rounding remainder (7,000 − 1,167×5 = 1,165), matching the reference design exactly');
+    assert(roundingRows.every(r => Math.abs(r.interest_due - 350) < 0.01), 'the real interest (7,000 × 30% = 2,100) genuinely divides evenly across 6 real weeks (350 each), with no rounding remainder to absorb');
+    const roundingTotalPrincipal = roundingRows.reduce((s, r) => s + Number(r.principal_due), 0);
+    const roundingTotalInterest = roundingRows.reduce((s, r) => s + Number(r.interest_due), 0);
+    assert(Math.abs(roundingTotalPrincipal - 7000) < 0.01 && Math.abs(roundingTotalInterest - 2100) < 0.01, 'the real rounded weekly installments genuinely sum to exactly the real principal (7,000) and real interest (2,100), matching the reference totals row exactly');
 
     // Admin-facing product management genuinely accepts and returns a
     // real term_weeks product end-to-end too.

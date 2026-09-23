@@ -111,8 +111,8 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,171 backend tests and 982 frontend tests, all
-passing** against a real PostgreSQL database — see
+At last verification: **1,199 backend tests and 1,002 frontend tests,
+all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
 ## Security
@@ -182,6 +182,19 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   the sidebar's "Notifications" entry is gone — the real topbar bell
   (now shown for every role, Investor included) is the one real way to
   reach notifications.
+- **Loan Officer's Undisbursed Loans — real weekly installments, Edit,
+  Print** — complete: every real `term_weeks` product (Starter, Jijenge,
+  Ibuka, Mavuno, Fly and their "Special" variants) now genuinely repays
+  in real equal weekly installments — principal and interest both
+  amortized across every real week, rounded to the nearest real
+  shilling with the last week absorbing the remainder — replacing the
+  old single lump-sum-at-term-end design end-to-end (schedule
+  generation, the Schedule modal, the new Print page). A real Edit
+  button appears next to "Waiting Manager" for a loan still at its
+  first approval step, backed by a real `PATCH /api/loans/:id` that
+  enforces the edit window server-side (only the loan's own Loan
+  Officer, only before any real Manager decision) — gone the instant
+  a Manager approves, rejects, or returns it.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

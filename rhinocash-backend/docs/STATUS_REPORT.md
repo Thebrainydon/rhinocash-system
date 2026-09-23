@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,171 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 982 passed, 0 failed  (drives the real UI functions in
+Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 1,002 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,153 passed, 0 failed
+Total:    2,201 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1233,6 +1233,71 @@ already was — Investor sessions authenticate through a structurally
 separate `req.investor` realm, so `GET /api/notifications` was never
 reachable for one; the bell panel now branches to the same real,
 already-loaded `investorNotifications()` data instead.
+
+The single biggest change this round: a real reference image showed a
+6-week "Jijenge Special" loan repaid as 6 separate weekly installments,
+not the single lump-sum repayment this build had used for every
+`term_weeks` product since it was first built. After confirming the
+intended scope with the user, `buildSchedule()` in `loans.js` was
+rewritten so a real weekly product now genuinely creates `term_weeks`
+real installment rows — one every 7 real days — with principal and
+interest both evenly amortized across all of them via a new
+`splitWithRemainder()` helper (each period rounded to the nearest real
+shilling, the last period absorbing whatever rounding remainder is
+left, so the real schedule always sums to exactly the real principal
+and real interest — a real 7,000 principal over 6 weeks: 1,167 × 5 +
+1,165, matching the reference exactly). Every other real consumer of
+`loan_schedule` — collections, payments, reports, targets, dashboard,
+accounting, branches — was confirmed via a full grep to already be
+schedule-row-count-agnostic (generic `WHERE loan_id IN (...)` /
+`ORDER BY period` queries, the same ones that already handled a
+monthly product's multiple rows), so this was a genuinely surgical,
+single-function change with a real, wide-reaching effect. The frontend
+projection (`renderProjectedInstallmentsPreview()`, shown via the real
+Schedule link on an undisbursed loan) now mirrors the exact same real
+math client-side through a shared `projectedScheduleRows()`/
+`splitWithRemainder()` pair, so what an officer sees before disbursement
+matches what `buildSchedule()` will actually create, shilling for
+shilling — and its layout now matches the reference design exactly
+(client name + product name header, a real Principal summary, Date/
+Principal/Interest/Installment columns) rather than the old generic
+"Schedule/Principal/Interest/Total" table.
+
+A real, dedicated Print page (`renderLoanSchedulePrint()`, reached only
+from the new Print button on that same Schedule modal) reuses those
+exact same real schedule rows — never a second, independently computed
+table — inside a real company letterhead (the Rhinocash logo, a
+rotated low-opacity watermark, a real "Generated on ... by
+&lt;staff name&gt;" line, the loan's own real product/amount/account-
+reference/computed-maturity block, and a real footer line), matching
+the reference's own printed-schedule design closely. This exposed a
+real, previously-unfixed gap shared by every other `window.print()`
+button already in this app (payslips, receipts, pay-in summaries): none
+of them had any `@media print` rule, so printing any of them printed
+the whole app chrome — sidebar, topbar, toast bars — around the
+content. A new, small, shared print stylesheet rule now hides all of
+that (plus a `.no-print` class on this page's own Back/Print buttons)
+for every printable page in the app at once, not just the new one.
+
+Finally, a real Edit button now appears next to "Waiting Manager" in
+the Undisbursed Loans table for a loan still at its real first
+approval step, opening a real Edit modal (Loan Amount, Guarantor Name/
+Contact, Loan Securities, Type of Loan — deliberately never client_id,
+product_id or the confirmed processing fee, which stay fixed) backed
+by a new real `PATCH /api/loans/:id` route. That route enforces the
+real edit window server-side, not just by hiding the button: only the
+loan's own real Loan Officer may call it (403 otherwise, even for a
+Manager who could otherwise approve it), and only while the loan is
+still genuinely `'Waiting for Manager'` — the instant a real Manager
+decision lands, the route refuses with a real 409, and a changed
+`loan_category` is re-validated with the exact same real New Loan/
+Repeat Loan guarantor rules `POST /api/loans` already enforces, never
+grandfathered in. (This round's added real request volume also pushed
+`integration.test.js`'s own continuous run past the real per-IP rate
+limiter's default 180/60s — raised for that one suite's own server
+process in `test/run-all.sh`, exactly like `run-frontend.sh` already
+does for the same real reason, leaving `v2.test.js`'s own dedicated
+"returns 429" test, a separate server process, untouched.)
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
