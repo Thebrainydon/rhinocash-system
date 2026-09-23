@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 843 passed, 0 failed  (drives the real UI functions in
+Frontend: 850 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,940 passed, 0 failed
+Total:    1,947 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -821,6 +821,32 @@ pattern already fixed for Processed Payments, and were fixed the same way
 Loan Officer now genuinely gets a different real page under that label,
 so the dispatch a test relied on to trigger the generic page's own loader
 no longer does that for this role.
+
+The Payments menu's fourth submenu, "Overpayments" (Loan Officer view), is
+now a real, chrome-free page over the exact same existing
+`GET /api/payments` endpoint, filtered to `status=Overpayment` — no new
+listing endpoint was needed. The real "Overpay" column is the genuine
+residual left over after allocation (`amount` minus whatever was actually
+applied to principal/interest/penalty) — the identical real figure
+`POST /api/payments/:id/reverse` already computes when unwinding a
+payment, not a separately invented number; it's now also returned as a
+real `totals.overpay` aggregate (summed in SQL over the full filtered set,
+the same "never just this page" convention every other total in this
+codebase already follows) so the page header's Ksh figure is always
+correct regardless of pagination. Two small, purely additive backend
+changes made this possible: `GET /api/payments` now also returns each
+row's real `client_national_id` (from the join it already performs), and
+gained a dedicated `idno` filter (`c.national_id LIKE ?`) — kept separate
+from the existing general-purpose `q` search since the reference design's
+own search box is explicitly scoped to a client's ID number, not a
+free-text name/phone/reference search. Deliberately excluded: a real
+"processing fee overpayment" row, unlike the earlier Processed Payments
+merge — a processing fee's amount is fixed by the server at initiation,
+never a client-supplied figure that could exceed it, so no such real event
+exists in this system to show here, and the user's own explicit
+instruction ("all data must be real and come from the real backend and
+database") ruled out fabricating one just to visually match every row
+type the reference screenshot happened to show.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

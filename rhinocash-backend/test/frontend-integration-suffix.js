@@ -2070,6 +2070,63 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     session.loPrepaymentsState.q = '';
     renderApp();
 
+    // Overpayments (Loan Officer Payments menu): a real, chrome-free page
+    // over the exact same GET /api/payments endpoint filtered to
+    // status=Overpayment. The real "Overpay" residual is computed from
+    // real allocated_principal/interest/penalty — the same figure
+    // POST /api/payments/:id/reverse already relies on.
+    const opClient = await api.post('/api/clients', { name:'[TEST] LO Overpayments Client', phone:'0722'+Math.floor(Math.random()*900000+100000) });
+    await api.patch(`/api/clients/${opClient.client.id}`, { national_id: 'OPTESTID99' });
+    const opLoan = await api.post('/api/loans', { client_id: opClient.client.id, product_id: ppProducts.products[0].id, principal: 10000, term_months: 3 });
+    let opMgr = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return opMgr; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(opLoan.loan.id);
+    let opReg = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return opReg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(opLoan.loan.id);
+    let opOps = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opOps; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(opLoan.loan.id);
+    let opAcc = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return opAcc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(opLoan.loan.id);
+    let opAdm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return opAdm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(opLoan.loan.id, 'Cash');
+
+    let opOfc = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return opOfc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const opDetail = await api.get(`/api/loans/${opLoan.loan.id}`);
+    const opBalance = opDetail.schedule.reduce((s,r)=> s + (r.total_due - (r.paid_amount||0)) + (r.penalty_due - (r.penalty_paid||0)), 0);
+    const opPayment = await recordPayment(opLoan.loan.id, opBalance + 9, 'M-Pesa', true); // pays off the loan entirely and genuinely overpays by 9
+
+    session.loOverpaymentsState = null; DB.loOverpayments = null;
+    goTo('payments','Overpayments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Overpayments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Overpayments (Ksh') && html.includes('Search Idno') && html.includes('Overpay') && html.includes('Transaction') && html.includes('Description') && html.includes('Approval'), "the real Overpayments page genuinely renders with the requested Ksh-prefixed title and full column set");
+    __assert(html.includes(opPayment.reference), "the real, just-recorded overpayment genuinely appears by its real reference number");
+    __assert(html.includes('Idno: OPTESTID99'), "the real client's real national_id genuinely renders under their name");
+    __assert(DB.loOverpayments && Array.isArray(DB.loOverpayments.payments), "the real Overpayments data genuinely loaded from the real backend endpoint, not fabricated client-side");
+
+    session.loOverpaymentsState.idno = 'OPTESTID99'; session.loOverpaymentsState.page = 1; DB.loOverpayments = null;
+    goTo('payments','Overpayments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(opPayment.reference), "the real Search Idno filter genuinely includes a matching real national ID");
+    session.loOverpaymentsState.idno = 'NO-SUCH-IDNO'; session.loOverpaymentsState.page = 1; DB.loOverpayments = null;
+    goTo('payments','Overpayments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes(opPayment.reference), "the real Search Idno filter genuinely excludes a non-matching national ID");
+
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];
     if(clientForFu){

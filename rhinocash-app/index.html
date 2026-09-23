@@ -8565,7 +8565,8 @@ function renderPayments(){
   if(active==="Processed Payments") return renderLoanOfficerProcessedPayments();
   if(active==="Prepayments" && session.role !== 'Loan Officer') return tabsHtml + renderPrepayments();
   if(active==="Prepayments") return renderLoanOfficerPrepayments();
-  if(active==="Overpayments") return tabsHtml + renderOverpayments();
+  if(active==="Overpayments" && session.role !== 'Loan Officer') return tabsHtml + renderOverpayments();
+  if(active==="Overpayments") return renderLoanOfficerOverpayments();
   if(active==="Receipts") return tabsHtml + (session.selectedReceiptId ? renderReceiptDetail(session.selectedReceiptId) : renderReceiptsList());
   if(active==="Pay-in Summary") return tabsHtml + renderPayinSummary();
   if(active==="Payments Report") return tabsHtml + renderPaymentsReport();
@@ -12663,6 +12664,67 @@ function renderLoanOfficerPrepayments(){
           <td>${fmtNum(r.prepayment)}</td>
         </tr>`).join("") || `<tr><td colspan="7" class="empty">No prepayments found.</td></tr>`}
       </table></div>
+    </div>
+  `;
+}
+
+// ==================== Overpayments (Loan Officer Payments menu) ====================
+// A real, chrome-free page over the exact same existing GET /api/payments
+// endpoint, filtered to status=Overpayment. The real "Overpay" column is
+// the real residual left over after allocation (amount minus whatever
+// was actually applied to principal/interest/penalty) — the identical
+// real figure POST /api/payments/:id/reverse already computes when
+// unwinding a payment, not a separately invented number. There is no real
+// "processing fee overpayment" concept in this system (a fee's amount is
+// server-fixed at initiation, never a client-supplied figure that could
+// exceed it), so unlike Processed Payments this view is intentionally
+// NOT merged with processing-fee data.
+function defaultLoanOfficerOverpaymentsState(){
+  return { idno:'', page:1 };
+}
+async function loadLoanOfficerOverpayments(){
+  const st = session.loOverpaymentsState;
+  return withRequest('load-lo-overpayments:'+JSON.stringify(st), async ()=>{
+    const params = new URLSearchParams({ status:'Overpayment', page:st.page||1, limit:20 });
+    if(st.idno) params.set('idno', st.idno);
+    const res = await api.get('/api/payments?'+params.toString());
+    res.stateKey = JSON.stringify(st);
+    DB.loOverpayments = res;
+  });
+}
+function renderLoanOfficerOverpayments(){
+  const st = session.loOverpaymentsState || (session.loOverpaymentsState = defaultLoanOfficerOverpaymentsState());
+  if(!DB.loOverpayments || DB.loOverpayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerOverpayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const d = DB.loOverpayments;
+  const { page, totalPages, total, limit } = d.pagination;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Overpayments (Ksh ${fmtNum(d.totals.overpay)})</span></div>
+      <div class="pill-row" style="justify-content:flex-end; margin-top:8px;">
+        <input placeholder="🔍 Search Idno" value="${escapeHtml(st.idno)}" oninput="session.loOverpaymentsState.idno=this.value; session.loOverpaymentsState.page=1; DB.loOverpayments=null; renderApp();" class="btn btn-sm btn-outline">
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>#</th><th>Client</th><th>Overpay</th><th>Transaction</th><th>Amount</th><th>Description</th><th>Date</th><th>Approval</th></tr>
+        ${d.payments.map((p,i)=>{
+          const allocP = Number(p.allocated_principal||0), allocI = Number(p.allocated_interest||0), allocPen = Number(p.allocated_penalty||0);
+          const overpay = Number(p.amount) - allocP - allocI - allocPen;
+          const bullets = [];
+          if(allocP>0) bullets.push(`Principal - ${fmtNum(allocP)}`);
+          if(allocI>0) bullets.push(`Interest - ${fmtNum(allocI)}`);
+          if(allocPen>0) bullets.push(`Penalty - ${fmtNum(allocPen)}`);
+          return `<tr class="clickable" onclick="goTo('payments','Receipts'); openReceipt('${p.id}')">
+            <td>${(page-1)*limit+i+1}</td>
+            <td>${escapeHtml(p.client_name||'—')}${p.client_national_id?`<br><span class="hint">Idno: ${escapeHtml(p.client_national_id)}</span>`:''}</td>
+            <td>${fmtNum(overpay)}</td>
+            <td>${escapeHtml(p.reference||'—')}</td>
+            <td>${fmtNum(p.amount)}</td>
+            <td><ul style="margin:0; padding-left:16px;">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
+            <td>${p.created_at?`${fmtDDMMYYYY(p.created_at.slice(0,10))},${p.created_at.slice(11,16)}`:'—'}</td>
+            <td>${p.recorded_by ? staffName(p.recorded_by) : 'System'}</td>
+          </tr>`;
+        }).join("") || `<tr><td colspan="8" class="empty">No overpayments found.</td></tr>`}
+      </table></div>
+      ${total>limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.loOverpaymentsState.page=${page-1}; DB.loOverpayments=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.loOverpaymentsState.page=${page+1}; DB.loOverpayments=null; renderApp();">Next →</button></div>` : ""}
     </div>
   `;
 }
