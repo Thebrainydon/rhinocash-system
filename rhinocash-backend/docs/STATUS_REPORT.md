@@ -1163,6 +1163,21 @@ duration of the actual `POST /api/loans` request, is replaced — the
 instant that request settles — by a second, real default-styled
 "Success" bar, before the existing real redirect to Undisbursed Loans.
 
+A second correction to the same save flow: those two bars were
+positioned with the app's existing corner toast system (bottom-right),
+but the real reference site (mfi.yenadltd.com) shows its own equivalent
+messages centered on the page. Rather than repositioning every toast in
+the app (a much larger, unrequested change touching dozens of already-
+approved screens), a new, separate `centerToasts` pool and
+`centerToast()`/`dismissCenterToast()` pair were added alongside the
+existing `toasts`/`toast()`, rendered through their own
+`.toast-wrap-center` overlay (`position:fixed; top:50%; left:50%;
+transform:translate(-50%,-50%)`) — scoped specifically to this flow. The
+real "Processing... please wait" bar keeps its greenish styling; the
+real "success" bar now matches the reference site's own exact look — a
+muted gray background, lowercase text — rather than the app's default
+dark toast color.
+
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
   paths are tested; a genuine handshake with Safaricom's sandbox or

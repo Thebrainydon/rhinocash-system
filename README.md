@@ -162,8 +162,9 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   that shows a real already-paid fee's amount and receipt the moment one
   is found, and nothing at all otherwise. Saving shows the requested
   two-bar sequence: a real greenish "Processing... please wait" bar
-  while the request is in flight, replaced by a real "Success" bar,
-  then a real redirect to Undisbursed Loans.
+  while the request is in flight, replaced by a real gray "success" bar,
+  then a real redirect to Undisbursed Loans — both bars centered on the
+  page, matching the real reference site's own centered messages.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

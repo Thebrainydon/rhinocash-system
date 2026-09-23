@@ -222,6 +222,10 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .toast{background:var(--navy); color:#fff; padding:11px 18px; border-radius:9px; font-size:13px; font-weight:600; box-shadow:0 6px 20px rgba(0,0,0,0.2); animation:slidein .15s ease-out;}
 .toast-success{background:#1BAF7A;}
 @keyframes slidein{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
+.toast-wrap-center{position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; display:flex; flex-direction:column; gap:10px; align-items:center;}
+.toast-center{padding:11px 28px; border-radius:6px; font-size:14px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,0.15); animation:slidein .15s ease-out;}
+.toast-center-success{background:#1BAF7A; color:#fff;}
+.toast-center-done{background:#C2C2C2; color:#5A5A5A; text-transform:lowercase;}
 .notif-item{padding:12px 14px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:flex-start;}
 .notif-item:last-child{border-bottom:none;}
 .notif-dot{width:8px; height:8px; border-radius:50%; background:var(--rust); margin-top:5px; flex-shrink:0;}
@@ -920,6 +924,16 @@ let toasts = [];
 let modal = null; // {type, ...}
 
 function toast(msg, type){ toasts.push({id:uid("t"), msg, type}); renderApp(); setTimeout(()=>{ toasts.shift(); renderApp(); }, 3200); }
+// A separate, real page-centered message pool — distinct from the
+// corner toasts[] above — matching the real reference site's own
+// "Processing... please wait" / "success" bars, which appear centered
+// on the page rather than tucked into a corner. Scoped to flows that
+// explicitly reference that reference design (currently: submitting a
+// real loan application) rather than repositioning every toast in the
+// app.
+let centerToasts = [];
+function centerToast(msg, type){ const t = {id:uid("ct"), msg, type}; centerToasts.push(t); renderApp(); return t; }
+function dismissCenterToast(t){ const idx = centerToasts.indexOf(t); if(idx>-1) centerToasts.splice(idx,1); }
 // Real CSV export utility — used by every LoanBook "Export CSV" button.
 // Builds a genuine CSV from the real rows already fetched from the
 // backend (never fabricated data), escaping values that contain a
@@ -1873,6 +1887,7 @@ function renderApp(){
       </div>
     </div>
     <div class="toast-wrap">${toasts.map(t=>`<div class="toast${t.type==='success'?' toast-success':''}">${escapeHtml(t.msg)}</div>`).join("")}</div>
+    <div class="toast-wrap-center">${centerToasts.map(t=>`<div class="toast-center${t.type==='success'?' toast-center-success':' toast-center-done'}">${escapeHtml(t.msg)}</div>`).join("")}</div>
     ${modal ? renderModal() : ""}
   `;
   initPendingCharts();
@@ -5466,24 +5481,22 @@ function submitLoanApp(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
-  // Two real, sequential bars, matching the requested design exactly: a
-  // greenish "Processing... please wait" bar shown for the real duration
-  // of the actual POST /api/loans request (pushed straight onto the
-  // real toasts array, bypassing toast()'s own auto-dismiss timer so it
-  // can be removed the instant the request settles, success or failure),
-  // then replaced by the real default (dark) "Success" bar once the real
-  // loan application has actually been created.
-  const processingToast = { id: uid('t'), msg: 'Processing... please wait', type: 'success' };
-  toasts.push(processingToast); renderApp();
+  // Two real, sequential, page-centered bars — matching the real
+  // reference site exactly (its own messages appear centered on the
+  // page, not tucked into a corner): a greenish "Processing... please
+  // wait" bar shown for the real duration of the actual POST /api/loans
+  // request, replaced the instant it settles by the real gray "success"
+  // bar, before the existing real redirect.
+  const processingToast = centerToast('Processing... please wait', 'success');
   return withRequest('submit-loan', async ()=>{
     try{
       await createLoanApplication(f);
       session.loanAppState = null;
       goToUndisbursedLoans();
-      toast('Success');
+      const doneToast = centerToast('success');
+      setTimeout(()=>{ dismissCenterToast(doneToast); renderApp(); }, 3200);
     } finally {
-      const idx = toasts.indexOf(processingToast);
-      if(idx>-1) toasts.splice(idx,1);
+      dismissCenterToast(processingToast);
     }
   });
 }

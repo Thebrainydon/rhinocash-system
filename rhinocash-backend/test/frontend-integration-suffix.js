@@ -3704,11 +3704,11 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
     const submitPromise = submitLoanApp({ preventDefault(){}, target:{} });
-    __assert(toasts.some(t=>t.msg==='Processing... please wait' && t.type==='success'), "clicking Save genuinely shows a real greenish 'Processing... please wait' bar for the real duration of the actual submit request");
+    __assert(centerToasts.some(t=>t.msg==='Processing... please wait' && t.type==='success'), "clicking Save genuinely shows a real greenish, page-centered 'Processing... please wait' bar for the real duration of the actual submit request — matching the real reference site's own centered messages, not the corner toast style");
     await submitPromise;
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
-    __assert(!toasts.some(t=>t.msg==='Processing... please wait'), "the real greenish 'Processing... please wait' bar genuinely disappears the instant the real request settles");
-    __assert(toasts.some(t=>t.msg==='Success' && t.type!=='success'), "a real successful submission genuinely shows a second, real default (dark) 'Success' bar, replacing the 'Processing... please wait' one — never the same greenish style");
+    __assert(!centerToasts.some(t=>t.msg==='Processing... please wait'), "the real greenish 'Processing... please wait' bar genuinely disappears the instant the real request settles");
+    __assert(centerToasts.some(t=>t.msg==='success' && t.type!=='success'), "a real successful submission genuinely shows a second, real page-centered gray 'success' bar, replacing the 'Processing... please wait' one — matching the real reference site's own lowercase, gray success bar exactly, never the same greenish style");
     const wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
