@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 850 passed, 0 failed  (drives the real UI functions in
+Frontend: 857 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,947 passed, 0 failed
+Total:    1,954 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -847,6 +847,39 @@ exists in this system to show here, and the user's own explicit
 instruction ("all data must be real and come from the real backend and
 database") ruled out fabricating one just to visually match every row
 type the reference screenshot happened to show.
+
+The Payments menu's fifth submenu, "Receipts" (Loan Officer view), is now
+a real, chrome-free, two-level browser: a per-day summary for a selected
+Year/Month (real posted/overpaid loan payments merged with real confirmed
+processing-fee collections, the same real merge already established for
+Processed Payments and Payment Receipts), and a per-day receipt-slip grid
+(Client Name/Client IDNO/Loan Officer, a Description/Transaction/Total
+breakdown per real allocated bucket, a TOTALS row, and real Confirmed
+By/Posting Status fields) reached via "View." There is no real
+"printed"/"unprinted" tracking anywhere in this system, so the Unprinted
+column always shows the same real count as Receipts — never a fabricated
+partial figure. This app has no PDF-generation library and no other
+printable page in it has ever needed one — the existing single-receipt
+detail page already relies on `window.print()` for its own "Print
+Receipt" button — so "Download"/"Download All" follow that exact same
+established convention: they render the real receipt-slip grid and
+immediately trigger the browser's own print dialog, letting the user's
+own "Save as PDF" produce the actual file, rather than inventing a new
+mechanism for this one page.
+
+A real, genuine, pre-existing bug was found and fixed while building this:
+`goTo()` never cleared `session.selectedReceiptId`, so once any role
+opened a specific receipt (via the "Receipt" action from Processed
+Payments, Overpayments, or the Receipts list itself) and later navigated
+back to the Receipts tab through the sidebar rather than that receipt's
+own "← Back to Receipts" button, they'd see the same old receipt forever,
+never able to reach the list again through normal navigation. This had
+been latent in every role since before this round — it only became
+directly observable now because the Loan Officer's own new default (list)
+view made the gap visible. Fixed by having `goTo()` itself always clear
+`selectedReceiptId`; `openReceipt()` re-sets it immediately afterward on
+the one real call path that genuinely wants a specific receipt shown, so
+existing click-through behavior for every role is unchanged.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

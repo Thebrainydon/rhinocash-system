@@ -2116,7 +2116,15 @@ function goTo(section, subtab){
     toast("Access denied — you don't have permission to view this section.");
     session.sidebarOpen = false; renderApp(); return;
   }
-  session.section=section; session.subtab=subtab||null; session.sidebarOpen=false; renderApp();
+  session.section=section; session.subtab=subtab||null; session.sidebarOpen=false;
+  // A specific opened receipt must never stay "stuck" open when navigating
+  // anywhere else — a real, pre-existing gap: goTo() alone never cleared
+  // this, so returning to the Receipts tab via the sidebar (rather than its
+  // own "← Back to Receipts" button) reopened the same old receipt forever.
+  // openReceipt() re-sets this immediately after goTo() on the one real
+  // call path that genuinely wants a specific receipt shown.
+  session.selectedReceiptId = null;
+  renderApp();
 }
 function toggleSidebar(){ session.sidebarOpen = !session.sidebarOpen; renderApp(); }
 function closeSidebar(){ session.sidebarOpen = false; renderApp(); }
@@ -8567,7 +8575,9 @@ function renderPayments(){
   if(active==="Prepayments") return renderLoanOfficerPrepayments();
   if(active==="Overpayments" && session.role !== 'Loan Officer') return tabsHtml + renderOverpayments();
   if(active==="Overpayments") return renderLoanOfficerOverpayments();
-  if(active==="Receipts") return tabsHtml + (session.selectedReceiptId ? renderReceiptDetail(session.selectedReceiptId) : renderReceiptsList());
+  if(active==="Receipts" && session.selectedReceiptId) return tabsHtml + renderReceiptDetail(session.selectedReceiptId);
+  if(active==="Receipts" && session.role !== 'Loan Officer') return tabsHtml + renderReceiptsList();
+  if(active==="Receipts") return renderLoanOfficerReceipts();
   if(active==="Pay-in Summary") return tabsHtml + renderPayinSummary();
   if(active==="Payments Report") return tabsHtml + renderPaymentsReport();
   if(active==="M-Pesa Integration") return tabsHtml + renderMpesa();
@@ -12727,6 +12737,153 @@ function renderLoanOfficerOverpayments(){
       ${total>limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.loOverpaymentsState.page=${page-1}; DB.loOverpayments=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.loOverpaymentsState.page=${page+1}; DB.loOverpayments=null; renderApp();">Next →</button></div>` : ""}
     </div>
   `;
+}
+
+// ==================== Payment Receipts (Loan Officer Payments menu) ====================
+// A real, chrome-free, per-day receipts browser. A "receipt" here is any
+// real, genuinely confirmed cash collection this officer is party to —
+// posted/overpaid loan-schedule payments (GET /api/payments) merged with
+// confirmed processing-fee collections
+// (GET /api/loans/processing-fee/confirmed), the same real merge already
+// established for Processed Payments. There is no real "printed" tracking
+// anywhere in this system, so "Unprinted" always equals the real day's
+// full receipt count — never a fabricated partial figure. "View" and
+// "Download" both render the same real per-day receipt-slip grid; since
+// this app has no PDF-generation library and every other printable page
+// in it already relies on window.print() (see Print Receipt on the
+// single-receipt detail page), "Download"/"Download All" simply triggers
+// that same browser print dialog on the rendered grid, letting the
+// browser's own Save-as-PDF handle the actual file — no new mechanism
+// invented for this one page.
+function defaultLoanOfficerReceiptsState(){
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth()+1, viewDay: null };
+}
+async function loadLoanOfficerReceiptsMonth(){
+  const st = session.loReceiptsState;
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  return withRequest('load-lo-receipts-month:'+key, async ()=>{
+    const from = `${st.year}-${String(st.month).padStart(2,'0')}-01`;
+    const lastDay = new Date(st.year, st.month, 0).getDate();
+    const to = `${st.year}-${String(st.month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    const qs = (extra) => new URLSearchParams({ date_from: from, date_to: to, limit: 500, ...extra }).toString();
+    const [postedRes, overpayRes, feeRes] = await Promise.all([
+      api.get('/api/payments?'+qs({ status:'Posted' })),
+      api.get('/api/payments?'+qs({ status:'Overpayment' })),
+      api.get('/api/loans/processing-fee/confirmed?'+new URLSearchParams({ date_from: from, date_to: to }).toString()),
+    ]);
+    const receipts = [];
+    postedRes.payments.concat(overpayRes.payments).forEach(p=>{
+      receipts.push({
+        id:p.id, reference:p.reference||'—', amount:Number(p.amount),
+        principal:Number(p.allocated_principal||0), interest:Number(p.allocated_interest||0), penalty:Number(p.allocated_penalty||0), fee:0,
+        clientName:p.client_name, clientNationalId:p.client_national_id,
+        approvedBy:p.recorded_by, status:p.status, date:p.created_at,
+      });
+    });
+    feeRes.feePayments.forEach(f=>{
+      receipts.push({
+        id:f.id, reference:f.mpesa_receipt_number||f.id, amount:Number(f.amount),
+        principal:0, interest:0, penalty:0, fee:Number(f.amount),
+        clientName:f.client_name, clientNationalId:f.client_national_id,
+        approvedBy:f.confirmed_by, status:'Confirmed', date:f.confirmed_at,
+      });
+    });
+    const byDay = {};
+    receipts.forEach(r=>{ const day = (r.date||'').slice(0,10); if(day){ (byDay[day]=byDay[day]||[]).push(r); } });
+    DB.loReceiptsMonth = { byDay, stateKey: key };
+  });
+}
+function viewLoanOfficerReceiptDay(day){ session.loReceiptsState.viewDay = day; renderApp(); }
+function downloadLoanOfficerReceiptDay(day){
+  session.loReceiptsState.viewDay = day; renderApp();
+  setTimeout(()=>{ window.print && window.print(); }, 60);
+}
+function renderLoanOfficerReceiptsList(){
+  const st = session.loReceiptsState;
+  const d = DB.loReceiptsMonth;
+  const days = Object.keys(d.byDay).sort((a,b)=> a<b?1:a>b?-1:0);
+  const curYear = new Date().getFullYear();
+  const yearOptions = [curYear, curYear-1, curYear-2];
+  const monthOptions = [];
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for(let m=1;m<=12;m++) monthOptions.push({ value:m, label: MONTH_ABBR[m-1] + ' ' + st.year });
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Payment Receipts</span></div>
+      <div class="pill-row" style="margin-top:8px;">
+        <select onchange="session.loReceiptsState.year=Number(this.value); DB.loReceiptsMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
+        </select>
+        <select onchange="session.loReceiptsState.month=Number(this.value); DB.loReceiptsMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap" style="margin-top:10px;"><table>
+        <tr><th>#</th><th>Date</th><th>Receipts</th><th>Unprinted</th><th>Action</th></tr>
+        ${days.map((day,i)=>{
+          const count = d.byDay[day].length;
+          return `<tr>
+            <td>${i+1}</td>
+            <td>${fmtDDMMYYYY(day)}</td>
+            <td>${count}</td>
+            <td>${count} <a href="#" onclick="viewLoanOfficerReceiptDay('${day}'); return false;">👁 View</a> | <a href="#" onclick="downloadLoanOfficerReceiptDay('${day}'); return false;">⬇ Download</a></td>
+            <td><a href="#" onclick="downloadLoanOfficerReceiptDay('${day}'); return false;">☁ Download All</a></td>
+          </tr>`;
+        }).join("") || `<tr><td colspan="5" class="empty">No receipts in this month.</td></tr>`}
+      </table></div>
+    </div>
+  `;
+}
+function renderLoanOfficerReceiptDayGrid(day){
+  const receipts = DB.loReceiptsMonth.byDay[day] || [];
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="session.loReceiptsState.viewDay=null; renderApp();" style="cursor:pointer;">←</span><span>Payment Receipts — ${fmtDDMMYYYY(day)}</span></span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px;">
+        ${receipts.map(r=>{
+          const lines = [];
+          if(r.interest>0) lines.push({label:'Interest', amt:r.interest});
+          if(r.principal>0) lines.push({label:'Principal', amt:r.principal});
+          if(r.penalty>0) lines.push({label:'Penalty', amt:r.penalty});
+          if(r.fee>0) lines.push({label:'Processing fee', amt:r.fee});
+          return `<div style="border:1px solid var(--border); border-radius:8px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <div><strong>Client Name</strong> ${escapeHtml(r.clientName||'—')}</div>
+                <div class="hint">Client IDNO ${escapeHtml(r.clientNationalId||'—')}</div>
+                <div class="hint">Loan Officer ${escapeHtml(session.userName)}</div>
+              </div>
+              <div style="text-align:right;">
+                <div class="hint">Date ${fmtDDMMYYYY(day)}</div>
+                <div style="font-size:20px; font-weight:800; color:var(--red);">${fmtNum(r.amount)}</div>
+              </div>
+            </div>
+            <table style="margin-top:8px; width:100%;">
+              <tr><th>Description</th><th>Transaction</th><th>Total</th></tr>
+              ${lines.map(l=>`<tr><td>${escapeHtml(l.label)}</td><td>${escapeHtml(r.reference)}</td><td>${fmtNum(l.amt)}</td></tr>`).join("")}
+              <tr style="font-weight:700;"><td colspan="2">TOTALS</td><td>${fmtNum(r.amount)}</td></tr>
+            </table>
+            <table style="margin-top:8px; width:100%;">
+              <tr>
+                <td>Confirmed By ${escapeHtml(r.approvedBy?staffName(r.approvedBy):'System')}<div class="hint">Signature ...........................</div></td>
+                <td>Posting Status ${escapeHtml(r.status)}<div class="hint">Signature ...........................</div></td>
+              </tr>
+            </table>
+          </div>`;
+        }).join("") || `<div class="empty">No receipts for this day.</div>`}
+      </div>
+    </div>
+  `;
+}
+function renderLoanOfficerReceipts(){
+  const st = session.loReceiptsState || (session.loReceiptsState = defaultLoanOfficerReceiptsState());
+  const key = JSON.stringify({ year: st.year, month: st.month });
+  if(!DB.loReceiptsMonth || DB.loReceiptsMonth.stateKey !== key){ loadLoanOfficerReceiptsMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  return st.viewDay ? renderLoanOfficerReceiptDayGrid(st.viewDay) : renderLoanOfficerReceiptsList();
 }
 
 /* ---------------- Init ---------------- */

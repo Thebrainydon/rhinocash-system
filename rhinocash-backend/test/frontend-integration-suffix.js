@@ -1097,9 +1097,13 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const htmlNoLogo9 = html.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/g, '');
     __assert(!htmlNoLogo9.includes('undefined') && !htmlNoLogo9.includes('NaN'), "Processed Payments has no undefined/NaN leakage");
 
-    goTo('payments', 'Receipts');
-    html = document.getElementById('root').innerHTML;
+    // A Loan Officer now sees a different real page under the "Receipts"
+    // label's default (list) view (see the "Payment Receipts (Loan
+    // Officer Payments menu)" section below) — the generic receipts list
+    // itself is untouched and still real/tested directly here.
+    html = renderReceiptsList();
     __assert(html.includes(payment.reference), "the Receipts list shows the real payment");
+    goTo('payments', 'Receipts');
     openReceipt(payment.id);
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Official Payment Receipt') && html.includes(fmt(payment.amount)), "a real receipt renders with the real amount for a real payment");
@@ -2126,6 +2130,28 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await new Promise(r=>setTimeout(r,50)); renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes(opPayment.reference), "the real Search Idno filter genuinely excludes a non-matching national ID");
+
+    // Payment Receipts (Loan Officer Payments menu): a real, chrome-free,
+    // per-day receipts browser merging real posted/overpaid loan payments
+    // (GET /api/payments) with real confirmed processing-fee collections
+    // (GET /api/loans/processing-fee/confirmed) for the selected month.
+    session.loReceiptsState = null; DB.loReceiptsMonth = null;
+    goTo('payments','Receipts');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Payment Receipts list genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Payment Receipts') && html.includes('Receipts') && html.includes('Unprinted') && html.includes('Action'), "the real Payment Receipts list genuinely renders with the requested title and full column set");
+    __assert(DB.loReceiptsMonth && typeof DB.loReceiptsMonth.byDay === 'object', "the real receipts data genuinely loaded from the real backend endpoints, not fabricated client-side");
+    const todayStr = new Date().toISOString().slice(0,10);
+    __assert(Array.isArray(DB.loReceiptsMonth.byDay[todayStr]) && DB.loReceiptsMonth.byDay[todayStr].some(r=>r.reference===ppPayment.reference), "a real payment recorded earlier this same session genuinely appears in today's real receipts list");
+    __assert(DB.loReceiptsMonth.byDay[todayStr].some(r=>r.reference===opPayment.reference), "a real overpayment genuinely appears in the real receipts list too, not just plain Posted payments");
+
+    viewLoanOfficerReceiptDay(todayStr);
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Payment Receipts —') && html.includes('Client Name') && html.includes('Client IDNO') && html.includes('Loan Officer') && html.includes('Description') && html.includes('Transaction') && html.includes('TOTALS') && html.includes('Confirmed By') && html.includes('Posting Status'), "the real per-day receipt-slip grid genuinely renders with the requested fields");
+    __assert(html.includes(ppPayment.reference), "the real day-grid genuinely shows the real transaction reference for a real payment");
+    session.loReceiptsState.viewDay = null;
+    renderApp();
 
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];

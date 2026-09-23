@@ -2063,7 +2063,7 @@ function register(router) {
     }
     const where = `WHERE ${clauses.join(' AND ')}`;
     const rows = await all(
-      `SELECT lfp.*, c.name as client_name, c.phone as client_phone
+      `SELECT lfp.*, c.name as client_name, c.phone as client_phone, c.national_id as client_national_id
        FROM loan_fee_payments lfp JOIN clients c ON c.id = lfp.client_id
        ${where} ORDER BY lfp.confirmed_at DESC`,
       params
