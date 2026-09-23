@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,002 frontend tests,
+At last verification: **1,199 backend tests and 1,020 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -145,7 +145,23 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
 - **Loan Officer's My Account -> Update Details** — complete: a real
   profile photo upload (the pre-existing avatar backend, now actually
   wired up in the frontend) that shows on this page, the Dashboard
-  avatar, and the topbar avatar.
+  avatar, and the topbar avatar; plus a real Change Password form
+  (Current/New/Confirm, each with a real eye-icon show/hide toggle)
+  reusing the pre-existing `/api/auth/change-password` endpoint — this
+  is now the one place a Loan Officer can set a new password, including
+  typing in the one they set via the login page's own Forgot Password
+  flow, since Leave & Attendance and Security & Login (see below) are
+  no longer on their My Account menu.
+- **Loan Officer's sidebar: active-state highlighting, auto-collapse,
+  trimmed My Account menu** — complete: "Client Leads" and "Raised
+  Ticket" no longer wrongly co-highlight their own quick-action-modal
+  siblings ("Create a Lead", "Create a Ticket") just because they
+  happened to share the same route section; clicking a real item in a
+  different sidebar section now auto-collapses whichever other section
+  was left open, with no manual close click needed; and "Leave &
+  Attendance" / "Security & Login" are removed from this role's own My
+  Account menu (every other role's menu is unaffected), with password
+  changes now handled entirely by the Update Details page above.
 - **Loan Officer's System & Help -> Create a Ticket / Raised Ticket** —
   complete: a real "Create a Ticket" quick-action modal (Ticket subject,
   Message or Inquiry, a real "Send To" staff directory) and a real,

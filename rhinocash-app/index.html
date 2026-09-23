@@ -468,7 +468,7 @@ const SIDEBAR_MENUS = {
     {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Rates","Loan Arrears","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
-    {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
   ],
   "Manager": [
@@ -609,7 +609,13 @@ const LABEL_ROUTES = {
   "Regional Clients": {section:"clients", subtab:"All Clients"},
   "View Client": {section:"clients", subtab:"All Clients"},
   "Client Leads": {section:"clients", subtab:"Client Leads"},
-  "Create a Lead": {section:"clients", subtab:"Client Leads"},
+  // "Create a Lead" is deliberately NOT routed here — sidebarNavigate()
+  // always intercepts it as a real quick-action modal, for every role,
+  // and never actually navigates anywhere with it. A real route entry
+  // here would only ever cause the real sidebar's own active-state
+  // check to wrongly highlight it in lockstep with "Client Leads" (its
+  // route would coincidentally match the same real page) — a real bug
+  // this comment now documents rather than reintroduces.
   "Interactions": {section:"clients", subtab:"Interactions"},
   "Client Status": {section:"clients", subtab:"All Clients"},
   "Dormant Clients": {section:"clients", subtab:"All Clients"},
@@ -898,11 +904,23 @@ const ROLE_ROUTE_OVERRIDES = {
     // own "Tickets" tab) — scoped here so only the Loan Officer's own
     // real, chrome-free "Support Tickets" page picks it up.
     "Raised Ticket":{section:"support", subtab:"Raised Ticket"},
+    // "Create a Ticket" is a real quick-action modal for this role only
+    // (see sidebarNavigate()) — never a real page — so it's explicitly
+    // routeless here (null, not simply absent) to override the generic
+    // LABEL_ROUTES entry every other role still uses for the real
+    // Support page. Without this, its generic {section:"support"} (no
+    // subtab restriction) would wrongly match ANY real support subtab,
+    // including "Raised Ticket"'s own page, highlighting both at once.
+    "Create a Ticket": null,
   },
 };
 function resolveRoute(itemLabel){
   const override = ROLE_ROUTE_OVERRIDES[session.role];
-  if(override && override[itemLabel]) return override[itemLabel];
+  // `in`, not truthiness — a real override can deliberately be `null`
+  // (see Loan Officer's "Create a Ticket") to affirmatively suppress
+  // the generic LABEL_ROUTES fallback below, not just fail to provide
+  // one of its own.
+  if(override && itemLabel in override) return override[itemLabel];
   return LABEL_ROUTES[itemLabel];
 }
 function sidebarNavigate(itemLabel){
@@ -916,6 +934,16 @@ function sidebarNavigate(itemLabel){
   // "Raised Ticket" still opens that dashboard for everyone, including
   // the Loan Officer, since that list is exactly where a raised ticket lives.
   if(itemLabel === 'Create a Ticket' && session.role === 'Loan Officer'){ session.sidebarOpen = false; openCreateSupportTicketModal(); return; }
+  // Real navigation always collapses every OTHER real expanded sidebar
+  // section — clicking an item in a different menu means "I'm done with
+  // whatever I had open before", so it closes on its own, matching the
+  // requested behavior exactly. The section this exact item itself
+  // belongs to (if any) is left alone — it's already open, since that's
+  // how the user reached this item in the first place.
+  const ownSection = (SIDEBAR_MENUS[session.role]||[]).find(sec=>sec.items.includes(itemLabel));
+  Object.keys(session.sidebarExpanded).forEach(label=>{
+    if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
+  });
   const route = resolveRoute(itemLabel);
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
@@ -11387,12 +11415,18 @@ async function deleteFaqArticle(id){
 /* ---------- 11. My Account ---------- */
 function renderAccount(){
   if(session.role === "Investor") return renderInvestorAccount();
-  if(session.role === "Loan Officer" && (session.subtab||"View Details")==="View Details") return renderLoanOfficerViewDetails();
   if(session.role === "Loan Officer" && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
   if(session.role === "Loan Officer" && session.subtab==="Salary Advance") return renderLoanOfficerSalaryAdvance();
   if(session.role === "Loan Officer" && session.subtab==="Update Details") return renderLoanOfficerUpdateDetails();
+  // Any other subtab — including "View Details" itself, no subtab at all,
+  // or a stale/removed one (e.g. a leftover "Leave & Attendance" from
+  // before that menu item existed for this role) — genuinely falls back
+  // to this role's own View Details, never the generic renderViewDetails()
+  // below, which is a different page missing this role's own ACC BALANCES
+  // tile and Options button.
+  if(session.role === "Loan Officer") return renderLoanOfficerViewDetails();
   const roleTabs = {
-    "Loan Officer": ["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
+    "Loan Officer": ["View Details","My Work Plan","Salary Advance","Update Details"],
     "Manager": ["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Regional Manager": ["View Details","Regional Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Operational Manager": ["View Details","Operational Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
@@ -11988,7 +12022,17 @@ function handleMyAvatarFileChange(ev){
     renderApp();
   });
 }
-function togglePasswordFieldHint(){ toast("For your security, change your password from Security & Login"); }
+// A real, shared show/hide toggle for any password-type input — flips
+// the real DOM input's own type between 'password' and 'text' (so a
+// real browser password manager still treats it as a real password
+// field the rest of the time) and swaps the eye glyph to match.
+function togglePasswordVisibility(inputId, iconEl){
+  const input = document.getElementById(inputId);
+  if(!input) return;
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  if(iconEl) iconEl.textContent = showing ? '👁' : '🙈';
+}
 function renderLoanOfficerUpdateDetails(){
   const me = DB.me || {};
   return `
@@ -12001,17 +12045,36 @@ function renderLoanOfficerUpdateDetails(){
       <form onsubmit="return submitUpdateOwnDetails(event)" style="text-align:left;">
         <div class="field"><label>E-mail</label><input name="email" type="email" value="${escapeHtml(me.email||'')}"></div>
         <div class="field"><label>Contact</label><input name="phone" value="${escapeHtml(me.phone||'')}"></div>
-        <div class="field">
-          <label>Password</label>
-          <div style="position:relative;">
-            <input type="password" readonly value="••••••••••" style="width:100%; padding-right:34px;">
-            <span onclick="togglePasswordFieldHint()" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Change your password from Security & Login">👁</span>
-          </div>
-        </div>
         <div class="pill-row" style="justify-content:space-between; margin-top:18px;">
           <button type="button" class="btn btn-outline btn-sm" onclick="doLogout()">⏻ Logout</button>
           <button type="submit" class="btn btn-green btn-sm">⟳ Update</button>
         </div>
+      </form>
+    </div>
+    <div class="card" style="max-width:420px; text-align:left; margin-top:16px;">
+      <div class="card-title" style="font-size:15px;">Password</div>
+      ${session.mustChangePassword ? `<div class="section-note">Your account was just created (or reset) — set a new password before continuing.</div>` : ""}
+      <form onsubmit="return submitChangePassword(event)">
+        ${!session.mustChangePassword ? `
+        <div class="field"><label>Current Password</label>
+          <div style="position:relative;">
+            <input id="lo-current-password" name="currentPassword" type="password" required autocomplete="current-password" placeholder="Your current password — or the one you set via Forgot Password" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordVisibility('lo-current-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
+          </div>
+        </div>` : ""}
+        <div class="field"><label>New Password</label>
+          <div style="position:relative;">
+            <input id="lo-new-password" name="newPassword" type="password" required minlength="8" autocomplete="new-password" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordVisibility('lo-new-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
+          </div>
+        </div>
+        <div class="field"><label>Confirm New Password</label>
+          <div style="position:relative;">
+            <input id="lo-confirm-password" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordVisibility('lo-confirm-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" type="submit">Change Password</button>
       </form>
     </div>
   `;
@@ -12773,12 +12836,11 @@ function submitChangePassword(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   if(f.newPassword !== f.confirmPassword){ toast("New password and confirmation don't match"); return false; }
-  withRequest('change-password', async ()=>{
+  return withRequest('change-password', async ()=>{
     await api.post('/api/auth/change-password', { currentPassword: f.currentPassword, newPassword: f.newPassword });
     session.mustChangePassword = false;
     toast("Password changed");
   });
-  return false;
 }
 async function refreshMyData(){
   toast("Refreshing…");

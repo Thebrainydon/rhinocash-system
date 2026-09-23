@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,002 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,020 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,201 passed, 0 failed
+Total:    2,219 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1298,6 +1298,51 @@ limiter's default 180/60s — raised for that one suite's own server
 process in `test/run-all.sh`, exactly like `run-frontend.sh` already
 does for the same real reason, leaving `v2.test.js`'s own dedicated
 "returns 429" test, a separate server process, untouched.)
+
+A follow-up round fixed a genuine Loan Officer sidebar highlighting bug:
+"Client Leads" and "Raised Ticket" are real pages, while "Create a
+Lead" and (for this role) "Create a Ticket" are real quick-action
+modals that `sidebarNavigate()` always intercepts before ever
+navigating anywhere with them — but their leftover/coincidental
+`LABEL_ROUTES`/role-override route entries were still being consulted
+by the sidebar's own active-highlighting check, which treats a route
+with no `subtab` restriction as matching every subtab in that section.
+The result: opening the real "Client Leads" page also lit up "Create a
+Lead" in the sidebar, and opening "Raised Ticket" also lit up "Create a
+Ticket". Fixed by removing the dead "Create a Lead" route entry and
+adding an explicit `null` override for "Create a Ticket" scoped to Loan
+Officer only — `resolveRoute()` now checks `itemLabel in override`
+rather than truthiness, so a role can affirmatively suppress the
+generic fallback route rather than merely omitting one of its own.
+
+The same round added a real sidebar auto-collapse: clicking a real item
+in a sidebar section other than the one currently open now closes that
+other section automatically (`sidebarNavigate()` collapses every
+`session.sidebarExpanded` entry except the clicked item's own section),
+matching the requested behavior of never needing a separate manual
+close click when moving between menus.
+
+"Leave & Attendance" and "Security & Login" were removed from the Loan
+Officer's own My Account menu only (every other role's own menu list
+was independently left untouched) — real password changes for this
+role now live entirely on Update Details instead, via a real Change
+Password form (Current/New/Confirm, each with a genuine eye-icon
+show/hide toggle flipping the real input's own `type` between
+`password` and `text`) that reuses the pre-existing, unmodified
+`submitChangePassword()`/`POST /api/auth/change-password` — including
+its existing `must_change_password` exemption that already hides the
+Current Password field after a forced reset, exactly matching what
+`renderSecurityLogin()` already did for every other role. Building this
+test coverage caught two further real, pre-existing bugs, both fixed
+alongside it: `submitChangePassword()` itself never `return`ed its
+`withRequest(...)` promise (unlike its sibling `submitUpdateOwnDetails()`),
+so a caller `await`-ing it could not actually rely on it having
+finished; and `renderAccount()`'s Loan-Officer branch only special-cased
+`session.subtab==="View Details"` when falling back to this role's own
+`renderLoanOfficerViewDetails()`, so navigating straight to a stale or
+now-removed subtab (like the just-removed "Leave & Attendance") instead
+silently rendered the wrong, generic `renderViewDetails()` page. Both
+now correctly fall back to this role's own real View Details page.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

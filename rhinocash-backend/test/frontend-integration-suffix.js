@@ -2528,9 +2528,18 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     global.FormData = class { constructor(){ return of8; } };
     await doLogin({ preventDefault(){}, target:{} });
 
-    goTo('account','Leave & Attendance');
+    // Leave & Attendance and Security & Login are genuinely gone from the
+    // Loan Officer's own My Account menu — real password-change now
+    // lives on Update Details instead (see below).
+    goTo('dashboard');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Work Plan') && html.includes('Salary Advance'), "Loan Officer's My Account tab bar shows the real role-specific tab set");
+    __assert(!html.includes('>Leave & Attendance<') && !html.includes('>Security & Login<'), "the real Loan Officer sidebar genuinely no longer offers Leave & Attendance or Security & Login");
+
+    // Navigating directly to the real, now-removed subtab genuinely falls
+    // back to View Details rather than crashing or showing a stale page.
+    goTo('account','Leave & Attendance');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Options'), "navigating directly to the real, removed 'Leave & Attendance' subtab genuinely falls back to the real View Details page, not a crash or a stale removed page");
 
     // My Work Plan (a real, chrome-free Daily Workplan — src/routes/workplans.js).
     session.loWorkPlanState = null; DB.loWorkPlan = null;
@@ -2614,6 +2623,59 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders on the real Dashboard avatar (the same real data URI, not a second fabricated image)");
     __assert((html.match(new RegExp(DB.myAvatarDataUri.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'))||[]).length >= 2, "the real, just-uploaded photo genuinely renders in BOTH the Dashboard avatar and the topbar avatar (top-right)");
 
+    // Update Details now also carries the real password-change form that
+    // used to live only on the now-removed Security & Login page — a real
+    // eye-toggle on each of its three password fields, and a real submit
+    // through the pre-existing, unmodified submitChangePassword() handler.
+    goTo('account','Update Details');
+    html = document.getElementById('root').innerHTML;
+    __assert(!session.mustChangePassword, "sanity: this officer isn't mid a forced password reset, so the Current Password field should be present");
+    __assert(html.includes('id="lo-current-password"') && html.includes('id="lo-new-password"') && html.includes('id="lo-confirm-password"'), "the real Update Details page genuinely renders all three real password fields (current, new, confirm)");
+    __assert((html.match(/togglePasswordVisibility\(/g)||[]).length === 3, "each of the three real password fields genuinely has its own real eye-toggle wired to the real, shared togglePasswordVisibility() function");
+
+    // The real rendered markup (not the fake headless DOM, which doesn't
+    // parse HTML at all) is what genuinely proves each field starts as a
+    // real masked password input.
+    __assert(html.includes('id="lo-current-password" name="currentPassword" type="password"'), "the real Current Password field genuinely starts masked");
+    __assert(html.includes('id="lo-new-password" name="newPassword" type="password"'), "the real New Password field genuinely starts masked");
+    __assert(html.includes('id="lo-confirm-password" name="confirmPassword" type="password"'), "the real Confirm New Password field genuinely starts masked");
+
+    // The real, shared toggle itself: starts from the real initial masked
+    // state, un-masks on click, and re-masks on a second click.
+    const loCurrentPwInput = document.getElementById('lo-current-password');
+    loCurrentPwInput.type = 'password';
+    const fakeEyeIcon = { textContent: '👁' };
+    togglePasswordVisibility('lo-current-password', fakeEyeIcon);
+    __assert(loCurrentPwInput.type === 'text' && fakeEyeIcon.textContent === '🙈', "clicking the real eye icon genuinely un-masks the real input and swaps the real glyph");
+    togglePasswordVisibility('lo-current-password', fakeEyeIcon);
+    __assert(loCurrentPwInput.type === 'password' && fakeEyeIcon.textContent === '👁', "clicking the real eye icon again genuinely re-masks the real input and swaps the real glyph back");
+
+    // A real end-to-end submit, reusing the real, unmodified
+    // submitChangePassword()/POST /api/auth/change-password — exactly what
+    // lets an officer type in the very password they set via the login
+    // page's real Forgot Password flow. Changed back immediately after
+    // confirming it took effect, since every other officer login for the
+    // rest of this file relies on the original SEEDED_OFFICER_PASSWORD.
+    const pwForm = new Map([['currentPassword', process.env.SEEDED_OFFICER_PASSWORD],['newPassword','NewOfficerPass1'],['confirmPassword','NewOfficerPass1']]);
+    global.FormData = class { constructor(){ return pwForm; } };
+    await submitChangePassword({ preventDefault(){}, target:{} });
+
+    // Confirm it's a real change: log back in with the real new password.
+    let relog = new Map([['username','officer@rhinocash.co.ke'],['password','NewOfficerPass1']]);
+    global.FormData = class { constructor(){ return relog; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === 'Loan Officer', "the real new password genuinely works for a real re-login, proving submitChangePassword() on Update Details reached the real backend");
+
+    // Restore the original password so every later officer login in this
+    // file (which uses SEEDED_OFFICER_PASSWORD) keeps working.
+    const pwRestoreForm = new Map([['currentPassword','NewOfficerPass1'],['newPassword', process.env.SEEDED_OFFICER_PASSWORD],['confirmPassword', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return pwRestoreForm; } };
+    await submitChangePassword({ preventDefault(){}, target:{} });
+    let relog2 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return relog2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === 'Loan Officer', "the real original password genuinely works again after restoring it, keeping every later officer login in this file intact");
+
     // Create a Ticket (System & Help): a real quick-action modal reached
     // via the sidebar, not the full ticket-management dashboard other
     // roles still get for the same label — real "Send To" recipient
@@ -2662,6 +2724,35 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     html = document.getElementById('root').innerHTML;
     __assert(session.selectedTicketId === null && html.includes('Support Tickets'), "closing the real ticket detail genuinely returns to the real Raised Ticket list page, still without falling back to the Dashboard");
 
+    // Sidebar active-state fix: "Client Leads" and "Raised Ticket" are real
+    // pages, "Create a Lead" and "Create a Ticket" are real quick-action
+    // modals that happen to share the same route section — clicking into
+    // the real page must highlight only itself, not the modal item too.
+    goTo('clients','Client Leads');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Client Leads')">Client Leads</div>`), "the real 'Client Leads' sidebar item genuinely shows as active on its own real page");
+    __assert(!html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Create a Lead')">Create a Lead</div>`), "the real 'Create a Lead' sidebar item (a quick-action modal, not a real page) genuinely no longer shows as active just because 'Client Leads' is open");
+
+    goTo('support','Raised Ticket');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Raised Ticket')">Raised Ticket</div>`), "the real 'Raised Ticket' sidebar item genuinely shows as active on its own real page");
+    __assert(!html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Create a Ticket')">Create a Ticket</div>`), "the real Loan-Officer-only 'Create a Ticket' sidebar item (a quick-action modal, not a real page) genuinely no longer shows as active just because 'Raised Ticket' is open");
+
+    // Sidebar auto-collapse: expanding one real section, then clicking a
+    // real item in a genuinely different section, must auto-close the
+    // first section without a separate manual close click.
+    // Both sections start genuinely expanded, matching how a real user
+    // would actually reach a LoanBook item without first closing Clients
+    // (a collapsed section's own items aren't clickable at all).
+    session.sidebarExpanded['Clients'] = true;
+    session.sidebarExpanded['LoanBook'] = true;
+    renderApp();
+    __assert(session.sidebarExpanded['Clients'] === true, "sanity: the real Clients section starts genuinely expanded for this test");
+    sidebarNavigate('Loan Application');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    __assert(session.sidebarExpanded['Clients'] === false, "clicking a real item in a genuinely different sidebar section ('LoanBook') auto-collapses the previously-open 'Clients' section, with no manual close click needed");
+    __assert(session.sidebarExpanded['LoanBook'] === true, "the real section the just-clicked item actually belongs to ('LoanBook') is genuinely left open, since that's how the real user reached it");
+
     // Real self-update: role/branch cannot change even if injected. (Only
     // phone is changed here — changing email would change the officer's
     // real login identifier and break every subsequent section in this
@@ -2672,11 +2763,10 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     await submitUpdateOwnDetails({ preventDefault(){}, target:{} });
     __assert(DB.me.phone === '0722333444', "a real self-update through the actual form handler changes the permitted phone field");
 
-    // Real Leave & Attendance: submit through the actual UI function.
-    const leaveForm = new Map([['leave_type','Annual'],['start_date','2026-12-10'],['end_date','2026-12-12'],['reason','Frontend test leave']]);
-    global.FormData = class { constructor(){ return leaveForm; } };
-    await submitLeaveRequest({ preventDefault(){}, target:{} });
-    __assert(DB.myLeaveRequests.some(l=>l.reason==='Frontend test leave'), "a real leave request was submitted via the actual form handler");
+    // Leave & Attendance is no longer on the Loan Officer's own My Account
+    // menu (see the sidebar assertions above) — submitLeaveRequest() itself
+    // is still a real, shared function other roles use, and is now tested
+    // instead under Manager below, where the capability still lives.
 
     // Real Salary Advance: submit through the actual UI function.
     const advForm = new Map([['amount','3000'],['reason','Frontend test advance']]);
@@ -2694,6 +2784,15 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     goTo('account','Branch Responsibilities');
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('My Team') && html.includes('Kisumu'), "Branch Responsibilities shows the real branch and real team roster");
+
+    // Real Leave & Attendance: submit through the actual UI function — still
+    // a real capability for Manager (unlike Loan Officer, whose menu no
+    // longer offers it), so its real frontend coverage now lives here.
+    goTo('account','Leave & Attendance');
+    const mgrLeaveForm = new Map([['leave_type','Annual'],['start_date','2026-12-10'],['end_date','2026-12-12'],['reason','Frontend test leave']]);
+    global.FormData = class { constructor(){ return mgrLeaveForm; } };
+    await submitLeaveRequest({ preventDefault(){}, target:{} });
+    __assert(DB.myLeaveRequests.some(l=>l.reason==='Frontend test leave'), "a real leave request was submitted via the actual form handler");
 
     // Accountant gets Financial Responsibilities (real pending workload, no fake numbers).
     let acf4 = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
