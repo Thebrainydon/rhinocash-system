@@ -867,6 +867,14 @@ immediately trigger the browser's own print dialog, letting the user's
 own "Save as PDF" produce the actual file, rather than inventing a new
 mechanism for this one page.
 
+Each receipt slip on the day-grid now also carries a real letterhead: the
+same real, already-embedded `LOGO_DATA_URI` this app already uses on its
+own login screen and sidebar (not a new asset), shown both as a small
+header logo next to "RHINOCASH LTD" / "Official Payment Receipt" and as a
+faint centered watermark behind the card's own content — a follow-up
+request after the first version shipped without either, per the
+reference design's own letterhead treatment.
+
 A real, genuine, pre-existing bug was found and fixed while building this:
 `goTo()` never cleared `session.selectedReceiptId`, so once any role
 opened a specific receipt (via the "Receipt" action from Processed
