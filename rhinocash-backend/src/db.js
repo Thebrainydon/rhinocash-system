@@ -281,6 +281,9 @@ CREATE TABLE IF NOT EXISTS users (
   monthly_disbursement_target NUMERIC(14,2) DEFAULT 0,
   monthly_new_loan_target INTEGER DEFAULT 0,
   leave_days_balance INTEGER DEFAULT 0,
+  national_id TEXT,
+  gender TEXT,
+  basic_salary NUMERIC(14,2) NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT iso_now(),
   last_login_at TEXT
 );
@@ -448,6 +451,64 @@ CREATE TABLE IF NOT EXISTS client_account_stk_requests (
   initiated_by TEXT REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
+
+-- A staff member's own real wallet accounts (Transactional/Investment/
+-- Savings) — the exact same design as client_accounts above, just scoped
+-- to a user instead of a client, auto-provisioned the first time any of
+-- them is requested via My Account -> View Details -> ACC BALANCES.
+CREATE TABLE IF NOT EXISTS staff_accounts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  account_type TEXT NOT NULL CHECK (account_type IN ('Transactional','Investment','Savings')),
+  account_number TEXT UNIQUE NOT NULL,
+  balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  UNIQUE(user_id, account_type)
+);
+CREATE INDEX IF NOT EXISTS idx_staff_accounts_user ON staff_accounts(user_id);
+
+CREATE TABLE IF NOT EXISTS staff_account_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES staff_accounts(id),
+  type TEXT NOT NULL,
+  tid TEXT,
+  details TEXT,
+  approval_status TEXT NOT NULL DEFAULT 'Pending',
+  amount NUMERIC(14,2) NOT NULL,
+  balance_after NUMERIC(14,2) NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_account_tx_account ON staff_account_transactions(account_id);
+
+-- A real, separate STK-push request table for staff wallet deposits — kept
+-- entirely apart from client_account_stk_requests/mpesa_stk_requests, the
+-- same "genuinely separate path" principle as every other STK table here.
+CREATE TABLE IF NOT EXISTS staff_account_stk_requests (
+  id TEXT PRIMARY KEY,
+  checkout_request_id TEXT UNIQUE,
+  account_id TEXT NOT NULL REFERENCES staff_accounts(id),
+  phone TEXT NOT NULL,
+  amount NUMERIC(14,2) NOT NULL,
+  environment TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  initiated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
+-- A real, self-authored log of interactions on a staff member's own real
+-- profile (My Account -> View Details -> Interactions -> Notes) — the
+-- same real "Create Interaction" pattern client_interactions already
+-- gives clients, just scoped to a staff member's own record.
+CREATE TABLE IF NOT EXISTS staff_interactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  subject TEXT NOT NULL,
+  note TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE INDEX IF NOT EXISTS idx_staff_interactions_user ON staff_interactions(user_id);
 
 -- ===================== Loans =====================
 CREATE TABLE IF NOT EXISTS loan_products (
@@ -1107,6 +1168,9 @@ async function ensureColumn(table, ddl) {
 async function initSchema() {
   await rawQuery(SCHEMA);
   await ensureColumn('payments', 'allocated_penalty NUMERIC(14,2) NOT NULL DEFAULT 0');
+  await ensureColumn('users', 'national_id TEXT');
+  await ensureColumn('users', 'gender TEXT');
+  await ensureColumn('users', "basic_salary NUMERIC(14,2) NOT NULL DEFAULT 0");
   await ensureConstraint('branches_manager_fk',
     'ALTER TABLE branches ADD CONSTRAINT branches_manager_fk FOREIGN KEY (manager_id) REFERENCES users(id)');
   await ensureConstraint('branch_proposals_manager_fk',

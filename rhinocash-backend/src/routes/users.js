@@ -103,7 +103,8 @@ function register(router) {
       return next({ status: 403, message: `Your role cannot assign the ${b.role_id} role` });
     }
     const fields = ['name', 'phone', 'role_id', 'access_level', 'job_title', 'department_id', 'branch_id',
-      'region_id', 'reporting_manager_id', 'employment_status', 'monthly_disbursement_target', 'monthly_new_loan_target'];
+      'region_id', 'reporting_manager_id', 'employment_status', 'monthly_disbursement_target', 'monthly_new_loan_target',
+      'basic_salary', 'national_id', 'gender'];
     const sets = []; const params = [];
     fields.forEach(f => { if (b[f] !== undefined) { sets.push(`${f} = ?`); params.push(b[f]); } });
     if (sets.length === 0) return next({ status: 400, message: 'No recognized fields to update' });

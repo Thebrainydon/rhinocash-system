@@ -322,6 +322,74 @@ function register(router) {
     await logAction(req, { action: 'Cancelled target', module: 'targets', recordType: 'Target', recordId: req.params.id, reason: req.body.reason });
     res.json({ ok: true });
   });
+
+  // ==================== Own monthly performance (My Account -> View Details) ====================
+  // A real, honest month-by-month breakdown for the CALLER's own real
+  // portfolio — never another staff member's. New Loans/Revenue carry a
+  // real Target wherever a manager has actually set one (metric new_loans/
+  // collection, same VALID_METRICS this whole engine already uses);
+  // Repeat Loans/Performing/Arrears carry a real computed Actual but an
+  // honest 0 Target, since no dedicated target metric exists for them —
+  // never fabricated to look "complete".
+  router.get('/api/users/me/performance', requireAuth, async (req, res) => {
+    const year = /^\d{4}$/.test(req.query.year) ? req.query.year : String(new Date().getFullYear());
+    const officerId = req.user.id;
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      const period = `${year}-${String(m).padStart(2, '0')}`;
+      const start = `${period}-01`;
+      const endDay = new Date(Number(year), m, 0).getDate();
+      const end = `${period}-${String(endDay).padStart(2, '0')}`;
+
+      const newLoans = (await get(
+        `SELECT COUNT(*) as v FROM loans WHERE officer_id = ? AND loan_category = 'New Loan' AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`,
+        [officerId, start, end]
+      )).v;
+      const repeatLoans = (await get(
+        `SELECT COUNT(*) as v FROM loans WHERE officer_id = ? AND loan_category = 'Repeat Loan' AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`,
+        [officerId, start, end]
+      )).v;
+      // Performing/Arrears are a real snapshot "as of this month" — never
+      // computed for a month that has not genuinely begun yet, which
+      // would otherwise fabricate a future condition no one can know yet.
+      const monthHasStarted = start <= new Date().toISOString().slice(0, 10);
+      const performing = !monthHasStarted ? 0 : (await get(
+        `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
+           AND l.status NOT IN ('Written Off','Closed')
+           AND NOT EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`,
+        [officerId, end, end]
+      )).v;
+      const arrears = !monthHasStarted ? 0 : (await get(
+        `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
+           AND l.status NOT IN ('Written Off','Closed')
+           AND EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`,
+        [officerId, end, end]
+      )).v;
+      const revenue = (await get(
+        `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE l.officer_id = ? AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`,
+        [officerId, start, end]
+      )).v;
+
+      const newLoansTarget = (await get(
+        `SELECT target_value as v FROM targets WHERE recipient_user_id = ? AND metric = 'new_loans' AND period = ? AND period_type = 'monthly' AND status != 'Cancelled' ORDER BY created_at DESC LIMIT 1`,
+        [officerId, period]
+      ));
+      const revenueTarget = (await get(
+        `SELECT target_value as v FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND period_type = 'monthly' AND status != 'Cancelled' ORDER BY created_at DESC LIMIT 1`,
+        [officerId, period]
+      ));
+
+      months.push({
+        month: m, period,
+        newLoans: { target: newLoansTarget ? newLoansTarget.v : 0, actual: newLoans },
+        repeatLoans: { target: 0, actual: repeatLoans },
+        performing: { target: 0, actual: performing },
+        arrears: { target: 0, actual: arrears },
+        revenue: { target: revenueTarget ? revenueTarget.v : 0, actual: revenue },
+      });
+    }
+    res.json({ year, months });
+  });
 }
 
 module.exports = { register, ALLOWED_RECIPIENT_ROLES, VALID_METRICS, computeAchievement };

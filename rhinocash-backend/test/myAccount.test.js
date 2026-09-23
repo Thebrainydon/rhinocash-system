@@ -51,6 +51,125 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(mineTargets.json.targets.every(t => t.recipient_user_id === officerMe.id), 'every target returned by mine=1 genuinely belongs to the real authenticated caller only');
   }
 
+  // Real staff wallet accounts (My Account -> View Details -> ACC BALANCES) —
+  // auto-provisioned Transactional/Investment/Savings accounts scoped to the
+  // caller, never another staff member's.
+  {
+    const accounts = await api('GET', '/api/users/me/accounts', { token: officerToken });
+    assert(accounts.status === 200 && Array.isArray(accounts.json.accounts) && accounts.json.accounts.length === 3, 'a real GET returns exactly the 3 real auto-provisioned wallet accounts');
+    const types = accounts.json.accounts.map(a => a.account_type).sort();
+    assert(JSON.stringify(types) === JSON.stringify(['Investment', 'Savings', 'Transactional']), 'the real 3 accounts are genuinely Transactional/Investment/Savings, nothing fabricated');
+    const txAccount = accounts.json.accounts.find(a => a.account_type === 'Transactional');
+    assert(txAccount.account_number && txAccount.balance === 0, 'the real Transactional account carries a real generated account number and a real starting balance of 0');
+
+    const again = await api('GET', '/api/users/me/accounts', { token: officerToken });
+    assert(again.json.accounts.find(a => a.account_type === 'Transactional').id === txAccount.id, 'a second real call re-uses the same real account row rather than re-provisioning a duplicate');
+
+    const managerAccounts = await api('GET', '/api/users/me/accounts', { token: managerToken });
+    assert(managerAccounts.json.accounts[0].id !== txAccount.id, 'a different real staff member genuinely gets their own distinct real wallet accounts, never the officer\'s');
+
+    const txns = await api('GET', '/api/users/me/accounts/Transactional/transactions', { token: officerToken });
+    assert(txns.status === 200 && Array.isArray(txns.json.transactions) && txns.json.transactions.length === 0, 'a brand-new real wallet genuinely has no transactions yet — never fabricated');
+
+    const badType = await api('GET', '/api/users/me/accounts/Bogus/transactions', { token: officerToken });
+    assert(badType.status === 400, 'an invalid real account type is genuinely rejected');
+
+    const depositNoPhone = await api('POST', '/api/users/me/accounts/Transactional/deposit', { token: officerToken, body: { amount: 500 } });
+    assert(depositNoPhone.status === 400, 'a real deposit request without a phone is rejected');
+    const depositBadAmount = await api('POST', '/api/users/me/accounts/Transactional/deposit', { token: officerToken, body: { phone: '0722000111', amount: -5 } });
+    assert(depositBadAmount.status === 400, 'a real deposit request with a non-positive amount is rejected');
+    const deposit = await api('POST', '/api/users/me/accounts/Transactional/deposit', { token: officerToken, body: { phone: '0722000111', amount: 500 } });
+    assert(deposit.status === 200 && ['NOT_CONFIGURED', 'INITIATED', 'FAILED'].includes(deposit.json.status), 'a real, valid deposit request genuinely reaches the real STK-push code path (NOT_CONFIGURED here, since no M-Pesa environment is active in this test run)');
+  }
+
+  // Real own monthly performance table (My Account -> View Details -> 2026 Performance).
+  {
+    const perf = await api('GET', '/api/users/me/performance', { token: officerToken, });
+    assert(perf.status === 200 && Array.isArray(perf.json.months) && perf.json.months.length === 12, 'a real GET returns exactly 12 real months for the current year');
+    assert(perf.json.year === String(new Date().getFullYear()), 'the real default year is genuinely the current year, not hardcoded');
+    const jan = perf.json.months[0];
+    assert(jan.month === 1 && 'newLoans' in jan && 'repeatLoans' in jan && 'performing' in jan && 'arrears' in jan && 'revenue' in jan, 'each real month row carries all 5 real metric buckets');
+    assert(typeof jan.newLoans.actual === 'number' && typeof jan.newLoans.target === 'number', 'each real bucket carries a real numeric target and actual, never a fabricated placeholder');
+    assert(jan.repeatLoans.target === 0 && jan.performing.target === 0 && jan.arrears.target === 0, 'Repeat Loans/Performing/Arrears carry an honest 0 target — no real target metric exists for them yet, never fabricated to look complete');
+
+    const explicitYear = await api('GET', '/api/users/me/performance?year=2025', { token: officerToken });
+    assert(explicitYear.json.year === '2025', 'an explicit real year query param is honored');
+
+    const managerPerf = await api('GET', '/api/users/me/performance', { token: managerToken });
+    assert(managerPerf.status === 200, 'a different real role can also fetch their own real performance — scoped to themselves, not restricted to Loan Officer only');
+
+    // A real target set by the officer's own Manager for the current month
+    // genuinely flows through into the New Loans target — the same real
+    // targets table and computeAchievement-style logic the rest of the
+    // targets engine already uses, never a second fabricated source.
+    const officerMe = (await api('GET', '/api/auth/me', { token: officerToken })).json.user;
+    const now = new Date();
+    const thisPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const setTarget = await api('POST', '/api/targets', { token: managerToken, body: { metric: 'new_loans', recipient_user_id: officerMe.id, target_value: 12, period: thisPeriod } });
+    assert(setTarget.status === 201, 'the real target is genuinely created');
+    const perfAfter = await api('GET', '/api/users/me/performance', { token: officerToken });
+    const thisMonth = perfAfter.json.months[now.getMonth()];
+    assert(thisMonth.newLoans.target === 12, 'the real New Loans target the Manager just set for this exact month genuinely appears in the performance table — not fabricated, not stuck at 0');
+  }
+
+  // Real staff Interactions log (My Account -> View Details -> Interactions -> Notes).
+  {
+    const before = await api('GET', '/api/users/me/interactions', { token: officerToken });
+    assert(before.status === 200 && Array.isArray(before.json.interactions), 'a real GET returns a real interactions array for the caller');
+
+    const badSubject = await api('POST', '/api/users/me/interactions', { token: officerToken, body: { subject: 'Nonsense', note: 'A note' } });
+    assert(badSubject.status === 400, 'an invalid real subject is rejected');
+    const noNote = await api('POST', '/api/users/me/interactions', { token: officerToken, body: { subject: 'Performance' } });
+    assert(noNote.status === 400, 'a real interaction with no note is rejected');
+
+    const created = await api('POST', '/api/users/me/interactions', { token: officerToken, body: { subject: 'PTP', note: 'Client promised to pay by Friday' } });
+    assert(created.status === 201 && created.json.interaction.subject === 'PTP' && created.json.interaction.note === 'Client promised to pay by Friday', 'a real, valid interaction is genuinely created with the real subject/note submitted');
+
+    const after = await api('GET', '/api/users/me/interactions', { token: officerToken });
+    assert(after.json.interactions.some(i => i.id === created.json.interaction.id), 'the real, just-created interaction genuinely appears in a fresh real GET');
+
+    const managerInteractions = await api('GET', '/api/users/me/interactions', { token: managerToken });
+    assert(!managerInteractions.json.interactions.some(i => i.id === created.json.interaction.id), 'a different real staff member genuinely never sees the officer\'s own interaction — scoped structurally to the caller');
+  }
+
+  // Real payroll / payslips (My Account -> View Details -> Leaves & Payroll)
+  // — real Basic Salary set by an authorized role via PATCH /api/users/:id,
+  // real Kenyan NSSF/SHIF/PAYE statutory formulas, never fabricated.
+  {
+    const beforeSalary = await api('GET', '/api/users/me/payroll', { token: officerToken });
+    assert(beforeSalary.status === 200 && Array.isArray(beforeSalary.json.months) && beforeSalary.json.months.length === 0, 'with no real Basic Salary set yet, the real payroll list is honestly empty — never fabricated');
+
+    const officerMe = (await api('GET', '/api/auth/me', { token: officerToken })).json.user;
+    const badPeriodBefore = await api('GET', '/api/users/me/payroll/2026-09', { token: officerToken });
+    assert(badPeriodBefore.status === 404, 'a real single-period payslip is genuinely refused when no real Basic Salary is set — not a fabricated zero-salary payslip');
+
+    const officerSalaryDenied = await api('PATCH', `/api/users/${officerMe.id}`, { token: officerToken, body: { basic_salary: 999999 } });
+    assert(officerSalaryDenied.status === 403, 'the officer genuinely cannot set their own real Basic Salary — that requires real manage_users authority (Admin/CEO/Director)');
+
+    const setSalary = await api('PATCH', `/api/users/${officerMe.id}`, { token: adminToken, body: { basic_salary: 26000 } });
+    assert(setSalary.status === 200 && Number(setSalary.json.user.basic_salary) === 26000, 'Admin genuinely sets a real Basic Salary for the officer');
+
+    const afterSalary = await api('GET', '/api/users/me/payroll', { token: officerToken });
+    assert(afterSalary.json.months.length > 0, 'once a real Basic Salary exists, real past months of payroll genuinely appear');
+    const m = afterSalary.json.months[0];
+    assert(m.basicSalary === 26000 && m.grossPay === 26000, 'each real month genuinely carries the real Basic Salary just set');
+    assert(m.nssf === 1560, 'the real NSSF figure is genuinely computed via the real statutory formula (6% of 26,000 = 1,560), not fabricated');
+    assert(m.shif === 715, 'the real SHIF figure is genuinely computed via the real statutory formula (2.75% of 26,000 = 715), not fabricated');
+    assert(m.paye >= 0 && typeof m.paye === 'number', 'a real, non-negative PAYE figure is genuinely computed via the real 2023 statutory bands');
+    assert(Math.abs(m.totalDeductions - (m.nssf + m.shif + m.paye + m.salaryAdvance + m.otherDeductions)) < 0.01, 'the real Total Deductions genuinely sums every real deduction bucket, not a separately fabricated figure');
+    assert(Math.abs(m.netPay - (m.grossPay - m.totalDeductions)) < 0.01, 'the real Net Pay genuinely equals Gross Pay minus real Total Deductions');
+    assert(!afterSalary.json.months.some(mo => new Date(mo.period + '-01') > new Date()), 'no real future, not-yet-earned month genuinely appears in the payroll list');
+
+    const singlePeriod = await api('GET', `/api/users/me/payroll/${m.period}`, { token: officerToken });
+    assert(singlePeriod.status === 200 && singlePeriod.json.payslip.period === m.period && singlePeriod.json.payslip.netPay === m.netPay, 'the real single-period payslip endpoint genuinely matches the real monthly list figures');
+
+    const badPeriodFormat = await api('GET', '/api/users/me/payroll/notaperiod', { token: officerToken });
+    assert(badPeriodFormat.status === 400, 'an invalid real period format is genuinely rejected');
+
+    const managerPayroll = await api('GET', '/api/users/me/payroll', { token: managerToken });
+    assert(managerPayroll.json.months.length === 0, 'a different real staff member with no real Basic Salary of their own genuinely sees an empty real payroll list — never the officer\'s real salary');
+  }
+
   // Confirm no self-approval loophole exists for leave/salary-advance (already-existing engine, re-verified here in this module's context).
   {
     const leave = await api('POST', '/api/leave-requests', { token: officerToken, body: { leave_type: 'Annual', start_date: '2026-12-01', end_date: '2026-12-03' } });

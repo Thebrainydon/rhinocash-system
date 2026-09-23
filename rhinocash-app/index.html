@@ -11067,6 +11067,7 @@ async function deleteFaqArticle(id){
 /* ---------- 11. My Account ---------- */
 function renderAccount(){
   if(session.role === "Investor") return renderInvestorAccount();
+  if(session.role === "Loan Officer" && (session.subtab||"View Details")==="View Details") return renderLoanOfficerViewDetails();
   const roleTabs = {
     "Loan Officer": ["View Details","My Work Plan","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Manager": ["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
@@ -11119,6 +11120,494 @@ function renderViewDetails(){
     <div class="detail-label">Reporting Manager</div><div class="detail-value">${me.reporting_manager_id ? staffName(me.reporting_manager_id) : "—"}</div>
     <div class="detail-label">Leave Balance</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
   </div>`;
+}
+
+// ==================== Loan Officer's chrome-free View Details ====================
+// Own real profile (DB.me — auth.js's publicUser() spreads every users
+// column with no whitelist, so national_id/gender flow through
+// automatically once set), a real ACC BALANCES tile into the staff wallet
+// built in staffWallet.js, and a real month-by-month performance table
+// (GET /api/users/me/performance in targets.js).
+function defaultLoStaffAccountState(){ return { type:'Transactional', from:todayISO(), to:todayISO() }; }
+function openLoStaffAccount(){
+  session.loStaffAccountOpen = true;
+  if(!session.loStaffAccountState) session.loStaffAccountState = defaultLoStaffAccountState();
+  renderApp();
+}
+function closeLoStaffAccount(){ session.loStaffAccountOpen = false; renderApp(); }
+async function loadStaffAccounts(){
+  return withRequest('load-staff-accounts', async ()=>{
+    const res = await api.get('/api/users/me/accounts');
+    DB.staffAccounts = res.accounts;
+  });
+}
+async function loadStaffAccountTransactions(type, from, to){
+  return withRequest('load-staff-account-txns:'+type+':'+from+':'+to, async ()=>{
+    const params = new URLSearchParams();
+    if(from) params.set('from', from);
+    if(to) params.set('to', to);
+    const res = await api.get(`/api/users/me/accounts/${type}/transactions?`+params.toString());
+    DB.staffAccountTransactions = { type, from, to, account: res.account, transactions: res.transactions };
+  });
+}
+async function loadLoanOfficerPerformance(year){
+  return withRequest('load-lo-performance:'+year, async ()=>{
+    const res = await api.get('/api/users/me/performance?year='+year);
+    DB.loPerformance = res;
+  });
+}
+async function loadStaffInteractions(year){
+  return withRequest('load-staff-interactions:'+year, async ()=>{
+    const res = await api.get('/api/users/me/interactions?year='+year);
+    DB.staffInteractions = { year, interactions: res.interactions };
+  });
+}
+async function loadLoStaffLoans(){
+  return withRequest('load-lo-staff-loans', async ()=>{
+    const res = await api.get('/api/loans/view?category=All Loans&export=true');
+    DB.loStaffLoans = res.rows;
+  });
+}
+async function loadStaffPayroll(year){
+  return withRequest('load-staff-payroll:'+year, async ()=>{
+    const res = await api.get('/api/users/me/payroll?year='+year);
+    DB.staffPayroll = res;
+  });
+}
+function openStaffCreateInteractionModal(){ openModal('staff-create-interaction'); }
+const STAFF_INTERACTION_SUBJECTS = ['Performance','PTP','Collection','Arrears','Production','Follow-Up'];
+function renderStaffCreateInteractionModal(){
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Create Interaction</h3>
+      <form onsubmit="return submitStaffCreateInteraction(event)">
+        <div class="field"><label>Subject to Address</label><select name="subject">${STAFF_INTERACTION_SUBJECTS.map(s=>`<option value="${s}">${s}</option>`).join("")}</select></div>
+        <div class="field"><label>Message Note</label><textarea name="note" rows="4" required></textarea></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Post</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+function submitStaffCreateInteraction(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.note || !f.note.trim()){ toast("Enter a message note"); return false; }
+  return withRequest('staff-create-interaction', async ()=>{
+    await api.post('/api/users/me/interactions', { subject: f.subject, note: f.note.trim() });
+    DB.staffInteractions = null;
+    toast("Interaction posted");
+    closeModal();
+  });
+}
+// A real, deterministic month-end payslip print — the exact same real
+// window.print() convention as every other printable page in this app
+// (Payment Receipts, Pay-in Summary), over the real GET
+// /api/users/me/payroll/:period computed payslip (real Basic Salary +
+// real Kenyan NSSF/SHIF/PAYE statutory formulas — see staffProfile.js).
+function printLoanOfficerPayslip(period){
+  session.loViewDetailsState.printPeriod = period;
+  DB.staffPayslip = null;
+  renderApp();
+  setTimeout(()=>{ window.print && window.print(); }, 400);
+}
+async function loadStaffPayslip(period){
+  return withRequest('load-staff-payslip:'+period, async ()=>{
+    const res = await api.get('/api/users/me/payroll/'+period);
+    DB.staffPayslip = res.payslip;
+  });
+}
+function numberToWordsKsh(n){
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function chunk(num){
+    let s = '';
+    if(num>=100){ s += ones[Math.floor(num/100)]+' Hundred '; num %= 100; }
+    if(num>=20){ s += tens[Math.floor(num/10)]+' '; num %= 10; }
+    if(num>0) s += ones[num]+' ';
+    return s.trim();
+  }
+  let num = Math.round(n);
+  if(num===0) return 'Zero';
+  const parts = [];
+  if(num>=1000000){ parts.push(chunk(Math.floor(num/1000000))+' Million'); num %= 1000000; }
+  if(num>=1000){ parts.push(chunk(Math.floor(num/1000))+' Thousand'); num %= 1000; }
+  if(num>0) parts.push(chunk(num));
+  return parts.join(' ');
+}
+function renderLoanOfficerPayslipPrint(period){
+  if(!DB.staffPayslip || DB.staffPayslip.period !== period){ loadStaffPayslip(period); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  const p = DB.staffPayslip;
+  const me = DB.me || {};
+  const [y,m] = period.split('-');
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const now = new Date();
+  const printedDate = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+  const cellStyle = "border:1px solid #999; padding:6px 8px;";
+  return `
+    <div class="card" style="position:relative;">
+      <div class="card-title" style="justify-content:space-between; gap:8px;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="session.loViewDetailsState.printPeriod=null; renderApp();" style="cursor:pointer;">←</span><span>Salary Slip — ${MONTH_NAMES[Number(m)-1]} ${y}</span></span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+      </div>
+      <div style="border:1px solid #999; padding:16px; margin-top:10px; position:relative;">
+        <img src="${LOGO_DATA_URI}" style="position:absolute; top:50%; left:50%; width:220px; transform:translate(-50%,-50%) rotate(-18deg); opacity:0.08; pointer-events:none;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+          <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:56px; height:56px; object-fit:contain;">
+          <div style="text-align:right;">
+            <div style="font-weight:800; color:var(--navy);">RHINOCASH LTD</div>
+            <div class="hint">P.O. Box 100, Nairobi</div>
+            <div class="hint">254700000000 | info@rhinocash.co.ke</div>
+          </div>
+        </div>
+        <div style="text-align:center; font-weight:800; color:var(--navy); margin:10px 0;">Salary Slip ${escapeHtml(p.ref)}</div>
+        <div><span class="hint">Employee Name:</span> <strong>${escapeHtml(session.userName)}</strong></div>
+        <div><span class="hint">Job No:</span> <strong>${escapeHtml(me.staff_code||'—')}</strong></div>
+        <div><span class="hint">Designation:</span> <strong>${escapeHtml(me.job_title||session.role)}</strong></div>
+        <div><span class="hint">Period:</span> <strong>${MONTH_NAMES[Number(m)-1]} ${y}</strong></div>
+        <table style="width:100%; border-collapse:collapse; margin-top:12px;">
+          <tr><th style="${cellStyle} text-align:left; background:var(--blue-bg);">Earnings</th><th style="${cellStyle} text-align:right; background:var(--blue-bg);"></th><th style="${cellStyle} text-align:left; background:var(--blue-bg);">Deductions</th><th style="${cellStyle} text-align:right; background:var(--blue-bg);"></th></tr>
+          <tr><td style="${cellStyle}">Basic Salary</td><td style="${cellStyle} text-align:right;">${fmtNum(p.basicSalary)}</td><td style="${cellStyle}">NSSF</td><td style="${cellStyle} text-align:right;">${fmtNum(p.nssf)}</td></tr>
+          <tr><td style="${cellStyle}">Allowances</td><td style="${cellStyle} text-align:right;">${fmtNum(p.allowances)}</td><td style="${cellStyle}">SHIF</td><td style="${cellStyle} text-align:right;">${fmtNum(p.shif)}</td></tr>
+          <tr><td style="${cellStyle}">Bonus</td><td style="${cellStyle} text-align:right;">${fmtNum(p.bonus)}</td><td style="${cellStyle}">PAYE</td><td style="${cellStyle} text-align:right;">${fmtNum(p.paye)}</td></tr>
+          <tr><td style="${cellStyle}"></td><td style="${cellStyle}"></td><td style="${cellStyle}">Salary Advance</td><td style="${cellStyle} text-align:right;">${fmtNum(p.salaryAdvance)}</td></tr>
+          <tr><td style="${cellStyle}"></td><td style="${cellStyle}"></td><td style="${cellStyle}">Other Deductions</td><td style="${cellStyle} text-align:right;">${fmtNum(p.otherDeductions)}</td></tr>
+          <tr><td style="${cellStyle} font-weight:700;">Gross Pay</td><td style="${cellStyle} text-align:right; font-weight:700;">${fmtNum(p.grossPay)}</td><td style="${cellStyle} font-weight:700;">Total Deductions</td><td style="${cellStyle} text-align:right; font-weight:700;">${fmtNum(p.totalDeductions)}</td></tr>
+        </table>
+        <table style="width:100%; border-collapse:collapse; margin-top:0;">
+          <tr><td style="${cellStyle} font-weight:800; background:var(--blue-bg);">Net Salary</td><td style="${cellStyle} text-align:right; font-weight:800; background:var(--blue-bg);">${fmtNum(p.netPay)}</td></tr>
+        </table>
+        <div style="margin-top:12px; font-weight:700;">Ksh ${numberToWordsKsh(p.netPay)} only</div>
+        <div style="display:flex; justify-content:space-between; gap:16px; margin-top:10px;">
+          <div><span class="hint">Cheque No</span><br><strong>${escapeHtml(p.ref)}</strong></div>
+          <div><span class="hint">Bank Name</span><br><strong>Safaricom MPESA, ${me.branch_id?branchName(me.branch_id):'—'}</strong></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; gap:16px; margin-top:6px;">
+          <div><span class="hint">Account No</span><br><strong>${escapeHtml(me.phone||'—')}</strong></div>
+          <div><span class="hint">Date</span><br><strong>${printedDate}</strong></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; gap:16px; margin-top:24px; border-top:1px solid #999; padding-top:14px;">
+          <div>Employee Signature<br><br>...........................</div>
+          <div>Human Resource Manager<br><br>...........................</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function openStaffActionsModal(){ openModal('staff-actions'); }
+function renderStaffActionsModal(){
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Staff Actions</h3>
+      <div class="empty">No actions available</div>
+    </div>
+  `;
+}
+function renderLoanOfficerViewDetails(){
+  if(session.loStaffAccountOpen) return renderLoStaffAccountPage();
+  if(session.loViewDetailsState && session.loViewDetailsState.printPeriod) return renderLoanOfficerPayslipPrint(session.loViewDetailsState.printPeriod);
+  const me = DB.me || {};
+  if(!DB.staffAccounts) loadStaffAccounts();
+  const txAccount = (DB.staffAccounts||[]).find(a=>a.account_type==='Transactional');
+  if(!DB.loPerformance) loadLoanOfficerPerformance();
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+          <h3 style="color:var(--navy); margin:0;">${escapeHtml(session.userName)}</h3>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="openStaffActionsModal()">Options</button>
+      </div>
+
+      <div style="background:#3E77A8; color:#fff; border-radius:12px; padding:16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <div style="display:flex; align-items:baseline; gap:6px;">
+            <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
+            <span style="font-size:24px; font-weight:800;">${fmtNum(txAccount?txAccount.balance:0)}</span>
+          </div>
+          <div class="hint" style="color:#DCEBFA; margin-top:2px;">ACC Balances</div>
+        </div>
+        <button class="btn btn-sm btn-green" onclick="openLoStaffAccount()">View</button>
+      </div>
+
+      <div class="detail-label">Contact</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
+      <div class="detail-label">Idno</div><div class="detail-value">${escapeHtml(me.national_id||"—")}</div>
+      <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
+      <div class="detail-label">Gender</div><div class="detail-value">${escapeHtml(me.gender||"—")}</div>
+      <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||"—")}</div>
+      <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
+      <div class="detail-label">Roles</div><div class="detail-value">${session.role}</div>
+      <div class="detail-label">Access level</div><div class="detail-value">${escapeHtml(me.access_level||"—")}</div>
+      <div class="detail-label">Position</div><div class="detail-value">${escapeHtml(me.job_title||"—")}</div>
+      <div class="detail-label">Entry date</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
+      <div class="detail-label">Leaves</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
+
+      ${renderLoViewDetailsFilterPanel()}
+    </div>
+  `;
+}
+// A single filter row (Performance/Interactions/Staff Loans/Leaves &
+// Payroll, plus a year picker and a Notes button) driving which real
+// panel renders below it — each panel loads its own real backend data,
+// nothing fabricated client-side.
+const LO_VIEW_DETAILS_PANELS = ['Performance','Interactions','Staff Loans','Leaves & Payroll'];
+function defaultLoViewDetailsState(){ return { panel:'Performance', year:new Date().getFullYear() }; }
+function renderLoViewDetailsFilterPanel(){
+  const vd = session.loViewDetailsState || (session.loViewDetailsState = defaultLoViewDetailsState());
+  const curYear = new Date().getFullYear();
+  const meCreatedYear = DB.me && DB.me.created_at ? new Date(DB.me.created_at).getFullYear() : curYear;
+  const yearOptions = [];
+  for(let y=curYear; y>=Math.min(meCreatedYear, curYear-2); y--) yearOptions.push(y);
+  let panelBody;
+  if(vd.panel==='Interactions') panelBody = renderLoViewDetailsInteractionsPanel(vd);
+  else if(vd.panel==='Staff Loans') panelBody = renderLoViewDetailsStaffLoansPanel(vd);
+  else if(vd.panel==='Leaves & Payroll') panelBody = renderLoViewDetailsLeavesPayrollPanel(vd);
+  else panelBody = renderLoViewDetailsPerformancePanel(vd);
+  return `
+    <div class="pill-row" style="align-items:center; gap:8px; margin:18px 0 10px; flex-wrap:wrap;">
+      <select onchange="session.loViewDetailsState.panel=this.value; renderApp();">
+        ${LO_VIEW_DETAILS_PANELS.map(p=>`<option value="${p}" ${vd.panel===p?'selected':''}>${p}</option>`).join("")}
+      </select>
+      <select onchange="session.loViewDetailsState.year=Number(this.value); renderApp();">
+        ${yearOptions.map(y=>`<option value="${y}" ${vd.year===y?'selected':''}>${y}</option>`).join("")}
+      </select>
+      <span style="flex:1 1 auto;"></span>
+      <button class="btn btn-outline btn-sm" onclick="openStaffCreateInteractionModal()">📝 Notes</button>
+    </div>
+    ${panelBody}
+  `;
+}
+function renderLoViewDetailsPerformancePanel(vd){
+  if(!DB.loPerformance || DB.loPerformance.year !== String(vd.year)) loadLoanOfficerPerformance(vd.year);
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `
+    <div class="card-title" style="background:var(--blue-bg);">${vd.year} Performance</div>
+    <div class="table-wrap"><table>
+      <tr>
+        <th rowspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none; vertical-align:middle;">Month</th>
+        <th colspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none;">New Loans</th>
+        <th colspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Repeat Loans</th>
+        <th colspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Performing</th>
+        <th colspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Arrears</th>
+        <th colspan="2" style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Revenue</th>
+      </tr>
+      <tr>
+        ${['New Loans','Repeat Loans','Performing','Arrears','Revenue'].map(()=>`<th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Target</th><th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Actual</th>`).join("")}
+      </tr>
+      ${!DB.loPerformance || DB.loPerformance.year !== String(vd.year) ? `<tr><td colspan="11" class="empty">Loading…</td></tr>` : DB.loPerformance.months.map(mo=>`<tr>
+        <td>${MONTH_ABBR[mo.month-1]}</td>
+        <td>${fmtNum(mo.newLoans.target)}</td><td>${fmtNum(mo.newLoans.actual)}</td>
+        <td>${fmtNum(mo.repeatLoans.target)}</td><td>${fmtNum(mo.repeatLoans.actual)}</td>
+        <td>${fmtNum(mo.performing.target)}</td><td>${fmtNum(mo.performing.actual)}</td>
+        <td>${fmtNum(mo.arrears.target)}</td><td>${fmtNum(mo.arrears.actual)}</td>
+        <td>${fmtNum(mo.revenue.target)}</td><td>${fmtNum(mo.revenue.actual)}</td>
+      </tr>`).join("")}
+    </table></div>
+  `;
+}
+function renderLoViewDetailsInteractionsPanel(vd){
+  const fresh = DB.staffInteractions && DB.staffInteractions.year === vd.year;
+  if(!fresh) loadStaffInteractions(vd.year);
+  const rows = fresh ? DB.staffInteractions.interactions : null;
+  return `
+    <div class="card-title" style="background:var(--blue-bg); justify-content:center;">Staff Interactions</div>
+    <div class="table-wrap"><table>
+      <tr>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Subject</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Note</th>
+      </tr>
+      ${rows===null ? `<tr><td colspan="3" class="empty">Loading…</td></tr>` : (rows.length ? rows.map(i=>`<tr>
+        <td>${new Date(i.created_at).toLocaleDateString()}</td>
+        <td>${escapeHtml(i.subject)}</td>
+        <td>${escapeHtml(i.note)}</td>
+      </tr>`).join("") : `<tr><td colspan="3" class="empty">No Interactions Found</td></tr>`)}
+    </table></div>
+  `;
+}
+function renderLoViewDetailsStaffLoansPanel(vd){
+  if(!DB.loStaffLoans) loadLoStaffLoans();
+  const rows = DB.loStaffLoans;
+  return `
+    <div class="card-title" style="background:var(--blue-bg);">Staff Loans</div>
+    <div class="table-wrap"><table>
+      <tr>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Loan ID</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Client</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Product</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Principal</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Balance</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Status</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Disbursed</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">DPD</th>
+      </tr>
+      ${rows===null||rows===undefined ? `<tr><td colspan="8" class="empty">Loading…</td></tr>` : (rows.length ? rows.map(l=>`<tr>
+        <td>${l.loanId.slice(-8).toUpperCase()}</td>
+        <td>${escapeHtml(l.clientName)}</td>
+        <td>${escapeHtml(productName(l.productId))}</td>
+        <td>${fmtNum(l.principal)}</td>
+        <td>${fmtNum(l.balance)}</td>
+        <td>${escapeHtml(l.displayStatus)}</td>
+        <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString() : '—'}</td>
+        <td>${l.dpd}</td>
+      </tr>`).join("") : `<tr><td colspan="8" class="empty">No Loans Found</td></tr>`)}
+    </table></div>
+  `;
+}
+function renderLoViewDetailsLeavesPayrollPanel(vd){
+  if(!DB.myLeaveRequests) loadMyLeaveRequests();
+  const payrollFresh = DB.staffPayroll && DB.staffPayroll.year === String(vd.year);
+  if(!payrollFresh) loadStaffPayroll(vd.year);
+  if(DB.myLeaveRequests===null || DB.myLeaveRequests===undefined || !payrollFresh){
+    return `<div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div><div class="table-wrap"><table><tr><td class="empty">Loading…</td></tr></table></div>`;
+  }
+  const leaveRows = (DB.myLeaveRequests||[]).filter(l=>new Date(l.start_date).getFullYear()===vd.year).map(l=>({
+    date: l.start_date, type: `${l.leave_type} Leave`, details: `${l.start_date} to ${l.end_date} (${l.status})`, info: '', sortKey: l.start_date,
+  }));
+  const payrollRows = DB.staffPayroll.months.map(p=>{
+    const [y,m] = p.period.split('-');
+    const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return { date: `${MONTH_ABBR[Number(m)-1]} 01`, type: `${MONTH_ABBR[Number(m)-1]} 01 Salary`,
+      details: `Safaricom MPESA, ${DB.me&&DB.me.branch_id?branchName(DB.me.branch_id):'—'} Branch\nCHQ No: ${p.ref}\nAcc: ${escapeHtml((DB.me&&DB.me.phone)||'')}`,
+      info: p.netPay, period: p.period, sortKey: p.period+'-01' };
+  });
+  const rows = [...leaveRows, ...payrollRows].sort((a,b)=> b.sortKey.localeCompare(a.sortKey));
+  return `
+    <div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div>
+    <div class="table-wrap"><table>
+      <tr>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Type</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Details</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Info</th>
+      </tr>
+      ${rows.length ? rows.map(r=>`<tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(r.type)}</td>
+        <td style="white-space:pre-line;">${escapeHtml(r.details)}</td>
+        <td>${r.period ? `KES ${fmtNum(r.info)} <span class="clickable" style="cursor:pointer;" title="Print" onclick="printLoanOfficerPayslip('${r.period}')">🖨</span>` : escapeHtml(r.info||'')}</td>
+      </tr>`).join("") : `<tr><td colspan="4" class="empty">No Leaves or Payslips Found</td></tr>`}
+    </table></div>
+  `;
+}
+function renderLoStaffAccountPage(){
+  const st = session.loStaffAccountState || (session.loStaffAccountState = defaultLoStaffAccountState());
+  if(!DB.staffAccounts){
+    loadStaffAccounts();
+    return `<div class="card"><div class="empty">Loading…</div></div>`;
+  }
+  const account = DB.staffAccounts.find(a=>a.account_type===st.type);
+  const txnsFresh = DB.staffAccountTransactions && DB.staffAccountTransactions.type===st.type && DB.staffAccountTransactions.from===st.from && DB.staffAccountTransactions.to===st.to;
+  if(!txnsFresh) loadStaffAccountTransactions(st.type, st.from, st.to);
+  const txns = txnsFresh ? DB.staffAccountTransactions.transactions : null;
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+        <span class="btn btn-outline btn-sm" onclick="closeLoStaffAccount()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0; cursor:pointer;" onclick="openModal('staff-account-type')">${st.type} Account ▾</h3>
+      </div>
+
+      <div style="background:#3E77A8; color:#fff; border-radius:12px; padding:16px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div style="display:flex; align-items:baseline; gap:6px;">
+            <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
+            <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.balance:0)}</span>
+          </div>
+          <button class="btn btn-sm btn-green" onclick="openStaffDepositModal()" style="flex-shrink:0;">⊕ Deposit</button>
+        </div>
+        <div class="hint" style="color:#DCEBFA; margin-top:2px;">Available Balance</div>
+        <div style="border-top:1px solid rgba(255,255,255,0.3); margin-top:12px; padding-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <span style="font-size:12px; color:#BEE0FF;">AccNo: ${account?escapeHtml(account.account_number):''}</span>
+          <button class="btn btn-sm btn-green" onclick="toast('Coming soon')" style="flex-shrink:0;">⇄ Transfer</button>
+        </div>
+      </div>
+
+      <div style="background:#2C5F4F; color:#fff; border-radius:12px; padding:16px; margin-bottom:18px;">
+        <div style="display:flex; align-items:baseline; gap:6px;">
+          <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
+          <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.withdrawals_total:0)}</span>
+        </div>
+        <div class="hint" style="color:#CFE5DC; margin-top:2px;">Withdrawals</div>
+      </div>
+
+      <h3 style="color:var(--navy); margin-bottom:10px;">Transaction List</h3>
+      <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
+        <input type="date" value="${st.from}" onchange="session.loStaffAccountState.from=this.value; renderApp();" style="flex-shrink:0;">
+        <span class="hint" style="flex-shrink:0;">~</span>
+        <input type="date" value="${st.to}" onchange="session.loStaffAccountState.to=this.value; renderApp();" style="flex-shrink:0;">
+      </div>
+      <div class="table-wrap"><table>
+        <tr>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">TID</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Details</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Approval</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Amount</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Bal After</th>
+        </tr>
+        ${txns===null ? `<tr><td colspan="6" class="empty">Loading…</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+          <td>${new Date(t.created_at).toLocaleDateString()}</td>
+          <td>${escapeHtml(t.tid||'—')}</td>
+          <td>${escapeHtml(t.details||t.type)}</td>
+          <td>${escapeHtml(t.approval_status)}</td>
+          <td>${fmtNum(t.amount)}</td>
+          <td>${fmtNum(t.balance_after)}</td>
+        </tr>`).join("") : `<tr><td colspan="6" class="empty">No Transactions Found</td></tr>`)}
+      </table></div>
+    </div>
+  `;
+}
+function renderStaffAccountTypeModal(){
+  const st = session.loStaffAccountState || defaultLoStaffAccountState();
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Select Account</h3>
+      ${CLIENT_ACCOUNT_TYPES.map(t=>`
+        <label style="display:flex; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;">
+          <input type="radio" name="staff-acc-type" value="${t}" ${st.type===t?'checked':''} onchange="session.loStaffAccountState.type='${t}'; closeModal();">
+          <span>${t} Account</span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+function openStaffDepositModal(){ openModal('staff-deposit-wallet'); }
+function submitStaffDeposit(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.phone || !f.amount || !(Number(f.amount)>0)){ toast("Enter a valid phone number and amount"); return false; }
+  const st = session.loStaffAccountState || defaultLoStaffAccountState();
+  return withRequest('staff-deposit-wallet', async ()=>{
+    const res = await api.post(`/api/users/me/accounts/${st.type}/deposit`, { phone: f.phone, amount: Number(f.amount) });
+    if(res.status === 'INITIATED'){ toast("STK push sent — check your phone"); closeModal(); }
+    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
+    else { toast(res.message || "Could not initiate the deposit"); }
+  });
+}
+function renderStaffDepositModal(){
+  const me = DB.me || {};
+  const st = session.loStaffAccountState || defaultLoStaffAccountState();
+  const account = (DB.staffAccounts||[]).find(a=>a.account_type===st.type);
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Deposit to ${st.type} Wallet</h3>
+      <form onsubmit="return submitStaffDeposit(event)">
+        <div class="field"><label>Select Deposit Method</label><select name="method"><option>Direct from MPESA</option></select></div>
+        <div class="hint" style="margin:8px 0 14px;">Automatic topup via M-Pesa using <strong>Account No: ${account?escapeHtml(account.account_number):''}</strong></div>
+        <div class="field"><label>MPESA Phone number</label><input name="phone" value="${escapeHtml(me.phone||'')}" required></div>
+        <div class="field"><label>Amount to Pay</label><input name="amount" type="number" min="1" required></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Request</button>
+        </div>
+      </form>
+    </div>
+  `;
 }
 
 function renderUpdateDetails(){
@@ -12086,6 +12575,10 @@ function renderModal(){
   else if(modal.type === "loan-action-options") body = renderLoanActionOptionsModal();
   else if(modal.type === "loan-payment-request") body = renderLoanPaymentRequestModal();
   else if(modal.type === "tag-loan") body = renderTagLoanModal();
+  else if(modal.type === "staff-actions") body = renderStaffActionsModal();
+  else if(modal.type === "staff-account-type") body = renderStaffAccountTypeModal();
+  else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
+  else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   return `<div class="modal-overlay" onclick="if(event.target===this${modal.type==='session-expired'?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;

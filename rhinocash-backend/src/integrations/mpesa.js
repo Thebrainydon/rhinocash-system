@@ -300,6 +300,52 @@ async function initiateWalletStkPush({ accountId, accountNumber, phone, amount, 
   }
 }
 
+// Real STK Push initiation for a staff member's own wallet deposit — the
+// exact same design as initiateWalletStkPush above (client wallets), just
+// its own table (staff_account_stk_requests), so a staff deposit can never
+// collide with a client's.
+async function initiateStaffWalletStkPush({ accountId, accountNumber, phone, amount, initiatedBy }) {
+  const config = await effectiveConfig();
+  if (!config) return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration.' };
+  const tokenResult = await requestOAuthToken(config);
+  if (!tokenResult.ok) return { status: 'FAILED', message: tokenResult.message };
+
+  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const password = Buffer.from(`${config.shortcode}${config.passkey}${timestamp}`).toString('base64');
+  const payload = {
+    BusinessShortCode: config.shortcode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Math.round(amount),
+    PartyA: phone,
+    PartyB: config.shortcode,
+    PhoneNumber: phone,
+    CallBackURL: config.callbackUrl,
+    AccountReference: accountNumber,
+    TransactionDesc: 'Staff wallet deposit',
+  };
+  try {
+    const res = await fetch(STK_PUSH_URL[config.environment], {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenResult.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 200 && body && body.CheckoutRequestID) {
+      const crypto = require('node:crypto');
+      await run(
+        `INSERT INTO staff_account_stk_requests (id, checkout_request_id, account_id, phone, amount, environment, initiated_by) VALUES (?,?,?,?,?,?,?)`,
+        ['sstk_' + crypto.randomUUID(), body.CheckoutRequestID, accountId, phone, amount, config.environment, initiatedBy || null]
+      );
+      return { status: 'INITIATED', checkoutRequestId: body.CheckoutRequestID, message: 'STK push sent to your phone.' };
+    }
+    return { status: 'FAILED', message: (body && (body.errorMessage || body.ResponseDescription)) || `Safaricom returned HTTP ${res.status}.` };
+  } catch (e) {
+    return { status: 'FAILED', message: 'Could not reach Safaricom to initiate the STK push — check outbound network access.' };
+  }
+}
+
 // Real STK Push initiation for a loan application's real, required
 // processing fee — a genuinely separate request path again (its own
 // loan_fee_payments row, no mpesa_stk_requests/client_account_stk_requests
@@ -643,7 +689,7 @@ async function processCallback(callbackId, actorUserId) {
 }
 
 module.exports = {
-  isConfigured, initiateStkPush, initiateWalletStkPush, initiateLoanFeeStkPush, recordCallback, unmatchedCallbacks, processCallback,
+  isConfigured, initiateStkPush, initiateWalletStkPush, initiateStaffWalletStkPush, initiateLoanFeeStkPush, recordCallback, unmatchedCallbacks, processCallback,
   validateC2b, recordC2bTransaction, processC2bTransaction, unmatchedC2bTransactions,
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,

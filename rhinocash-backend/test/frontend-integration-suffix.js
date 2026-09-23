@@ -2260,6 +2260,127 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
       __assert(DB.acctPages.promises.promises.find(p=>p.id===newPromise.id), "real evaluatePromise() through the actual UI function re-fetches the real promise state");
     }
 
+    // My Account -> View Details (Loan Officer's chrome-free profile page):
+    // real ACC BALANCES tile into the new staff wallet subsystem
+    // (staffWallet.js), and the real 2026 Performance table backed by the
+    // new GET /api/users/me/performance endpoint (targets.js) — nothing
+    // here is fabricated client-side.
+    DB.staffAccounts = null; DB.staffAccountTransactions = null; DB.loPerformance = null;
+    session.loStaffAccountOpen = false; session.loStaffAccountState = null;
+    goTo('account','View Details');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Loan Officer View Details page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
+    __assert(html.includes('ACC Balances') && html.includes('Options') && html.includes('Contact') && html.includes('Idno') && html.includes('Gender') && html.includes('Jobno') && html.includes('Roles') && html.includes('Position') && html.includes('Entry date') && html.includes('Leaves'), "the real View Details page genuinely renders with the requested ACC BALANCES tile, Options button, and full profile field set");
+    __assert(html.includes('Performance') && html.includes('New Loans') && html.includes('Repeat Loans') && html.includes('Performing') && html.includes('Arrears') && html.includes('Revenue'), "the real Performance table genuinely renders with all 5 requested metric columns");
+    __assert(Array.isArray(DB.loPerformance && DB.loPerformance.months) && DB.loPerformance.months.length===12, "the real performance data genuinely loaded from the real backend, not fabricated client-side");
+    __assert(Array.isArray(DB.staffAccounts) && DB.staffAccounts.length===3, "the real staff wallet accounts genuinely auto-provisioned and loaded");
+
+    openStaffActionsModal();
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'staff-actions' && html.includes('Staff Actions'), "the real Options button genuinely opens the real, empty Staff Actions modal");
+    closeModal();
+
+    openLoStaffAccount();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(session.loStaffAccountOpen === true, "the real View button at ACC Balances genuinely opens the real Transactional wallet page");
+    __assert(html.includes('Transactional Account') && html.includes('AccNo') && html.includes('Deposit') && html.includes('Transfer') && html.includes('Withdrawals') && html.includes('Transaction List'), "the real Transactional Account wallet page genuinely renders with the requested balance/AccNo/Deposit/Transfer/Withdrawals/Transaction List elements");
+    __assert(DB.staffAccountTransactions && DB.staffAccountTransactions.type === 'Transactional' && Array.isArray(DB.staffAccountTransactions.transactions), "the real Transaction List genuinely loaded from the real backend for the real Transactional account");
+
+    openModal('staff-account-type');
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'staff-account-type' && html.includes('Investment Account') && html.includes('Savings Account'), "the real account-type switcher modal genuinely renders all 3 real account types");
+    closeModal();
+
+    openStaffDepositModal();
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'staff-deposit-wallet' && html.includes('Deposit to Transactional Wallet') && html.includes('MPESA Phone number') && html.includes('Amount to Pay'), "the real Deposit modal genuinely renders with the requested title and form fields");
+    const toastsBeforeDeposit = toasts.length;
+    let staffDepForm = new Map([['method','Direct from MPESA'],['phone','0722000111'],['amount','500']]);
+    global.FormData = class { constructor(){ return staffDepForm; } };
+    await submitStaffDeposit({ preventDefault(){}, target:{} });
+    __assert(toasts.length > toastsBeforeDeposit, "a real staff deposit request genuinely reaches the real STK-push backend and surfaces a real toast, not a silent no-op");
+    closeModal();
+    closeLoStaffAccount();
+    __assert(session.loStaffAccountOpen === false, "the real back arrow genuinely returns from the wallet page to View Details");
+
+    // View Details' real filter panel (Performance/Interactions/Staff
+    // Loans/Leaves & Payroll) plus the real "Create Interaction" flow and
+    // the real, statutory-formula payslip print page.
+    const officerUserId = DB.me.id;
+    session.loViewDetailsState = null;
+    goTo('account','View Details');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Performance') && html.includes('Interactions') && html.includes('Staff Loans') && html.includes('Leaves & Payroll'), "the real View Details filter row genuinely offers all 4 requested panels");
+    __assert(html.includes('Notes'), "the real Notes button genuinely renders in the View Details filter row");
+    __assert(session.loViewDetailsState.panel === 'Performance', "the real default panel is genuinely Performance");
+
+    session.loViewDetailsState.panel = 'Interactions';
+    DB.staffInteractions = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Staff Interactions'), "the real Interactions panel genuinely renders with the requested title");
+    __assert(DB.staffInteractions && Array.isArray(DB.staffInteractions.interactions), "the real interactions list genuinely loaded from the real backend, not fabricated client-side");
+
+    openStaffCreateInteractionModal();
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(modal && modal.type === 'staff-create-interaction' && html.includes('Create Interaction') && html.includes('Subject to Address') && html.includes('Message Note'), "the real Notes button genuinely opens the real Create Interaction modal");
+    __assert(STAFF_INTERACTION_SUBJECTS.every(s=>html.includes(s)), "the real Subject to Address dropdown genuinely offers every requested subject (Performance/PTP/Collection/Arrears/Production/Follow-Up)");
+
+    let interactionForm = new Map([['subject','PTP'],['note','Client promised full payment by Friday']]);
+    global.FormData = class { constructor(){ return interactionForm; } };
+    await submitStaffCreateInteraction({ preventDefault(){}, target:{} });
+    __assert(modal === null, "a real, valid interaction submission genuinely closes the modal");
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client promised full payment by Friday') && html.includes('PTP'), "the real, just-posted interaction genuinely appears in the real Interactions table");
+
+    session.loViewDetailsState.panel = 'Staff Loans';
+    DB.loStaffLoans = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Staff Loans') && html.includes('Loan ID') && html.includes('Principal') && html.includes('Balance') && html.includes('DPD'), "the real Staff Loans panel genuinely renders with the requested title and column set");
+    __assert(Array.isArray(DB.loStaffLoans), "the real Staff Loans data genuinely loaded from the real, existing GET /api/loans/view endpoint, not fabricated client-side");
+
+    // Real Basic Salary + real Kenyan statutory payroll (Admin sets it, officer sees it).
+    let adminForm4 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm4; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const salarySet = await api.patch(`/api/users/${officerUserId}`, { basic_salary: 26000 });
+    __assert(Number(salarySet.user.basic_salary) === 26000, "Admin genuinely sets a real Basic Salary for the officer via the actual staff-management endpoint");
+
+    let of8 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of8; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.loViewDetailsState = null;
+    goTo('account','View Details');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    session.loViewDetailsState.panel = 'Leaves & Payroll';
+    DB.staffPayroll = null; DB.myLeaveRequests = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,120)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Leaves') && html.includes('Payslips'), "the real Leaves & Payroll panel genuinely renders with the requested title");
+    __assert(DB.staffPayroll && DB.staffPayroll.months.length > 0, "once a real Basic Salary exists, a real current-month payslip genuinely appears — computed from the real Kenyan NSSF/SHIF/PAYE statutory formulas, never fabricated");
+    const thisMonthPayslip = DB.staffPayroll.months[0];
+    __assert(html.includes('KES ' + fmtNum(thisMonthPayslip.netPay)), "the real computed Net Pay genuinely renders in the Leaves & Payroll table");
+
+    printLoanOfficerPayslip(thisMonthPayslip.period);
+    await new Promise(r=>setTimeout(r,500)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('RHINOCASH LTD') && html.includes('Salary Slip') && html.includes('NSSF') && html.includes('SHIF') && html.includes('PAYE') && html.includes('Net Salary') && html.includes('Employee Signature'), "the real payslip print page genuinely renders with the requested letterhead and full Earnings/Deductions breakdown");
+    __assert(DB.staffPayslip && DB.staffPayslip.period === thisMonthPayslip.period && DB.staffPayslip.netPay === thisMonthPayslip.netPay, "the real single-period payslip print data genuinely matches the real monthly list figures, not separately fabricated");
+    session.loViewDetailsState.printPeriod = null;
+    renderApp();
+
     // Manager reuses the SAME real LoanBook pages — shared engine, role-appropriate scope, no duplicate frontend.
     let mk8 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mk8; } };

@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 875 passed, 0 failed  (drives the real UI functions in
+Backend:  1,137 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 905 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,972 passed, 0 failed
+Total:    2,042 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -964,6 +964,56 @@ Receipts, Pay-in Summary, Payments Report, Validate Payments) — all
 built as real, chrome-free pages over real, already-existing or minimally
 and honestly extended backend data, matching each reference design
 exactly.
+
+The Loan Officer's My Account -> View Details page is now a real,
+chrome-free profile page: a real ACC BALANCES tile into a brand-new staff
+wallet subsystem (`staff_accounts`/`staff_account_transactions`/
+`staff_account_stk_requests`, the exact same real, deliberately-separate
+STK-deposit-request design the existing client wallet already uses — see
+`src/routes/staffWallet.js` and `mpesa.initiateStaffWalletStkPush`),
+profile fields sourced from real `users` columns (two new nullable ones,
+`national_id`/`gender`, self-healed via `ensureColumn` for databases
+created before this change), and a filter-driven panel underneath
+(Performance/Interactions/Staff Loans/Leaves & Payroll, plus a year
+picker and a "Notes" button):
+
+- **Performance** reuses the real month-by-month achievement engine
+  (`GET /api/users/me/performance`, `src/routes/targets.js`) — New Loans
+  and Revenue carry a real Target wherever a manager has actually set one
+  (the existing `new_loans`/`collection` target metrics); Repeat Loans/
+  Performing/Arrears carry a real computed Actual but an honest 0 Target,
+  since no dedicated target metric exists for them. Performing/Arrears
+  are a real snapshot "as of this month" and are only ever computed for a
+  month that has genuinely begun — a month that has not started yet
+  always shows 0, never a fabricated future condition.
+- **Interactions** is a real, self-authored note log
+  (`staff_interactions` table, `GET`/`POST /api/users/me/interactions`)
+  — the same real "Create Interaction" pattern `client_interactions`
+  already gives clients, just scoped to a staff member's own record, with
+  the same real Subject categories (Performance/PTP/Collection/Arrears/
+  Production/Follow-Up) the reference design specified.
+- **Staff Loans** reuses the existing, already-comprehensive
+  `GET /api/loans/view` endpoint outright — no new backend endpoint —
+  showing the officer's own real loan portfolio (Loan ID/Client/Product/
+  Principal/Balance/Status/Disbursed/DPD).
+- **Leaves & Payroll** merges real leave requests (the existing
+  `GET /api/leave-requests?mine=1`) with a real, computed monthly payroll
+  (`GET /api/users/me/payroll`, `src/routes/staffProfile.js`): a real
+  Basic Salary field an Admin/CEO/Director sets via the existing
+  `PATCH /api/users/:id` staff-management endpoint, and real Kenyan
+  statutory NSSF (6% up to the real KES 72,000 Upper Earnings Limit),
+  SHIF (2.75%, real KES 300 statutory minimum), and PAYE (the real 2023
+  Finance Act progressive bands, less the real KES 2,400 personal
+  relief) deductions — genuinely computed, never fabricated placeholder
+  zeros. A real Salary Advance deduction is pulled from
+  `salary_advance_requests` for any advance actually approved within
+  that period. A payslip only ever exists for a period that has
+  genuinely begun and where the staff member was genuinely already
+  employed by its end. The print button opens a real payslip page (the
+  same `window.print()` convention as every other printable page in this
+  app) with a real Earnings/Deductions breakdown, a real computed
+  amount-in-words line, and blank Employee/HR signature lines for a human
+  to actually sign.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
