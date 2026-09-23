@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,166 backend tests and 944 frontend tests, all
+At last verification: **1,170 backend tests and 954 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -151,6 +151,14 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   Message or Inquiry, a real "Send To" staff directory) and a real,
   chrome-free "Raised Ticket" page reusing the same real ticket list as
   the topbar Tickets panel.
+- **Loan Officer's LoanBook -> Create Loan Application** — complete: a
+  real form connected to the client/product/processing-fee backend (the
+  full real product catalog, real client-ID lookup, real STK-push/
+  manual-confirm processing fee, and real server-side New Loan/Repeat
+  Loan enforcement all already existed), with real Loan Duration in days,
+  a real green success toast, a real live "Waiting {Role}"/disbursed-date
+  Disbursement column tracking the real 4-step approval chain, and a
+  real auto-detected already-paid processing fee.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide

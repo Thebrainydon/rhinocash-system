@@ -3583,7 +3583,7 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     session.loanAppState.productId = starterProduct.id;
     renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('<option value="1" selected>4 weeks</option>'), "selecting a real weekly product genuinely auto-fills Loan Duration with its own single real term, pre-selected");
+    __assert(html.includes('<option value="1" selected>28 days</option>'), "selecting a real weekly product genuinely auto-fills Loan Duration with its own single real term expressed in real days (4 weeks = 28 days, matching the reference wording), pre-selected");
 
     // Real "Repeat Loan" prefill: DB.loans already has a real prior loan
     // for this client (createLoanApplication further below reuses
@@ -3596,6 +3596,29 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     handleLoanCategoryChange('Repeat Loan', { form: fakeForm });
     __assert(fakeGuarantorInput.value === 'Prefill Guarantor' && fakeGuarantorContactInput.value === '0700111222', "choosing Repeat Loan genuinely prefills the real guarantor name/contact from the client's real most recent prior loan");
     DB.loans.splice(DB.loans.indexOf(priorLoanForPrefill), 1);
+
+    // Real "has this client already paid?" auto-detect: a real Confirmed
+    // processing fee, paid earlier for this exact real client + product
+    // (e.g. via the topbar's own Processing Fee flow), genuinely appears
+    // automatically the next time the officer opens Create Application
+    // and types the same real client's ID number — no re-payment prompt.
+    session.loanAppState = { idNumber: lookupClient.idNumber||'', matchedClient: lookupClient, productId: starterProduct.id, notFound:false, feePhone: lookupClient.phone, feePayment: null };
+    await initiateProcessingFee();
+    await confirmProcessingFee('FEEDETECT1');
+    __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.status === 'Confirmed', "setup: a real fee payment for this client+product is genuinely Confirmed");
+
+    session.loanAppState = { idNumber: lookupClient.idNumber||'', matchedClient: lookupClient, productId: starterProduct.id, notFound:false, feePhone: '', feePayment: null };
+    await checkExistingProcessingFee();
+    __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.status === 'Confirmed' && session.loanAppState.feePayment.receiptNumber === 'FEEDETECT1', "opening Create Application fresh for the same real client and product genuinely auto-detects the real already-Confirmed fee payment, without the officer re-paying");
+
+    // A DIFFERENT, still-unpaid product for the very same real client
+    // genuinely does NOT show a fee payment — it only ever reflects a
+    // real Confirmed payment for the exact selected product.
+    const otherFeeProduct = DB.products.find(p=>p.id==='pr_ln_jijenge');
+    session.loanAppState = { idNumber: lookupClient.idNumber||'', matchedClient: lookupClient, productId: otherFeeProduct.id, notFound:false, feePhone: '', feePayment: null };
+    await checkExistingProcessingFee();
+    __assert(!session.loanAppState.feePayment, "a real client who has not paid the processing fee for this real different product genuinely shows no fee payment — it never appears unless actually paid");
+
     session.loanAppState = null;
   }
 
@@ -3666,8 +3689,10 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     let wkLoanForm = new Map([['clientId',wkFrontendClient.id],['productId','pr_ln_starter'],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Real Guarantor'],['guarantor_contact','0711222333'],['processing_fee_id',session.loanAppState.feePayment.id]]);
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
+    const toastsBeforeSuccess = toasts.length;
     await submitLoanApp({ preventDefault(){}, target:{} });
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
+    __assert(toasts.length > toastsBeforeSuccess && toasts[toasts.length-1].type === 'success' && /submitted successfully/i.test(toasts[toasts.length-1].msg), "a real successful submission genuinely shows the reference's greenish success toast, not the app's default navy one");
     const wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
@@ -3687,22 +3712,46 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 
     // Before any real approval exists, the real Approvals column genuinely
     // shows a plain dash (never a fabricated approver), and the real
-    // Disbursement column genuinely shows the loan's real submission
-    // timestamp (its most recent real event, since no approval or
-    // disbursement has happened yet) — not the old fixed "Waiting for X"
-    // status text.
+    // Disbursement column genuinely shows a real, live "Waiting {Role}"
+    // label derived from the loan's own real status — matching the
+    // reference screenshots' staged Approvals/Disbursement columns —
+    // never a stale leftover submission timestamp.
     __assert(!wkFrontendLoan.approvals || wkFrontendLoan.approvals.length === 0, "a freshly submitted real loan genuinely has no real approvals yet");
-    __assert(undisbHtml.includes(fmtLoanDetailDateTime(wkFrontendLoan.createdAt)), "the real Disbursement column genuinely shows the loan's real most-recent event timestamp (its own submission time, since nothing has happened to it yet), not a fabricated placeholder");
+    __assert(wkFrontendLoan.status === 'Waiting for Manager', "a freshly submitted real loan genuinely starts at the real first real approval step");
+    __assert(undisbHtml.includes('Waiting Manager'), "the real Disbursement column genuinely shows a real, live 'Waiting Manager' label for a loan still at its first real approval step, not the loan's own real submission timestamp");
+    __assert(loanDisbursementCellLabel(wkFrontendLoan).includes('Waiting Manager') && !loanDisbursementCellLabel(wkFrontendLoan).includes(fmtLoanDetailDateTime(wkFrontendLoan.createdAt)), "the real Disbursement cell's own rendered output for this loan is genuinely the live 'Waiting Manager' label, not its submission timestamp (checked directly against the cell function, since the Application column elsewhere in the same row legitimately shows that same timestamp)");
 
     // Rendering path check (adaptLoan's own real mapping is covered
     // separately by the backend's approval-chain integration test): once a
     // loan genuinely carries more than one real approval, the Approvals
     // column stacks every one of them, in order, rather than only the
-    // latest — this exercises that exact real template branch.
+    // latest — this exercises that exact real template branch, and each
+    // real 'Approved' decision genuinely reads as the reference's short
+    // "Ok" shorthand (the real stored decision value is untouched).
     wkFrontendLoan.approvals = [{ name:'First Approver', decision:'Approved', createdAt: wkFrontendLoan.createdAt }, { name:'Second Approver', decision:'Approved', createdAt: wkFrontendLoan.createdAt }];
+    wkFrontendLoan.status = 'Waiting for Operational Manager';
     renderApp();
     const stackedHtml = document.getElementById('root').innerHTML;
     __assert(stackedHtml.includes('First Approver') && stackedHtml.includes('Second Approver'), "the real Approvals column genuinely shows the whole real chain stacked, not only the most recent decision");
+    __assert(stackedHtml.includes('First Approver</strong>: <em>Ok</em>') && stackedHtml.includes('Second Approver</strong>: <em>Ok</em>'), "each real 'Approved' decision genuinely displays as the reference's short 'Ok' wording in this one compact table cell");
+    __assert(stackedHtml.includes('Waiting Operational Manager'), "the real Disbursement column genuinely tracks the loan's real current approval step as it progresses");
+
+    // A real 'Rejected' or 'Returned' decision is never relabeled — only
+    // 'Approved' has a reference-matching short form.
+    wkFrontendLoan.approvals = [{ name:'Third Approver', decision:'Rejected', createdAt: wkFrontendLoan.createdAt }];
+    renderApp();
+    const rejectedHtml = document.getElementById('root').innerHTML;
+    __assert(rejectedHtml.includes('Third Approver</strong>: <em>Rejected</em>'), "a real 'Rejected' decision genuinely still displays its own real word, never relabeled to 'Ok'");
+
+    // Once genuinely disbursed, the Disbursement column shows the real
+    // disbursed date/time itself, in green, not a 'Waiting' label.
+    const disbursedStamp = new Date().toISOString();
+    wkFrontendLoan.disbursedAt = disbursedStamp;
+    renderApp();
+    const disbursedHtml = document.getElementById('root').innerHTML;
+    __assert(disbursedHtml.includes(fmtLoanDetailDateTime(disbursedStamp)) && disbursedHtml.includes('color:var(--green'), "the real Disbursement column genuinely shows the real disbursed date/time, styled green, once the loan is genuinely disbursed");
+    wkFrontendLoan.disbursedAt = null;
+    wkFrontendLoan.status = 'Waiting for Manager';
     wkFrontendLoan.approvals = [];
     renderApp();
 

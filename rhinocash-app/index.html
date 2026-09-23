@@ -220,6 +220,7 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
 .close-x{cursor:pointer; font-size:20px; color:var(--ink-faint); line-height:1;}
 .toast-wrap{position:fixed; bottom:20px; right:20px; z-index:100; display:flex; flex-direction:column; gap:8px;}
 .toast{background:var(--navy); color:#fff; padding:11px 18px; border-radius:9px; font-size:13px; font-weight:600; box-shadow:0 6px 20px rgba(0,0,0,0.2); animation:slidein .15s ease-out;}
+.toast-success{background:#1BAF7A;}
 @keyframes slidein{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
 .notif-item{padding:12px 14px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:flex-start;}
 .notif-item:last-child{border-bottom:none;}
@@ -918,7 +919,7 @@ let forgotPasswordState = { submitting:false, submitted:false, error:"" };
 let toasts = [];
 let modal = null; // {type, ...}
 
-function toast(msg){ toasts.push({id:uid("t"), msg}); renderApp(); setTimeout(()=>{ toasts.shift(); renderApp(); }, 3200); }
+function toast(msg, type){ toasts.push({id:uid("t"), msg, type}); renderApp(); setTimeout(()=>{ toasts.shift(); renderApp(); }, 3200); }
 // Real CSV export utility — used by every LoanBook "Export CSV" button.
 // Builds a genuine CSV from the real rows already fetched from the
 // backend (never fabricated data), escaping values that contain a
@@ -1871,7 +1872,7 @@ function renderApp(){
         <div class="content">${renderSection()}</div>
       </div>
     </div>
-    <div class="toast-wrap">${toasts.map(t=>`<div class="toast">${escapeHtml(t.msg)}</div>`).join("")}</div>
+    <div class="toast-wrap">${toasts.map(t=>`<div class="toast${t.type==='success'?' toast-success':''}">${escapeHtml(t.msg)}</div>`).join("")}</div>
     ${modal ? renderModal() : ""}
   `;
   initPendingCharts();
@@ -5342,7 +5343,7 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
         <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
         <div class="section-note">${st.matchedClient ? `${escapeHtml(st.matchedClient.name)} — ${branchName(st.matchedClient.branch)}` : (st.notFound ? 'No client found with that ID number.' : '')}</div>
-        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; session.loanAppState.feePayment=null; session.loanAppState.feePhone=''; renderApp();">
+        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; session.loanAppState.feePayment=null; session.loanAppState.feePhone=''; renderApp(); checkExistingProcessingFee();">
           <option value="">-- Loan Product --</option>
           ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
         </select></div>
@@ -5350,7 +5351,7 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Loan Duration</label><select name="term" required>
           <option value="">-- Select --</option>
           ${product ? (product.termWeeks
-            ? `<option value="1" selected>${product.termWeeks} week${product.termWeeks>1?'s':''}</option>`
+            ? `<option value="1" selected>${product.termWeeks*7} days</option>`
             : Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join(""))
             : ""}
         </select></div>
@@ -5392,7 +5393,30 @@ function lookupClientForLoanApp(idNumber){
     if(session.loanAppState.idNumber !== idNumber) return; // a newer keystroke has already superseded this lookup
     session.loanAppState.matchedClient = match || null;
     session.loanAppState.notFound = !match;
+    if(match) await checkExistingProcessingFee();
   }), 400);
+}
+// Real auto-detect: once a real client AND a real fee-requiring product
+// are both selected, check whether this exact (client, product) pair
+// already has a real Confirmed, not-yet-spent processing fee payment on
+// file — e.g. requested and paid earlier, before this application form
+// was even opened — and if so, show it as already paid automatically
+// rather than making the officer re-request a payment that's already
+// real and settled.
+async function checkExistingProcessingFee(){
+  const st = session.loanAppState;
+  if(!st || !st.matchedClient || !st.productId || st.feePayment) return;
+  const product = DB.products.find(p=>p.id===st.productId);
+  if(!product || product.processingFeeAmount==null) return;
+  const clientId = st.matchedClient.id, productId = st.productId;
+  return withRequest('check-existing-fee', async ()=>{
+    const params = new URLSearchParams({ client_id: clientId, product_id: productId, unconsumed: '1' });
+    const res = await api.get('/api/loans/processing-fee/confirmed?'+params.toString());
+    const cur = session.loanAppState;
+    if(!cur || !cur.matchedClient || cur.matchedClient.id !== clientId || cur.productId !== productId) return; // stale — client/product changed since this check started
+    const fee = res.feePayments && res.feePayments[0];
+    if(fee) cur.feePayment = { id: fee.id, status: 'Confirmed', amount: fee.amount, receiptNumber: fee.mpesa_receipt_number };
+  });
 }
 // Real, required, upfront processing fee — appears automatically once a
 // real client is matched AND a product that carries a real
@@ -5467,7 +5491,7 @@ function submitLoanApp(ev){
   if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
   return withRequest('submit-loan', async ()=>{
     await createLoanApplication(f);
-    toast("Loan application submitted");
+    toast("Loan application submitted successfully", 'success');
     session.loanAppState = null;
     goToUndisbursedLoans();
   });
@@ -5510,13 +5534,34 @@ function loanTermDaysLabel(loan){
   if(prod && prod.termWeeks) return `${prod.termWeeks*7} Days`;
   return `${loan.term} month${loan.term>1?'s':''}`;
 }
-// The loan's real most-recent event timestamp — see the block comment
-// above for why this (not a fixed "Waiting for X" placeholder) is what
-// the real Disbursement column shows.
+// The loan's real most-recent event timestamp — used wherever a plain
+// "last activity" date is wanted (not the Disbursement column below,
+// which shows a real "Waiting X" label instead while undisbursed).
 function loanLastActionAt(loan){
   if(loan.disbursedAt) return loan.disbursedAt;
   if(loan.approvals && loan.approvals.length) return loan.approvals[loan.approvals.length-1].createdAt;
   return loan.createdAt;
+}
+// The real Disbursement column: the real disbursed date/time once
+// genuinely disbursed, or — while still moving through the real 4-step
+// approval chain — a real "Waiting {role}" label derived from the loan's
+// own real status (STATUS_TO_REQUIRED_ROLE_ID), never a stale leftover
+// timestamp from whichever step last acted on it.
+function loanDisbursementCellLabel(loan){
+  if(loan.disbursedAt) return `<span style="color:var(--green,#2c6e49); font-weight:700;">${fmtLoanDetailDateTime(loan.disbursedAt)}</span>`;
+  const requiredRoleId = STATUS_TO_REQUIRED_ROLE_ID[loan.status];
+  if(requiredRoleId) return `<span class="hint" style="font-style:italic;">Waiting ${ROLE_ID_TO_DISPLAY[requiredRoleId]}</span>`;
+  if(loan.status==='Approved for Disbursement') return `<span class="hint" style="font-style:italic;">Waiting Accountant</span>`;
+  if(loan.status==='Disbursement Pending') return `<span class="hint" style="font-style:italic;">Processing…</span>`;
+  return escapeHtml(loan.status||'—');
+}
+// Display-only shorthand for a real approval decision — the stored
+// loan_approvals.decision value itself is never changed (still literally
+// "Approved"/"Rejected"/"Returned" everywhere else, incl. the CSV export
+// and the loan detail history), only how "Approved" reads in this one
+// compact table cell.
+function approvalDecisionLabel(decision){
+  return decision === 'Approved' ? 'Ok' : decision;
 }
 function loanApplicationsFiltered(st){
   let rows = DB.loans;
@@ -5559,8 +5604,8 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.guarantorContact||'—')}</td>
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
       <td>${l.processingFeeReceipt ? `${escapeHtml(l.processingFeeReceipt)}<br>` : ''}${fmt(l.processingFee||0)}</td>
-      <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(a.decision)}</em>`).join('<br>') : '—'}</td>
-      <td>${fmtLoanDetailDateTime(loanLastActionAt(l))}</td>
+      <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(approvalDecisionLabel(a.decision))}</em>`).join('<br>') : '—'}</td>
+      <td>${loanDisbursementCellLabel(l)}</td>
     </tr>`).join("");
   return `
     <div class="card">

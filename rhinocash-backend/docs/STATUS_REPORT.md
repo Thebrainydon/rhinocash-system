@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,166 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 944 passed, 0 failed  (drives the real UI functions in
+Backend:  1,170 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 954 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,110 passed, 0 failed
+Total:    2,124 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1114,6 +1114,35 @@ attempt, so a dismissed-late (or programmatically skipped, as in the
 regression suite's many role-switching `confirmLogout(); doLogin(...)`
 sequences) acknowledgement modal never survives into the next real
 session.
+
+The Loan Officer's Create Loan Application form turned out to already be
+a real, working page wired to the real client/product/processing-fee
+backend — the full real product catalog (Starter through Fly, each with
+its real 4-week/6-week "Special" term and its real 20%/30% flat rate),
+the real client-ID lookup against `GET /api/clients`, the real
+STK-push/manual-confirm processing-fee flow, and the real server-side
+(never frontend-only) New Loan/Repeat Loan and processing-fee
+enforcement in `POST /api/loans` were all already correct and already
+tested. Four genuine gaps against the reference design were found and
+fixed. Loan Duration for a real weekly product now reads in real days
+("28 days") rather than weeks, matching the reference wording exactly.
+A real successful submission now shows a real green success toast
+(`toast(msg, 'success')`, a new `.toast-success` style) instead of the
+app's default navy one. The Loan Applications table's Disbursement
+column — previously a stale "last event" timestamp — now shows a real,
+live `loanDisbursementCellLabel()`: a "Waiting {Role}" label driven by
+the loan's own real status while it's still moving through the real
+4-step Manager -> Regional Manager -> Operational Manager -> Accountant
+chain, or the real disbursed date/time in green once genuinely
+disbursed — and the Approvals column's real `'Approved'` decision value
+(the actual stored value, never changed) now displays as the reference's
+short "Ok" in that one compact cell only. Finally, a real
+"has this client already paid?" auto-detect (`checkExistingProcessingFee()`,
+backed by three new optional filters — `client_id`, `product_id`,
+`unconsumed` — on `GET /api/loans/processing-fee/confirmed`) now finds
+and reuses a real, already-Confirmed, not-yet-spent processing-fee
+payment for the exact selected client and product the moment both are
+picked, so a client who paid earlier is never asked to pay again.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

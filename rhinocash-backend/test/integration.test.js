@@ -560,6 +560,28 @@ async function api(method, path, { token, body } = {}) {
     // The real matching client + product finally succeeds.
     const matchingLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: feeId } });
     assert(matchingLoan.status === 201 && matchingLoan.json.loan.processing_fee_receipt === 'ABCDE12345', 'the real confirmed payment genuinely succeeds for the exact real client and product it was paid for, and its real receipt code lands on the new loan');
+
+    // The real fee payment above is now spent on `matchingLoan` — this
+    // block proves GET /api/loans/processing-fee/confirmed's client_id/
+    // product_id/unconsumed filters (Create Loan Application's own real
+    // "has this client already paid?" auto-detect) narrow correctly and
+    // never re-offer an already-consumed fee payment.
+    const byClientAndProduct = await api('GET', `/api/loans/processing-fee/confirmed?client_id=${feeClient.json.client.id}&product_id=${feeStarter.id}`, { token: officerToken });
+    assert(byClientAndProduct.status === 200 && byClientAndProduct.json.feePayments.some(f => f.id === feeId), 'client_id + product_id genuinely narrows the confirmed-fee list down to the exact real pair, and the already-spent payment is still returned when unconsumed is not requested');
+
+    const unconsumedOnly = await api('GET', `/api/loans/processing-fee/confirmed?client_id=${feeClient.json.client.id}&product_id=${feeStarter.id}&unconsumed=1`, { token: officerToken });
+    assert(unconsumedOnly.status === 200 && !unconsumedOnly.json.feePayments.some(f => f.id === feeId), 'unconsumed=1 genuinely excludes a real fee payment already spent on another loan application, so it can never be offered for reuse');
+
+    // A second, still-unspent Confirmed fee payment for the same real
+    // client + product genuinely DOES show up under unconsumed=1.
+    const freshFeeInit = await api('POST', '/api/loans/processing-fee/initiate', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, phone: '0722555099' } });
+    await api('POST', `/api/loans/processing-fee/${freshFeeInit.json.feeId}/confirm`, { token: officerToken, body: { mpesa_receipt_number: 'FRESH12345' } });
+    const unconsumedAfterFresh = await api('GET', `/api/loans/processing-fee/confirmed?client_id=${feeClient.json.client.id}&product_id=${feeStarter.id}&unconsumed=1`, { token: officerToken });
+    assert(unconsumedAfterFresh.status === 200 && unconsumedAfterFresh.json.feePayments.some(f => f.id === freshFeeInit.json.feeId) && !unconsumedAfterFresh.json.feePayments.some(f => f.id === feeId), 'a fresh, still-unspent Confirmed fee payment for the same real client and product genuinely appears under unconsumed=1, while the already-spent one stays excluded');
+
+    // A DIFFERENT product genuinely never matches, even for the same client.
+    const wrongProductFilter = await api('GET', `/api/loans/processing-fee/confirmed?client_id=${feeClient.json.client.id}&product_id=${feeIbuka.id}&unconsumed=1`, { token: officerToken });
+    assert(wrongProductFilter.status === 200 && wrongProductFilter.json.feePayments.length === 0, 'product_id genuinely excludes a real confirmed fee payment made for a different product, even for the same client');
   }
 
   // ---- 11f. Daily Disbursements — real per-day, per-branch disbursement

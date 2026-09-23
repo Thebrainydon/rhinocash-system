@@ -2061,6 +2061,14 @@ function register(router) {
       clauses.push('(c.name LIKE ? OR c.phone LIKE ? OR lfp.mpesa_receipt_number LIKE ?)');
       const like = `%${q.q}%`; params.push(like, like, like);
     }
+    // Real, targeted lookup for Create Loan Application's own "has this
+    // client already paid?" auto-detect — client_id/product_id narrow to
+    // the exact real pair, and unconsumed=1 excludes a real fee payment
+    // that has already been spent on another real loan application
+    // (loan_id set), so it can never be offered to be reused.
+    if (q.client_id) { clauses.push('lfp.client_id = ?'); params.push(q.client_id); }
+    if (q.product_id) { clauses.push('lfp.product_id = ?'); params.push(q.product_id); }
+    if (q.unconsumed === '1') { clauses.push('lfp.loan_id IS NULL'); }
     const where = `WHERE ${clauses.join(' AND ')}`;
     const rows = await all(
       `SELECT lfp.*, c.name as client_name, c.phone as client_phone, c.national_id as client_national_id
