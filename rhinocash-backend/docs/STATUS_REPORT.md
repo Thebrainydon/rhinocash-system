@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,024 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,027 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,223 passed, 0 failed
+Total:    2,226 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1369,6 +1369,47 @@ change was needed to any individual page's own render function, since
 every one of them already emits a `.pill-row` immediately followed by
 a `.table-wrap` in the same real DOM structure this generic wiring
 already expects.
+
+That "every page" claim had exactly one real exception, caught by a
+follow-up round: Loan Officer's "Payi Summary" ("Daily Paybill
+Collection") had its own real year/month filter row nested *inside*
+the card's own title `<div>` — a one-off layout no other page in the
+app used — rather than as a standalone row directly above the table.
+`wireFilterRowScrollSync()` only ever pairs a `.table-wrap` with its
+own direct previous `.pill-row` sibling, so on this one page it found
+nothing to wire, and the filter row also rendered in a visibly
+different position (crammed into the title bar) than the reference
+design and every other real filter+table page in the app. Fixed by
+restructuring this one page's own markup to the same standalone-row
+pattern every other page already used — no change to the generic
+wiring function itself was needed, since the bug was this one page's
+own one-off structure, not a gap in the generic logic.
+
+The same round added a shared `.weekday-bar` style (a light-blue
+background behind the Monday..Sunday header, matching the reference
+design) to both of the app's own calendar-style tables — Payi
+Summary's own daily collection calendar and the separate Daily
+Disbursements calendar — replacing Payi Summary's previously
+unstyled header row and Daily Disbursements' own plain grey one.
+
+Building this round's own real test coverage surfaced a genuine gap in
+`seed.js --demo`: nothing in demo seeding had ever created a single
+`mpesa_c2b_transactions` row, so Payi Summary's own real amount/Print-
+button cells — which only render once a real day's total actually
+exists — had nothing at all to show on a freshly seeded database, even
+though the underlying feature itself was already real and already
+covered by its own existing real webhook-driven test. Fixed by having
+`seed.js --demo` also create a real, modest set of demo Paybill
+collections: one real transaction per weekday from the 1st of the
+current month up to today (never a future date, since a payment can't
+genuinely be "received" before it happens), left deliberately unmatched
+to any loan since matching is its own separate, real action. Verified
+this doesn't disturb any existing suite: both `test/run-all.sh` and
+`test/run-frontend.sh` already reseed via `seed.js --demo` before every
+run, and every existing C2B-related test scopes its own assertions to
+its own freshly-generated transaction IDs rather than raw table counts,
+so the additional demo rows sit alongside them without conflict — both
+full suites re-verified green after the change.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

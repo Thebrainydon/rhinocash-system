@@ -1930,6 +1930,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(html.includes('Daily Disbursements') && !html.includes('Disbursed Loans</div>') && !html.includes('kpi-grid'), "the real Daily Disbursements page genuinely replaces the old KPI tiles with the real calendar view");
     __assert(html.includes('Monday') && html.includes('Sunday') && html.includes('-- Loan Product --'), "the real calendar genuinely renders the requested weekday columns and the real Loan Product filter");
     __assert(DB.dailyDisb && Array.isArray(DB.dailyDisb.days), "the real Daily Disbursements data genuinely loaded from the real dedicated backend endpoint, not fabricated client-side");
+    __assert(html.includes('<tr class="weekday-bar">'), "the real Daily Disbursements calendar's own Monday..Sunday header row genuinely uses the shared light-blue weekday-bar styling, matching the reference design");
 
     // Loan Arrears: the shared real ageing-buckets loader/endpoint is
     // still real and still directly callable (used elsewhere) — this
@@ -2201,8 +2202,18 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Pay-in Summary page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
     __assert(html.includes('Daily Paybill Collection') && html.includes('Monday') && html.includes('Sunday') && html.includes('Corporate'), "the real Daily Paybill Collection calendar genuinely renders with the requested title and full weekday columns, including Saturday and Sunday");
+    __assert(html.includes('<tr class="weekday-bar">'), "the real Daily Paybill Collection calendar's own Monday..Sunday header row genuinely uses the shared light-blue weekday-bar styling, matching the reference design");
     const todayC2bStr = new Date().toISOString().slice(0,10);
     __assert(DB.loPayinSummaryMonth && DB.loPayinSummaryMonth.byDay[todayC2bStr] && DB.loPayinSummaryMonth.byDay[todayC2bStr].amount >= 2500, "the real, just-confirmed C2B payment genuinely appears in today's real daily total, not fabricated client-side");
+
+    // The real year/month filter row used to be nested INSIDE the card
+    // title itself (a one-off layout only this page had), which meant the
+    // real generic wireFilterRowScrollSync() — which only pairs a
+    // .table-wrap with its own direct previous .pill-row sibling — could
+    // never find and wire it, unlike every other real filter+table page.
+    // Now restructured to the same standalone-row pattern every other
+    // page already uses, confirmed directly against the real source.
+    __assert(__srcForBanCheck.includes('<span>Daily Paybill Collection</span>\n      </div>\n      <div class="pill-row" style="gap:8px;">'), "the real year/month filter row on Daily Paybill Collection is genuinely its own standalone row (a direct sibling of both the card title and the table), not nested inside the card title anymore");
 
     printLoanOfficerPayinSummaryDay(todayC2bStr);
     await new Promise(r=>setTimeout(r,80)); renderApp();

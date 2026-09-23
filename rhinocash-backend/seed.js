@@ -355,6 +355,31 @@ async function seedDemoData() {
     );
     console.log(`  investor             sara.investor@example.com     ${password}\n`);
   }
+
+  // A real, modest set of demo M-Pesa Paybill collections for the current
+  // month (weekdays only, up to today — never a future date, since a
+  // payment can't genuinely be "received" before it happens) — otherwise
+  // nothing else in --demo seeding ever creates mpesa_c2b_transactions
+  // rows, leaving the real "Daily Paybill Collection" calendar (Loan
+  // Officer > Payments) with nothing at all to show on a freshly seeded
+  // database. Left unmatched (matched_loan_id stays NULL) since matching
+  // is a real, separate action — these exist only to make the calendar's
+  // real amount/Print-button cells genuinely demonstrable out of the box.
+  const c2bNow = new Date();
+  const c2bYear = c2bNow.getFullYear(), c2bMonth = c2bNow.getMonth() + 1, c2bToday = c2bNow.getDate();
+  for (let day = 1; day <= c2bToday; day++) {
+    const weekday = new Date(c2bYear, c2bMonth - 1, day).getDay(); // 0=Sun..6=Sat
+    if (weekday === 0 || weekday === 6) continue;
+    const dd = String(day).padStart(2, '0'), mm = String(c2bMonth).padStart(2, '0');
+    const transId = `DEMOC2B${c2bYear}${mm}${dd}`;
+    const amount = 400000 + ((day * 9973) % 400000);
+    const msisdn = '2547' + String(10000000 + ((day * 7919) % 90000000));
+    await run(
+      `INSERT INTO mpesa_c2b_transactions (id, trans_id, environment, amount, msisdn, bill_ref_number, created_at)
+       VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+      ['c2b_' + crypto.randomUUID(), transId, 'sandbox', amount, msisdn, 'DEMO', `${c2bYear}-${mm}-${dd}T12:00:00.000Z`]
+    );
+  }
 }
 
 (async () => {

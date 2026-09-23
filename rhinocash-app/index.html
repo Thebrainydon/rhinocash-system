@@ -155,6 +155,10 @@ th{
 td{padding:10px 10px; border-bottom:1px solid var(--line); color:var(--ink);}
 tr:last-child td{border-bottom:none;}
 tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
+/* A day-of-week header row (Monday..Sunday) on a calendar-style table —
+   matches the reference design's light-blue bar, in place of the default
+   plain/uppercase th styling used by every other, non-calendar table. */
+tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:none; font-size:12.5px; font-weight:800; letter-spacing:0; border-bottom:none;}
 .table-wrap{overflow-x:auto;}
 /* A filter/action row (date pickers, dropdowns, the Generate button) that
    sits directly above a .table-wrap gets this class added at render time
@@ -6472,7 +6476,7 @@ function renderDailyDisbursementsCalendar(st, d){
     </td>`;
   }).join("")}</tr>`).join("");
   return `<table style="width:100%; border-collapse:collapse;">
-    <tr>${dayNames.map(n=>`<th style="text-align:left; padding:6px 8px; background:#EEF0F5; font-size:12px;">${n}</th>`).join("")}</tr>
+    <tr class="weekday-bar">${dayNames.map(n=>`<th style="text-align:left; padding:6px 8px; font-size:12px;">${n}</th>`).join("")}</tr>
     ${rowsHtml}
   </table>`;
 }
@@ -14121,19 +14125,19 @@ function renderLoanOfficerPayinSummaryCalendar(){
   const WEEKDAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   return `
     <div class="card">
-      <div class="card-title" style="justify-content:space-between; gap:8px; flex-wrap:wrap;">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;">
         <span>Daily Paybill Collection</span>
-        <div class="pill-row" style="gap:8px;">
-          <select onchange="session.loPayinSummaryState.year=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
-            ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
-          </select>
-          <select onchange="session.loPayinSummaryState.month=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
-            ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
-          </select>
-        </div>
+      </div>
+      <div class="pill-row" style="gap:8px;">
+        <select onchange="session.loPayinSummaryState.year=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${yearOptions.map(y=>`<option value="${y}" ${y===st.year?'selected':''}>${y}</option>`).join("")}
+        </select>
+        <select onchange="session.loPayinSummaryState.month=Number(this.value); DB.loPayinSummaryMonth=null; renderApp();" class="btn btn-sm btn-outline">
+          ${monthOptions.map(o=>`<option value="${o.value}" ${o.value===st.month?'selected':''}>${o.label}</option>`).join("")}
+        </select>
       </div>
       <div class="table-wrap" style="margin-top:10px;"><table>
-        <tr>${WEEKDAY_NAMES.map(w=>`<th>${w}</th>`).join("")}</tr>
+        <tr class="weekday-bar">${WEEKDAY_NAMES.map(w=>`<th>${w}</th>`).join("")}</tr>
         ${weeks.map(week=>`<tr>
           ${week.map(dayNum=>{
             if(dayNum===null) return `<td></td>`;

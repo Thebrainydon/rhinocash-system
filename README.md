@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,024 frontend tests,
+At last verification: **1,199 backend tests and 1,027 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -210,6 +210,21 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   (`wireFilterRowScrollSync()`, run after every render) by pairing each
   real `.table-wrap` with its own real preceding `.pill-row`, rather
   than needing a change in each individual page's own markup.
+- **Loan Officer's Payi Summary ("Daily Paybill Collection") — layout and
+  demo-data fixes** — complete: the year/month filter row used to be
+  nested inside the card's own title (a one-off layout only this page
+  had), which put it in a different visible position than every other
+  page's filter row and meant the app-wide filter/table scroll-sync
+  above couldn't find or wire it; now a standalone row like everywhere
+  else. Its own Monday..Sunday header, and the similar calendar on
+  Loan Officer's Disbursements page, now use a shared light-blue
+  weekday-bar style matching the reference design, in place of plain
+  table-header styling (Disbursements) or none at all (Payi Summary).
+  `seed.js --demo` now also creates a real, modest set of demo M-Pesa
+  Paybill collections (weekdays only, up to today) — previously nothing
+  in demo seeding ever created this data, so the calendar's own real
+  amount/Print-button cells (which only render once a day's real total
+  actually exists) had nothing to show on a freshly seeded database.
 - **Loan Officer's Undisbursed Loans — real weekly installments, Edit,
   Print** — complete: every real `term_weeks` product (Starter, Jijenge,
   Ibuka, Mavuno, Fly and their "Special" variants) now genuinely repays
