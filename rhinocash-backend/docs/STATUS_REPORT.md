@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,027 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,029 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,226 passed, 0 failed
+Total:    2,228 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1410,6 +1410,16 @@ run, and every existing C2B-related test scopes its own assertions to
 its own freshly-generated transaction IDs rather than raw table counts,
 so the additional demo rows sit alongside them without conflict — both
 full suites re-verified green after the change.
+
+A further follow-up added a real Profile photo section to Loan
+Officer's View Details page — between the ACC Balances tile and the
+Contact/Idno/... field list, matching the reference design exactly —
+which this page had never rendered at all. Reuses the exact same real
+`DB.myAvatarDataUri` Update Details, the Dashboard, and the topbar
+already display (loaded once, up front, in `loadCoreData()`), falling
+back to the same real placeholder silhouette Update Details itself
+uses when no photo has been uploaded yet — no new backend call, no
+second, independently-fetched copy of the photo.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

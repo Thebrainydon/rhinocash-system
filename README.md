@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,027 frontend tests,
+At last verification: **1,199 backend tests and 1,029 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -132,7 +132,10 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
 ## Current functional state
 
 - **Loan Officer's My Account -> View Details** — complete: a real
-  ACC BALANCES tile into a new staff wallet subsystem, and a filter-driven
+  ACC BALANCES tile into a new staff wallet subsystem, a Profile photo
+  section (the same real uploaded avatar Update Details/Dashboard/the
+  topbar already show, falling back to a placeholder silhouette when
+  none is set yet) matching the reference layout, and a filter-driven
   Performance/Interactions/Staff Loans/Leaves & Payroll panel, the latter
   including a real Kenyan-statutory (NSSF/SHIF/PAYE) computed payslip.
 - **Loan Officer's My Account -> My Work Plan** — complete: a real Daily

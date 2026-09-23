@@ -2316,6 +2316,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Loan Officer View Details page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
     __assert(html.includes('ACC Balances') && html.includes('Options') && html.includes('Contact') && html.includes('Idno') && html.includes('Gender') && html.includes('Jobno') && html.includes('Roles') && html.includes('Position') && html.includes('Entry date') && html.includes('Leaves'), "the real View Details page genuinely renders with the requested ACC BALANCES tile, Options button, and full profile field set");
+    __assert(html.includes('>Profile<') && html.includes('👤'), "the real View Details page genuinely renders a Profile photo section between the ACC Balances tile and the detail fields, matching the reference design — falling back to a real placeholder silhouette since no real photo is uploaded yet at this point in the test");
     __assert(html.includes('Performance') && html.includes('New Loans') && html.includes('Repeat Loans') && html.includes('Performing') && html.includes('Arrears') && html.includes('Revenue'), "the real Performance table genuinely renders with all 5 requested metric columns");
     __assert(Array.isArray(DB.loPerformance && DB.loPerformance.months) && DB.loPerformance.months.length===12, "the real performance data genuinely loaded from the real backend, not fabricated client-side");
     __assert(Array.isArray(DB.staffAccounts) && DB.staffAccounts.length===3, "the real staff wallet accounts genuinely auto-provisioned and loaded");
@@ -2636,6 +2637,10 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     html = document.getElementById('root').innerHTML;
     __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders on the real Dashboard avatar (the same real data URI, not a second fabricated image)");
     __assert((html.match(new RegExp(DB.myAvatarDataUri.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'))||[]).length >= 2, "the real, just-uploaded photo genuinely renders in BOTH the Dashboard avatar and the topbar avatar (top-right)");
+
+    goTo('account','View Details');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(DB.myAvatarDataUri) && html.includes('>Profile<'), "the real, just-uploaded photo genuinely renders in the real Profile section on View Details too, matching the reference design, not just Update Details/Dashboard/topbar");
 
     // Update Details now also carries the real password-change form that
     // used to live only on the now-removed Security & Login page — a real
