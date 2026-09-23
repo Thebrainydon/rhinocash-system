@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,170 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 960 passed, 0 failed  (drives the real UI functions in
+Backend:  1,171 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 967 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,130 passed, 0 failed
+Total:    2,138 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1177,6 +1177,29 @@ real "Processing... please wait" bar keeps its greenish styling; the
 real "success" bar now matches the reference site's own exact look — a
 muted gray background, lowercase text — rather than the app's default
 dark toast color.
+
+The Add Client form got the same treatment. Its old save flow — a
+full-screen white overlay with a fake 1%-90% progress percentage, then
+a green-checkmark "Client Added Successful!" modal — is replaced by the
+exact same real "Uploading... please wait" / "success" centered bars
+Create Application now uses, reusing the same `.toast-wrap-center`/
+`.toast-center` CSS classes but painted via a direct write to a
+dedicated DOM node outside the normal render tree (never `renderApp()`)
+— the same real technique the old overlay already relied on, since a
+file input's chosen file is genuinely lost the instant its element is
+replaced by a fresh render, and this form's photo/ID uploads still need
+to survive the save. Saving now also genuinely redirects into the real
+View Client page's own "Dormant clients" category filter (the same
+real `CLIENT_DIR_CATEGORIES` browser, not a fabricated view) rather
+than the old plain "All Clients" — and `POST /api/clients`'s single
+Add Client route now explicitly creates the client with a real
+`status` of `'Dormant'`, not the schema's own `'Active'` default,
+since a freshly registered client genuinely has no loan or transaction
+activity yet. (Bulk import and lead-conversion still use the schema
+default — this change is scoped to the single Add Client form only, per
+what was actually asked.) No backend code anywhere gates on
+`clients.status`, so this was safe to change outright — confirmed by
+grep before making the change.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

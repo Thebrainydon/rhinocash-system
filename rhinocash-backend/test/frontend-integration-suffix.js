@@ -145,11 +145,25 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     const clientForm = new Map([['name','Alice Wanjiru'],['phone','0722555222'],['idNumber','30998877'],['email',''],['gender','Female'],['type','Individual'],['branch',''],['address','Kisumu Town']]);
     global.FormData = class { constructor(){ return clientForm; } };
     const before = DB.clients.length;
-    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const addClientPromise = submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const addClientOverlay = document.getElementById('add-client-progress-overlay');
+    __assert(!!addClientOverlay && addClientOverlay.innerHTML.includes('Uploading... please wait') && addClientOverlay.innerHTML.includes('toast-center-success'), "clicking Save on Add Client genuinely shows a real greenish, page-centered 'Uploading... please wait' bar for the real duration of the actual save request — the exact same look Create Application uses");
+    await addClientPromise;
+    __assert(document.getElementById('add-client-progress-overlay').innerHTML === '', "the real centered bar genuinely clears once the whole real save-and-redirect sequence completes");
     __assert(DB.clients.length === before + 1, "submitAddClient (the real form handler) created a real client via the API");
     const newClient = DB.clients[0];
     __assert(newClient.name === 'Alice Wanjiru' && newClient.idNumber === '30998877', "the created client has the real submitted data, correctly field-mapped (idNumber -> national_id round-trip)");
     __assert(newClient.branch === 'br_kisumu', "client was created under the Kisumu manager's own branch (server-resolved, not client-guessed)");
+    __assert(newClient.status === 'Dormant', "a real freshly added client genuinely starts Dormant — no real loan activity has happened yet");
+
+    // Saving genuinely redirects to the real View Client page, pre-filtered
+    // to the real 'Dormant clients' category — the exact same redirect-
+    // into-a-filtered-category pattern Create Application uses for
+    // Undisbursed Loans — and no leftover checkmark modal remains open.
+    __assert(session.section === 'clients' && session.subtab === 'All Clients', "saving the real Add Client form genuinely redirects to the real View Client page");
+    __assert(DB.acctPages.clientdir && DB.acctPages.clientdir.filters.category === 'Dormant' && DB.acctPages.clientdir.filters.status === 'Dormant', "the real redirect genuinely pre-selects the 'Dormant clients' category filter, matching the real reference design");
+    __assert(DB.acctPages.clientdir.clients.some(c=>c.id===newClient.id), "the real just-added client genuinely appears in this real, freshly-loaded Dormant clients list — not a stale or fabricated one");
+    __assert(!modal, "no leftover 'Client Added Successful' checkmark modal remains open — replaced by the real centered 'Uploading... please wait' / 'success' bars, matching Create Application's own save flow");
 
     // openClient() fetches the real detail, including interactions/documents/loans, not just session-local state.
     await openClient(newClient.id);

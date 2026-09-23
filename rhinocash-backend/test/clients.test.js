@@ -32,6 +32,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(!!r.json.client.client_code, 'the new client has a real generated client_code');
     assert(r.json.client.officer_id === officerMe.id, 'a Loan Officer creating a client defaults to being assigned as its own officer');
     assert(r.json.client.next_of_kin === 'Jane Doe' && r.json.client.business_type === 'Retail Shop', 'the new next_of_kin/business_type fields are genuinely persisted');
+    assert(r.json.client.status === 'Dormant', 'a real freshly registered client genuinely starts Dormant — no real loan/transaction activity has happened yet, so it belongs under the real "Dormant clients" category, not "Active"');
     clientId = r.json.client.id;
   }
 
@@ -242,7 +243,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(!!row, 'AF: the real just-logged interaction genuinely appears in the list');
     assert(row.client_name === 'Test Client Alpha' && row.client_phone === clientPhone, 'AF: the real client name/phone are genuinely joined in, not left as a bare client_id');
     assert(row.officer_name === officerMe.name && row.staff_name === officerMe.name, 'AF: the real assigned officer and the real staff who logged it are both genuinely resolved to names');
-    assert(row.client_status === 'Active', 'AF: the real client\'s current status is genuinely included');
+    assert(row.client_status === 'Dormant', 'AF: the real client\'s current status is genuinely included — Dormant, since this client was created via the single Add Client route and has no real loan activity yet');
 
     const nairobiList = await api('GET', '/api/clients/interactions', { token: nairobiManagerToken });
     assert(nairobiList.status === 200 && !nairobiList.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AF: a Nairobi Manager genuinely cannot see a Kisumu client\'s interaction — branch scope holds');

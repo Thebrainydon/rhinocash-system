@@ -4378,6 +4378,17 @@ function ensureAddClientProgressOverlay(){
   }
   return el;
 }
+// Real, page-centered "Uploading... please wait" / "success" bars —
+// the exact same look as the real .toast-wrap-center/.toast-center
+// classes Create Application uses, but painted via a direct DOM write
+// to a dedicated node outside the normal render tree (never
+// renderApp()), so the Add Client form's just-typed values and chosen
+// files are never wiped mid-save (a file input's chosen file is lost
+// the instant its element is replaced by a fresh render — there is no
+// browser workaround for that).
+function paintAddClientCenterBar(overlay, msg, kind){
+  overlay.innerHTML = `<div class="toast-wrap-center"><div class="toast-center${kind==='processing'?' toast-center-success':' toast-center-done'}">${escapeHtml(msg)}</div></div>`;
+}
 async function submitAddClient(ev){
   ev.preventDefault();
   const form = ev.target;
@@ -4388,19 +4399,7 @@ async function submitAddClient(ev){
     { input: 'idPhotoBack', docType: 'ID Photo Back' },
   ];
   const overlay = ensureAddClientProgressOverlay();
-  const paintProgress = (pct) => { overlay.innerHTML = `
-    <div style="position:fixed; inset:0; background:rgba(255,255,255,0.94); z-index:200; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-      <div style="font-size:15px; color:var(--navy); font-weight:700; margin-bottom:14px;">Saving Client…</div>
-      <div style="font-size:36px; font-weight:800; color:var(--green); margin-bottom:14px;">${pct}%</div>
-      <div style="width:200px; background:#EFEDE7; border-radius:20px; height:8px; overflow:hidden;">
-        <div style="background:var(--green); height:100%; width:${pct}%;"></div>
-      </div>
-    </div>`; };
-  // Creeps toward, but never reaches, 100% on its own — only the real
-  // save below (success or failure) decides when this actually ends.
-  let pct = 1;
-  paintProgress(pct);
-  const timer = setInterval(() => { if(pct < 90){ pct = Math.min(90, pct + 1 + Math.floor(Math.random()*6)); paintProgress(pct); } }, 100);
+  paintAddClientCenterBar(overlay, 'Uploading... please wait', 'processing');
   await withRequest('add-client', async ()=>{
     const c = await addClient(f);
     // Real uploads, attached as real client_documents rows — only for
@@ -4412,29 +4411,26 @@ async function submitAddClient(ev){
       const uploaded = await uploadFile(file);
       await api.post(`/api/clients/${c.id}/documents`, { name:file.name, doc_type:ff.docType, file_path:uploaded.path });
     }
-    clearInterval(timer);
-    paintProgress(100);
+    paintAddClientCenterBar(overlay, 'success', 'done');
     // Every delay here is awaited in-line, never a detached setTimeout —
-    // this function's promise only resolves once the popup has actually
-    // shown and closed, so nothing can fire later against whatever the
-    // app has moved on to by then.
-    await new Promise(r=>setTimeout(r, 350));
+    // this function's promise only resolves once the bar has actually
+    // shown and this has actually navigated, so nothing can fire later
+    // against whatever the app has moved on to by then.
+    await new Promise(r=>setTimeout(r, 1200));
     overlay.innerHTML = "";
-    openModal('client-added-success');
-    await new Promise(r=>setTimeout(r, 1600));
-    if(modal && modal.type==='client-added-success'){ closeModal(); goTo("clients","All Clients"); }
+    // A freshly registered client genuinely has no loan activity yet
+    // (see POST /api/clients, which now creates it real-Dormant) — so
+    // redirecting straight into the real "Dormant clients" category
+    // (the same real View Client filter, not a separate fabricated
+    // list) genuinely shows this exact client, matching the same
+    // redirect-into-a-filtered-category pattern Create Application uses
+    // for Undisbursed Loans.
+    DB.acctPages.clientdir = null;
+    await loadClientDirectory({ category:'Dormant', status:'Dormant' }, 1);
+    goTo("clients","All Clients");
   });
-  clearInterval(timer);
   overlay.innerHTML = ""; // no-op if the success path above already cleared it
   return false;
-}
-function renderClientAddedSuccessModal(){
-  return `
-    <div style="text-align:center; padding:8px 0;">
-      <div style="font-size:44px; margin-bottom:10px;">✅</div>
-      <h3 style="color:var(--green); margin:0;">Client Added Successful!</h3>
-    </div>
-  `;
 }
 function renderClientGroups(){
   const rows = DB.groups.map(g=>`<tr><td><strong>${escapeHtml(g.name)}</strong></td><td>${g.meetingDay}</td><td>${g.memberIds.length}</td>
@@ -12913,7 +12909,6 @@ function renderModal(){
   else if(modal.type === "c2b-payments") body = renderC2bPaymentsModal();
   else if(modal.type === "bulk-upload-utility") body = renderBulkUploadModal();
   else if(modal.type === "create-lead") body = renderCreateLeadModal();
-  else if(modal.type === "client-added-success") body = renderClientAddedSuccessModal();
   else if(modal.type === "import-clients") body = renderImportClientsModal();
   else if(modal.type === "filter-client-fields") body = renderFilterClientFieldsModal();
   else if(modal.type === "image-viewer") body = renderImageViewerModal();

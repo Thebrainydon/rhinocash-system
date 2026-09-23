@@ -126,12 +126,18 @@ function register(router) {
 
     const id = 'cl_' + crypto.randomUUID();
     const code = generateClientCode();
+    // A freshly registered client genuinely has no loan/transaction
+    // activity yet — real, not the schema's own 'Active' default — so
+    // they start Dormant, matching the real View Client "Dormant
+    // clients" category filter, until a real loan or transaction moves
+    // them to Active. Bulk import and lead-conversion still use the
+    // schema default; this is scoped to the single Add Client form only.
     await run(
-      `INSERT INTO clients (id, client_code, name, gender, national_id, phone, email, address, next_of_kin, next_of_kin_phone, business_type, client_type, branch_id, officer_id, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO clients (id, client_code, name, gender, national_id, phone, email, address, next_of_kin, next_of_kin_phone, business_type, client_type, branch_id, officer_id, created_by, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, code, b.name, b.gender || null, b.national_id || null, b.phone, b.email || null, b.address || null,
         b.next_of_kin || null, b.next_of_kin_phone || null, b.business_type || null,
-        b.client_type || 'Individual', branchId, officerId, req.user.id]
+        b.client_type || 'Individual', branchId, officerId, req.user.id, 'Dormant']
     );
     await logAction(req, { action: 'Created client', module: 'clients', recordType: 'Client', recordId: id, newValue: { name: b.name, branch_id: branchId } });
     res.status(201).json({ client: await get('SELECT * FROM clients WHERE id = ?', [id]) });

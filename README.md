@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,170 backend tests and 960 frontend tests, all
+At last verification: **1,171 backend tests and 967 frontend tests, all
 passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -165,6 +165,13 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   while the request is in flight, replaced by a real gray "success" bar,
   then a real redirect to Undisbursed Loans — both bars centered on the
   page, matching the real reference site's own centered messages.
+- **Clients -> Add Client** — complete: saving now shows the same real
+  centered "Uploading... please wait" / "success" bar sequence (in
+  place of the old full-screen percentage overlay and checkmark modal),
+  then redirects into the real View Client page's "Dormant clients"
+  category — genuinely showing the just-added client, since a freshly
+  registered client now real-starts with a `Dormant` status rather than
+  `Active`, matching the real reference design.
 - **Loan Officer's Payments menu** — complete, all 8 submenus.
 - **Regional Manager LoanBook** — complete, 13 submenus.
 - **Operational Manager LoanBook** — complete, 15 submenus (company-wide
