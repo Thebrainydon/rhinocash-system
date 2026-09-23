@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,097 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 827 passed, 0 failed  (drives the real UI functions in
+Frontend: 832 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    1,924 passed, 0 failed
+Total:    1,929 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -725,6 +725,31 @@ now-orphaned `renderCollectionReports()`/`exportCollectionReportsCSV()`
 functions. This is a distinct label from the real, still-live "Collection
 Report" (singular) submenu built earlier — the two were never meant to
 coexist for this role.
+
+LoanBook's page for the Payments menu isn't the only place this shows: the
+Payments menu's own "Unposted Payments" submenu (Loan Officer view) is now
+a real, chrome-free page, reusing — deliberately, not coincidentally — the
+exact same real state, loader, and cache
+(`session.c2bPaymentsState`/`loadC2bPaymentsBrowser()`/
+`DB.c2bPaymentsBrowser`) as the pre-existing topbar cash-icon "Payments"
+panel, over the real, pre-existing `GET /api/mpesa/c2b/transactions`
+endpoint. The reference design shows this submenu as literally the same
+page reached via that icon, so giving each its own separate state would
+risk the two silently drifting apart (one showing stale totals the other
+already refreshed); sharing one real state makes that impossible by
+construction, and a dedicated frontend assertion opens both back to back
+and confirms the second reuses the first's cached data rather than
+re-fetching. Inspecting the existing topbar panel against the reference
+surfaced one real, narrow mismatch — its header and Amount column used the
+app's general "KES 1,234" formatting instead of the reference's own "Ksh
+1,234" convention — fixed in both places (the topbar panel and the new
+submenu) without touching the shared `fmt()` helper used everywhere else
+in the app, the same "match this one reference page's own convention, not
+the app's general one" approach already used for Collection Report's
+purple/red accent colors and Loan Arrears' Fall Date. The Manager/
+Accountant-only "Assign to loan" control on the topbar panel (`canAssign`)
+is untouched and simply doesn't apply to the Loan Officer's new page, since
+Loan Officers were never eligible for it to begin with.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

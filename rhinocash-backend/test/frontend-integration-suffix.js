@@ -1938,6 +1938,32 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
     __assert(html.includes('Balance Asc') && html.includes('Maturity Desc'), "the real Order By dropdown genuinely offers the requested Balance/Amount/Disbursement/Maturity sort options");
     __assert(!html.includes('>Regional Loan Portfolio<') && !html.includes('>Loan Approval Monitoring<') && !html.includes('>Loan Maturity Pipeline<') && !html.includes('>Collection Reports<'), "the real Loan Officer sidebar genuinely no longer lists any submenu beyond View Loans, nor the duplicate Collection Reports entry");
 
+    // Unposted Payments (Loan Officer Payments menu): a real, chrome-free
+    // page that is deliberately the exact same real state/loader/cache as
+    // the topbar cash-icon Payments panel (session.c2bPaymentsState /
+    // loadC2bPaymentsBrowser() / DB.c2bPaymentsBrowser) — the reference
+    // design shows this submenu as literally the same page reached via
+    // that icon, so both must genuinely share one real state.
+    session.c2bPaymentsState = null; DB.c2bPaymentsBrowser = null;
+    goTo('payments','Unposted Payments');
+    await new Promise(r=>setTimeout(r,50)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Unposted Payments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
+    __assert(html.includes('Payments (Ksh') && html.includes('Client') && html.includes('Phone') && html.includes('Paybill') && html.includes('Account') && html.includes('Transaction') && html.includes('Amount') && html.includes('Date'), "the real Unposted Payments page genuinely renders with the requested Ksh-prefixed title and full column set");
+    __assert(DB.c2bPaymentsBrowser && Array.isArray(DB.c2bPaymentsBrowser.transactions), "the real Unposted Payments data genuinely loaded from the real, pre-existing GET /api/mpesa/c2b/transactions endpoint, not fabricated client-side");
+    const upBrowserBefore = DB.c2bPaymentsBrowser;
+
+    // Opening the real topbar cash-icon panel right after genuinely reuses
+    // the same session state and cached data — it never re-fetches or
+    // shows a different total, because it IS the same real page.
+    openC2bPaymentsPanel();
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Payments (Ksh'), "the real topbar Payments panel genuinely uses the same Ksh-prefixed title as the Unposted Payments submenu");
+    __assert(DB.c2bPaymentsBrowser === upBrowserBefore, "the real topbar Payments panel genuinely reused the exact same cached data the Unposted Payments submenu just loaded, rather than re-fetching");
+    closeModal();
+    renderApp();
+
     // Follow-Ups: real create through the actual UI function.
     const clientForFu = DB.clients[0];
     if(clientForFu){
