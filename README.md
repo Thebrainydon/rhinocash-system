@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,029 frontend tests,
+At last verification: **1,199 backend tests and 1,035 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -213,6 +213,20 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   (`wireFilterRowScrollSync()`, run after every render) by pairing each
   real `.table-wrap` with its own real preceding `.pill-row`, rather
   than needing a change in each individual page's own markup.
+- **App-wide: mobile sidebar animation, layout, and topbar branding** —
+  complete: opening the sidebar (hamburger) and closing it (tapping
+  anywhere outside it) now genuinely slide/fade, rather than popping
+  open or shut instantly — `toggleSidebar()`/`closeSidebar()` toggle a
+  class directly on the real, already-existing sidebar/backdrop DOM
+  nodes instead of going through the app's usual full rebuild, which
+  gave a freshly re-created node no "from" state for its own real CSS
+  transition to animate from. The separate ✕ close button is gone
+  (tapping outside already closed it); "RHINOCASH LTD" now appears
+  directly below the real logo in the sidebar's own profile card; the
+  topbar's own "RHINOCASH LTD" text is now desktop-only, hidden on
+  mobile where every other page already omitted it; and the green
+  Online status dot now genuinely pulses (scaling in and out) instead
+  of sitting static.
 - **Loan Officer's Payi Summary ("Daily Paybill Collection") — layout and
   demo-data fixes** — complete: the year/month filter row used to be
   nested inside the card's own title (a one-off layout only this page

@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,029 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,035 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,228 passed, 0 failed
+Total:    2,234 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1420,6 +1420,34 @@ already display (loaded once, up front, in `loadCoreData()`), falling
 back to the same real placeholder silhouette Update Details itself
 uses when no photo has been uploaded yet — no new backend call, no
 second, independently-fetched copy of the photo.
+
+A follow-up round fixed a real, app-wide (not role-scoped) mobile
+sidebar bug: opening it (the hamburger) and closing it (tapping
+anywhere outside it) never actually animated — the sidebar and its
+backdrop just popped open or shut instantly, despite `.sidebar.open`
+already carrying a real `transition:transform` rule. Root cause: this
+whole app re-renders by replacing the entire DOM via `innerHTML` on
+every state change, so toggling `session.sidebarOpen` and calling
+`renderApp()` destroyed the old `.sidebar` node and created a brand
+new one already in its final class state — a CSS transition only ever
+animates a property change on the *same persisting* node, and a
+freshly-created node has no "from" state to animate from. Fixed by
+having `toggleSidebar()`/`closeSidebar()` toggle the `open` class
+directly on the real, already-existing `.sidebar`/`.sidebar-backdrop`
+DOM nodes instead of going through the app's usual full rebuild —
+these two functions are the only real UI actions that change nothing
+else on the page, so skipping the full re-render for them specifically
+is safe; every other real state change (including sidebar-closing
+navigation itself) still goes through the same real `renderApp()` as
+before. The backdrop's own CSS was changed from a `display:none/block`
+toggle (not animatable) to a real `opacity` transition for the same
+reason. Alongside this: the separate ✕ close button was removed (the
+backdrop already closes it on any outside tap); a real "RHINOCASH LTD"
+label was added directly below the sidebar's own logo; the topbar's
+own "RHINOCASH LTD" text is now hidden on mobile only (a real
+`@media (max-width:880px)` rule) while staying on desktop; and the
+sidebar's green Online dot now runs a real `@keyframes` pulse
+(scaling in and out with a fading glow) instead of sitting static.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

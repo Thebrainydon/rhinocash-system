@@ -5314,6 +5314,29 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     goTo('dashboard');
   }
 
+  // ---- 17b. Mobile sidebar: no separate close (✕) button (closing by
+  // clicking anywhere outside it, via the real backdrop, already existed
+  // and is the one real way to close it now); "RHINOCASH LTD" genuinely
+  // appears right below the real logo; the topbar's own "RHINOCASH LTD"
+  // text is genuinely mobile-only hidden (desktop keeps it); and
+  // opening/closing genuinely animates a real slide/fade on the real,
+  // persisting DOM nodes rather than a full app rebuild that would give
+  // a freshly-created node no "from" state to transition from ----
+  {
+    let html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('sidebar-close') && !html.includes('>✕<'), "the real sidebar genuinely has no separate close (✕) button anymore");
+    __assert(html.includes('<div class="side-profile-brand">RHINOCASH LTD</div>'), "the real sidebar genuinely shows 'RHINOCASH LTD' directly below the real logo");
+    __assert(__rawIndexHtml.includes('.topbar-brand{ display:none; }'), "the real topbar's own 'RHINOCASH LTD' text is genuinely hidden on mobile (inside the real @media max-width:880px block), staying visible on desktop");
+    __assert(__rawIndexHtml.includes('@keyframes sideOnlinePulse'), "the real sidebar's green Online dot genuinely has a real pulsing (scale in/out) animation, not a static dot");
+
+    __assert(typeof toggleSidebar === 'function' && typeof closeSidebar === 'function', "the real toggleSidebar()/closeSidebar() functions genuinely exist");
+    const sidebarOpenBefore = session.sidebarOpen;
+    let threw = false;
+    try { toggleSidebar(); closeSidebar(); } catch(e) { threw = true; }
+    __assert(!threw, "toggleSidebar()/closeSidebar() genuinely run without throwing even against this harness's fake document (no real querySelector), via their own real fallback to renderApp()");
+    session.sidebarOpen = sidebarOpenBefore; renderApp();
+  }
+
   // ---- 18. The real Loan Status Browser (topbar calendar-check icon) ----
   {
     let of130 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
