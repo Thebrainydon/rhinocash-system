@@ -2743,7 +2743,7 @@ function renderDashboard(){
     case "Director": return renderPortfolioRiskCard() + renderDirectorDashboard();
     case "Investor": return renderInvestorDashboard();
     case "Regional Manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
-    case "Manager": return renderTeamCollectionPerformanceCard() + renderManagerDashboard();
+    case "Manager": return renderManagerDashboard();
     default: return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard(); // Operational Manager — company-wide operational oversight
   }
 }
@@ -2977,9 +2977,7 @@ function renderManagerDashboard(){
         </div>
       </div>
       <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('loanbook','Loan Applications')">Review Loans</button>
         <button class="btn btn-outline btn-sm" onclick="goTo('clients','Add Client')">Add Client</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('payments','Record Payment')">Record Payment</button>
         ${isSectionAllowed('staff') ? `<button class="btn btn-outline btn-sm" onclick="goTo('staff')">Staff Management</button>` : ""}
       </div>
     </div>
@@ -2989,6 +2987,8 @@ function renderManagerDashboard(){
       ${progressBar(st.todayPct)}
       <div class="hint" style="margin-top:6px;">${st.todayPct.toFixed(0)}% collected of ${fmt(st.dueToday)} due today</div>
     </div>
+
+    ${renderTeamCollectionPerformanceCard()}
 
     ${kpiTiles(st)}
     ${statGrid(st)}
