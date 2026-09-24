@@ -12,7 +12,14 @@ Collection MTD/Rate sources, New/Repeat Loan definitions, Arrears/DPD/PAR/
 Outstanding sources, and Payment allocation + Accounting integration. Every
 finding below is anchored to an exact file:line citation. Nothing here was
 fabricated or assumed — every figure, table and endpoint named was read directly
-from the real source.
+from the real source. This document has been through three rounds: the
+initial audit (A-I below), a follow-up that resolved two of the originally-
+deferred findings (F.5, F.6) and corrected one earlier mischaracterization
+(E.8), and a third round folding in a real cross-module bug (F.8) that
+real device testing surfaced independently but which is squarely this
+audit's own subject matter (client-count consistency, §5 of the original
+brief) — reported back into this document rather than treated as an
+unrelated fix.
 
 ---
 
@@ -39,8 +46,13 @@ Accounting ┬─→ (reads live from journal_entries; does not feed LoanBook/
            └─→ Requisitions/Utility Payments feed Accounting's ledger only,
                 never the Dashboard directly (confirmed, see E.6)
 
-My Account ──→ reads GET /api/users/me/performance (targets.js), a THIRD,
-               independent calculation of New/Repeat Loans — see E.2
+My Account ──→ View Details reads GET /api/users/me/performance
+               (targets.js), reconciled with computeStats() this audit —
+               see E.2/F.5. My Work Plan (daily_workplans table, keyed by
+               user_id/plan_date) and Salary Advance (salary_advance_requests,
+               keyed by user_id) confirmed standalone — own tables, own
+               routes (workplans.js, misc.js), no read or write path
+               touches clients/loans/payments/journal_entries at all.
 
 System & Help ─→ standalone (tickets/FAQ), no financial dependency
 ```
@@ -78,7 +90,8 @@ truth, not about the ground truth itself being duplicated.
 | DPD / arrears days | Oldest unpaid schedule row's due date vs today (frontend `loanArrearsDays()`, index.html:1360-ish) | Dashboard `performingLoans`/`arrearsAmt`/`par`; `/api/loans/arrears` (loans.js:1768, same rule) |
 | Payment allocation | `allocate()`, payments.js:38-86 — the ONLY real allocation implementation in the codebase (confirmed no duplicate; one display-only reconstruction exists, see E.5) | Every payment-posting code path; every balance/arrears figure downstream |
 | Cashflow / P&L / Balance Sheet | Live aggregation over `journal_entries` via `ledgerBalance()` (accounting.js:15) — no stored running balance anywhere | Requisitions, Utility Payments, disbursement fee income, payment interest income all post into this one ledger |
-| Client Active/Dormant (Dashboard) | Derived from real loan activity: a client with any loan in `activeScope` (`["Active","Disbursed"]`) is Active (`computeStats()`, index.html:2413-2415) | Dashboard tiles only |
+| Total Clients (Dashboard) | `clients.officer_id === officerId` — every client actually assigned to this officer, with or without a loan (`computeStats()`, index.html:2386-2388, **corrected — see F.8**) | Dashboard tile only |
+| Client Active/Dormant (Dashboard) | Derived from real loan activity: a client with any loan in `activeScope` (`["Active","Disbursed"]`) is Active (`computeStats()`, index.html:2413-2415); Dormant = Total − Active | Dashboard tiles only |
 | Client Active/Dormant (View Clients) | Stored `clients.status` column, previously never auto-transitioned — now promoted at disbursement time (F.1) | View Clients filter, Client Account |
 
 ---
@@ -98,7 +111,7 @@ dead code, confirmed unreachable (see E.1).
 | Disbursement YTD | `st.disbursedYTD`, `st.loansYTDCount` | Same as MTD, year-to-date | `DB.loans` |
 | "{prevMonth} COLLECTION" | `st.collPctPrev`, `st.collectionsPrev` | Same formula, previous calendar month | `DB.payments` / `DB.loans[].schedule` |
 | Undisbursed Loans | `st.undisbursedCount`, `st.undisbursedAmt` | `isUndisbursedLoan()` — status not in `LOAN_TERMINAL_STATUSES` | `DB.loans` |
-| Total Clients | `st.totalClients` | Distinct clients with ≥1 loan owned by this officer | `DB.clients` × `DB.loans` |
+| Total Clients | `st.totalClients` | Every client with `officerId` = this officer, with or without a loan (**fixed — see F.8**; was previously ≥1-loan-only, undercounting) | `DB.clients` |
 | Active Clients | `st.activeClients` | Distinct clients with a loan in `["Active","Disbursed"]` | `DB.loans` |
 | Dormant Clients | `st.dormantClients` | `totalClients − activeClients` | derived |
 | Performing | `st.performingLoans` | Active-scope loans with `loanArrearsDays()===0` | `DB.loans` |
@@ -432,6 +445,36 @@ aggregation.
 test exercises this route either way, so this is a no-regression check,
 not a coverage check).
 
+### F.8 — Dashboard's Total/Dormant Clients now count every one of the officer's clients, not just ones with a loan
+**File:** `rhinocash-app/index.html`, `computeStats()` (line ~2386).
+**Before:** `clientsScope` (the set `totalClients`/`dormantClients` are
+derived from) was `DB.clients.filter(c => DB.loans.some(l=>l.clientId===c.id
+&& l.officerId===officerId))` — a client only counted at all if they
+already had at least one loan with this officer. This is precisely the
+"Total/Active/Dormant Clients" consistency question section 5 of the
+original audit brief asked about: a freshly-registered client with zero
+loans yet is unambiguously "Dormant" by the app's own definition (no real
+loan activity), but was invisible to Total/Dormant Clients entirely —
+found via real device testing after the first two audit rounds, reported
+back into this same reconciliation rather than treated as a separate,
+unrelated bug.
+**Fix:** `clientsScope` now filters directly by `c.officerId === officerId`
+— the field that actually means "this client belongs to this officer"
+(`clients.officer_id`, set once at registration) — independent of whether
+a loan exists yet. `activeClients` itself was already correct (derived
+from `activeScope`, the loan-based active-loan set, not from
+`clientsScope`), so only `totalClients`/`dormantClients` change.
+Confirmed safe for every other `st.clientsScope` consumer: `loanCyclePie()`
+(index.html:2537-2539) already explicitly skips any client with zero
+disbursed loans (`if(n<=0) return;`), so including no-loan-yet clients in
+the scope adds them to the denominator correctly (as clients with 0
+cycles, silently excluded from the pie) rather than breaking it.
+**Verified:** full backend suite unaffected (frontend-only change); full
+frontend suite green; live end-to-end — created a real client via
+`POST /api/clients` with no loan, confirmed Dashboard's Total Clients went
+1→2 and Dormant Clients 0→1 for that exact client, confirmed via
+Playwright screenshot.
+
 ---
 
 ## G. Test Results
@@ -507,6 +550,11 @@ corrections introduced.
   (KES 5,846) all now agree for the same loan — verified via both direct
   API calls and Playwright screenshots of the Dashboard and View Loans
   pages (see F.6).
+- **CLIENT TEST, extended (third round):** registered a client with no
+  loan at all → confirmed the Dashboard's Total Clients and Dormant
+  Clients tiles increment for that exact client immediately (previously
+  they would not have moved at all until the client's first loan
+  disbursed) — see F.8.
 
 ---
 
@@ -601,7 +649,19 @@ following observations:
   ready-to-adopt candidate if Manager/Admin scope ever needs a server-side
   aggregation endpoint instead of shipping the whole company's loans/
   payments to the client for `computeStats()`-style aggregation.
+- **Total/Dormant Clients now count by `clients.officer_id` (F.8), not by
+  loan existence.** This matters for Manager readiness specifically
+  because the branch-scoped path in `computeStats()` (`branchIds` set,
+  `officerId` unset) was ALREADY correct before this fix —
+  `DB.clients.filter(c=>branchIds.includes(c.branch))` naturally includes
+  every client in the branch regardless of loan history. Only the
+  officer-scoped path had the bug. So Manager's own branch-level client
+  counts were never at risk from this; the fix brings the Loan-Officer
+  path up to the same standard the branch path already met, which is
+  itself a good sign the branch-scope code paths were built carefully the
+  first time.
 
-No structural blocker was found that would prevent Manager development from
-starting once H.1 is addressed (or explicitly deferred with the team's
-sign-off).
+No structural blocker was found that would prevent Manager development
+from starting. The audit's remaining open items (§H) are product/labeling
+decisions, not integrity defects, and the team can defer them with a
+clear paper trail of why, rather than needing to resolve them first.
