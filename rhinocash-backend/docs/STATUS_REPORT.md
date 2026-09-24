@@ -124,6 +124,31 @@ this repo's own seed data (13 real products, `active=1`), populates the
 dropdown correctly; that data-provisioning question was handed back to
 the user rather than "fixed" against a problem that isn't in this code.
 
+**Real "Processing... please wait" -> "Success" feedback, rolled out app-
+wide.** The fifth report — no loading/success feedback on Submit/Save
+buttons — turned out to already have a real, working solution built for
+Create Loan Application (`centerToast`/`dismissCenterToast`, a page-
+centered greenish "Processing..." bar replaced by a gray "success" one),
+but wired into only 1 of ~280 places that submit a form. Generalized it
+directly into the shared `withRequest()` wrapper every one of those already
+funnels through, as an opt-in `{mutates:true}` flag — automatic for every
+genuine create/update action (51 call sites: Add Payment/Requisition/
+Loan actions/Leave/Branch/Investor/Ticket/etc.), deliberately NOT applied
+to quiet background reads (pagination, filters, polling, mark-as-read)
+where a big banner on every click would be noise, not feedback. One real
+subtlety surfaced and handled correctly: a form with its own still-open
+file input (Add Client, Add Document) can never use the generic banner,
+since it works via `renderApp()`, which wipes a file input's displayed
+"chosen file" state the instant it re-renders — those keep using the
+separate, dedicated-overlay technique Add Client already had (now shared
+as `ensureFileFormProgressOverlay()`/`paintFileFormCenterBar()`, extended
+to Add Document too). Verified live with Playwright, including with an
+artificial network delay to actually observe the mid-flight state: the
+banner shows and clears correctly on a plain form (Apply Leave), and on
+Add Document specifically, the file input's chosen file (`test.png`) and
+typed values genuinely survive the whole upload, confirmed by inspecting
+the live DOM mid-request, not just by watching it happen quickly.
+
 Re-run them yourself — that's the point of them being real, not a claim
 to take on faith:
 

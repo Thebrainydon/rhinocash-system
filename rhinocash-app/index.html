@@ -1131,11 +1131,28 @@ const api = {
 // gets the same handling: no double-submits, a clear error toast instead
 // of a silent failure or a stack trace, and the UI never freezes without
 // feedback (requirement: loading state + duplicate-submit prevention).
+// {mutates:true} additionally shows the same real, page-centered
+// "Processing... please wait" -> "Success" bars submitLoanApp originally
+// pioneered on its own (see centerToast/dismissCenterToast) — generalized
+// here so every genuine create/update action gets it automatically,
+// without every one of ~50 call sites re-implementing the same
+// processing/dismiss/success/dismiss dance by hand. Deliberately opt-in,
+// not automatic for every withRequest call: many calls through this
+// function are quiet background reads (pagination, filters, polling)
+// where flashing a big banner on every click would be noise, not
+// feedback. A form with its own visible file input still open during the
+// save (e.g. Add Client) must NOT use this — centerToast's renderApp()
+// would wipe the native file input's displayed "chosen file" state
+// exactly like the comment on ensureFileFormProgressOverlay() explains —
+// those keep using that same dedicated-overlay technique instead.
 let inFlight = new Set();
-async function withRequest(key, fn){
+async function withRequest(key, fn, opts){
   if(inFlight.has(key)) return; // duplicate-submit guard
   inFlight.add(key);
-  try{ await fn(); }
+  const mutates = opts && opts.mutates;
+  const processingToast = mutates ? centerToast('Processing... please wait', 'success') : null;
+  let succeeded = false;
+  try{ await fn(); succeeded = true; }
   catch(e){
     if(e instanceof ApiError){
       if(e.status !== 401) toast(e.message); // 401 already handled/toasted by apiRequest
@@ -1144,7 +1161,19 @@ async function withRequest(key, fn){
       toast("Something went wrong. Please try again.");
     }
   }
-  finally{ inFlight.delete(key); renderApp(); }
+  finally{
+    if(processingToast) dismissCenterToast(processingToast);
+    inFlight.delete(key);
+    renderApp();
+    if(mutates && succeeded){
+      // 'success' with NO type arg — this is deliberately the gray/
+      // "done" style, not the greenish one 'success' as a TYPE means
+      // above; matches the real reference site's own lowercase gray
+      // success bar exactly (see centerToast's type==='success' check).
+      const doneToast = centerToast('success');
+      setTimeout(()=>{ dismissCenterToast(doneToast); renderApp(); }, 3200);
+    }
+  }
 }
 
 // ---- Role id (backend, e.g. "loan_officer") <-> display name (frontend, "Loan Officer") ----
@@ -4429,7 +4458,7 @@ function submitImportClients(){
       : `Imported all ${res.created} row(s) successfully`);
     if(res.errors && res.errors.length) console.error('Client import row errors:', res.errors);
     if(res.created > 0){ closeModal(); DB.acctPages.clientdir = null; renderApp(); }
-  });
+  }, {mutates:true});
 }
 function renderImportClientsModal(){
   const f = DB.importClientsForm;
@@ -4545,29 +4574,29 @@ function renderAddClientForm(){
   `;
 }
 // A dedicated DOM node outside the normal render tree — updated by direct
-// writes, never via renderApp() — so the save's progress animation can
-// run without ever wiping the form's typed values or chosen files (a
+// writes, never via renderApp() — so a save's progress animation can run
+// without ever wiping a still-open form's typed values or chosen files (a
 // file input's chosen file is lost the instant its element is replaced;
 // there is no browser workaround for that, so the render tree must
-// simply never touch this form while a save is in flight).
-function ensureAddClientProgressOverlay(){
-  let el = document.getElementById('add-client-progress-overlay');
+// simply never touch a form with a live file input while its own save is
+// in flight). Shared by every such form (Add Client, Add Document/
+// Client Documents) — each gets its own overlay node, by id, so two of
+// these can never collide if somehow both were open at once.
+function ensureFileFormProgressOverlay(id){
+  let el = document.getElementById(id);
   if(!el){
     el = document.createElement('div');
-    el.id = 'add-client-progress-overlay';
+    el.id = id;
     document.body.appendChild(el);
   }
   return el;
 }
-// Real, page-centered "Uploading... please wait" / "success" bars —
-// the exact same look as the real .toast-wrap-center/.toast-center
-// classes Create Application uses, but painted via a direct DOM write
-// to a dedicated node outside the normal render tree (never
-// renderApp()), so the Add Client form's just-typed values and chosen
-// files are never wiped mid-save (a file input's chosen file is lost
-// the instant its element is replaced by a fresh render — there is no
-// browser workaround for that).
-function paintAddClientCenterBar(overlay, msg, kind){
+// Real, page-centered "Uploading... please wait" / "success" bars — the
+// exact same look as the real .toast-wrap-center/.toast-center classes
+// Create Application uses, but painted via a direct DOM write to a
+// dedicated node outside the normal render tree (never renderApp()), for
+// the reason ensureFileFormProgressOverlay() above explains.
+function paintFileFormCenterBar(overlay, msg, kind){
   overlay.innerHTML = `<div class="toast-wrap-center"><div class="toast-center${kind==='processing'?' toast-center-success':' toast-center-done'}">${escapeHtml(msg)}</div></div>`;
 }
 async function submitAddClient(ev){
@@ -4579,8 +4608,8 @@ async function submitAddClient(ev){
     { input: 'idPhotoFront', docType: 'ID Photo Front' },
     { input: 'idPhotoBack', docType: 'ID Photo Back' },
   ];
-  const overlay = ensureAddClientProgressOverlay();
-  paintAddClientCenterBar(overlay, 'Uploading... please wait', 'processing');
+  const overlay = ensureFileFormProgressOverlay('add-client-progress-overlay');
+  paintFileFormCenterBar(overlay, 'Uploading... please wait', 'processing');
   await withRequest('add-client', async ()=>{
     const c = await addClient(f);
     // Real uploads, attached as real client_documents rows — only for
@@ -4592,7 +4621,7 @@ async function submitAddClient(ev){
       const uploaded = await uploadFile(file);
       await api.post(`/api/clients/${c.id}/documents`, { name:file.name, doc_type:ff.docType, file_path:uploaded.path });
     }
-    paintAddClientCenterBar(overlay, 'success', 'done');
+    paintFileFormCenterBar(overlay, 'success', 'done');
     // Every delay here is awaited in-line, never a detached setTimeout —
     // this function's promise only resolves once the bar has actually
     // shown and this has actually navigated, so nothing can fire later
@@ -5351,7 +5380,7 @@ function submitLoanPaymentRequest(ev){
     if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
     else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
     else { toast(res.message || "Could not initiate the payment request"); }
-  });
+  }, {mutates:true});
 }
 function renderLoanPaymentRequestModal(){
   const loan = DB.loans.find(l=>l.id===modal.loanId);
@@ -5380,7 +5409,7 @@ async function rateLoan(loanId, rating, reason){
     const idx = DB.loans.findIndex(l=>l.id===loanId);
     if(idx>=0) DB.loans[idx] = { ...DB.loans[idx], ...adapted };
     toast("Loan tagged");
-  });
+  }, {mutates:true});
 }
 function submitTagLoan(ev){
   ev.preventDefault();
@@ -5533,13 +5562,23 @@ function submitDocument(ev,clientId){
   ev.preventDefault();
   const form = ev.target;
   const f = Object.fromEntries(new FormData(form));
+  const file = form.elements.file.files[0];
+  if(!file){ toast("Choose a file to upload"); return; }
+  // Same real "Uploading... please wait" -> "success" bars as Add Client,
+  // and for the same reason: this form has a real, still-visible file
+  // input while the upload is in flight, so it must be painted outside
+  // the normal render tree rather than via withRequest's own
+  // {mutates:true} centerToast handling (which calls renderApp(), and
+  // would wipe the file input's displayed "chosen file" state).
+  const overlay = ensureFileFormProgressOverlay('add-document-progress-overlay');
+  paintFileFormCenterBar(overlay, 'Uploading... please wait', 'processing');
   return withRequest('add-document', async ()=>{
-    const file = form.elements.file.files[0];
-    if(!file){ toast("Choose a file to upload"); return; }
     const uploaded = await uploadFile(file);
     await addDocument(clientId, f.name, f.type, uploaded.path);
-    toast("Document uploaded");
-  });
+    paintFileFormCenterBar(overlay, 'success', 'done');
+    await new Promise(r=>setTimeout(r, 1200));
+    overlay.innerHTML = "";
+  }).finally(()=>{ overlay.innerHTML = ""; });
 }
 
 function statusBadge(status){
@@ -5740,7 +5779,7 @@ function manuallyConfirmProcessingFee(){
     session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
     toast('Processing fee marked as paid');
     renderApp();
-  });
+  }, {mutates:true});
 }
 // initiateProcessingFee()/confirmProcessingFee() are no longer wired to
 // any button on this form (per the requested design, the form only ever
@@ -5758,7 +5797,7 @@ function initiateProcessingFee(){
     const res = await api.post('/api/loans/processing-fee/initiate', { client_id: st.matchedClient.id, product_id: product.id, phone: st.feePhone });
     session.loanAppState.feePayment = { id: res.feeId, status: res.status, amount: res.amount, message: res.message };
     renderApp();
-  });
+  }, {mutates:true});
 }
 function confirmProcessingFee(code){
   const st = session.loanAppState;
@@ -5770,30 +5809,20 @@ function confirmProcessingFee(code){
     session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
     toast('Processing fee confirmed');
     renderApp();
-  });
+  }, {mutates:true});
 }
 function submitLoanApp(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
-  // Two real, sequential, page-centered bars — matching the real
-  // reference site exactly (its own messages appear centered on the
-  // page, not tucked into a corner): a greenish "Processing... please
-  // wait" bar shown for the real duration of the actual POST /api/loans
-  // request, replaced the instant it settles by the real gray "success"
-  // bar, before the existing real redirect.
-  const processingToast = centerToast('Processing... please wait', 'success');
+  // The real, page-centered "Processing... please wait" -> "Success" bars
+  // (now the shared withRequest({mutates:true}) behavior every other
+  // create/update action uses too, not a one-off here anymore).
   return withRequest('submit-loan', async ()=>{
-    try{
-      await createLoanApplication(f);
-      session.loanAppState = null;
-      goToUndisbursedLoans();
-      const doneToast = centerToast('success');
-      setTimeout(()=>{ dismissCenterToast(doneToast); renderApp(); }, 3200);
-    } finally {
-      dismissCenterToast(processingToast);
-    }
-  });
+    await createLoanApplication(f);
+    session.loanAppState = null;
+    goToUndisbursedLoans();
+  }, {mutates:true});
 }
 // ---- Loan Applications (Loan Officer): one real table, filterable by
 // category — All templates / Disbursed loans / Undisbursed loans / Pended
@@ -5913,7 +5942,7 @@ function submitLoanEdit(ev){
     if(idx>-1) DB.loans[idx] = adaptLoan(res.loan);
     closeModal();
     toast('Loan application updated');
-  });
+  }, {mutates:true});
 }
 function loanApplicationsFiltered(st){
   let rows = DB.loans;
@@ -8856,7 +8885,7 @@ function submitNewActivity(ev){
     await api.post('/api/collections/activities', f);
     toast("Activity logged");
     await loadCollectionActivities();
-  });
+  }, {mutates:true});
 }
 
 // ==================== Follow-Ups ====================
@@ -8903,7 +8932,7 @@ function submitNewFollowUp(ev){
     await api.post('/api/collections/follow-ups', f);
     toast("Follow-up created");
     await loadFollowUps(DB.acctPages.followups?DB.acctPages.followups.filters:{});
-  });
+  }, {mutates:true});
 }
 async function decideFollowUp(id, status, outcome){
   await api.patch(`/api/collections/follow-ups/${id}`, { status, outcome });
@@ -8955,7 +8984,7 @@ function submitNewPromise(ev){
     await api.post('/api/collections/promises', { ...f, promised_amount:Number(f.promised_amount) });
     toast("Promise to pay recorded");
     await loadPromises(DB.acctPages.promises?DB.acctPages.promises.filters:{});
-  });
+  }, {mutates:true});
 }
 async function evaluatePromise(id){
   const res = await api.post(`/api/collections/promises/${id}/evaluate`, {});
@@ -9408,7 +9437,7 @@ function submitStkPush(ev){
     session.lastStkResult = result;
     if(result.status === 'INITIATED') toast("STK push sent — waiting for the customer to complete it on their phone");
     else toast(`Request status: ${result.status}`);
-  });
+  }, {mutates:true});
 }
 
 /* ---------- 5. Accounting ---------- */
@@ -9513,7 +9542,7 @@ function submitNewExpense(ev){
     await api.post('/api/expenses', { category:f.category, amount:Number(f.amount), note:f.note||null });
     toast("Expense submitted for approval");
     await loadExpensesPage(DB.acctPages.exp?DB.acctPages.exp.filters:{}, 1);
-  });
+  }, {mutates:true});
 }
 async function decideExpense(id, action, reason){
   if(action==='approve') await api.post(`/api/expenses/${id}/approve`, {});
@@ -9619,7 +9648,7 @@ function requestRequisitionOtp(){
     DB.requisitionForm.otpRequested = true;
     DB.requisitionForm.otpForTesting = res.otpForTesting || null;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
-  });
+  }, {mutates:true});
 }
 function renderCreateRequisitionPage(){
   const f = DB.requisitionForm;
@@ -9681,7 +9710,7 @@ function submitCreateRequisition(ev){
     toast("Requisition submitted successfully");
     closeCreateRequisitionForm();
     await loadRequisitions(DB.acctPages.req?DB.acctPages.req.filters:{});
-  });
+  }, {mutates:true});
 }
 
 // ==================== Vendor/Utility Payments — real expense creation with utility-specific fields ====================
@@ -9769,7 +9798,7 @@ function requestUtilPaymentOtp(){
     DB.utilPaymentForm.otpRequested = true;
     DB.utilPaymentForm.otpForTesting = res.otpForTesting || null;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
-  });
+  }, {mutates:true});
 }
 function renderCreateUtilityPaymentPage(){
   const f = DB.utilPaymentForm;
@@ -9849,7 +9878,7 @@ function submitUtilityPayment(ev){
     toast("Vendor payment submitted successfully");
     closeCreateUtilityPaymentForm();
     await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
-  });
+  }, {mutates:true});
 }
 
 // ---- Bulk Upload (Import Utility Payments): a real CSV parse + the same
@@ -9901,7 +9930,7 @@ function requestBulkUploadOtp(){
     DB.bulkUploadForm.otpRequested = true;
     DB.bulkUploadForm.otpForTesting = res.otpForTesting || null;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
-  });
+  }, {mutates:true});
 }
 function submitBulkUpload(){
   const f = DB.bulkUploadForm;
@@ -9914,7 +9943,7 @@ function submitBulkUpload(){
       : `Imported all ${res.created} row(s) successfully`);
     if(res.errors && res.errors.length) console.error('Bulk upload row errors:', res.errors);
     if(res.created > 0){ closeModal(); await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{}); }
-  });
+  }, {mutates:true});
 }
 function renderBulkUploadModal(){
   const f = DB.bulkUploadForm;
@@ -10211,7 +10240,7 @@ function submitNewAccount(ev){
     await api.post('/api/accounts', f);
     toast("Account created");
     await loadChartOfAccounts(DB.acctPages.coa?DB.acctPages.coa.filters:{});
-  });
+  }, {mutates:true});
 }
 async function editAccount(id, patch){
   await api.patch(`/api/accounts/${id}`, patch);
@@ -10296,7 +10325,7 @@ function submitNewAdjustment(ev){
     await api.post('/api/adjustments', { ...f, amount:Number(f.amount) });
     toast("Adjustment drafted");
     await loadAdjustments(DB.acctPages.adj?DB.acctPages.adj.filters:{});
-  });
+  }, {mutates:true});
 }
 async function submitAdjustmentForReview(id){ await api.post(`/api/adjustments/${id}/submit`, {}); toast("Adjustment submitted for review"); await loadAdjustments(DB.acctPages.adj?DB.acctPages.adj.filters:{}); }
 async function decideAdjustment(id, decision){ await api.post(`/api/adjustments/${id}/decide`, {decision}); toast(`Adjustment ${decision.toLowerCase()}`); await loadAdjustments(DB.acctPages.adj?DB.acctPages.adj.filters:{}); }
@@ -10429,7 +10458,7 @@ function submitNewInvestor(ev){
     await api.post('/api/investors', { ...f, amount:Number(f.amount), profit_share_pct:Number(f.profit_share_pct), term_months:Number(f.term_months) });
     toast("Investor registered");
     await loadInvestorDirectory(DB.acctPages.investordir?DB.acctPages.investordir.filters:{});
-  });
+  }, {mutates:true});
 }
 
 function openInvestorProfile(id){ session.selectedInvestorId = id; DB.acctPages.investorProfile = null; renderApp(); loadInvestorProfile(id); }
@@ -10491,7 +10520,7 @@ function submitGeneratePayout(ev, investorId){
     await api.post(`/api/investors/${investorId}/generate-payout`, f);
     toast("Payout generated from real period P&L");
     await loadInvestorProfile(investorId);
-  });
+  }, {mutates:true});
 }
 async function markPayoutPaid(payoutId){
   await api.post(`/api/investor-payouts/${payoutId}/mark-paid`, {});
@@ -10620,7 +10649,7 @@ function submitCreateBranch(ev){
     await api.post('/api/branches', f);
     toast("Branch created");
     await loadBranchDirectory(DB.acctPages.branchdir?DB.acctPages.branchdir.filters:{});
-  });
+  }, {mutates:true});
 }
 
 // ---- Branch Details — real aggregation of existing APIs, nothing recalculated ----
@@ -10745,7 +10774,7 @@ function submitNewRegion(ev){
     await api.post('/api/regions', f);
     toast("Region created");
     await loadRegions(DB.acctPages.regions?DB.acctPages.regions.filters:{});
-  });
+  }, {mutates:true});
 }
 async function toggleRegionStatus(id, status){
   await api.patch(`/api/regions/${id}`, { status });
@@ -10797,7 +10826,7 @@ function submitBranchProposal(ev){
     await api.post('/api/branch-proposals', { ...f, budget: f.budget?Number(f.budget):null });
     toast("Branch proposal submitted");
     await loadBranchProposalsPage();
-  });
+  }, {mutates:true});
 }
 async function decideBranchProposal(id, action, reason){
   if(action==='approve'){
@@ -10873,7 +10902,7 @@ function submitSaveReportPreset(){
     const r = await api.get('/api/report-filter-presets');
     DB.reportPresets = r.presets;
     renderApp();
-  });
+  }, {mutates:true});
 }
 async function deleteReportPreset(id){
   await api.del(`/api/report-filter-presets/${id}`);
@@ -11244,7 +11273,7 @@ function submitSaveTicketPreset(){
     await api.post('/api/ticket-filter-presets', { name, filters });
     toast("Filter preset saved");
     await loadTicketPresets();
-  });
+  }, {mutates:true});
 }
 async function deleteTicketPreset(id){
   await api.del(`/api/ticket-filter-presets/${id}`);
@@ -11387,7 +11416,7 @@ function submitTicket(ev){
     toast("Support ticket submitted");
     DB.ticketDashboard = null;
     await loadSupportTickets(DB.acctPages.tickets?DB.acctPages.tickets.filters:{}, 1);
-  });
+  }, {mutates:true});
 }
 // ==================== Create a Ticket — a real quick-action modal (the
 // Loan Officer's sidebar shortcut) over the exact same real POST
@@ -11436,7 +11465,7 @@ function submitCreateSupportTicket(ev){
     await api.post('/api/support-tickets', { subject: f.subject, message: f.message.trim(), assignedTo: f.assignedTo || null });
     toast("Ticket sent");
     closeModal();
-  });
+  }, {mutates:true});
 }
 function openTicketDetail(id){ session.selectedTicketId = id; DB.ticketDetail = null; renderApp(); loadTicketDetail(id); }
 function closeTicketDetail(){ session.selectedTicketId = null; renderApp(); }
@@ -11493,7 +11522,7 @@ function submitTicketComment(ev, ticketId){
   return withRequest('ticket-comment', async ()=>{
     await api.post(`/api/support-tickets/${ticketId}/comments`, f);
     await loadTicketDetail(ticketId);
-  });
+  }, {mutates:true});
 }
 async function assignTicketToMe(ticketId){
   await api.post(`/api/support-tickets/${ticketId}/assign`, { assignedTo: DB.me.id });
@@ -11518,7 +11547,7 @@ function submitLinkClient(ev, ticketId){
     await api.post(`/api/support-tickets/${ticketId}/link`, { clientId: f.clientId });
     toast("Client linked to ticket");
     await loadTicketDetail(ticketId);
-  });
+  }, {mutates:true});
 }
 async function updateTicket(ticketId, status){
   await api.patch(`/api/support-tickets/${ticketId}`, { status });
@@ -11574,7 +11603,7 @@ function submitNewFaq(ev){
     await api.post('/api/faq', f);
     toast("FAQ article added");
     await loadFaq(DB.faqArticles?DB.faqArticles.filters:{});
-  });
+  }, {mutates:true});
 }
 async function deleteFaqArticle(id){
   await api.del(`/api/faq/${id}`);
@@ -11726,7 +11755,7 @@ function submitStaffCreateInteraction(ev){
     DB.staffInteractions = null;
     toast("Interaction posted");
     closeModal();
-  });
+  }, {mutates:true});
 }
 // A real, deterministic month-end payslip print — the exact same real
 // window.print() convention as every other printable page in this app
@@ -12122,7 +12151,7 @@ function submitStaffDeposit(ev){
     if(res.status === 'INITIATED'){ toast("STK push sent — check your phone"); closeModal(); }
     else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
     else { toast(res.message || "Could not initiate the deposit"); }
-  });
+  }, {mutates:true});
 }
 function renderStaffDepositModal(){
   const me = DB.me || {};
@@ -12164,7 +12193,7 @@ function submitUpdateOwnDetails(ev){
     const res = await api.patch('/api/auth/me', f);
     DB.me = res.user;
     toast("Details updated");
-  });
+  }, {mutates:true});
 }
 // ==================== Real profile photo — POST /api/uploads + POST
 // /api/users/me/avatar (both pre-existing, real endpoints). GET
@@ -12240,7 +12269,7 @@ function handleMyAvatarFileChange(ev){
     await loadMyAvatarDataUri();
     toast("Profile photo updated");
     renderApp();
-  });
+  }, {mutates:true});
 }
 // A real, shared show/hide toggle for any password-type input — flips
 // the real DOM input's own type between 'password' and 'text' (so a
@@ -12357,7 +12386,7 @@ function submitLeaveRequest(ev){
     await api.post('/api/leave-requests', f);
     toast("Leave request submitted");
     await loadMyLeaveRequests();
-  });
+  }, {mutates:true});
 }
 
 // ==================== Salary Advance — real, reused across every staff role ====================
@@ -12389,7 +12418,7 @@ function submitSalaryAdvanceRequest(ev){
     await api.post('/api/salary-advances', { ...f, amount:Number(f.amount) });
     toast("Salary advance request submitted");
     await loadMySalaryAdvances();
-  });
+  }, {mutates:true});
 }
 // ==================== Loan Officer's chrome-free Salary Advance page —
 // reuses the exact same real GET /api/salary-advances?mine=1 data and
@@ -12489,7 +12518,7 @@ function submitLoWorkPlanSetup(ev){
     DB.loWorkPlan = null;
     toast("Workplan saved");
     closeModal();
-  });
+  }, {mutates:true});
 }
 function renderLoWorkPlanSetupModal(){
   const st = session.loWorkPlanState || defaultLoWorkPlanState();
@@ -12777,7 +12806,7 @@ function submitSecuritySettings(ev){
     // Real, immediate effect for the current session too — not just future logins.
     if(DB.sysAdmin.security) session.sessionWarningMinutes = DB.sysAdmin.security.sessionWarningMinutes;
     scheduleSessionExpiryWarning();
-  });
+  }, {mutates:true});
 }
 function renderSystemAdministration(){
   if(!DB.sysAdmin) loadSystemAdminData();
@@ -12824,7 +12853,7 @@ function submitOrgSettings(ev){
     await api.put('/api/system/organization', f);
     toast("Organization settings saved");
     await loadSystemAdminData();
-  });
+  }, {mutates:true});
 }
 function renderMaintenanceModeCard(maintRes, isAdmin){
   if(!maintRes) return "";
@@ -12847,7 +12876,7 @@ function submitEnableMaintenance(ev){
     await api.put('/api/system/maintenance', { enabled:true, message:f.message||null });
     toast("Maintenance mode enabled");
     await loadSystemAdminData();
-  });
+  }, {mutates:true});
 }
 async function toggleMaintenanceMode(enabled){
   await api.put('/api/system/maintenance', { enabled });
@@ -12924,7 +12953,7 @@ function submitMpesaConfig(ev, env){
     await api.put(`/api/admin/mpesa/config/${env}`, f);
     toast(`${env} configuration saved`);
     await loadMpesaAdminConfig();
-  });
+  }, {mutates:true});
 }
 async function testMpesaConnection(env){
   const result = await api.post(`/api/admin/mpesa/test-connection/${env}`, {});
@@ -13001,7 +13030,7 @@ function submitBoardResolution(ev){
     await api.post('/api/governance/resolutions', f);
     toast("Resolution proposed");
     await loadGovernanceData();
-  });
+  }, {mutates:true});
 }
 async function decideBoardResolution(id, decision){
   await api.post(`/api/governance/resolutions/${id}/decide`, { decision });
@@ -13015,7 +13044,7 @@ function submitEquityHolding(ev){
     await api.post('/api/governance/equity', { ...f, percentage:Number(f.percentage), capital_contributed:f.capital_contributed?Number(f.capital_contributed):null });
     toast("Equity holding recorded");
     await loadGovernanceData();
-  });
+  }, {mutates:true});
 }
 
 // ==================== Investor — separate account experience, dedicated investor auth/APIs only ====================
@@ -13060,7 +13089,7 @@ function submitChangePassword(ev){
     await api.post('/api/auth/change-password', { currentPassword: f.currentPassword, newPassword: f.newPassword });
     session.mustChangePassword = false;
     toast("Password changed");
-  });
+  }, {mutates:true});
 }
 async function refreshMyData(){
   toast("Refreshing…");
@@ -13107,7 +13136,7 @@ function handleImageViewerFileChange(ev){
     if(oldDocId) await deleteClientDocument(iv.clientId, oldDocId);
     DB.imageViewer = { ...iv, docId:newDoc.id, filePath:newDoc.filePath, scale:1, rotation:0 };
     toast("Photo updated");
-  });
+  }, {mutates:true});
 }
 function deleteImageViewerPhoto(){
   const iv = DB.imageViewer;
@@ -13308,7 +13337,7 @@ function submitDeposit(ev){
     if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
     else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
     else { toast(res.message || "Could not initiate the deposit"); }
-  });
+  }, {mutates:true});
 }
 function renderDepositModal(){
   const c = DB.clients.find(x=>x.id===session.selectedClientId);
@@ -13456,7 +13485,7 @@ function submitApplyLeave(ev){
     DB.leaveRequests.unshift(res.leaveRequest);
     toast("Leave application submitted — awaiting your reporting manager's decision");
     closeModal();
-  });
+  }, {mutates:true});
 }
 
 // ---- Apply salary Advance — the SAME real modal for every role's
@@ -13506,7 +13535,7 @@ function submitRequestAdvance(ev){
     if(res.otp && res.otp.status === 'NOT_CONFIGURED') toast(`SMS isn't configured here — your OTP for testing is ${res.otp.otpForTesting}`);
     else toast("Advance request submitted — a confirmation OTP was sent to your phone");
     closeModal();
-  });
+  }, {mutates:true});
 }
 
 // ==================== Loan Status Browser — real, role-scoped filterable loan list, reusing /api/loans/applications-overview ====================
@@ -13786,7 +13815,7 @@ function assignC2bPayment(id, loanId){
     toast("Payment assigned and posted");
     DB.c2bPaymentsBrowser = null;
     await loadC2bPaymentsBrowser();
-  });
+  }, {mutates:true});
 }
 function renderC2bPaymentsModal(){
   const st = session.c2bPaymentsState;
