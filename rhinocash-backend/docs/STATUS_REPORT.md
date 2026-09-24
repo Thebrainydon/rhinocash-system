@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,037 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,044 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,236 passed, 0 failed
+Total:    2,243 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1462,6 +1462,51 @@ own labels are all short single words), switches its `.detail-label`/
 `.detail-value` children to `display:inline-block` at a fixed label
 width, without touching the base rules every other real page still
 uses unmodified.
+
+A further follow-up replaced every individual page/panel/table's own
+"Loading…" text placeholder — over 100 real spots across the app —
+with a real, shared purple dots spinner (`loadingDotsHtml()`, an 8-dot
+ring with a staggered pulse animation), matching the reference design.
+The one real exception is the initial, one-time screen shown right
+after login, before any page has data to render at all, which now
+reads "Loading Dashboard......" instead of the old generic "Loading
+your Rhinocash data…" text.
+
+Making that Dashboard-specific text actually visible required a real
+login-flow change, not just a text edit: previously, `doLogin()` kept
+the user on the login screen (showing "Login successful… redirecting"
+on the button) for the entire real `loadCoreData()` wait, only flipping
+`session.loggedIn = true` — the flag `renderApp()` gated the whole app
+shell on — once that load had already finished. That was a deliberate
+earlier design choice specifically to skip ever showing a separate
+loading screen; this round's request reverses it. A first attempt just
+moved `session.loggedIn = true` earlier, ahead of `loadCoreData()` —
+and broke real login itself: `apiRequest()`'s 401 handler force-logs-out
+(wiping `authToken`/`DB` and reopening the login screen) whenever a 401
+arrives while `session.loggedIn` is already true, and `loadCoreData()`
+fires many best-effort calls that are each already wrapped in their own
+`.catch(()=>{})` specifically because an occasional 401 among them
+(e.g. a role-scoped endpoint) is expected and meant to be silently
+tolerated — with `loggedIn` now true earlier, that same tolerated 401
+instead tripped the global interceptor and erased the fresh login
+before the first render even landed, something the initial fix's own
+first, panicked read of the test failures (login itself looking
+broken) took a real, separate diagnostic pass with temporary debug
+logging to actually trace back to. Fixed properly with a second,
+distinct flag: `session.authenticated` now flips true immediately once
+credentials are verified — `renderApp()` gates the app shell (and its
+own "Loading Dashboard......" screen) on `authenticated`, not
+`loggedIn` — while `session.loggedIn` keeps its original, later timing
+untouched, so the 401-tolerance guarantee `loadCoreData()` depends on
+never regressed. (Chasing that regression also briefly produced a
+second false trail: after the real fix, the exact same failure kept
+reappearing run after run, which pointed back at the frontend code
+again — until it turned out to be a leftover dev server process from
+earlier verification in this same round, never stopped, still bound to
+the test suite's own default port and quietly accumulating real failed-
+login attempts against a real backend account until it tripped the
+real 5-attempts-per-15-minutes lockout this app already enforces —
+resolved by killing the stray process, not by touching the app.)
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

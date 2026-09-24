@@ -235,6 +235,18 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 
 /* ---- Misc ---- */
 .empty{padding:40px 20px; text-align:center; color:var(--ink-faint); font-size:13px;}
+/* The shared per-page/per-panel loading indicator — see loadingDotsHtml() */
+.dots-spinner{ position:relative; width:32px; height:32px; margin:4px auto; }
+.dots-spinner i{ position:absolute; inset:0; }
+.dots-spinner i b{
+  position:absolute; top:0; left:50%; width:6px; height:6px; margin-left:-3px;
+  border-radius:50%; background:var(--purple); display:block;
+  animation:dotsSpinnerPulse 1s linear infinite;
+}
+@keyframes dotsSpinnerPulse{
+  0%, 39%, 100%{ opacity:0.25; transform:scale(0.7); }
+  40%{ opacity:1; transform:scale(1.2); }
+}
 .pill-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
 .search{border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:13px; width:240px;}
 .two-col{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
@@ -982,7 +994,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, loggingIn:false, loginSuccess:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false, clientAccountOpen:false, clientAccountState:null };
+let session = { loggedIn:false, authenticated:false, loggingIn:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false, clientAccountOpen:false, clientAccountState:null };
 let loginError = "";
 // Real, backend-driven forgot-password recovery screen — not a second auth
 // mechanism, just a public UI for POST /api/auth/forgot-password.
@@ -1080,7 +1092,7 @@ async function apiRequest(method, path, body){
     // Session expired/revoked/invalid — force back to the login screen
     // rather than let the app carry on showing stale, now-inaccessible data.
     if(session.loggedIn){
-      authToken = null; session.loggedIn = false; session.section="dashboard";
+      authToken = null; session.loggedIn = false; session.authenticated = false; session.section="dashboard";
       DB = null;
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
       broadcastSessionEnded();
@@ -1432,6 +1444,25 @@ function lineChart(points, opts){
 function progressBar(pct, color){
   pct = Math.max(0, Math.min(100, pct));
   return `<div class="bar-track" style="height:10px;"><div class="bar-fill" style="width:${pct}%; background:${color||'linear-gradient(90deg,var(--navy),var(--navy-soft))'};"></div></div>`;
+}
+// The one real loading indicator every individual page/panel/table uses
+// while its own data is still in flight — a ring of pulsing purple dots,
+// matching the reference design, with no text (the one real exception is
+// the initial post-login "Loading Dashboard......" full-page screen in
+// renderApp() itself, shown once, before any page has data to show at
+// all). Each dot is statically rotated to its own position around the
+// ring (via the outer <i>), while its own inner <b> runs the identical
+// real pulse animation on a staggered real animation-delay, so the dots
+// appear to brighten and fade in sequence around the circle.
+function loadingDotsHtml(){
+  const n = 8;
+  let dots = '';
+  for(let i=0;i<n;i++){
+    const angle = (360/n)*i;
+    const delay = (-1 + i/n).toFixed(2);
+    dots += `<i style="transform:rotate(${angle}deg);"><b style="animation-delay:${delay}s;"></b></i>`;
+  }
+  return `<div class="dots-spinner">${dots}</div>`;
 }
 
 /* ---------------- Actions ---------------- */
@@ -1924,8 +1955,8 @@ function initPendingCharts(){
 
 function renderApp(){
   const root = document.getElementById('root');
-  if(!session.loggedIn){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
-  if(!DB){ root.innerHTML = `<div class="loading-screen">Loading your Rhinocash data…</div>`; return; }
+  if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
+  if(!DB){ root.innerHTML = `<div class="loading-screen">Loading Dashboard......</div>`; return; }
   const menu = SIDEBAR_MENUS[session.role] || [];
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
@@ -2009,16 +2040,16 @@ function renderLogin(){
             <div class="login-field">
               <div class="login-field-row">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
-                <input name="username" placeholder="Email address" autocomplete="username" required ${(session.loggingIn||session.loginSuccess)?'disabled':''}>
+                <input name="username" placeholder="Email address" autocomplete="username" required ${session.loggingIn?'disabled':''}>
               </div>
             </div>
             <div class="login-field">
               <div class="login-field-row">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${(session.loggingIn||session.loginSuccess)?'disabled':''}>
+                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
               </div>
             </div>
-            <button class="login-btn" type="submit" ${(session.loggingIn||session.loginSuccess)?'disabled':''}>${(session.loggingIn||session.loginSuccess) ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>${session.loginSuccess ? 'Login successful… redirecting' : 'Processing… please wait'}` : '▸ Login'}</button>
+            <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Processing… please wait` : '▸ Login'}</button>
           </form>
           <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
           <div class="hint" style="margin-top:16px; color:#C7CBDA; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
@@ -2118,7 +2149,7 @@ const sessionChannel = (typeof BroadcastChannel !== 'undefined') ? new Broadcast
 if(sessionChannel){
   sessionChannel.onmessage = (ev)=>{
     if(ev.data === 'session-ended' && session.loggedIn){
-      authToken = null; session.loggedIn = false; session.section = "dashboard";
+      authToken = null; session.loggedIn = false; session.authenticated = false; session.section = "dashboard";
       DB = null; session.justLoggedOut = false;
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
       openModal('session-expired');
@@ -2151,7 +2182,7 @@ function renderSessionExpiryWarningModal(){
 }
 async function doLogin(ev){
   ev.preventDefault();
-  if(session.loggingIn || session.loginSuccess) return false; // duplicate-submit guard
+  if(session.loggingIn) return false; // duplicate-submit guard
   const f = Object.fromEntries(new FormData(ev.target));
   if(!f.username || !f.password){ loginError = "Please enter your email and password."; renderApp(); return false; }
   loginError = "";
@@ -2191,24 +2222,34 @@ async function doLogin(ev){
     session.sessionExpiresAt = result.expiresAt || null;
     session.sessionWarningMinutes = result.sessionWarningMinutes || 5;
     scheduleSessionExpiryWarning();
-    // Credentials are verified and the session is real at this point — say
-    // so immediately instead of leaving the user staring at a static
-    // screen while loadCoreData() (which can take a few seconds on a slow
-    // connection) runs. loadCoreData() populates DB itself, so it's safe to
-    // kick it off in the background while still showing the login panel;
-    // this also skips the separate full-page "Loading your data…" screen
-    // that used to appear right after this one, since this message already
-    // covers that wait.
+    // Credentials are verified and the session is real at this point —
+    // move into the real app shell immediately rather than lingering on
+    // the login screen while loadCoreData() (which can take a few seconds
+    // on a slow connection) runs. renderApp() itself shows the real, one-
+    // time "Loading Dashboard......" full-page screen for exactly this
+    // wait, since DB is still null at this point. session.authenticated
+    // (not session.loggedIn) is what renderApp() itself gates the app
+    // shell on — session.loggedIn stays false until loadCoreData() has
+    // actually finished, on purpose: apiRequest()'s own 401 handler only
+    // forces a real logout when session.loggedIn is already true, so an
+    // individual, already-tolerated 401 from one of loadCoreData()'s own
+    // many best-effort calls (each already wrapped in its own .catch())
+    // can never wipe out this fresh, real login before it's even done.
     session.loggingIn = false;
-    session.loginSuccess = true;
+    session.authenticated = true;
     renderApp();
     await loadCoreData();
     session.loggedIn = true;
-    session.loginSuccess = false;
     renderApp();
   }catch(e){
+    // Covers a genuine credentials failure (authenticated was never set)
+    // and the extremely unlikely case of loadCoreData() itself throwing
+    // after authenticated was already set — either way, a real failure
+    // here must land the user back on the real login screen with the
+    // real error shown, never stuck on a permanent "Loading Dashboard"
+    // screen with nothing to show for it.
     session.loggingIn = false;
-    session.loginSuccess = false;
+    session.authenticated = false;
     loginError = (e && e.message) || "Invalid credentials.";
     renderApp();
   }
@@ -2238,7 +2279,7 @@ async function confirmLogout(){
     // naturally expires, but the client stops using it immediately below.
   }
   authToken = null;
-  session.loggedIn = false; session.loggingOut = false;
+  session.loggedIn = false; session.authenticated = false; session.loggingOut = false;
   if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
   broadcastSessionEnded();
   session.userId = null; session.investorId = null;
@@ -2738,7 +2779,7 @@ async function loadOfficerComparison(){
 function renderTeamCollectionPerformanceCard(){
   const state = DB.acctPages.officerComp;
   if(!state) loadOfficerComparison();
-  if(!state) return `<div class="card"><div class="empty">Loading team performance…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Team Collection Performance <small>real per-officer rate, within your branch</small></div>
     <div class="table-wrap"><table><tr><th>Officer</th><th>Expected</th><th>Collected</th><th>Rate</th><th>Active Loans</th></tr>
@@ -2757,7 +2798,7 @@ async function loadBranchComparison(regionId){
 function renderBranchComparisonCard(title, regionId){
   const state = DB.acctPages.branchComp;
   if(!state) loadBranchComparison(regionId);
-  if(!state) return `<div class="card"><div class="empty">Loading branch comparison…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">${title} <small>ranked by real collection rate</small></div>
     <div class="table-wrap"><table><tr><th>Rank</th><th>Branch</th><th>Expected</th><th>Collected</th><th>Rate</th><th>Arrears</th></tr>
@@ -2792,7 +2833,7 @@ async function loadCollectionAuditMonitoring(){
 function renderCollectionActivityMonitoringCard(){
   const state = DB.acctPages.colAudit;
   if(!state) loadCollectionAuditMonitoring();
-  if(!state) return `<div class="card"><div class="empty">Loading collection activity monitoring…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Collection Activity Monitoring <small>real audit trail for the Collections module</small></div>
     <div class="table-wrap"><table><tr><th>Action</th><th>Record</th><th>By</th><th>When</th></tr>
@@ -2817,7 +2858,7 @@ async function loadDirectorPortfolioRisk(){
 function renderPortfolioRiskCard(){
   const state = DB.acctPages.directorRisk;
   if(!state) loadDirectorPortfolioRisk();
-  if(!state) return `<div class="card"><div class="empty">Loading portfolio risk…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Portfolio Risk <small>governance view — real PAR and arrears, no operational detail</small></div>
     <div class="kpi-grid">${state.par.par.map(p=>`<div class="kpi"><div class="kpi-label">PAR ${p.threshold}</div><div class="kpi-value">${p.percentage.toFixed(1)}%</div></div>`).join("")}</div>
@@ -2828,7 +2869,7 @@ function renderPortfolioRiskCard(){
 function renderCollectionsSummaryCard(){
   const state = DB.acctPages.dashColl;
   if(!state) loadDashboardCollectionsSummary();
-  if(!state) return `<div class="card"><div class="empty">Loading collections summary…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Collections Summary <small>within your authorized scope · <a href="#" onclick="goTo('loanbook','Collection Sheet'); return false;">View Collection Sheet →</a></small></div>
     <div class="kpi-grid">
@@ -4430,7 +4471,7 @@ function renderClientInteractionsPage(){
     </div>`;
   if(!DB.clientInteractions || DB.clientInteractions.stateKey !== JSON.stringify(st)){
     loadClientInteractions();
-    return `<div class="card">${header}<div class="empty">Loading…</div></div>`;
+    return `<div class="card">${header}<div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const d = DB.clientInteractions;
   const rows = d.rows.map((r,i)=>`<tr class="clickable" onclick="openClient('${r.client_id}')">
@@ -4623,7 +4664,7 @@ function renderClientLeads(){
     </div>`;
   if(!DB.leadsBrowser || DB.leadsBrowser.stateKey !== JSON.stringify(st)){
     loadLeadsBrowser();
-    return `<div class="card">${header(0)}<div class="empty">Loading…</div></div>`;
+    return `<div class="card">${header(0)}<div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const rows = DB.leadsBrowser.rows;
   const tableRows = rows.map(l=>`<tr ${l.status==='Converted'?`class="clickable" onclick="openClient('${l.converted_client_id}')"`:''}>
@@ -5041,7 +5082,7 @@ function renderInstallmentTransactionsModal(){
       </div>
       <div class="table-wrap"><table>
         <tr><th>Date</th><th>Transaction</th><th>Account</th><th>Amount</th><th>Deducted</th></tr>
-        ${!fresh ? `<tr><td colspan="5" class="empty">Loading…</td></tr>` : (rows || `<tr><td colspan="5" class="empty">No transactions recorded for this installment yet.</td></tr>`)}
+        ${!fresh ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : (rows || `<tr><td colspan="5" class="empty">No transactions recorded for this installment yet.</td></tr>`)}
       </table></div>
     </div>
   `;
@@ -5122,7 +5163,7 @@ function renderLoanAccountStatementModal(){
   const loan = DB.loans.find(l=>l.id===modal.loanId);
   const paysData = DB.loanStatementPayments;
   const fresh = loan && paysData && paysData.loanId===modal.loanId;
-  if(!fresh) return `<div class="empty">Loading…</div>`;
+  if(!fresh) return `<div class="empty">${loadingDotsHtml()}</div>`;
   const client = DB.clients.find(c=>c.id===loan.clientId);
   const branch = DB.branches.find(b=>b.id===loan.branchId);
   const maturity = loan.schedule && loan.schedule.length ? loan.schedule[loan.schedule.length-1].dueDate : null;
@@ -5188,7 +5229,7 @@ function renderLoanLedgerStatementModal(){
   const loan = DB.loans.find(l=>l.id===modal.loanId);
   const paysData = DB.loanStatementPayments;
   const fresh = loan && paysData && paysData.loanId===modal.loanId;
-  if(!fresh) return `<div class="empty">Loading…</div>`;
+  if(!fresh) return `<div class="empty">${loadingDotsHtml()}</div>`;
   const client = DB.clients.find(c=>c.id===loan.clientId);
   const totalInterest = (loan.schedule||[]).reduce((s,r)=>s+r.interestDue,0);
   // `delta` drives the running balance directly (positive = adds to what
@@ -6029,7 +6070,7 @@ function exportCollectionSheetDayCSV(){
 }
 function renderCollectionSheet(){
   const st = session.collSheetDayState || (session.collSheetDayState = defaultCollSheetDayState());
-  if(!DB.collSheetDay || DB.collSheetDay.stateKey !== JSON.stringify(st)){ loadCollectionSheetDay(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.collSheetDay || DB.collSheetDay.stateKey !== JSON.stringify(st)){ loadCollectionSheetDay(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.collSheetDay;
   const monthOptions = collSheetDayMonthOptions();
   const dayOptions = collSheetDayDayOptions(st.month);
@@ -6105,7 +6146,7 @@ function renderCollectionReport(){
   const maxDate = collectionReportMaxDate();
   const pctSt = computeStats(DB.me.id);
   const pctClass = collectionPctBadgeClass(pctSt.todayPct);
-  if(!DB.officerCollectionReport || DB.officerCollectionReport.stateKey !== JSON.stringify(st)){ loadOfficerCollectionReport(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.officerCollectionReport || DB.officerCollectionReport.stateKey !== JSON.stringify(st)){ loadOfficerCollectionReport(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.officerCollectionReport;
   return `
     <div class="card">
@@ -6158,7 +6199,7 @@ function exportCollectionRatesOfficerCSV(){
 }
 function renderCollectionRatesOfficer(){
   const st = session.collectionRatesOfficerState || (session.collectionRatesOfficerState = defaultCollectionRatesOfficerState());
-  if(!DB.collectionRatesOfficer || DB.collectionRatesOfficer.stateKey !== JSON.stringify(st)){ loadCollectionRatesOfficer(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.collectionRatesOfficer || DB.collectionRatesOfficer.stateKey !== JSON.stringify(st)){ loadCollectionRatesOfficer(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.collectionRatesOfficer;
   const monthOptions = collSheetDayMonthOptions();
   const [ry,rm] = st.month.split('-').map(Number);
@@ -6221,7 +6262,7 @@ function exportLoanArrearsSheetCSV(){
 }
 function renderLoanArrearsSheet(){
   const st = session.loanArrearsSheetState || (session.loanArrearsSheetState = defaultLoanArrearsSheetState());
-  if(!DB.loanArrearsSheet || DB.loanArrearsSheet.stateKey !== JSON.stringify(st)){ loadLoanArrearsSheet(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loanArrearsSheet || DB.loanArrearsSheet.stateKey !== JSON.stringify(st)){ loadLoanArrearsSheet(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loanArrearsSheet;
   const isRunning = d.status === 'running';
   const title = isRunning ? `Running Loans disbursed ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}` : `Loan Arrears from ${fmtDDMMYYYY(d.from)} to ${fmtDDMMYYYY(d.to)}`;
@@ -6328,7 +6369,7 @@ function loanOfficerViewLoansStatusClass(s){
 }
 function renderLoanOfficerViewLoans(){
   const st = session.loViewLoansState || (session.loViewLoansState = defaultLoanOfficerViewLoansState());
-  if(!DB.loViewLoans || DB.loViewLoans.stateKey !== JSON.stringify(st)){ loadLoanOfficerViewLoans(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loViewLoans || DB.loViewLoans.stateKey !== JSON.stringify(st)){ loadLoanOfficerViewLoans(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loViewLoans;
   const reload = () => { DB.loViewLoans=null; renderApp(); };
   return `
@@ -6420,7 +6461,7 @@ function exportProgressiveDisbursements(){
 }
 function renderCollectionMTD(){
   const st = session.progressiveDisbState || (session.progressiveDisbState = defaultProgressiveDisbState());
-  if(!DB.progressiveDisb || DB.progressiveDisb.stateKey !== JSON.stringify(st)){ loadProgressiveDisbursements(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.progressiveDisb || DB.progressiveDisb.stateKey !== JSON.stringify(st)){ loadProgressiveDisbursements(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.progressiveDisb;
   const rowHtml = r => `<tr><td>${escapeHtml(r.officerName)}</td><td>${fmtNum(r.disbursedAmount)}</td><td>${r.totalLoans}</td><td>${fmtNum(r.loanPlusCharges)}</td><td>${fmtNum(r.paid)}</td><td>${fmtNum(r.arrears)}</td><td>${r.gcPct.toFixed(2)}%</td></tr>`;
   return `
@@ -6521,7 +6562,7 @@ function renderDailyDisbursementsCalendar(st, d){
 }
 function renderDailyDisbursementsPage(){
   const st = session.dailyDisbState || (session.dailyDisbState = defaultDailyDisbState());
-  if(!DB.dailyDisb || DB.dailyDisb.stateKey !== JSON.stringify(st)){ loadDailyDisbursements(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.dailyDisb || DB.dailyDisb.stateKey !== JSON.stringify(st)){ loadDailyDisbursements(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.dailyDisb;
   const curYear = new Date().getFullYear();
   const yearOptions = []; for(let y=curYear-2; y<=curYear+1; y++) yearOptions.push(y);
@@ -6643,7 +6684,7 @@ async function exportCollectionRatesBranch(){
 }
 function renderCollectionRatesBranchPage(){
   const st = session.mgrRatesState || (session.mgrRatesState = (()=>{ const now=new Date(); return { from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10), branchId:'', officerId:'', productId:'', cycle:'', status:'', q:'', page:1 }; })());
-  if(!DB.collectionRatesBranch || DB.collectionRatesBranch.stateKey !== JSON.stringify(st)){ loadCollectionRatesBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.collectionRatesBranch || DB.collectionRatesBranch.stateKey !== JSON.stringify(st)){ loadCollectionRatesBranch(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.collectionRatesBranch;
   const pp = d.previousPeriod;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7032,7 +7073,7 @@ async function exportLoanExceptions(){
 }
 function renderLoanExceptionsPage(){
   const st = session.opExceptionsState || (session.opExceptionsState = { branchId:'', officerId:'', category:'', q:'', page:1 });
-  if(!DB.loanExceptions || DB.loanExceptions.stateKey !== JSON.stringify(st)){ loadLoanExceptions(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loanExceptions || DB.loanExceptions.stateKey !== JSON.stringify(st)){ loadLoanExceptions(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loanExceptions;
   const s = d.summary;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7098,7 +7139,7 @@ function renderLoanExceptionsPage(){
 
 function renderOperationalPortfolioPage(){
   const st = session.opPortfolioState || (session.opPortfolioState = (()=>{ const now=new Date(); return { from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10), branchId:'', officerId:'', productId:'', q:'', page:1 }; })());
-  if(!DB.operationalPortfolio || DB.operationalPortfolio.stateKey !== JSON.stringify(st)){ loadOperationalPortfolio(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.operationalPortfolio || DB.operationalPortfolio.stateKey !== JSON.stringify(st)){ loadOperationalPortfolio(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.operationalPortfolio;
   const k = d.kpis;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7226,7 +7267,7 @@ function renderOperationalPortfolioPage(){
 
 function renderApprovedLoansPage(){
   const st = session.mgrApprovedState || (session.mgrApprovedState = { branchId:'', officerId:'', productId:'', disbursedStatus:'', q:'', page:1 });
-  if(!DB.approvedLoans || DB.approvedLoans.stateKey !== JSON.stringify(st)){ loadApprovedLoans(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.approvedLoans || DB.approvedLoans.stateKey !== JSON.stringify(st)){ loadApprovedLoans(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.approvedLoans;
   const k = d.kpis;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7311,7 +7352,7 @@ function renderApprovedLoansPage(){
 
 function renderMaturityPipelinePage(){
   const st = session.mgrMaturityState || (session.mgrMaturityState = { branchId:'', officerId:'', productId:'', bucket:'', q:'', page:1 });
-  if(!DB.maturityPipeline || DB.maturityPipeline.stateKey !== JSON.stringify(st)){ loadMaturityPipeline(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.maturityPipeline || DB.maturityPipeline.stateKey !== JSON.stringify(st)){ loadMaturityPipeline(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.maturityPipeline;
   const s = d.summary;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7425,7 +7466,7 @@ function renderMaturityPipelinePage(){
 
 function renderApprovalMonitoringPage(){
   const st = session.mgrApprovalState || (session.mgrApprovalState = { branchId:'', officerId:'', productId:'', stage:'', minAmount:'', maxAmount:'', q:'', page:1 });
-  if(!DB.approvalMonitoring || DB.approvalMonitoring.stateKey !== JSON.stringify(st)){ loadApprovalMonitoring(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.approvalMonitoring || DB.approvalMonitoring.stateKey !== JSON.stringify(st)){ loadApprovalMonitoring(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.approvalMonitoring;
   const k = d.kpis;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7556,7 +7597,7 @@ function renderApprovalMonitoringPage(){
 
 function renderPortfolioQualityBranchPage(){
   const st = session.mgrQualityState || (session.mgrQualityState = { branchId:'', officerId:'', productId:'', riskStatus:'', q:'', page:1 });
-  if(!DB.portfolioQualityBranch || DB.portfolioQualityBranch.stateKey !== JSON.stringify(st)){ loadPortfolioQualityBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.portfolioQualityBranch || DB.portfolioQualityBranch.stateKey !== JSON.stringify(st)){ loadPortfolioQualityBranch(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.portfolioQualityBranch;
   const s = d.summary;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7675,7 +7716,7 @@ function renderPortfolioQualityBranchPage(){
 
 function renderBranchPortfolioPage(){
   const st = session.mgrPortfolioState || (session.mgrPortfolioState = { branchId:'', officerId:'', productId:'', status:'', bucket:'', riskStatus:'', q:'', page:1 });
-  if(!DB.branchPortfolio || DB.branchPortfolio.stateKey !== JSON.stringify(st)){ loadBranchPortfolio(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.branchPortfolio || DB.branchPortfolio.stateKey !== JSON.stringify(st)){ loadBranchPortfolio(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.branchPortfolio;
   const k = d.kpis;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7766,7 +7807,7 @@ function renderBranchPortfolioPage(){
 
 function renderViewLoansPage(){
   const st = session.viewLoansState || (session.viewLoansState = { category:'Current Loans', branchId:'', productId:'', officerId:'', rating:'', cycles:'', disbursedFrom:'', disbursedTo:'', appliedFrom:'', appliedTo:'', riskStatus:'', minDpd:'', sort:'', q:'', page:1 });
-  if(!DB.viewLoans || DB.viewLoans.stateKey !== JSON.stringify(st)){ loadViewLoans(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.viewLoans || DB.viewLoans.stateKey !== JSON.stringify(st)){ loadViewLoans(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.viewLoans;
   const rows = d.rows;
   const isManager = session.role !== 'Loan Officer';
@@ -7865,7 +7906,7 @@ function renderViewLoansPage(){
 
 function renderArrearsBranchPage(){
   const st = session.mgrArrearsState || (session.mgrArrearsState = { asOf: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'', bucket:'', q:'', page:1 });
-  if(!DB.arrearsBranch || DB.arrearsBranch.stateKey !== JSON.stringify(st)){ loadArrearsBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.arrearsBranch || DB.arrearsBranch.stateKey !== JSON.stringify(st)){ loadArrearsBranch(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.arrearsBranch;
   const s = d.summary;
   const { page, totalPages, totalRows } = d.pagination;
@@ -7953,7 +7994,7 @@ function renderArrearsBranchPage(){
 
 function renderCollectionReportPage(){
   const st = session.mgrReportState || (session.mgrReportState = (()=>{ const now=new Date(); return { from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10), branchId:'', officerId:'', productId:'', status:'', q:'', page:1 }; })());
-  if(!DB.collectionReport || DB.collectionReport.stateKey !== JSON.stringify(st)){ loadCollectionReport(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.collectionReport || DB.collectionReport.stateKey !== JSON.stringify(st)){ loadCollectionReport(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.collectionReport;
   const pp = d.previousPeriod;
   const trendColor = pp && pp.trend==='improved' ? 'var(--green)' : pp && pp.trend==='declined' ? 'var(--red)' : 'inherit';
@@ -8051,7 +8092,7 @@ function renderCollectionReportPage(){
 
 function renderDisbursementsOverviewPage(){
   const st = session.mgrDisbState || (session.mgrDisbState = (()=>{ const now=new Date(); return { from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10), branchId:'', officerId:'', productId:'' }; })());
-  if(!DB.disbursementsOverview || DB.disbursementsOverview.stateKey !== JSON.stringify(st)){ loadDisbursementsOverview(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.disbursementsOverview || DB.disbursementsOverview.stateKey !== JSON.stringify(st)){ loadDisbursementsOverview(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.disbursementsOverview;
   const s = d.summary;
   const isRegional = session.role === 'Regional Manager';
@@ -8134,7 +8175,7 @@ function renderDisbursementsOverviewPage(){
 
 function renderMtdBranchPage(){
   const st = session.mgrMtdState || (session.mgrMtdState = { branchId:'', officerId:'', productId:'' });
-  if(!DB.mtdBranch || DB.mtdBranch.stateKey !== JSON.stringify(st)){ loadMtdBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.mtdBranch || DB.mtdBranch.stateKey !== JSON.stringify(st)){ loadMtdBranch(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.mtdBranch;
   const isRegional = session.role === 'Regional Manager';
   const isOperational = session.role === 'Operational Manager';
@@ -8424,7 +8465,7 @@ async function exportApplicationsOverview(){
 }
 function renderApplicationsOverviewPage(){
   const st = session.mgrAppOverviewState || (session.mgrAppOverviewState = { branchId:'', officerId:'', productId:'', status:'', cycle:'', from:'', to:'', minAmount:'', maxAmount:'', q:'', page:1 });
-  if(!DB.applicationsOverview || DB.applicationsOverview.stateKey !== JSON.stringify(st)){ loadApplicationsOverview(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.applicationsOverview || DB.applicationsOverview.stateKey !== JSON.stringify(st)){ loadApplicationsOverview(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.applicationsOverview;
   const pageRows = d.rows;
   const { page, totalPages, totalRows } = d.pagination;
@@ -8597,7 +8638,7 @@ async function loadSheetBranch(){
 }
 function renderSheetBranchPage(){
   const st = session.mgrSheetState || (session.mgrSheetState = { date: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'', status:'', q:'', expandedOfficers:{} });
-  if(!DB.sheetBranch || DB.sheetBranch.stateKey !== sheetBranchFilterKey(st)){ loadSheetBranch(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.sheetBranch || DB.sheetBranch.stateKey !== sheetBranchFilterKey(st)){ loadSheetBranch(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.sheetBranch;
   const k = d.kpis;
   const isRegional = session.role === 'Regional Manager';
@@ -8709,7 +8750,7 @@ async function loadArrears(filters, page){
 }
 function renderArrears(){
   const state = DB.acctPages.arrears;
-  if(!state){ loadArrears({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadArrears({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
     <div class="card">
       <div class="card-title">Ageing Summary <small>${state.totalOverdueLoans} loans overdue · ${fmt(state.totalOverdueAmount)} at risk</small></div>
@@ -8737,7 +8778,7 @@ async function loadCollectionActivities(clientId){
 }
 function renderCollectionActivities(){
   const state = DB.acctPages.activities;
-  if(!state){ loadCollectionActivities(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadCollectionActivities(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
     <div class="card" style="max-width:640px;">
       <div class="card-title">Log Collection Activity</div>
@@ -8779,7 +8820,7 @@ async function loadFollowUps(filters){
 }
 function renderFollowUps(){
   const state = DB.acctPages.followups;
-  if(!state){ loadFollowUps({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadFollowUps({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
     <div class="card" style="max-width:640px;">
       <div class="card-title">New Follow-Up</div>
@@ -8831,7 +8872,7 @@ async function loadPromises(filters){
 }
 function renderPromisesToPay(){
   const state = DB.acctPages.promises;
-  if(!state){ loadPromises({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadPromises({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const myClientLoans = DB.loans.filter(l=>["Active","Disbursed"].includes(l.status));
   return `
     <div class="card" style="max-width:640px;">
@@ -8939,7 +8980,7 @@ async function loadMpesaTxDetail(id){
 }
 function renderMpesaTxDetail(){
   const d = DB.mpesaTxDetail;
-  if(!d) return `<div class="card"><div class="empty">Loading transaction detail…</div></div>`;
+  if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const c = d.callback;
   const canRetry = Number(c.result_code)!==0 && hasPermission(session.role,"Record Payments") && d.stkRequest;
   return `
@@ -8973,7 +9014,7 @@ async function retryMpesaTransaction(loanId, phone, amount){
 function renderMpesaTransactions(){
   if(session.selectedMpesaTxId) return renderMpesaTxDetail();
   const state = DB.mpesaTransactions;
-  if(!state){ loadMpesaTransactions({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadMpesaTransactions({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">M-Pesa Transactions <small>${state.transactions.length} real record(s), within your authorized scope</small></div>
     <form onsubmit="return submitMpesaTxFilter(event)" class="pill-row" style="margin-bottom:12px;">
@@ -8999,7 +9040,7 @@ async function loadMpesaReconciliation(){
 function renderMpesaReconciliation(){
   if(!DB.mpesaReconciliation) loadMpesaReconciliation();
   const state = DB.mpesaReconciliation;
-  if(!state) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const s = state.summary;
   const canMatch = hasPermission(session.role,"Post Accounting Entries");
   return `
@@ -9039,7 +9080,7 @@ async function loadMpesaB2cRequests(filters){
 function submitMpesaB2cFilter(ev){ ev.preventDefault(); const f=Object.fromEntries(new FormData(ev.target)); Object.keys(f).forEach(k=>{if(!f[k])delete f[k];}); return loadMpesaB2cRequests(f); }
 function renderMpesaB2cRequests(){
   const state = DB.mpesaB2cRequests;
-  if(!state){ loadMpesaB2cRequests({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadMpesaB2cRequests({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">M-Pesa B2C Disbursement Requests <small>${state.requests.length} real record(s), within your authorized scope</small></div>
     <form onsubmit="return submitMpesaB2cFilter(event)" class="pill-row" style="margin-bottom:12px;">
@@ -9164,7 +9205,7 @@ function renderPaginationControls(pageKey, loaderFnName, filters){
 function loadProcessedPayments(filters, page){ return loadPaymentsPage('processed', {...(filters||{}), status:'Posted'}, page||1); }
 function renderProcessedPayments(){
   const state = DB.paymentsPages.processed;
-  if(!state) { loadProcessedPayments({}, 1); return `<div class="card"><div class="empty">Loading processed payments…</div></div>`; }
+  if(!state) { loadProcessedPayments({}, 1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const rows = state.payments;
   return `<div class="card"><div class="card-title">Processed Payments <small>${state.totals.count} posted total (KES ${fmtNum(state.totals.amount)}), real accounting effect applied</small></div>
     <div class="table-wrap"><table><tr><th>Ref</th><th>Loan</th><th>Amount</th><th>Allocated (P/I)</th><th>Channel</th><th>Date</th><th></th></tr>
@@ -9179,7 +9220,7 @@ function renderProcessedPayments(){
 function loadPrepayments(filters, page){ return loadPaymentsPage('prepayments', {...(filters||{}), status:'Posted'}, page||1); }
 function renderPrepayments(){
   const state = DB.paymentsPages.prepayments;
-  if(!state) { loadPrepayments({}, 1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state) { loadPrepayments({}, 1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   // Real classification from the backend's actual per-installment
   // allocation record (payment_allocations) — a payment only shows here
   // when some real portion of it was genuinely applied to an installment
@@ -9252,7 +9293,7 @@ async function exportPaymentsReportCSV(){
 }
 function renderPaymentsReport(){
   const state = DB.paymentsPages.report;
-  if(!state) { loadPaymentsReport({}, 1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state) { loadPaymentsReport({}, 1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const f = state.filters;
   const rows = state.payments;
   return `<div class="card">
@@ -9391,7 +9432,7 @@ function loadExpensesPage(filters, page){
 }
 function renderExpensesPage(){
   const state = DB.acctPages.exp;
-  if(!state){ loadExpensesPage({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadExpensesPage({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canDecide = hasPermission(session.role, "Post Accounting Entries");
   return `
     <div class="card" style="max-width:640px;">
@@ -9456,7 +9497,7 @@ function submitReqFilter(ev){
 }
 function renderRequisitionsPage(){
   const state = DB.acctPages.req;
-  if(!state){ loadRequisitions({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadRequisitions({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canPay = hasPermission(session.role, "Post Accounting Entries");
   const f = state.filters;
   return `
@@ -9620,7 +9661,7 @@ function submitUtilPaymentFilter(ev){
 }
 function renderUtilityPaymentsPage(){
   const state = DB.acctPages.util;
-  if(!state){ loadUtilityPayments({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadUtilityPayments({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const f = state.filters;
   return `
     <div class="card">
@@ -9862,7 +9903,7 @@ function loadGeneralLedger(filters, page){
 }
 function renderGeneralLedgerPage(){
   const state = DB.acctPages.gl;
-  if(!state){ loadGeneralLedger({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadGeneralLedger({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">General Ledger <small>${state.pagination.total} real posted entries — branch/region-scoped to what you're authorized to see</small></div>
     ${acctScopeFilterBar('gl', `<select name="account_id"><option value="">All accounts</option>${(DB.accounts||[]).map(a=>`<option value="${a.id}" ${state.filters.account_id===a.id?'selected':''}>${a.name}</option>`).join("")}</select>`)}
@@ -9882,7 +9923,7 @@ function loadTrialBalance(filters){
 }
 function renderTrialBalancePage(){
   const state = DB.acctPages.tb;
-  if(!state){ loadTrialBalance({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadTrialBalance({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Trial Balance</div>
     ${acctScopeFilterBar('tb')}
@@ -9905,7 +9946,7 @@ function loadProfitLoss(filters){
 }
 function renderProfitLossPage(){
   const state = DB.acctPages.pl;
-  if(!state){ loadProfitLoss({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadProfitLoss({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Profit &amp; Loss <small>all-time, from real posted journal entries</small></div>
     ${acctScopeFilterBar('pl')}
@@ -9928,7 +9969,7 @@ function loadBalanceSheet(filters){
 }
 function renderBalanceSheetPage(){
   const state = DB.acctPages.bs;
-  if(!state){ loadBalanceSheet({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadBalanceSheet({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Balance Sheet</div>
     ${acctScopeFilterBar('bs')}
@@ -10013,7 +10054,7 @@ function renderExpectedCashflowPage(){
     session.expectedCashflowState = { month: new Date().toISOString().slice(0,7), week:'', day:'' };
   }
   const st = session.expectedCashflowState;
-  if(!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(st)){ loadExpectedCashflow(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(st)){ loadExpectedCashflow(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const data = DB.expectedCashflowData;
   const weeks = expectedCfWeeksInMonth(st.month);
   const [y,m] = st.month.split('-').map(Number);
@@ -10059,7 +10100,7 @@ function loadCashflow(filters){
 }
 function renderCashflowPage(){
   const state = DB.acctPages.cf;
-  if(!state){ loadCashflow({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadCashflow({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Cashflow <small>${state.from} → ${state.to}</small></div>
     ${acctScopeFilterBar('cf', `<input type="date" name="date_from" value="${state.filters.date_from||''}" placeholder="From"><input type="date" name="date_to" value="${state.filters.date_to||''}" placeholder="To">`)}
@@ -10083,7 +10124,7 @@ async function loadChartOfAccounts(filters){
 }
 function renderChartOfAccountsPage(){
   const state = DB.acctPages.coa;
-  if(!state){ loadChartOfAccounts({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadChartOfAccounts({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canManage = hasPermission(session.role, "Manage System Settings");
   return `
     ${canManage ? `
@@ -10142,7 +10183,7 @@ async function loadAccountingPeriods(){
 }
 function renderAccountingPeriodsPage(){
   const state = DB.acctPages.periods;
-  if(!state){ loadAccountingPeriods(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadAccountingPeriods(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canClose = hasPermission(session.role, "Post Accounting Entries");
   const canReopen = hasPermission(session.role, "Manage System Settings");
   return `<div class="card">
@@ -10168,7 +10209,7 @@ async function loadAdjustments(filters){
 }
 function renderAdjustmentsPage(){
   const state = DB.acctPages.adj;
-  if(!state){ loadAdjustments({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadAdjustments({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canAct = hasPermission(session.role, "Post Accounting Entries");
   return `
     ${canAct ? `
@@ -10222,7 +10263,7 @@ async function loadPAR(filters){
 }
 function renderPARPage(){
   const state = DB.acctPages.par;
-  if(!state){ loadPAR({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadPAR({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Portfolio at Risk <small>as of ${state.asOf}</small></div>
     ${acctScopeFilterBar('par')}
@@ -10243,7 +10284,7 @@ async function loadBranchProfitability(){
 }
 function renderBranchProfitabilityPage(){
   const state = DB.acctPages.bp;
-  if(!state){ loadBranchProfitability(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadBranchProfitability(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Branch Profitability <small>real revenue/expenses per branch, within your authorized scope</small></div>
     <div class="table-wrap"><table><tr><th>Branch</th><th>Revenue</th><th>Expenses</th><th>Net Result</th><th>Portfolio</th></tr>
@@ -10260,7 +10301,7 @@ async function loadApprovalAging(){
 }
 function renderApprovalAgingPage(){
   const state = DB.acctPages.aging;
-  if(!state){ loadApprovalAging(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadApprovalAging(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Approval Aging <small>${state.overdueCount} item(s) over the ${state.overdueThresholdHours}-hour threshold</small></div>
     <div class="table-wrap"><table><tr><th>Type</th><th>Reference</th><th>Awaiting</th><th>Branch</th><th>Age</th><th>Status</th></tr>
@@ -10299,7 +10340,7 @@ function submitInvestorDirFilter(ev){
 }
 function renderInvestorDirectoryPage(){
   const state = DB.acctPages.investordir;
-  if(!state){ loadInvestorDirectory({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadInvestorDirectory({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canCreate = session.role === 'Admin';
   return `
     <div class="card">
@@ -10349,7 +10390,7 @@ async function loadInvestorProfile(id){
 }
 function renderInvestorProfilePage(id){
   const state = DB.acctPages.investorProfile;
-  if(!state) return `<div class="card"><div class="empty">Loading investor profile…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const inv = state.investor;
   const canManage = ['Admin','CEO','Director'].includes(session.role);
   const canPay = session.role === 'Accountant' || session.role === 'Admin';
@@ -10420,7 +10461,7 @@ async function loadAllInvestorPayouts(filters){
 }
 function renderInvestorPayoutsPage(){
   const state = DB.acctPages.investorPayouts;
-  if(!state){ loadAllInvestorPayouts({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadAllInvestorPayouts({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `<div class="card">
     <div class="card-title">Investor Payouts <small>${state.payouts.length} real payout record(s), company-wide</small></div>
     <form onsubmit="return submitPayoutFilter(event)" class="pill-row" style="margin-bottom:12px;">
@@ -10439,7 +10480,7 @@ async function loadInvestorObligations(){
 }
 function renderInvestorObligationsPage(){
   const state = DB.acctPages.investorObligations;
-  if(!state){ loadInvestorObligations(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadInvestorObligations(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Total Capital</div><div class="kpi-value">${fmt(state.totalCapital)}</div></div>
@@ -10482,7 +10523,7 @@ function submitBranchDirFilter(ev){
 }
 function renderBranchDirectoryPage(){
   const state = DB.acctPages.branchdir;
-  if(!state){ loadBranchDirectory({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadBranchDirectory({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canCreate = hasPermission(session.role, "Manage Branches");
   return `
     <div class="card">
@@ -10549,7 +10590,7 @@ async function loadBranchDetails(id){
 }
 function renderBranchDetailsPage(id){
   const state = DB.acctPages.branchDetails;
-  if(!state){ return `<div class="card"><div class="empty">Loading branch details…</div></div>`; }
+  if(!state){ return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const { branch, perf, par, profitability } = state;
   if(!branch) return `<div class="card"><div class="empty">Branch not found or outside your authorized scope.</div><button class="btn btn-sm btn-outline" onclick="closeBranchDetails()">← Back</button></div>`;
   const branchStaff = DB.staff.filter(s=>s.branch===branch.id);
@@ -10626,7 +10667,7 @@ async function loadRegions(filters){
 }
 function renderRegionsPage(){
   const state = DB.acctPages.regions;
-  if(!state){ loadRegions({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadRegions({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canManage = hasPermission(session.role, "Manage Branches");
   return `
     ${canManage ? `
@@ -10727,7 +10768,7 @@ function renderOrgOverviewPage(){
   const regions = DB.acctPages.regions ? DB.acctPages.regions.regions : null;
   if(!branches) loadBranchDirectory({});
   if(!regions) loadRegions({});
-  if(!branches || !regions) return `<div class="card"><div class="empty">Loading organizational overview…</div></div>`;
+  if(!branches || !regions) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const activeBranches = branches.filter(b=>b.status==='Active').length;
   const activeRegions = regions.filter(r=>r.status==='Active').length;
   return `
@@ -10815,7 +10856,7 @@ function renderReports(){
     {title:"Financial Reports", desc:`Income statement & balance sheet`, section:'accounting', subtab:'Trial Balance'},
     {title:"Payment Reports", desc:`${DB.payments.length} payment records`, section:'payments', subtab:'Pay-in Summary'},
   ];
-  if(!d) return `<div class="card"><div class="empty">Loading real analytics…</div></div>`;
+  if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `
     <div class="pill-row" style="margin-bottom:10px;">
       <button class="btn btn-sm btn-outline" onclick="exportReportsCSV()">Export CSV</button>
@@ -11008,7 +11049,7 @@ function renderStaff(){
       </form>
       <div class="table-wrap"><table><tr><th>Name</th><th>Role</th><th>Branch</th><th>Phone</th><th>Portfolio</th><th>Status</th></tr>${rows || `<tr><td colspan="6" class="empty">No staff match these filters.</td></tr>`}</table></div>
       ${renderPaginationControls('staffdir','loadStaffDirectory',state.filters)}
-      ` : `<div class="empty">Loading staff directory…</div>`}
+      ` : `<div class="empty">${loadingDotsHtml()}</div>`}
     </div>
     ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
     ${CAN_MANAGE_STAFF(session.role) ? `
@@ -11182,7 +11223,7 @@ function renderLoanOfficerRaisedTickets(){
   `;
   if(!DB.ticketsBrowser || DB.ticketsBrowser.stateKey !== JSON.stringify(st)){
     loadTicketsBrowser();
-    return `<div class="card">${header}<div class="empty">Loading…</div></div>`;
+    return `<div class="card">${header}<div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const d = DB.ticketsBrowser;
   const { page, totalPages, limit, total } = d.pagination;
@@ -11232,7 +11273,7 @@ function slaBadge(sla){
 function renderTicketDashboardCard(){
   if(!DB.ticketDashboard) loadTicketDashboard();
   const d = DB.ticketDashboard;
-  if(!d) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Support Overview <small>within your real visibility</small></div>
     <div class="kpi-grid">
@@ -11249,7 +11290,7 @@ function renderTicketDashboardCard(){
 }
 function renderTicketsListPage(){
   const state = DB.acctPages.tickets;
-  if(!state){ loadSupportTickets({},1); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadSupportTickets({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
     ${renderTicketDashboardCard()}
     <div class="card">
@@ -11355,7 +11396,7 @@ async function loadTicketDetail(id){
 }
 function renderTicketDetail(id){
   const d = DB.ticketDetail;
-  if(!d) return `<div class="card"><div class="empty">Loading ticket…</div></div>`;
+  if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const t = d.ticket, sla = d.sla;
   const isManagerial = ['Admin','Manager','Regional Manager','Operational Manager','CEO','Director'].includes(session.role);
   return `
@@ -11449,7 +11490,7 @@ async function loadFaq(filters){
 function submitFaqFilter(ev){ ev.preventDefault(); const f=Object.fromEntries(new FormData(ev.target)); Object.keys(f).forEach(k=>{if(!f[k])delete f[k];}); return loadFaq(f); }
 function renderFaqPage(){
   const state = DB.faqArticles;
-  if(!state){ loadFaq({}); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!state){ loadFaq({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canManage = session.role === 'Admin';
   return `
     <div class="card">
@@ -11674,7 +11715,7 @@ function numberToWordsKsh(n){
   return parts.join(' ');
 }
 function renderLoanOfficerPayslipPrint(period){
-  if(!DB.staffPayslip || DB.staffPayslip.period !== period){ loadStaffPayslip(period); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.staffPayslip || DB.staffPayslip.period !== period){ loadStaffPayslip(period); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const p = DB.staffPayslip;
   const me = DB.me || {};
   const [y,m] = period.split('-');
@@ -11843,7 +11884,7 @@ function renderLoViewDetailsPerformancePanel(vd){
       <tr>
         ${['New Loans','Repeat Loans','Performing','Arrears','Revenue'].map(()=>`<th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Target</th><th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Actual</th>`).join("")}
       </tr>
-      ${!DB.loPerformance || DB.loPerformance.year !== String(vd.year) ? `<tr><td colspan="11" class="empty">Loading…</td></tr>` : DB.loPerformance.months.map(mo=>`<tr>
+      ${!DB.loPerformance || DB.loPerformance.year !== String(vd.year) ? `<tr><td colspan="11" class="empty">${loadingDotsHtml()}</td></tr>` : DB.loPerformance.months.map(mo=>`<tr>
         <td>${MONTH_ABBR[mo.month-1]}</td>
         <td>${fmtNum(mo.newLoans.target)}</td><td>${fmtNum(mo.newLoans.actual)}</td>
         <td>${fmtNum(mo.repeatLoans.target)}</td><td>${fmtNum(mo.repeatLoans.actual)}</td>
@@ -11866,7 +11907,7 @@ function renderLoViewDetailsInteractionsPanel(vd){
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Subject</th>
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Note</th>
       </tr>
-      ${rows===null ? `<tr><td colspan="3" class="empty">Loading…</td></tr>` : (rows.length ? rows.map(i=>`<tr>
+      ${rows===null ? `<tr><td colspan="3" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(i=>`<tr>
         <td>${new Date(i.created_at).toLocaleDateString()}</td>
         <td>${escapeHtml(i.subject)}</td>
         <td>${escapeHtml(i.note)}</td>
@@ -11890,7 +11931,7 @@ function renderLoViewDetailsStaffLoansPanel(vd){
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Disbursed</th>
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">DPD</th>
       </tr>
-      ${rows===null||rows===undefined ? `<tr><td colspan="8" class="empty">Loading…</td></tr>` : (rows.length ? rows.map(l=>`<tr>
+      ${rows===null||rows===undefined ? `<tr><td colspan="8" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(l=>`<tr>
         <td>${l.loanId.slice(-8).toUpperCase()}</td>
         <td>${escapeHtml(l.clientName)}</td>
         <td>${escapeHtml(productName(l.productId))}</td>
@@ -11908,7 +11949,7 @@ function renderLoViewDetailsLeavesPayrollPanel(vd){
   const payrollFresh = DB.staffPayroll && DB.staffPayroll.year === String(vd.year);
   if(!payrollFresh) loadStaffPayroll(vd.year);
   if(DB.myLeaveRequests===null || DB.myLeaveRequests===undefined || !payrollFresh){
-    return `<div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div><div class="table-wrap"><table><tr><td class="empty">Loading…</td></tr></table></div>`;
+    return `<div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div><div class="table-wrap"><table><tr><td class="empty">${loadingDotsHtml()}</td></tr></table></div>`;
   }
   const leaveRows = (DB.myLeaveRequests||[]).filter(l=>new Date(l.start_date).getFullYear()===vd.year).map(l=>({
     date: l.start_date, type: `${l.leave_type} Leave`, details: `${l.start_date} to ${l.end_date} (${l.status})`, info: '', sortKey: l.start_date,
@@ -11943,7 +11984,7 @@ function renderLoStaffAccountPage(){
   const st = session.loStaffAccountState || (session.loStaffAccountState = defaultLoStaffAccountState());
   if(!DB.staffAccounts){
     loadStaffAccounts();
-    return `<div class="card"><div class="empty">Loading…</div></div>`;
+    return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const account = DB.staffAccounts.find(a=>a.account_type===st.type);
   const txnsFresh = DB.staffAccountTransactions && DB.staffAccountTransactions.type===st.type && DB.staffAccountTransactions.from===st.from && DB.staffAccountTransactions.to===st.to;
@@ -11994,7 +12035,7 @@ function renderLoStaffAccountPage(){
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Amount</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Bal After</th>
         </tr>
-        ${txns===null ? `<tr><td colspan="6" class="empty">Loading…</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+        ${txns===null ? `<tr><td colspan="6" class="empty">${loadingDotsHtml()}</td></tr>` : (txns.length ? txns.map(t=>`<tr>
           <td>${new Date(t.created_at).toLocaleDateString()}</td>
           <td>${escapeHtml(t.tid||'—')}</td>
           <td>${escapeHtml(t.details||t.type)}</td>
@@ -12299,7 +12340,7 @@ function renderLoanOfficerSalaryAdvance(){
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Accepted</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Status</th>
         </tr>
-        ${rows===null||rows===undefined ? `<tr><td colspan="5" class="empty">Loading…</td></tr>` : (rows.length ? rows.map(s=>{ const st = loSalaryAdvanceStatus(s); return `<tr>
+        ${rows===null||rows===undefined ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(s=>{ const st = loSalaryAdvanceStatus(s); return `<tr>
           <td>${fmtRow(s.created_at)}</td>
           <td>${fmtNum(s.amount)}</td>
           <td>${escapeHtml(s.reason||'—')}</td>
@@ -12410,7 +12451,7 @@ function renderLoanOfficerWorkPlan(){
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Clients Visited</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Achieved</th>
         </tr>
-        ${!d ? `<tr><td colspan="5" class="empty">Loading…</td></tr>` : LO_WORKPLAN_CATEGORIES.map(c=>{ const f = d[c.key]; return `<tr>
+        ${!d ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : LO_WORKPLAN_CATEGORIES.map(c=>{ const f = d[c.key]; return `<tr>
           <td>${c.label}</td>
           <td>${f.target||0}</td>
           <td>${f.locations ? escapeHtml(f.locations) : 'None'}</td>
@@ -12487,7 +12528,7 @@ function renderFinancialResponsibilities(){
       <div class="kpi"><div class="kpi-label">Pending Expenses</div><div class="kpi-value">${s.expenses.length}</div></div>
       <div class="kpi"><div class="kpi-label">Pending Requisitions</div><div class="kpi-value">${s.requisitions.length}</div></div>
       <div class="kpi"><div class="kpi-label">Adjustments Awaiting Review</div><div class="kpi-value">${s.adjustments.length}</div></div>
-    </div>` : `<div class="empty">Loading…</div>`}
+    </div>` : `<div class="empty">${loadingDotsHtml()}</div>`}
     <a href="#" onclick="goTo('accounting'); return false;" class="btn btn-sm btn-outline" style="margin-top:10px;">Go to Accounting →</a>
   </div>`;
 }
@@ -12505,7 +12546,7 @@ function submitSecurityEventsFilter(ev){ ev.preventDefault(); const f=Object.fro
 function renderSystemHealthCard(){
   if(!DB.systemHealth) loadSystemHealth();
   const h = DB.systemHealth;
-  if(!h) return `<div class="card"><div class="empty">Loading system health…</div></div>`;
+  if(!h) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">System Health <small>real, live — not a fabricated "all systems normal"</small></div>
     <div class="kpi-grid">
@@ -12526,7 +12567,7 @@ function renderSystemHealthCard(){
 function renderSecurityEventsCard(){
   if(!DB.securityEvents) loadSecurityEvents({});
   const state = DB.securityEvents;
-  if(!state) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Security Events <small>real login attempts, company-wide</small></div>
     <form onsubmit="return submitSecurityEventsFilter(event)" class="pill-row" style="margin-bottom:10px;">
@@ -12543,7 +12584,7 @@ async function loadCommunicationLog(){
 function renderCommunicationLogCard(){
   if(!DB.communicationLog) loadCommunicationLog();
   const log = DB.communicationLog;
-  if(!log) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!log) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `<div class="card">
     <div class="card-title">Communication Log <small>real attempts, honest delivery status</small></div>
     <div class="table-wrap"><table><tr><th>Channel</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Related</th><th>Date</th></tr>
@@ -12651,7 +12692,7 @@ function submitSecuritySettings(ev){
 function renderSystemAdministration(){
   if(!DB.sysAdmin) loadSystemAdminData();
   const d = DB.sysAdmin;
-  if(!d) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const isAdmin = session.role === 'Admin';
   return `
     ${renderOrgSettingsCard(d.org, isAdmin)}
@@ -12662,7 +12703,7 @@ function renderSystemAdministration(){
   `;
 }
 function renderOrgSettingsCard(orgRes, isAdmin){
-  if(!orgRes) return `<div class="card"><div class="empty">Loading organization settings…</div></div>`;
+  if(!orgRes) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const o = orgRes.organization;
   return `<div class="card">
     <div class="card-title">Organization Settings</div>
@@ -12724,7 +12765,7 @@ async function toggleMaintenanceMode(enabled){
   await loadSystemAdminData();
 }
 function renderActiveSessionsCard(sessionsRes){
-  if(!sessionsRes) return `<div class="card"><div class="empty">Loading active sessions…</div></div>`;
+  if(!sessionsRes) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const sessions = sessionsRes.sessions;
   return `<div class="card">
     <div class="card-title">Active Sessions <small>${sessions.length} real active session(s)</small></div>
@@ -12739,7 +12780,7 @@ async function revokeSingleSession(id){
   await loadSystemAdminData();
 }
 function renderBackupCard(backupsRes){
-  if(!backupsRes) return `<div class="card"><div class="empty">Loading backup history…</div></div>`;
+  if(!backupsRes) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const backups = backupsRes.backups;
   return `<div class="card">
     <div class="card-title">System Backup <small>real data snapshot, not a fabricated history</small></div>
@@ -12770,7 +12811,7 @@ async function createSystemBackup(){
 function renderMpesaConfiguration(){
   if(!DB.mpesaAdminConfig) loadMpesaAdminConfig();
   const cfg = DB.mpesaAdminConfig;
-  if(!cfg) return `<div class="card"><div class="empty">Loading…</div></div>`;
+  if(!cfg) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `
     <div class="card">
       <div class="card-title">M-Pesa Integration Status <small>Active environment: ${cfg.activeEnvironment ? cfg.activeEnvironment.toUpperCase() : 'None'}</small></div>
@@ -12842,7 +12883,7 @@ function renderGovernanceResponsibilities(){
       <div class="card-title">Board Matters <small>real resolutions — proposed by CEO/Director, decided by a different Director/Admin</small></div>
       ${state ? `<div class="table-wrap"><table><tr><th>Title</th><th>Proposed By</th><th>Status</th><th></th></tr>
       ${state.resolutions.map(r=>`<tr><td>${escapeHtml(r.title)}</td><td>${staffName(r.proposed_by)}</td><td>${statusBadge(r.status)}</td>
-        <td>${canDecide && r.status==='Proposed' ? `<button class="btn btn-sm btn-green" onclick="withRequest('res-approve-${r.id}', ()=>decideBoardResolution('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="withRequest('res-reject-${r.id}', ()=>decideBoardResolution('${r.id}','Rejected'))">Reject</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No board resolutions yet.</td></tr>`}</table></div>` : `<div class="empty">Loading…</div>`}
+        <td>${canDecide && r.status==='Proposed' ? `<button class="btn btn-sm btn-green" onclick="withRequest('res-approve-${r.id}', ()=>decideBoardResolution('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="withRequest('res-reject-${r.id}', ()=>decideBoardResolution('${r.id}','Rejected'))">Reject</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No board resolutions yet.</td></tr>`}</table></div>` : `<div class="empty">${loadingDotsHtml()}</div>`}
     </div>
     ${canRecordEquity ? `<div class="card" style="max-width:560px;">
       <div class="card-title">Record Equity Holding</div>
@@ -13089,7 +13130,7 @@ function renderClientAccountPage(id){
   const st = session.clientAccountState || (session.clientAccountState = defaultClientAccountState());
   if(!DB.clientAccounts || DB.clientAccounts.clientId !== id){
     loadClientAccounts(id);
-    return `<div class="card"><div class="empty">Loading…</div></div>`;
+    return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const account = DB.clientAccounts.accounts.find(a=>a.account_type===st.type);
   const txnsFresh = DB.clientAccountTransactions && DB.clientAccountTransactions.clientId===id && DB.clientAccountTransactions.type===st.type && DB.clientAccountTransactions.from===st.from && DB.clientAccountTransactions.to===st.to;
@@ -13144,7 +13185,7 @@ function renderClientAccountPage(id){
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Amount</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Bal After</th>
         </tr>
-        ${txns===null ? `<tr><td colspan="6" class="empty">Loading…</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+        ${txns===null ? `<tr><td colspan="6" class="empty">${loadingDotsHtml()}</td></tr>` : (txns.length ? txns.map(t=>`<tr>
           <td>${new Date(t.created_at).toLocaleDateString()}</td>
           <td>${escapeHtml(t.tid||'—')}</td>
           <td>${escapeHtml(t.details||t.type)}</td>
@@ -13413,7 +13454,7 @@ function renderLoanStatusModal(){
   const st = session.loanStatusState;
   if(!DB.loanStatusBrowser || DB.loanStatusBrowser.stateKey !== JSON.stringify(st)){
     loadLoanStatusBrowser();
-    return `<div class="modal-head"><h3>Loan Status</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+    return `<div class="modal-head"><h3>Loan Status</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">${loadingDotsHtml()}</div>`;
   }
   const d = DB.loanStatusBrowser;
   const { page, totalPages, totalRows, pageSize } = d.pagination;
@@ -13473,7 +13514,7 @@ function renderPendingPaymentsModal(){
   const st = session.pendingPaymentsState;
   if(!DB.pendingPaymentsBrowser || DB.pendingPaymentsBrowser.stateKey !== JSON.stringify(st)){
     loadPendingPaymentsBrowser();
-    return `<div class="modal-head"><h3>Pending Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+    return `<div class="modal-head"><h3>Pending Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">${loadingDotsHtml()}</div>`;
   }
   const d = DB.pendingPaymentsBrowser;
   const { page, totalPages } = d.pagination;
@@ -13531,7 +13572,7 @@ function renderTicketsModal(){
   const st = session.ticketsState;
   if(!DB.ticketsBrowser || DB.ticketsBrowser.stateKey !== JSON.stringify(st)){
     loadTicketsBrowser();
-    return `<div class="modal-head"><h3>Tickets</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+    return `<div class="modal-head"><h3>Tickets</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">${loadingDotsHtml()}</div>`;
   }
   const d = DB.ticketsBrowser;
   const { page, totalPages, total } = d.pagination;
@@ -13659,7 +13700,7 @@ function renderC2bPaymentsModal(){
   const st = session.c2bPaymentsState;
   if(!DB.c2bPaymentsBrowser || DB.c2bPaymentsBrowser.stateKey !== JSON.stringify(st)){
     loadC2bPaymentsBrowser();
-    return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">Loading…</div>`;
+    return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">${loadingDotsHtml()}</div>`;
   }
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
@@ -13702,7 +13743,7 @@ function renderLoanOfficerUnpostedPayments(){
   const st = session.c2bPaymentsState;
   if(!DB.c2bPaymentsBrowser || DB.c2bPaymentsBrowser.stateKey !== JSON.stringify(st)){
     loadC2bPaymentsBrowser();
-    return `<div class="card"><div class="empty">Loading…</div></div>`;
+    return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   }
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
@@ -13784,7 +13825,7 @@ async function loadLoanOfficerProcessedPayments(){
 }
 function renderLoanOfficerProcessedPayments(){
   const st = session.loProcessedPaymentsState || (session.loProcessedPaymentsState = defaultLoanOfficerProcessedPaymentsState());
-  if(!DB.loProcessedPayments || DB.loProcessedPayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerProcessedPayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loProcessedPayments || DB.loProcessedPayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerProcessedPayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loProcessedPayments;
   const pageSize = 25;
   const totalPages = Math.max(1, Math.ceil(d.rows.length/pageSize));
@@ -13860,7 +13901,7 @@ async function loadLoanOfficerPrepayments(){
 }
 function renderLoanOfficerPrepayments(){
   const st = session.loPrepaymentsState || (session.loPrepaymentsState = defaultLoanOfficerPrepaymentsState());
-  if(!DB.loPrepayments || DB.loPrepayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerPrepayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loPrepayments || DB.loPrepayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerPrepayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const byLoan = DB.loPrepayments.byLoan;
   let rows = Object.keys(byLoan).map(loanId=>{
     const loan = DB.loans.find(l=>l.id===loanId);
@@ -13915,7 +13956,7 @@ async function loadLoanOfficerOverpayments(){
 }
 function renderLoanOfficerOverpayments(){
   const st = session.loOverpaymentsState || (session.loOverpaymentsState = defaultLoanOfficerOverpaymentsState());
-  if(!DB.loOverpayments || DB.loOverpayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerOverpayments(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loOverpayments || DB.loOverpayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerOverpayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loOverpayments;
   const { page, totalPages, total, limit } = d.pagination;
   return `
@@ -14099,7 +14140,7 @@ function renderLoanOfficerReceiptDayGrid(day){
 function renderLoanOfficerReceipts(){
   const st = session.loReceiptsState || (session.loReceiptsState = defaultLoanOfficerReceiptsState());
   const key = JSON.stringify({ year: st.year, month: st.month });
-  if(!DB.loReceiptsMonth || DB.loReceiptsMonth.stateKey !== key){ loadLoanOfficerReceiptsMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loReceiptsMonth || DB.loReceiptsMonth.stateKey !== key){ loadLoanOfficerReceiptsMonth(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return st.viewDay ? renderLoanOfficerReceiptDayGrid(st.viewDay) : renderLoanOfficerReceiptsList();
 }
 
@@ -14210,7 +14251,7 @@ function renderLoanOfficerPayinSummaryCalendar(){
 }
 function renderLoanOfficerPayinSummaryDayPrint(day){
   const dd = DB.loPayinSummaryDay;
-  if(!dd || dd.day !== day){ loadLoanOfficerPayinSummaryDay(day); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!dd || dd.day !== day){ loadLoanOfficerPayinSummaryDay(day); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const now = new Date();
   const printedAt = `${fmtReceiptDayLabel(now.toISOString().slice(0,10))} - ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true}).toLowerCase()}`;
   return `
@@ -14247,7 +14288,7 @@ function renderLoanOfficerPayinSummary(){
   const st = session.loPayinSummaryState || (session.loPayinSummaryState = defaultLoanOfficerPayinSummaryState());
   if(st.printDay) return renderLoanOfficerPayinSummaryDayPrint(st.printDay);
   const key = JSON.stringify({ year: st.year, month: st.month });
-  if(!DB.loPayinSummaryMonth || DB.loPayinSummaryMonth.stateKey !== key){ loadLoanOfficerPayinSummaryMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loPayinSummaryMonth || DB.loPayinSummaryMonth.stateKey !== key){ loadLoanOfficerPayinSummaryMonth(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return renderLoanOfficerPayinSummaryCalendar();
 }
 
@@ -14408,7 +14449,7 @@ function renderLoanOfficerPaymentsReportDrillDown(bucket){
 function renderLoanOfficerPaymentsReport(){
   const st = session.loPaymentsReportState || (session.loPaymentsReportState = defaultLoanOfficerPaymentsReportState());
   const key = JSON.stringify({ year: st.year, month: st.month });
-  if(!DB.loPaymentsReportMonth || DB.loPaymentsReportMonth.stateKey !== key){ loadLoanOfficerPaymentsReportMonth(); return `<div class="card"><div class="empty">Loading…</div></div>`; }
+  if(!DB.loPaymentsReportMonth || DB.loPaymentsReportMonth.stateKey !== key){ loadLoanOfficerPaymentsReportMonth(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return st.drillDown ? renderLoanOfficerPaymentsReportDrillDown(st.drillDown) : renderLoanOfficerPaymentsReportSummary();
 }
 
@@ -14437,7 +14478,7 @@ function renderLoanOfficerValidatePayments(){
     const r = DB.loValidatePaymentsResult;
     if(!r || r.q !== st.q){
       loadLoanOfficerValidatePayments();
-      body = `<div class="empty">Loading…</div>`;
+      body = `<div class="empty">${loadingDotsHtml()}</div>`;
     } else if(!r.transaction){
       body = `<div class="section-note">No payment found matching "${escapeHtml(st.q)}"</div>`;
     } else {

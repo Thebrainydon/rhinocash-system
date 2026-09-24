@@ -52,9 +52,11 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
 - Migrated the database layer from SQLite to PostgreSQL — see
   `rhinocash-backend/docs/POSTGRESQL.md` for the architecture and
   `rhinocash-backend/docs/STATUS_REPORT.md` for current test status.
-- Login gives explicit "Processing… please wait" / "Login successful…
-  redirecting" feedback as soon as each phase actually happens, instead of
-  a static button and an unexplained pause.
+- Login gives explicit "Processing… please wait" feedback on the button
+  itself while credentials are being verified, then moves straight into
+  the real app shell, which shows a real "Loading Dashboard......"
+  full-page screen for the rest of the wait (fetching the account's own
+  data) — never a static button with an unexplained pause.
 - JSON API responses are gzip-compressed (`src/router.js`, using only
   `node:zlib`) when the client supports it — a large reduction in bytes
   transferred for the bulk LoanBook/Collections endpoints, which matters
@@ -111,7 +113,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,037 frontend tests,
+At last verification: **1,199 backend tests and 1,044 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -231,6 +233,23 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   mobile where every other page already omitted it; and the green
   Online status dot now genuinely pulses (scaling in and out) instead
   of sitting static.
+- **App-wide: shared loading indicator** — complete: every individual
+  page/panel/table's own "Loading…" text placeholder (over 100 spots
+  across the app) is now a real purple dots spinner (`loadingDotsHtml()`
+  — an 8-dot ring, each with its own static position and a staggered
+  pulse animation) matching the reference design, with no text. The one
+  real exception is the initial, one-time screen shown right after
+  login, before any page has data to render at all, which now reads
+  "Loading Dashboard......". This also fixed a real, related gap: the
+  login button's own "Login successful… redirecting" state used to
+  cover that same real wait while staying on the login screen —
+  `session.authenticated` (new) now flips true immediately once
+  credentials are verified, moving into the real app shell (and its own
+  "Loading Dashboard......" screen) right away, while `session.loggedIn`
+  itself still only flips true once the account's data has actually
+  finished loading — preserving the existing safeguard where a stray,
+  already-tolerated 401 from one of that data load's own many
+  best-effort calls can never force a real logout mid-load.
 - **Loan Officer's Payi Summary ("Daily Paybill Collection") — layout and
   demo-data fixes** — complete: the year/month filter row used to be
   nested inside the card's own title (a one-off layout only this page

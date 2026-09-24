@@ -5297,6 +5297,23 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(__rawIndexHtml.includes('.pr-scroll-sync{flex-wrap:nowrap !important; overflow-x:auto'), "the real shared CSS class that hides the synced filter row's own scrollbar and forces it onto one line genuinely exists");
   }
 
+  // ---- 16d. Shared loading indicator: every individual page/panel/table's
+  // own "Loading…" text placeholder is genuinely gone, replaced everywhere
+  // by the same real purple dots spinner (loadingDotsHtml()) — the one
+  // real exception being the initial, one-time, full-page "Loading
+  // Dashboard......" text shown right after login, before any page has
+  // data to render at all ----
+  {
+    __assert(typeof loadingDotsHtml === 'function', "the real loadingDotsHtml() function genuinely exists");
+    const spinnerHtml = loadingDotsHtml();
+    __assert(spinnerHtml.includes('class="dots-spinner"') && (spinnerHtml.match(/<i style="transform:rotate\(/g)||[]).length === 8, "the real loadingDotsHtml() genuinely renders a real 8-dot ring, each with its own real static rotation");
+    __assert(__rawIndexHtml.includes('@keyframes dotsSpinnerPulse'), "the real shared dots-spinner CSS pulse animation genuinely exists");
+    __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
+    __assert(__srcForBanCheck.includes("root.innerHTML = `<div class=\"loading-screen\">Loading Dashboard......</div>`"), "the real one-time, full-page loading screen shown right after login genuinely reads 'Loading Dashboard......', not the old generic 'Loading your Rhinocash data…' text");
+    __assert(!__srcForBanCheck.includes('loginSuccess') && !__srcForBanCheck.includes('Login successful'), "the real login button's own separate 'Login successful… redirecting' state is genuinely gone — session.loggedIn now flips true right away, so the real app shell (and its own 'Loading Dashboard......' screen) takes over the exact same real wait that message used to cover, instead of the two overlapping");
+    __assert(typeof session.loginSuccess === 'undefined', "the real session object genuinely no longer carries a loginSuccess field at all");
+  }
+
   // ---- 17. Redesigned topbar (no title text, no logout button — real icons + avatar only) ----
   {
     let of129 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
