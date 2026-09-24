@@ -1230,7 +1230,8 @@ async function loadCoreData(){
     transactions:[], expenses:[], interactions:[], documents:[], notifications:[], auditLog:[], supportTickets:[],
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
-    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null };
+    loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
+    docDataUris:{}, docDataUriLoading:{} };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -2335,7 +2336,16 @@ function closeSidebar(){
   if(sb && bd){ sb.classList.remove('open'); bd.classList.remove('open'); }
   else renderApp();
 }
-function toggleSideSection(label){ session.sidebarExpanded[label] = !session.sidebarExpanded[label]; renderApp(); }
+// True accordion: opening one section closes every other one that was
+// open, matching sidebarNavigate()'s own existing behavior when a
+// submenu item is clicked (see its comment above) — this is the other
+// half of the same rule, for clicking a menu HEADER itself.
+function toggleSideSection(label){
+  const opening = !session.sidebarExpanded[label];
+  Object.keys(session.sidebarExpanded).forEach(k=>{ session.sidebarExpanded[k] = false; });
+  session.sidebarExpanded[label] = opening;
+  renderApp();
+}
 
 
 function renderSection(){
@@ -2374,8 +2384,15 @@ function renderPlaceholder(){
 
 /* ---------- 1. Dashboard ---------- */
 function computeStats(officerId, branchIds){
+  // Every client actually assigned to this officer (clients.officerId, set
+  // at registration) — not just those who already have a loan. The old
+  // loan-based filter made a freshly-added client with no loan yet
+  // invisible to every Dashboard client tile (Total/Active/Dormant), since
+  // it required a matching loan to even be counted here in the first
+  // place; a client with zero loans is squarely "Dormant" by any real
+  // definition, not absent from the count entirely.
   let clientsScope = officerId
-    ? DB.clients.filter(c => DB.loans.some(l=>l.clientId===c.id && l.officerId===officerId))
+    ? DB.clients.filter(c => c.officerId === officerId)
     : DB.clients;
   let loansScope = officerId ? DB.loans.filter(l=>l.officerId===officerId) : DB.loans;
   if(branchIds && branchIds.length){
@@ -4808,8 +4825,10 @@ const LOAN_STATUS_DOT = { Active:'#2F7D5C', Disbursed:'#2F7D5C', Completed:'#2F7
 function renderClientPhotoThumb(clientId, docType, label, size){
   const s = size || 64;
   const doc = DB.documents.find(d=>d.clientId===clientId && d.type===docType);
-  const inner = doc && doc.filePath
-    ? `<img src="${API_BASE}${doc.filePath}" alt="${escapeHtml(label)}" style="width:${s}px; height:${s}px; object-fit:cover; border-radius:8px; border:1px solid var(--line);">`
+  const dataUri = doc && doc.filePath ? DB.docDataUris[doc.filePath] : null;
+  if(doc && doc.filePath && !dataUri) loadDocDataUri(doc.filePath);
+  const inner = dataUri
+    ? `<img src="${dataUri}" alt="${escapeHtml(label)}" style="width:${s}px; height:${s}px; object-fit:cover; border-radius:8px; border:1px solid var(--line);">`
     : `<div style="width:${s}px; height:${s}px; border-radius:8px; background:#EFEDE7; display:flex; align-items:center; justify-content:center; color:var(--ink-faint); font-size:22px;">🖼️</div>`;
   return `<div style="text-align:center; cursor:pointer;" onclick="openImageViewer('${clientId}','${docType}','${escapeHtml(label).replace(/'/g,"&#39;")}')">${inner}<div class="hint" style="margin-top:4px;">${label}</div></div>`;
 }
@@ -5420,7 +5439,7 @@ function renderClientDocumentsTab(id, docs){
     <div class="table-wrap"><table>
       <tr><th>Name</th><th>Type</th><th>Date</th><th></th></tr>
       ${docs.map(d=>`<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.type)}</td><td>${new Date(d.date).toLocaleDateString()}</td>
-        <td>${d.filePath?`<a href="${API_BASE}${d.filePath}" target="_blank" rel="noopener">View</a>`:''}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No documents.</td></tr>`}
+        <td>${d.filePath?`<span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="viewClientDocument('${d.filePath.replace(/'/g,"\\'")}')">View</span>`:''}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No documents.</td></tr>`}
     </table></div>
     <form onsubmit="return submitDocument(event,'${id}')" style="margin-top:12px;">
       <div class="form-grid">
@@ -12166,6 +12185,47 @@ async function loadMyAvatarDataUri(){
     DB.myAvatarDataUri = `data:${contentType};base64,${btoa(binary)}`;
   }catch(e){ DB.myAvatarDataUri = null; }
 }
+// ==================== Real client photo / ID photo / staff avatar
+// rendering, everywhere else this same GET /uploads/:name-requires-auth
+// problem shows up (renderClientPhotoThumb, the image viewer modal, the
+// client documents table's "View" link) — the exact issue
+// loadMyAvatarDataUri() above already solved for the CALLER's own avatar,
+// generalized here since these render for many different clients'
+// documents, not just one fixed path: fetch once with the real Bearer
+// token, cache the data URI by file path (DB.docDataUris), and re-render
+// once it lands. Call sites render the placeholder on the first pass
+// (cache miss) and the real image on the next render once this resolves —
+// never a broken-image icon from an unauthenticated <img src>. ====
+function loadDocDataUri(filePath){
+  if(!filePath || DB.docDataUris[filePath] || DB.docDataUriLoading[filePath]) return;
+  DB.docDataUriLoading[filePath] = true;
+  fetch(API_BASE + filePath, { headers: authToken ? { Authorization: 'Bearer ' + authToken } : {} })
+    .then(res => { if(!res.ok) throw new Error('fetch failed'); const ct = res.headers.get('content-type') || 'image/jpeg'; return res.arrayBuffer().then(buf => [ct, buf]); })
+    .then(([contentType, buf]) => {
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+      DB.docDataUris[filePath] = `data:${contentType};base64,${btoa(binary)}`;
+      delete DB.docDataUriLoading[filePath];
+      renderApp();
+    })
+    .catch(()=>{ delete DB.docDataUriLoading[filePath]; });
+}
+// Same auth problem as loadDocDataUri() above, for the Documents tab's
+// "View" link — was a plain <a href> to an auth-required URL, which opened
+// a new tab straight to a 401 error instead of the real document. A blob
+// URL (not a data URI) here since these can be PDFs, not just images. The
+// tab is opened synchronously, right on the click, and only re-pointed to
+// the real blob once it's fetched — opening it only after the async fetch
+// resolves would get silently blocked as a popup by most browsers, since
+// by then it's no longer inside the click's own call stack.
+function viewClientDocument(filePath){
+  const tab = window.open('', '_blank');
+  fetch(API_BASE + filePath, { headers: authToken ? { Authorization: 'Bearer ' + authToken } : {} })
+    .then(res => { if(!res.ok) throw new Error('fetch failed'); return res.blob(); })
+    .then(blob => { if(tab) tab.location.href = URL.createObjectURL(blob); })
+    .catch(()=>{ if(tab) tab.close(); toast('Could not load this document'); });
+}
 function triggerMyAvatarFilePicker(){
   const el = document.getElementById('my-avatar-file-input');
   if(el) el.click();
@@ -13018,7 +13078,7 @@ async function refreshMyData(){
 // zoom/rotate, no server round-trip needed for those two.
 function openImageViewer(clientId, docType, title){
   const doc = DB.documents.find(d=>d.clientId===clientId && d.type===docType);
-  DB.imageViewer = { clientId, docType, title: title||'Image', docId: doc?doc.id:null, url: doc&&doc.filePath?`${API_BASE}${doc.filePath}`:null, scale:1, rotation:0 };
+  DB.imageViewer = { clientId, docType, title: title||'Image', docId: doc?doc.id:null, filePath: doc?doc.filePath:null, scale:1, rotation:0 };
   openModal('image-viewer');
 }
 function zoomImageViewer(delta){
@@ -13045,7 +13105,7 @@ function handleImageViewerFileChange(ev){
     const oldDocId = iv.docId;
     const newDoc = await addDocument(iv.clientId, file.name, iv.docType, uploaded.path);
     if(oldDocId) await deleteClientDocument(iv.clientId, oldDocId);
-    DB.imageViewer = { ...iv, docId:newDoc.id, url:`${API_BASE}${newDoc.filePath}`, scale:1, rotation:0 };
+    DB.imageViewer = { ...iv, docId:newDoc.id, filePath:newDoc.filePath, scale:1, rotation:0 };
     toast("Photo updated");
   });
 }
@@ -13055,18 +13115,20 @@ function deleteImageViewerPhoto(){
   if(!confirm(`Delete this ${iv.title}?`)) return;
   return withRequest('image-viewer-delete', async ()=>{
     await deleteClientDocument(iv.clientId, iv.docId);
-    DB.imageViewer = { ...iv, docId:null, url:null, scale:1, rotation:0 };
+    DB.imageViewer = { ...iv, docId:null, filePath:null, scale:1, rotation:0 };
     toast("Photo deleted");
   });
 }
 function renderImageViewerModal(){
   const iv = DB.imageViewer;
   if(!iv) return `<div class="empty">No image selected.</div>`;
+  const dataUri = iv.filePath ? DB.docDataUris[iv.filePath] : null;
+  if(iv.filePath && !dataUri) loadDocDataUri(iv.filePath);
   return `
     <div class="modal-head"><h3>${escapeHtml(iv.title)}</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
     <div style="display:flex; align-items:center; justify-content:center; overflow:auto; min-height:280px; max-height:50vh; background:#F5F4F1; border-radius:10px; padding:16px;">
-      ${iv.url
-        ? `<img src="${iv.url}" alt="${escapeHtml(iv.title)}" style="max-width:none; max-height:40vh; transition:transform 0.15s ease; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">`
+      ${dataUri
+        ? `<img src="${dataUri}" alt="${escapeHtml(iv.title)}" style="max-width:none; max-height:40vh; transition:transform 0.15s ease; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">`
         : `<div style="width:140px; height:140px; border-radius:50%; background:#E4E1DA; display:flex; align-items:center; justify-content:center; font-size:64px; transform:scale(${iv.scale}) rotate(${iv.rotation}deg);">👤</div>`}
     </div>
     <input type="file" id="image-viewer-file-input" accept="image/*" style="display:none;" onchange="handleImageViewerFileChange(event)">

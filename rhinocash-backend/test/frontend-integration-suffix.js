@@ -1708,7 +1708,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
       __assert(detailHtml.includes('Client photo') && detailHtml.includes(`openImageViewer('${newClient.id}','Client Photo'`), "the real rendered Client Account page genuinely makes the real uploaded Client Photo clickable, tied to its real client id and doc type");
 
       openImageViewer(newClient.id, 'Client Photo', 'Client photo');
-      __assert(modal && modal.type === 'image-viewer' && DB.imageViewer.docId === doc.id && DB.imageViewer.url.endsWith(uploaded.path) && DB.imageViewer.scale === 1 && DB.imageViewer.rotation === 0, "openImageViewer() genuinely opens the real image viewer on the real existing document, at its real default zoom/rotation");
+      __assert(modal && modal.type === 'image-viewer' && DB.imageViewer.docId === doc.id && DB.imageViewer.filePath === uploaded.path && DB.imageViewer.scale === 1 && DB.imageViewer.rotation === 0, "openImageViewer() genuinely opens the real image viewer on the real existing document, at its real default zoom/rotation");
       zoomImageViewer(0.25);
       __assert(DB.imageViewer.scale === 1.25, "zoomImageViewer() through the real UI function genuinely changes the real zoom level");
       rotateImageViewer(90);
@@ -1731,7 +1731,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
 
       // Delete: removes the real document entirely.
       await deleteImageViewerPhoto();
-      __assert(DB.imageViewer.docId === null && DB.imageViewer.url === null, "deleteImageViewerPhoto() through the real UI function genuinely clears the real viewer state");
+      __assert(DB.imageViewer.docId === null && DB.imageViewer.filePath === null, "deleteImageViewerPhoto() through the real UI function genuinely clears the real viewer state");
       __assert(!DB.documents.some(d=>d.clientId===newClient.id && d.type==='Client Photo'), "the real Client Photo document genuinely no longer exists server-side after delete");
       const emptyThumbHtml = renderClientPhotoThumb(newClient.id, 'Client Photo', 'Client photo');
       __assert(!emptyThumbHtml.includes('<img'), "the real rendered thumbnail genuinely falls back to the placeholder once the real photo is deleted");

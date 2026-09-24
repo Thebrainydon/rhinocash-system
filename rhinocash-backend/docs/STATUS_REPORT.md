@@ -98,6 +98,32 @@ needs a product decision, not a unilateral code fix, and stays documented
 in the audit report's Remaining Limitations and Manager Readiness
 sections.
 
+**Manual bug reports from real device testing, fixed.** A round of
+real mobile-device testing surfaced four genuine issues, three now fixed:
+(1) the sidebar's menu-header accordion only ever toggled the section just
+clicked, so multiple menus (e.g. Payments and My Account) could stay
+expanded at once — `toggleSideSection()` now closes every other section
+the moment one is opened, matching how clicking an actual submenu item
+already behaved; (2) `computeStats()`'s Dashboard client tiles only ever
+counted a client if they already had a loan with this officer, so a
+freshly-added client with no loan yet was invisible to Total/Active/
+Dormant Clients entirely, rather than correctly showing up as Dormant —
+now scoped directly by `clients.officerId`, the field that actually means
+"this officer's client"; (3) client photos, ID photos and the Documents
+tab's "View" link all rendered as broken images/links, since
+`GET /uploads/:name` requires a Bearer token a plain `<img src>` or
+`<a href>` can never send — the exact problem `loadMyAvatarDataUri()`
+already solved for the caller's own avatar, now generalized
+(`loadDocDataUri()`/`viewClientDocument()`) to every client document.
+Verified live: uploaded a real photo, confirmed it now decodes and
+renders (`naturalWidth` matching the real uploaded pixel data) instead of
+a broken-image icon. The fourth report — an empty Loan Product dropdown
+on Create Loan Application — was investigated and traced to the reporter's
+own environment, not a code defect: the same flow, exercised live against
+this repo's own seed data (13 real products, `active=1`), populates the
+dropdown correctly; that data-provisioning question was handed back to
+the user rather than "fixed" against a problem that isn't in this code.
+
 Re-run them yourself — that's the point of them being real, not a claim
 to take on faith:
 
