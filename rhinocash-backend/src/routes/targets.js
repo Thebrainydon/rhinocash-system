@@ -341,12 +341,21 @@ function register(router) {
       const endDay = new Date(Number(year), m, 0).getDate();
       const end = `${period}-${String(endDay).padStart(2, '0')}`;
 
+      // New/Repeat here is derived from real disbursement history — the
+      // same rule the Dashboard's own computeStats() uses (a loan is
+      // "Repeat" iff its client has an earlier-disbursed loan anywhere in
+      // the system, regardless of officer) — rather than trusting the
+      // stored, officer-picked, optional loans.loan_category column,
+      // which can be blank or mislabeled. See docs/CROSS_MODULE_AUDIT.md
+      // §E.2/H.1 for why the two definitions previously disagreed.
       const newLoans = (await get(
-        `SELECT COUNT(*) as v FROM loans WHERE officer_id = ? AND loan_category = 'New Loan' AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`,
+        `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
+           AND NOT EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
         [officerId, start, end]
       )).v;
       const repeatLoans = (await get(
-        `SELECT COUNT(*) as v FROM loans WHERE officer_id = ? AND loan_category = 'Repeat Loan' AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`,
+        `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
+           AND EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
         [officerId, start, end]
       )).v;
       // Performing/Arrears are a real snapshot "as of this month" — never

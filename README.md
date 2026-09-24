@@ -56,8 +56,11 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
   `rhinocash-backend/docs/CROSS_MODULE_AUDIT.md` for the full dependency
   maps, findings, and corrections made (client status now auto-promotes
   at disbursement, the Dashboard and Collection Rates no longer
-  double-count reversed payments, and the Active Branches tile now
-  actually filters by branch status).
+  double-count reversed payments, the Active Branches tile now actually
+  filters by branch status, My Account's New/Repeat Loan counts now match
+  the Dashboard's own real-history definition instead of trusting an
+  optional field, and View Loans' balance now includes accrued penalty
+  like every other page that shows it).
 - Migrated the database layer from SQLite to PostgreSQL — see
   `rhinocash-backend/docs/POSTGRESQL.md` for the architecture and
   `rhinocash-backend/docs/STATUS_REPORT.md` for current test status.

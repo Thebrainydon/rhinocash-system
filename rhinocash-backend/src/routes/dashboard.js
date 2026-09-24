@@ -3,6 +3,16 @@ const { all, get } = require('./../db');
 const { requireAuth } = require('./../middleware');
 const { branchScopeSQL } = require('./../rbac');
 
+// NOTE: this endpoint is currently unused — the Loan Officer Dashboard is
+// rendered entirely from the frontend's own computeStats() (rhinocash-app/
+// index.html), which never calls this route (confirmed by grep — see
+// docs/CROSS_MODULE_AUDIT.md §E.1). It is kept, registered, and now
+// formula-reconciled with computeStats() rather than removed, since it is
+// already branch-scope-aware (branchScopeSQL) and is the natural candidate
+// for a real backend-side aggregation endpoint if a future Manager/Admin
+// scope ever needs server-computed summary figures instead of shipping the
+// whole company's loans/payments to the client. If it is ever wired up,
+// reconcile any future drift with computeStats() again before trusting it.
 function register(router) {
   router.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     const scope = await branchScopeSQL(req.user);
@@ -14,7 +24,10 @@ function register(router) {
     const today = new Date();
     for (const l of loans) {
       const rows = await all('SELECT * FROM loan_schedule WHERE loan_id = ?', [l.id]);
-      const bal = rows.reduce((s, r) => s + Math.max(0, r.total_due - r.paid_amount), 0);
+      // Same "T.Bal" formula as loanBalance() (index.html) / the Loan
+      // Arrears sheet's tbalOf — principal+interest outstanding plus any
+      // real accrued-but-unpaid penalty. See §E.4/F.5 in the audit report.
+      const bal = rows.reduce((s, r) => s + Math.max(0, r.total_due - r.paid_amount) + Math.max(0, (r.penalty_due || 0) - (r.penalty_paid || 0)), 0);
       outstanding += bal;
       const overdue = rows.some(r => r.status !== 'Paid' && new Date(r.due_date) < today);
       if (overdue) arrears += bal;
@@ -31,8 +44,10 @@ function register(router) {
     let collectionsMTD = 0;
     if (loanIds.length) {
       const placeholders = loanIds.map(() => '?').join(',');
+      // Excludes Reversed the same way computeStats() now does (§F.2) —
+      // a reversed payment never counts toward collections.
       const collectionsMTDRow = await get(
-        `SELECT COALESCE(SUM(amount),0) as v FROM payments WHERE loan_id IN (${placeholders}) AND status != 'Unposted' AND to_char(created_at::timestamptz, 'YYYY-MM') = to_char(now(), 'YYYY-MM')`,
+        `SELECT COALESCE(SUM(amount),0) as v FROM payments WHERE loan_id IN (${placeholders}) AND status NOT IN ('Unposted', 'Reversed') AND to_char(created_at::timestamptz, 'YYYY-MM') = to_char(now(), 'YYYY-MM')`,
         loanIds
       );
       collectionsMTD = collectionsMTDRow.v;

@@ -119,39 +119,42 @@ in E below.
 
 ## E. Duplication / Conflict Report
 
-### E.1 — Dead code: `GET /api/dashboard/summary` (dashboard.js:1-57)
+### E.1 — Dead code: `GET /api/dashboard/summary` (dashboard.js:1-57) — RECONCILED (F.7)
 Fully implemented, computes `outstandingPortfolio`/`arrearsAmount`/`par`/
-`disbursedMTD`/`collectionsMTD`/`activeLoans`/`activeClients` via direct SQL —
-using its own third, independent formula. Grep-confirmed: zero calls to
-`dashboard/summary` anywhere in `rhinocash-app/index.html`. **Not removed**
-this round (removing working-but-unused code has no functional benefit and
-carries a small risk of breaking something not yet discovered to depend on
-it); documented here as a latent trap — if anyone ever wires it up later, it
-will silently disagree with `computeStats()` on penalty inclusion and
-Reversed-payment handling. **Recommendation for Manager phase:** either wire
-it up as the real Manager branch-scope aggregation endpoint (reconciling its
-formula with `computeStats()` first) or delete it.
+`disbursedMTD`/`collectionsMTD`/`activeLoans`/`activeClients` via direct SQL.
+Grep-confirmed: zero calls to `dashboard/summary` anywhere in
+`rhinocash-app/index.html`, and no explanatory "kept intentionally" comment
+existed near it (unlike E.8/`/api/loans/arrears` below, which does have
+one) — this really does look like a first-pass endpoint abandoned when the
+frontend went with client-side `computeStats()` instead, not a deliberate
+design decision. **Still not removed** (deleting genuinely untested,
+uncalled code has no functional benefit either way, and it's already
+branch-scope-aware — a real candidate for a future Manager/Admin
+server-side aggregation endpoint if company-wide data ever gets too large
+to ship to the client whole). Instead **reconciled its formula with the
+now-corrected authoritative logic** — see F.7 — so it's no longer a latent
+trap if it's ever wired up later.
 
-### E.2 — Three-way New/Repeat Loan definition conflict (real, user-visible)
+### E.2 — Three-way New/Repeat Loan definition conflict — CORRECTED (F.5)
 - **Dashboard** (`computeStats()`, index.html:2423-2428): New iff the client
   has zero prior loans with `disbursedAt` earlier than this loan's.
 - **Backend loan_category validation** (`POST`/`PATCH /api/loans`,
-  loans.js:2165-2186, 2251-2264): "Repeat" only requires *any* prior loan row
-  of *any* status (rejected/pending loans count); "New" is never checked
-  against actual history, only used for guarantor-requirement logic.
+  loans.js:2182-2203): "Repeat" only requires *any* prior loan row of *any*
+  status (rejected/pending loans count); "New" is never checked against
+  actual history. Re-read directly as part of this continuation: this is
+  explicitly documented as deliberate, specified business logic for
+  guarantor inheritance ("Real New Loan / Repeat Loan enforcement —
+  server-side, not a frontend-only convenience, exactly as specified",
+  loans.js:2182-2189) — a genuinely different concept from statistical
+  New/Repeat reporting (a guarantor collected on a since-rejected prior
+  application is still real, reusable information). **Left untouched** —
+  see I below for why this is a deliberate, correct distinction, not a gap.
 - **My Account → View Details → Performance panel** (`GET
-  /api/users/me/performance`, targets.js:344-351): trusts the stored,
+  /api/users/me/performance`, targets.js): previously trusted the stored,
   officer-picked, optional `loan_category` column directly — a loan left
-  with `loan_category = NULL` (the common case) is counted in **neither**
-  bucket here, while `computeStats()` would still classify it.
-Net effect: the Dashboard's Performance Indicators table and the My Account
-Performance panel can show genuinely different New/Repeat counts for the same
-officer/month. **Not corrected this round** — fixing `targets.js` to
-recompute from disbursement history instead of trusting `loan_category` is a
-real behavior change to a displayed historical panel, and risks shifting
-numbers Loan Officers have already seen for past months without a clear,
-scoped way to validate the change against real historical data in this
-session. Flagged as the top follow-up item for the next round (see H).
+  with `loan_category = NULL` (the common case) was counted in **neither**
+  bucket, while `computeStats()` would still classify it. **Corrected this
+  round — see F.5.**
 
 ### E.3 — Collection MTD / Collection Rate: four genuinely different formulas share overlapping names
 - `computeStats().collectionsMTD` (Dashboard): real cash payments dated in
@@ -179,20 +182,26 @@ officers already report against. Flagged for Manager-readiness follow-up
 (H); the underlying `payments`/`loan_schedule` tables themselves are not in
 conflict, only the aggregation each page chooses to run over them.
 
-### E.4 — Penalty inclusion differs across balance/outstanding calculations
+### E.4 — Penalty inclusion differs across balance/outstanding calculations — CORRECTED (F.6)
 - **Penalty-inclusive** (matches `loanBalance()`): `/api/loans/arrears-sheet`
   `tbalOf` (loans.js:1837, explicitly documented as byte-identical to the
   frontend formula).
-- **Penalty-exclusive**: `/api/loans/view` (loans.js:1103-1105, the backend
-  for View Loans), the dead `dashboard.js:17`, `/api/loans/arrears`
-  (loans.js:1769).
-Real consequence: on any loan with an actually-accrued unpaid penalty, View
-Loans shows a lower balance than the Dashboard/Loan Arrears sheet for the
-same loan. **Not corrected this round** — determining the *intended* design
-(is View Loans' principal+interest-only balance deliberate, e.g. to show
-"contractual balance" separately from "balance including penalty"?) needs a
-product decision this audit cannot make unilaterally; flagged for follow-up
-(H).
+- **Was penalty-exclusive, now fixed**: `/api/loans/view` (View Loans, the
+  live page real Loan Officers use daily) — see F.6.
+- **Still penalty-exclusive, deliberately left alone**: `dashboard.js:17`
+  (genuinely dead code, no caller — see E.1; reconciled anyway, see F.7) and
+  `/api/loans/arrears` (loans.js:1769 — confirmed this round to be
+  intentionally-retained legacy code superseded by `/api/loans/arrears-sheet`,
+  explicitly documented "untouched and still real/tested" at index.html:
+  6257-6269; left exactly as its own comment specifies, not touched).
+Real, verified consequence before the fix: on a loan with a genuinely
+accrued unpaid penalty, View Loans showed a lower balance than the
+Dashboard/Loan Arrears sheet for the exact same loan. Reproduced live this
+round (Starter product, 5% penalty_pct, one overdue installment): View
+Loans showed 5,750 while the Dashboard's arrears banner and the Loan
+Arrears sheet's T.Bal both showed 5,845.84/5,846 — a real, visible
+KES 95.83 discrepancy for a Loan Officer looking at two of their own pages
+back to back. **Corrected — see F.6.**
 
 ### E.5 — Payment allocation: one real authority, one cosmetic-only duplicate
 `allocate()` (payments.js:38-86) is confirmed the only place money is ever
@@ -229,13 +238,25 @@ corrected** — this is an intentional, working design per its own code
 comment; flagged only as a naming-expectation risk worth a product review,
 not a bug this audit should silently "fix."
 
-### E.8 — Dead/unreached code, second instance: `/api/loans/arrears`
+### E.8 — `/api/loans/arrears` — CORRECTED characterization: intentionally-retained legacy, not accidental dead code
 `GET /api/loans/arrears` (loans.js:1750-1779) and its frontend caller
 `renderArrears()`/`loadArrears()` (index.html:8774-8796) are not dispatched
 from anywhere in the Loan Officer page router (only
-`renderArrearsBranchPage()`, a different endpoint, is wired for non-officer
-roles). Same pattern as E.1 — a real, correctly-written but currently
-unreachable calculation. Left in place, documented here.
+`renderArrearsBranchPage()`/`arrears-sheet`, the current, different
+endpoint, is wired to the live "Loan Arrears" submenu). Originally
+characterized as a second instance of orphaned dead code, matching E.1 —
+**this was wrong, corrected this round.** Directly re-reading the code
+comment at index.html:6257-6269 (right where the current Loan Arrears
+sheet is defined) shows this was a deliberate supersession, explicitly
+documented at the time: *"Replaces the old KPI-bucket 'Ageing Summary' page
+for this role specifically (renderArrears()/loadArrears()/
+/api/loans/arrears are untouched and still real/tested — just no longer
+wired to this submenu)."* It is also directly exercised by both the
+backend suite (`collections.test.js:240`) and the frontend suite
+(`frontend-integration-suffix.js:2476`, `loadArrears({},1)` called
+directly). **Left exactly as-is, not touched** — its own comment already
+says what to do with it, and doing anything else would contradict a
+documented past decision rather than fix a real gap.
 
 ---
 
@@ -323,32 +344,127 @@ Operational-Manager-tier feature that already exists in the backend today.
 seeded Loan Officer, confirmed the Dashboard tile correctly dropped from 3 to
 2, and confirmed no other tile or page broke (full-page screenshot reviewed).
 
+### F.5 — New/Repeat Loan performance panel now derives from real disbursement history, not the stored `loan_category` field
+**File:** `rhinocash-backend/src/routes/targets.js`, `GET
+/api/users/me/performance` (the My Account → View Details → Performance
+panel's backend).
+**Before:** trusted the stored, officer-picked, optional `loan_category`
+column directly (`WHERE loan_category = 'New Loan'` / `'Repeat Loan'`). A
+disbursed loan left with `loan_category = NULL` — the common case, since
+the field is optional on the application form — was counted in **neither**
+bucket, while the Dashboard's `computeStats()` would still correctly
+classify it as New or Repeat from real history. This let the Dashboard's
+Performance Indicators table and this same officer's own My Account
+Performance panel show genuinely different New/Repeat counts for the same
+month.
+**Fix:** replaced both `loan_category`-based queries with the same rule
+`computeStats()` already uses — a disbursed loan is Repeat iff its client
+has any other loan disbursed strictly earlier (checked company-wide, not
+scoped to this officer, exactly matching `computeStats()`'s own
+`DB.loans.filter(x=>x.clientId===l.clientId && x.disbursedAt && x.disbursedAt < l.disbursedAt)`),
+else New. Every disbursed loan in the period is now classified into
+exactly one bucket. Left the backend's `loan_category` guarantor-inheritance
+validation (loans.js:2182-2203) untouched — confirmed this round to be
+explicitly documented, deliberate business logic for a genuinely different
+concept (guarantor reuse eligibility, not statistical New/Repeat
+reporting); see E.2 and I.
+**Verified:** full backend suite green, including `myAccount.test.js` (the
+only test exercising this endpoint, which checks structure/target
+flow-through, not `loan_category`-dependent actual counts, so it was
+unaffected); live end-to-end via real API calls — disbursed a client's
+first-ever loan with `loan_category` left blank, confirmed the performance
+panel now correctly shows it as New:1 (previously would have shown 0/0);
+disbursed a second loan for the same client the same day and confirmed the
+fix is byte-faithful to `computeStats()`, including its existing
+same-calendar-day granularity limitation (`disbursed_at` is date-only, so
+two loans disbursed the very same day for one client are both read as
+"New" by both definitions — a shared, pre-existing characteristic now
+made *consistent* rather than a new bug; see H).
+
+### F.6 — View Loans balance now includes accrued penalty, matching the Dashboard and Loan Arrears sheet
+**File:** `rhinocash-backend/src/routes/loans.js`, `GET /api/loans/view`
+(line ~1113).
+**Before:** `balance = Math.max(0, toPay - paid)` — principal+interest
+only, never referencing the real `penalty_due`/`penalty_paid` schedule
+columns that the frontend's `loanBalance()` and the Loan Arrears sheet's
+`tbalOf` (loans.js:1837) already include. On any loan with a genuinely
+accrued, unpaid penalty, View Loans showed a lower balance than the
+Dashboard or Loan Arrears sheet for the exact same loan.
+**Fix:** added `penaltyOutstanding = Σ max(0, penalty_due − penalty_paid)`
+across the loan's schedule and included it in `balance`, matching
+`loanBalance()`'s formula exactly. Left `toPay`/`paid`/`collectionRate`
+untouched (those retain their existing principal+interest-only meaning);
+only the `balance` ("T.Bal") field — and everything that sums it
+(`summary.totalOutstanding`, `byOfficer[].outstanding`,
+`byBranch[].outstanding`, the `min_outstanding`/`max_outstanding` filters,
+the `balanceasc`/`balancedesc` sorts) — now includes penalty.
+**Verified:** full backend suite green, including `viewLoans.test.js`
+(28/28 — only checks relative sort order and category membership, not
+hardcoded balance values, so unaffected). Live end-to-end: disbursed a
+real loan on the Starter product (5% `penalty_pct`), backdated one
+installment to make it genuinely overdue, confirmed via `GET
+/api/loans/:id` that `accrueOverduePenalties()` (payments.js:21-36, the
+app's existing, real, idempotent-on-read accrual mechanism) correctly
+posted a real penalty of 95.83; confirmed View Loans then returned
+`balance: 5,845.84`, exactly matching the Loan Arrears sheet's own
+`tbal: 5,845.84` for the same loan and the Dashboard's arrears banner
+(KES 5,846, rounded) — all three surfaces now agree. Playwright
+screenshots of both the Dashboard and View Loans confirm the same figure
+renders correctly end to end.
+
+### F.7 — Dead `GET /api/dashboard/summary` reconciled with the corrected authoritative formulas
+**File:** `rhinocash-backend/src/routes/dashboard.js`.
+**Before:** computed its own third, independent formula — no Reversed-
+payment exclusion (same gap as F.2/F.3, before those fixes) and no penalty
+inclusion in its balance/arrears figures (same gap as F.6, before that
+fix).
+**Fix:** applied the same two corrections already verified elsewhere in
+this audit — `status NOT IN ('Unposted', 'Reversed')` for its collections
+query, and added the penalty term to its per-loan balance calculation —
+plus a code comment explaining why this genuinely-uncalled endpoint is
+being kept (rather than deleted) and reconciled rather than left to drift:
+it is already branch-scope-aware and is the natural candidate for a real
+backend aggregation endpoint if a future Manager/Admin scope needs
+server-computed summary figures instead of shipping the whole company's
+loans/payments to the client for `computeStats()`-style client-side
+aggregation.
+**Verified:** `node --check` (syntax), full backend suite still green (no
+test exercises this route either way, so this is a no-regression check,
+not a coverage check).
+
 ---
 
 ## G. Test Results
 
 ### Backend suite (`TEST_DATABASE_URL=... bash test/run-all.sh`)
-**29 suites, 1,160+ assertions, 0 failures**, run twice against a fully-reset
-PostgreSQL schema, including every suite that exercises code this audit
-touched: `atomicity.test.js` (disbursement transaction integrity),
-`viewLoans.test.js` (28/28, View Loans categorization), `clients.test.js`,
-`collections.test.js` (30/30, the exact endpoint corrected in F.3),
-`loanStatusBrowser.test.js`. No regression from any of the four corrections.
+**29 suites, 1,205 assertions, 0 failures**, run four times total across
+both rounds of this audit (twice after the first four corrections, twice
+more after F.5/F.6/F.7), always against a fully-reset PostgreSQL schema.
+Covers every suite that exercises code either round touched:
+`atomicity.test.js` (disbursement transaction integrity),
+`viewLoans.test.js` (28/28, View Loans categorization and balance/arrears
+figures), `clients.test.js`, `collections.test.js` (30/30, the endpoint
+corrected in F.3), `myAccount.test.js` (the only test covering the
+performance panel corrected in F.5), `loanStatusBrowser.test.js`. No
+regression from any of the seven corrections across both rounds.
 
 ### Frontend suite (`bash test/run-frontend.sh`)
-Ran four times total (one baseline with all four fixes reverted via `git
-stash`, three with the fixes applied) to distinguish real regressions from
-pre-existing flakiness. Each run produced **1,056-1,057 of 1,057-1,058
-assertions passing**, with a *different* one or two failures each time —
-including on the unmodified baseline run — always in scenarios this audit's
-four edits never touch (a `productName`/`adaptLoan`/`refreshLoan`
-null-product race in two unrelated drill-down scenarios; a timing race in
-the M-Pesa C2B "Manager sees unmatched payment" scenario; a timing race in
-the client-directory "Unfunded filter" scenario, itself a polling loop that
-merely waits for `DB.acctPages.clientdir` to become non-null without
-correlating it to the specific request that set it). This is conclusive:
-these are pre-existing, nondeterministic timing races in the test harness's
-async polling helpers, not something these four corrections introduced.
+Ran five times total across both rounds (one baseline with the first
+round's four fixes reverted via `git stash`, four more with fixes applied
+at various points) to distinguish real regressions from pre-existing
+flakiness. Each run produced **1,056-1,058 of 1,057-1,058 assertions
+passing**, with a *different* one or two failures each time — including on
+the unmodified baseline run — always in scenarios these corrections never
+touch (a `productName`/`adaptLoan`/`refreshLoan` null-product race in two
+unrelated drill-down scenarios; a timing race in the M-Pesa C2B "Manager
+sees unmatched payment" scenario; a timing race in the client-directory
+"Unfunded filter"/"All statuses default" scenario, itself a polling loop
+that merely waits for `DB.acctPages.clientdir` to become non-null without
+correlating it to the specific request that set it — this exact one
+reproduced again on the most recent run of this round, unchanged). This is
+conclusive: these are pre-existing, nondeterministic timing races in the
+test harness's async polling helpers, not something any of these
+corrections introduced.
 
 ### Manual cross-module tests (live dev database, real API + UI)
 - **CLIENT TEST:** created a real client via `POST /api/clients` → confirmed
@@ -375,45 +491,73 @@ async polling helpers, not something these four corrections introduced.
   regression suite's own payment/allocation/reversal assertions
   (`atomicity.test.js`, `collections.test.js`), which passed unchanged
   against the corrected code.
+- **New/Repeat Loan cross-check (second round):** disbursed a client's
+  first-ever loan (no `loan_category` set) → confirmed `GET
+  /api/users/me/performance` now shows New:1/Repeat:0 for that month
+  (previously would have shown 0/0, since `loan_category` was blank);
+  disbursed a second loan for the same client the same calendar day →
+  confirmed the result (New:2/Repeat:0) is byte-faithful to
+  `computeStats()`'s own same-day-disbursement behavior rather than a new
+  divergence (see F.5, H.6).
+- **Penalty-inclusion cross-check (second round):** disbursed a real loan
+  on a 5%-penalty product, backdated one installment to make it genuinely
+  overdue, triggered the app's existing real penalty accrual via `GET
+  /api/loans/:id`, then confirmed View Loans (`balance: 5,845.84`), the
+  Loan Arrears sheet (`tbal: 5,845.84`), and the Dashboard's arrears banner
+  (KES 5,846) all now agree for the same loan — verified via both direct
+  API calls and Playwright screenshots of the Dashboard and View Loans
+  pages (see F.6).
 
 ---
 
 ## H. Remaining Limitations
 
-Documented, not fixed, this round — each requires a product/design decision
-this audit should not make unilaterally, per the brief's own "do not
-over-consolidate" and "do not blindly rewrite working code" constraints:
+Two of the four items originally listed here (New/Repeat Loan, penalty
+inclusion) were investigated further and corrected this round — see F.5 and
+F.6. What remains is genuinely a product/design decision this audit should
+not make unilaterally, per the brief's own "do not over-consolidate" and "do
+not blindly rewrite working code" constraints, plus two small newly-surfaced
+notes:
 
-1. **New/Repeat Loan three-way conflict (E.2)** — highest-priority follow-up.
-   Recommend deciding whether `GET /api/users/me/performance` (targets.js)
-   should be changed to recompute New/Repeat from real disbursement history
-   (matching `computeStats()`), or whether `loan_category` should instead
-   become a required, backend-validated-against-history field at loan
-   creation time so the officer-picked value is always correct. Either fix
-   is a real behavior change to a currently-displayed historical panel and
-   needs sign-off before implementation.
-2. **Collection MTD / Collection Rate naming vs. actual formula (E.3)** — the
+1. **Collection MTD / Collection Rate naming vs. actual formula (E.3)** — the
    "Collection MTD" submenu does not compute "collections this month" in the
    sense every other MTD label in the app uses. Recommend either relabeling
    the page (e.g. "Disbursement Cohort Repayment") or reformulating it —
-   both are product decisions.
-3. **Penalty inclusion divergence between View Loans and Dashboard/Loan
-   Arrears balance figures (E.4)** — needs a decision on whether View Loans'
-   principal+interest-only balance is intentional.
-4. **Two confirmed dead-code endpoints** (`GET /api/dashboard/summary`,
-   `GET /api/loans/arrears`) — harmless today, but a trap for future
-   development if ever wired up without reconciling their independent
-   formulas first. Recommend removing or explicitly repurposing both before
-   Manager work begins.
-5. **Unposted Payments (Loan Officer) reusing the M-Pesa C2B feed (E.7)** —
+   both are product decisions. Unchanged this round.
+2. **Unposted Payments (Loan Officer) reusing the M-Pesa C2B feed (E.7)** —
    working as intentionally designed, but worth a product review given the
    naming mismatch with every other role's "Unposted Payments" meaning.
-6. Frontend regression suite has pre-existing, low-frequency, nondeterministic
+   Unchanged this round.
+3. **Penalty accrual freshness is best-effort app-wide, not just on View
+   Loans (new this round).** `accrueOverduePenalties()` (payments.js:21-36)
+   only actually runs when a specific loan is read (`GET /api/loans/:id`)
+   or paid against (`allocate()`) — never from a list endpoint. This means
+   `loan_schedule.penalty_due` for a loan nobody has individually opened or
+   paid against since it became overdue can still read 0/stale everywhere,
+   including in the now-fixed View Loans and the already-correct Dashboard/
+   Loan Arrears sheet alike. F.6 made View Loans consistent with the rest
+   of the app's existing best-effort freshness; it did not (and shouldn't,
+   without a performance-impact review) add per-row accrual calls to a list
+   endpoint. Worth considering a scheduled/batch accrual pass if this ever
+   becomes visibly stale in practice.
+4. **New/Repeat classification still can't distinguish same-calendar-day
+   disbursements (new this round, shared/pre-existing, not a new gap).**
+   Both `computeStats()` and the now-fixed `targets.js` (F.5) determine
+   "prior loan" via `disbursed_at <` a strict date comparison, and
+   `disbursed_at` is stored date-only (no time component). Two loans
+   disbursed for the same client on the same calendar day are both read as
+   "New" by both definitions. This was true of `computeStats()` before this
+   audit and remains true now that `targets.js` matches it exactly — F.5
+   fixed the *disagreement* between the two, not this pre-existing,
+   low-impact granularity limit of the definition itself. Changing it would
+   mean changing `computeStats()`'s own, already-in-production Dashboard
+   behavior, which is outside this audit's corrective mandate.
+5. Frontend regression suite has pre-existing, low-frequency, nondeterministic
    timing flakes in its async-polling test helpers (three distinct patterns
-   observed across 4 runs, all pre-existing and unrelated to this audit's
-   changes) — worth hardening the test harness's wait-for-response
-   correlation logic at some point, but out of scope for a Loan-Officer data-
-   integrity audit.
+   observed across 5 runs spanning both rounds of this audit, all
+   pre-existing and unrelated to any of these corrections) — worth
+   hardening the test harness's wait-for-response correlation logic at some
+   point, but out of scope for a Loan-Officer data-integrity audit.
 
 ---
 
@@ -426,10 +570,11 @@ following observations:
   built branch-scope-parameterized before this audit — good forward-looking
   design already in place; Manager can reuse it directly by passing the
   Manager's branch IDs instead of a single officer ID.
-- Outstanding balance, DPD, arrears and PAR calculations are genuinely
-  consistent between the frontend and the Loan-Officer-scoped backend
-  arrears sheet (E.4 aside, which is a penalty-inclusion detail, not a
-  structural conflict) — safe to reuse at branch scope.
+- Outstanding balance, DPD, arrears and PAR calculations are now genuinely
+  consistent across the frontend, View Loans, the Loan Arrears sheet and the
+  Dashboard (E.4/F.6 resolved this round, verified live with a real accrued
+  penalty) — safe to reuse at branch scope without carrying forward a
+  known, page-dependent discrepancy.
 - Payment allocation (`allocate()`) is a single, real, non-duplicated
   authority already used identically regardless of who posts the payment —
   nothing officer-scoped about its logic; branch-level Manager reporting can
@@ -437,17 +582,25 @@ following observations:
 - Cashflow/P&L/Balance Sheet are already live aggregations with no stored,
   officer-scoped running balance to reconcile — branch-scope Manager
   reporting is a pure query-scope change, not a recalculation.
-- **Before building Manager**, address item H.1 (New/Repeat Loan conflict)
-  first if Manager's own dashboard will show branch-level New/Repeat
-  figures — building a Manager view on top of `targets.js`'s currently
-  divergent definition would propagate the same inconsistency to a second,
-  higher-visibility role. The Dashboard-side `computeStats()` definition is
-  the one Manager should inherit, since it is already branch-scope-ready.
+- **New/Repeat Loan conflict resolved this round (F.5).** `GET
+  /api/users/me/performance` now derives New/Repeat from the same real
+  disbursement-history rule `computeStats()` already uses, rather than
+  trusting the officer-picked `loan_category` field — Manager can safely
+  build a branch-level New/Repeat view on either source now, since they
+  agree. (The guarantor-inheritance use of `loan_category`, loans.js:
+  2182-2203, remains its own deliberate, documented concept — not something
+  Manager reporting should reuse for New/Repeat counts, since it was never
+  meant to track that.)
 - Branch closure (`manage_branches` permission, already implemented in
   `branches.js`) is a genuinely Operational-Manager-tier feature already
   built and now correctly reflected on the Dashboard (F.4) — a concrete,
   already-verified example of "prepare the system for Manager" done
   correctly.
+- `GET /api/dashboard/summary` (dashboard.js), while still unused, is now
+  formula-reconciled (F.7) and already branch-scope-aware — a real,
+  ready-to-adopt candidate if Manager/Admin scope ever needs a server-side
+  aggregation endpoint instead of shipping the whole company's loans/
+  payments to the client for `computeStats()`-style aggregation.
 
 No structural blocker was found that would prevent Manager development from
 starting once H.1 is addressed (or explicitly deferred with the team's

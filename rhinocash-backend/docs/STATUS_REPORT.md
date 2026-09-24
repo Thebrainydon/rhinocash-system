@@ -71,14 +71,32 @@ API response internally inconsistent between two of its own columns — fixed
 the same way; (4) the Dashboard's "Active Branches" tile counted every
 branch ever loaded, not actually-Active ones — a real gap, since branch
 closure (`manage_branches` permission) is already a working feature, not a
-hypothetical. Several other genuine inconsistencies were found and
-deliberately **not** auto-fixed this round because correcting them means
-picking a product decision (which of several existing, differently-labeled
-"Collection MTD"/"Collection Rate" formulas is the intended one; whether
-`loan_category` should be backend-derived from real disbursement history
-instead of trusted as an officer-picked field) — those are documented in
-full in the audit report's Remaining Limitations and Manager Readiness
-sections rather than resolved unilaterally.
+hypothetical.
+
+A follow-up pass continued the same audit and resolved two of the items
+originally left open: (5) the My Account → View Details Performance
+panel's New/Repeat Loan counts were trusting the stored, officer-picked,
+optional `loan_category` field — a loan left with that field blank (the
+common case) was counted in neither bucket — now derived from real
+disbursement history the same way the Dashboard's `computeStats()` already
+does, so the two panels can no longer disagree; (6) View Loans' balance
+figure omitted any real accrued-but-unpaid penalty that the Dashboard and
+Loan Arrears sheet already included, so the same loan could show a lower
+balance there than everywhere else — reproduced live (a real KES 95.83
+gap on a test loan) and fixed by adding the same penalty term already used
+elsewhere. A previously-flagged "second dead-code endpoint"
+(`/api/loans/arrears`) turned out, on closer reading, to be intentionally-
+retained legacy code with its own explicit "kept, still tested, just not
+wired to this submenu" comment — left untouched, and the audit report
+corrected to stop calling it a gap. The genuinely-unused
+`GET /api/dashboard/summary` had its formula reconciled with the
+corrected logic anyway, in case it's ever adopted as a real Manager-scope
+aggregation endpoint. What's left — the several differently-labeled
+"Collection MTD"/"Collection Rate" formulas, and the Loan Officer's
+"Unposted Payments" menu deliberately reusing the M-Pesa C2B feed — still
+needs a product decision, not a unilateral code fix, and stays documented
+in the audit report's Remaining Limitations and Manager Readiness
+sections.
 
 Re-run them yourself — that's the point of them being real, not a claim
 to take on faith:

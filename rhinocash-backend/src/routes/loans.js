@@ -1110,7 +1110,16 @@ function register(router) {
       const sched = scheduleByLoan[l.id] || [];
       const toPay = sched.reduce((s, r) => s + r.total_due, 0);
       const paid = sched.reduce((s, r) => s + r.paid_amount, 0);
-      const balance = Math.max(0, toPay - paid);
+      // Real outstanding balance = unpaid principal+interest PLUS any real,
+      // accrued-but-unpaid penalty — matching loanBalance() on the
+      // frontend (index.html) and the Loan Arrears sheet's own tbalOf
+      // (below), the two other places this same "T.Bal" concept is
+      // computed. Previously omitted here, so a loan with a real unpaid
+      // penalty showed a lower balance on View Loans than on the
+      // Dashboard or Loan Arrears sheet for the exact same loan — see
+      // docs/CROSS_MODULE_AUDIT.md §E.4.
+      const penaltyOutstanding = sched.reduce((s, r) => s + Math.max(0, (r.penalty_due || 0) - (r.penalty_paid || 0)), 0);
+      const balance = Math.max(0, toPay - paid) + penaltyOutstanding;
       const overdueRows = sched.filter(r => r.paid_amount < r.total_due - 0.01 && r.due_date < today);
       const arrearsAmount = overdueRows.reduce((s, r) => s + (r.total_due - r.paid_amount), 0);
       const dpd = overdueRows.length ? Math.max(...overdueRows.map(r => Math.floor((new Date(today) - new Date(r.due_date)) / 86400000))) : 0;
