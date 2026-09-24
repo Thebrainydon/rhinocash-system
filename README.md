@@ -114,7 +114,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,205 backend tests and 1,054 frontend tests,
+At last verification: **1,205 backend tests and 1,058 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -302,6 +302,14 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   Interest Income, Loan Fees, Penalties, Write-offs, Recoveries, Provisions,
   Loan Financial Verification, Loan Approval History); new specs for this
   role have not yet been received/implemented.
+- **App-wide: blue/bold headings, column headers, and field labels** —
+  complete: real table column headers (`th`), real field labels
+  (`.detail-label`, e.g. View Details' Contact/Idno/Email/...), and real
+  stat-tile captions (`.kpi-label`, e.g. Total Clients/Active Branches)
+  now all genuinely render in the same real navy heading color already
+  used by page titles (`.card-title`), in place of the old plain grey —
+  matching the reference design's consistent blue-bold heading language
+  across every role and page, not just the ones most recently worked on.
 - Every other role (Admin, Manager, Loan Officer, CEO, Director, Investor)
   and every other module (Clients, Payments, Accounting, M-Pesa, Staff,
   Branches, Reports, Support) is present and passes the full regression

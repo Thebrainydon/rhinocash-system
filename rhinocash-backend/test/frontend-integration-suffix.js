@@ -5381,6 +5381,18 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(typeof session.loginSuccess === 'undefined', "the real session object genuinely no longer carries a loginSuccess field at all");
   }
 
+  // ---- 16e. App-wide: real table column headers, real field labels
+  // (.detail-label), and real stat-tile captions (.kpi-label) are all
+  // genuinely blue/navy and bold, matching the reference design, in place
+  // of the old plain grey — the one real heading-style class already
+  // correct beforehand (.card-title) is left untouched ----
+  {
+    __assert(__rawIndexHtml.includes('text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.3px; color:var(--navy);'), "the real shared table <th> column-header style genuinely uses the real navy heading color, not the old faint grey");
+    __assert(__rawIndexHtml.includes('.detail-label{font-size:11px; color:var(--navy);'), "the real shared .detail-label field-label style genuinely uses the real navy heading color, not the old faint grey");
+    __assert(__rawIndexHtml.includes('.kpi-label{font-size:11.5px; color:var(--navy);'), "the real shared .kpi-label stat-tile caption style genuinely uses the real navy heading color, not the old faint grey");
+    __assert(__rawIndexHtml.includes('.card-title{font-size:14.5px; font-weight:800; color:var(--navy);'), "the real .card-title heading style — already genuinely correct beforehand — is genuinely left untouched");
+  }
+
   // ---- 17. Redesigned topbar (no title text, no logout button — real icons + avatar only) ----
   {
     let of129 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);

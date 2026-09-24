@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,205 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,054 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,058 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,259 passed, 0 failed
+Total:    2,263 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1549,6 +1549,27 @@ STK-confirmed one rather than faking a real-looking code. A real,
 already-Confirmed payment (found automatically, same as before) still
 renders exactly the same real read-only markup it always did — the
 manual path is purely a fallback for the "nothing on file yet" case.
+
+A follow-up, genuinely app-wide (not role-scoped) round swept the whole
+frontend stylesheet for heading-style text still styled in plain grey
+rather than the real navy/blue-bold language already established by
+page titles (`.card-title` — already correct beforehand, confirmed
+still untouched). Two systemic CSS classes and one bare HTML element
+were the real, consistent gap, all sharing the exact same real
+`color:var(--ink-faint); font-weight:700` pattern: real table column
+headers (the shared `th` rule, used by essentially every real data
+table across every role); real field labels (`.detail-label`, e.g.
+View Details' own Contact/Idno/Email/... row labels); and real stat-
+tile captions (`.kpi-label`, e.g. Total Clients/Active Branches/PAR
+30). All three now use `var(--navy)`, the same real color `.card-title`
+already used, rather than introducing a second, inconsistent shade of
+blue. Deliberately left untouched: `.kpi-label` instances that live
+inside custom-colored dashboard tiles (a different, non-`.kpi` markup
+pattern entirely, where navy text would fail contrast); `.hint`, reused
+too broadly across genuinely unrelated caption/timestamp contexts to
+safely recolor as one class; the sidebar's own light-on-dark nav text
+(a different, intentionally separate color scheme); and the login
+screen's own lime-accented dark theme (also intentionally separate).
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
