@@ -240,6 +240,14 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .two-col{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
 .detail-label{font-size:11px; color:var(--ink-faint); text-transform:uppercase; font-weight:700; letter-spacing:0.3px;}
 .detail-value{font-size:14px; color:var(--ink); font-weight:600; margin-top:2px; margin-bottom:12px;}
+/* A scoped variant (Loan Officer's View Details, whose own labels are all
+   short single words) that puts each label and its value on the same
+   line, matching the reference design — kept separate from the base
+   .detail-label/.detail-value rules above since those are reused
+   elsewhere with much longer label text that a fixed side-by-side width
+   would wrap awkwardly. */
+.detail-inline .detail-label{ display:inline-block; width:110px; vertical-align:top; margin-top:0; }
+.detail-inline .detail-value{ display:inline-block; width:calc(100% - 118px); vertical-align:top; margin-top:0; }
 .modal-overlay{position:fixed; inset:0; background:rgba(15,20,30,0.45); display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:50; overflow-y:auto;}
 .modal{background:#fff; border-radius:14px; padding:24px 26px; width:100%; max-width:640px; box-shadow:0 20px 60px rgba(0,0,0,0.25);}
 .modal-wide{max-width:960px;}
@@ -11769,17 +11777,19 @@ function renderLoanOfficerViewDetails(){
         <div class="hint" style="margin-top:6px;">Profile</div>
       </div>
 
-      <div class="detail-label">Contact</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
-      <div class="detail-label">Idno</div><div class="detail-value">${escapeHtml(me.national_id||"—")}</div>
-      <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
-      <div class="detail-label">Gender</div><div class="detail-value">${escapeHtml(me.gender||"—")}</div>
-      <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||"—")}</div>
-      <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
-      <div class="detail-label">Roles</div><div class="detail-value">${session.role}</div>
-      <div class="detail-label">Access level</div><div class="detail-value">${escapeHtml(me.access_level||"—")}</div>
-      <div class="detail-label">Position</div><div class="detail-value">${escapeHtml(me.job_title||"—")}</div>
-      <div class="detail-label">Entry date</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
-      <div class="detail-label">Leaves</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
+      <div class="detail-inline">
+        <div class="detail-label">Contact</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
+        <div class="detail-label">Idno</div><div class="detail-value">${escapeHtml(me.national_id||"—")}</div>
+        <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
+        <div class="detail-label">Gender</div><div class="detail-value">${escapeHtml(me.gender||"—")}</div>
+        <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||"—")}</div>
+        <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
+        <div class="detail-label">Roles</div><div class="detail-value">${session.role}</div>
+        <div class="detail-label">Access level</div><div class="detail-value">${escapeHtml(me.access_level||"—")}</div>
+        <div class="detail-label">Position</div><div class="detail-value">${escapeHtml(me.job_title||"—")}</div>
+        <div class="detail-label">Entry date</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
+        <div class="detail-label">Leaves</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
+      </div>
 
       ${renderLoViewDetailsFilterPanel()}
     </div>

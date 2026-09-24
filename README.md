@@ -111,7 +111,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,035 frontend tests,
+At last verification: **1,199 backend tests and 1,037 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -135,9 +135,13 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   ACC BALANCES tile into a new staff wallet subsystem, a Profile photo
   section (the same real uploaded avatar Update Details/Dashboard/the
   topbar already show, falling back to a placeholder silhouette when
-  none is set yet) matching the reference layout, and a filter-driven
-  Performance/Interactions/Staff Loans/Leaves & Payroll panel, the latter
-  including a real Kenyan-statutory (NSSF/SHIF/PAYE) computed payslip.
+  none is set yet), each detail field's label and value now sitting on
+  the same line (a scoped `.detail-inline` layout, since the base
+  label/value styling is shared with ~100 other, longer-labeled spots
+  across the app) — both matching the reference layout — and a
+  filter-driven Performance/Interactions/Staff Loans/Leaves & Payroll
+  panel, the latter including a real Kenyan-statutory (NSSF/SHIF/PAYE)
+  computed payslip.
 - **Loan Officer's My Account -> My Work Plan** — complete: a real Daily
   Workplan (4 real visitation categories, each with a real saved target/
   locations and a real, freshly-computed Achieved/Clients Visited).

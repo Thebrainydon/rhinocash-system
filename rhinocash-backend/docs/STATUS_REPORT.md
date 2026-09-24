@@ -7,11 +7,11 @@ of intended behavior.
 
 ```
 Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,035 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,037 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,234 passed, 0 failed
+Total:    2,236 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -1448,6 +1448,20 @@ own "RHINOCASH LTD" text is now hidden on mobile only (a real
 `@media (max-width:880px)` rule) while staying on desktop; and the
 sidebar's green Online dot now runs a real `@keyframes` pulse
 (scaling in and out with a fading glow) instead of sitting static.
+
+A further follow-up fixed Loan Officer's View Details page's own
+detail-field layout: each field's label and value were stacked on two
+separate lines (label above, value below), where the reference design
+puts them side by side on one line. The underlying `.detail-label`/
+`.detail-value` classes are shared, reused as-is by roughly 100 other
+spots across the app with much longer label text (e.g. "System Role →
+Access Level", "Inactive/Deactivated Users") that a fixed side-by-side
+width would wrap awkwardly, so the fix is scoped: a new `.detail-inline`
+wrapper class, applied only around this page's own field list (whose
+own labels are all short single words), switches its `.detail-label`/
+`.detail-value` children to `display:inline-block` at a fixed label
+width, without touching the base rules every other real page still
+uses unmodified.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback
