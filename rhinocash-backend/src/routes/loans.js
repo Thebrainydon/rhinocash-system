@@ -38,7 +38,7 @@ function splitWithRemainder(total, periods) {
 // POST /api/loan-products) switches this from the monthly-installment
 // schedule to a real weekly one: termWeeks real installments, one every
 // 7 days, principal and interest evenly amortized across all of them —
-// the real short-term product catalog (Starter/Jijenge/Ibuka/Mavuno/Fly
+// the real short-term product catalog (Starter/Jijenge/Inuka/Mavuno/Fly
 // and their "Special" 6-week variants) is repaid in real equal weekly
 // installments, matching the reference design exactly, never a single
 // lump sum at the end. ratePct in that case is the real FLAT rate for
@@ -1675,7 +1675,7 @@ function register(router) {
     if (!b.name || !b.rate_pct) return next({ status: 400, message: 'name and rate_pct are required' });
     const id = 'pr_' + crypto.randomUUID();
     // term_weeks (optional): a real fixed-term, single-repayment product
-    // (the Starter/Jijenge/Ibuka/Mavuno/Fly catalog) — when set, it
+    // (the Starter/Jijenge/Inuka/Mavuno/Fly catalog) — when set, it
     // overrides the min/max month range entirely (buildSchedule() and
     // POST /api/loans both treat it as authoritative; see their own notes).
     const termWeeks = b.term_weeks ? Number(b.term_weeks) : null;
@@ -2011,7 +2011,7 @@ function register(router) {
 
   // ==================== Loan application processing fee ====================
   // A real, required, upfront payment for products that carry a real flat
-  // processing_fee_amount (the weekly Starter/Jijenge/Ibuka/Mavuno/Fly
+  // processing_fee_amount (the weekly Starter/Jijenge/Inuka/Mavuno/Fly
   // catalog) — POST /api/loans below refuses to create such a loan
   // without a real Confirmed payment record. Scoped by (client_id,
   // product_id), not loan_id, since the fee is genuinely paid before the
@@ -2038,6 +2038,36 @@ function register(router) {
     await logAction(req, { action: 'Requested loan processing fee STK push', module: 'loanbook', recordType: 'LoanFeePayment', recordId: id, newValue: { amount: product.processing_fee_amount, phone: b.phone, status: result.status } });
     const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [id]);
     res.status(201).json({ feeId: fee.id, amount: fee.amount, status: fee.status, message: fee.stk_message || result.message });
+  });
+
+  // TEMPORARY, at explicit request: a real, direct "type the amount and
+  // mark it paid" path, skipping the phone/STK/receipt-code round trip
+  // above entirely — meant to be removed again once a real client-facing
+  // processing-fee picker is enforced. Still writes a real, immediately
+  // Confirmed loan_fee_payments row (so it shows up correctly in every
+  // report that already reads this table, e.g. Processed Payments), just
+  // with mpesa_receipt_number set to a clear 'MANUAL' placeholder instead
+  // of a real Safaricom receipt, so it stays honestly distinguishable
+  // from a genuine STK-confirmed one.
+  router.post('/api/loans/processing-fee/manual', requireAuth, requirePermission('record_payments'), async (req, res, next) => {
+    const b = req.body;
+    if (!b.client_id || !b.product_id) return next({ status: 400, message: 'client_id and product_id are required' });
+    const client = await get('SELECT * FROM clients WHERE id = ?', [b.client_id]);
+    if (!client) return next({ status: 400, message: 'Unknown client' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    const product = await get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
+    if (!product) return next({ status: 400, message: 'Unknown loan product' });
+    if (product.processing_fee_amount == null) return next({ status: 400, message: 'This loan product does not require a separate upfront processing fee' });
+    const amount = b.amount != null ? Number(b.amount) : Number(product.processing_fee_amount);
+    if (!Number.isFinite(amount) || amount <= 0) return next({ status: 400, message: 'Enter a valid processing fee amount' });
+    const id = 'lfp_' + crypto.randomUUID();
+    await run(
+      `INSERT INTO loan_fee_payments (id, client_id, product_id, amount, phone, initiated_by, status, mpesa_receipt_number, confirmed_by, confirmed_at)
+       VALUES (?,?,?,?,?,?,'Confirmed','MANUAL',?,iso_now())`,
+      [id, b.client_id, b.product_id, amount, client.phone || 'MANUAL', req.user.id, req.user.id]
+    );
+    await logAction(req, { action: 'Manually confirmed loan processing fee payment', module: 'loanbook', recordType: 'LoanFeePayment', recordId: id, newValue: { amount } });
+    res.status(201).json({ fee: await get('SELECT * FROM loan_fee_payments WHERE id = ?', [id]) });
   });
 
   // Real manual confirmation — the same real "a human reconciles the
@@ -2118,7 +2148,7 @@ function register(router) {
     await assertRecordInScope(req.user, client.branch_id, 'client'); // can't write a loan against a client outside your scope
     const product = await get('SELECT * FROM loan_products WHERE id = ?', [b.product_id]);
     if (!product) return next({ status: 400, message: 'Unknown loan product' });
-    // A real term_weeks product (the real Starter/Jijenge/Ibuka/Mavuno/Fly
+    // A real term_weeks product (the real Starter/Jijenge/Inuka/Mavuno/Fly
     // catalog — see seed.js) has exactly one real valid term: itself. The
     // client never chooses a duration for these — the server is
     // authoritative on term_months (forced to 1, a loans-table legacy

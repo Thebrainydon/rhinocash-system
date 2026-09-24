@@ -6,12 +6,12 @@ real running server and a real PostgreSQL database — not a description
 of intended behavior.
 
 ```
-Backend:  1,199 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,044 passed, 0 failed  (drives the real UI functions in
+Backend:  1,205 passed, 0 failed  (29 suites — see test/run-all.sh)
+Frontend: 1,054 passed, 0 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
                                  test/run-frontend.sh)
-Total:    2,243 passed, 0 failed
+Total:    2,259 passed, 0 failed
 ```
 
 Previously (through the initial Postgres migration) 2 of the frontend
@@ -345,7 +345,7 @@ once one has been set, not a hardcoded placeholder.
 
 LoanBook's Create Application (Loan Officer view) is now backed by a
 real, admin-configurable short-term loan product catalog — Starter,
-Jijenge, Ibuka, Mavuno and Fly, each with a real 4-week tier and a real
+Jijenge, Inuka, Mavuno and Fly, each with a real 4-week tier and a real
 6-week "Special" tier at a real flat rate (20%/30%) over the loan's
 whole term, repaid once rather than in monthly installments. A new
 `loan_products.term_weeks` column (only set on this catalog; every
@@ -1507,6 +1507,48 @@ the test suite's own default port and quietly accumulating real failed-
 login attempts against a real backend account until it tripped the
 real 5-attempts-per-15-minutes lockout this app already enforces —
 resolved by killing the stray process, not by touching the app.)
+
+A follow-up mid-conversation request refined that same "Loading
+Dashboard..." screen's own styling: three dots (not six) followed by a
+real spinning-arrows icon, in bold blue, matching a reference
+screenshot — reusing the exact same real SVG and `loginSpin` animation
+the login button's own "Processing… please wait" spinner already used,
+rather than inventing a second one.
+
+A further round fixed four real issues on Loan Officer's Create Loan
+Application page, all confirmed against a live dev server via
+Playwright. First, the matched-client confirmation banner that used to
+render below Client Id Number ("<name> — <branch>") is gone entirely —
+the reference design never shows one, and real leftover data with a
+garbage client name had made this especially visible. Second, Loan
+Amount now carries real `min`/`max` HTML5 attributes tied to the
+selected product's own real range, so typing an out-of-range value
+genuinely triggers the browser's own native "Value must be less than
+or equal to N" validation message — previously the field had no real
+range constraint at all, just a placeholder hint. Third, the weekly
+product misspelled "Ibuka" throughout the seeded catalog is now
+correctly "Inuka" (and "Inuka Special") — only the real, user-facing
+display name changed; the internal `pr_ln_ibuka`/`pr_ln_ibuka_special`
+ids are untouched, since real loans and tests already reference them
+and an id was never user-facing to begin with.
+
+Fourth, and most involved: Processing Fee's real, fully-automatic,
+read-only design (a client's fee had to already be Confirmed via a
+real M-Pesa STK/receipt round trip before this form would show
+anything at all) got a real, explicitly temporary manual-entry
+fallback, added at direct request ("for now allow me to manually write
+the 600, will enforce the real picker later"). A new real backend
+endpoint, `POST /api/loans/processing-fee/manual`, lets a Loan Officer
+type an amount (defaulting to the product's own real flat fee) and
+mark it Confirmed immediately — still a real, genuine
+`loan_fee_payments` row (so it shows up correctly in every report that
+already reads this table, e.g. Processed Payments), just with
+`mpesa_receipt_number` set to a clear `'MANUAL'` placeholder rather
+than a real Safaricom receipt, honestly distinguishable from a genuine
+STK-confirmed one rather than faking a real-looking code. A real,
+already-Confirmed payment (found automatically, same as before) still
+renders exactly the same real read-only markup it always did — the
+manual path is purely a fallback for the "nothing on file yet" case.
 
 - **Live Safaricom M-Pesa round-trip.** The STK/C2B/B2C code — including
   the new wallet-deposit STK path — is real and the failure/callback

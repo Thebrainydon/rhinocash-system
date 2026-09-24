@@ -3727,7 +3727,12 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('<option value="1" selected>28 days</option>'), "selecting a real weekly product genuinely auto-fills Loan Duration with its own single real term expressed in real days (4 weeks = 28 days, matching the reference wording), pre-selected");
-    __assert(!html.includes('Payment for Processing Fee'), "a real fee-requiring product is now selected but this real client has not paid for it yet, so the Processing Fee section genuinely still shows nothing — never a 'pay now' prompt of any kind");
+    // A real fee-requiring product is now selected but this real client
+    // has not paid for it yet — the real, temporary manual-entry fallback
+    // now shows instead of nothing, defaulting to the product's own real
+    // flat fee amount, with no confirmed payment/receipt shown yet.
+    __assert(html.includes('Payment for Processing Fee') && html.includes('id="loanapp-manual-fee-amount"') && html.includes('>Mark as Paid<'), "a real fee-requiring product with no real payment on file yet genuinely shows the temporary manual-entry fallback (an editable amount and a Mark as Paid button), not nothing");
+    __assert(!html.includes('paid — Receipt'), "the real manual-entry fallback genuinely does not claim anything is already paid before it actually is");
 
     // Real "Repeat Loan" prefill: DB.loans already has a real prior loan
     // for this client (createLoanApplication further below reuses
@@ -3771,6 +3776,66 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     session.loanAppState = { idNumber: lookupClient.idNumber||'', matchedClient: lookupClient, productId: otherFeeProduct.id, notFound:false, feePhone: '', feePayment: null };
     await checkExistingProcessingFee();
     __assert(!session.loanAppState.feePayment, "a real client who has not paid the processing fee for this real different product genuinely shows no fee payment — it never appears unless actually paid");
+
+    session.loanAppState = null;
+  }
+
+  // ---- 85a2. Real Client Id Number confirmation banner removed (matching
+  // the reference design, which never shows one); real min/max HTML5
+  // validation on Loan Amount tied to the selected product's own real
+  // range (matching the reference's own native browser validation
+  // message); and the temporary manual-confirm Processing Fee path works
+  // end-to-end, all the way through a real loan submission ----
+  {
+    let of30c = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return of30c; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+
+    const manualForm = new Map([['name','[TEST] Manual Fee Client'],['phone','0722'+Math.floor(Math.random()*900000+100000)],['idNumber','98'+Math.floor(Math.random()*9000000+1000000)]]);
+    global.FormData = class { constructor(){ return manualForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const manualClient = DB.clients.find(c=>c.name==='[TEST] Manual Fee Client');
+
+    session.loanAppState = null;
+    goTo('loanbook','Create Application');
+    await new Promise(r=>setTimeout(r,300)); renderApp();
+    lookupClientForLoanApp(manualClient.idNumber);
+    for(let i=0; i<30 && !session.loanAppState.matchedClient; i++){ await new Promise(r=>setTimeout(r,50)); }
+    __assert(!!session.loanAppState.matchedClient, "setup: the real client is genuinely matched");
+
+    let html = document.getElementById('root').innerHTML;
+    __assert(!html.includes(escapeHtml(manualClient.name) + ' —'), "the real Create Loan Application form genuinely no longer shows a separate real matched-client confirmation banner (name — branch) below Client Id Number, matching the real reference design");
+
+    const manualStarterProduct = DB.products.find(p=>p.id==='pr_ln_starter');
+    session.loanAppState.productId = manualStarterProduct.id;
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(`min="${manualStarterProduct.minAmt}" max="${manualStarterProduct.maxAmt}"`), "the real Loan Amount field genuinely carries real min/max attributes tied to the real selected product's own real range, so a real out-of-range value genuinely triggers the browser's own real native validation message, matching the real reference site's own behavior");
+
+    // The real, temporary manual-confirm path: type an amount, click Mark
+    // as Paid, and it genuinely reaches the real new POST /api/loans/
+    // processing-fee/manual endpoint, marking a real fee payment Confirmed
+    // immediately — no phone/STK/receipt-code round trip at all.
+    const fakeManualAmountInput = { value: '600' };
+    const realGetElementById = document.getElementById.bind(document);
+    document.getElementById = (id) => id === 'loanapp-manual-fee-amount' ? fakeManualAmountInput : realGetElementById(id);
+    await manuallyConfirmProcessingFee();
+    document.getElementById = realGetElementById;
+    __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.status === 'Confirmed', "clicking the real Mark as Paid button genuinely reaches the real backend and marks a real fee payment Confirmed immediately");
+    __assert(session.loanAppState.feePayment.receiptNumber === 'MANUAL', "the real manually-confirmed fee payment genuinely carries the honest MANUAL placeholder receipt, never a fabricated real-looking Safaricom code");
+    __assert(Number(session.loanAppState.feePayment.amount) === 600, "the real manually-confirmed fee payment genuinely used the real typed amount");
+
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Payment for Processing Fee') && html.includes('600 paid') && html.includes('Receipt MANUAL'), "once genuinely Confirmed, the manual fee payment genuinely renders through the exact same real read-only 'paid' markup an STK-confirmed one would, including its real receipt");
+
+    // The real manually-confirmed fee payment genuinely works to submit a
+    // real loan application, exactly like a real STK-confirmed one does.
+    let manualLoanForm = new Map([['clientId',manualClient.id],['productId',manualStarterProduct.id],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Manual Guarantor'],['guarantor_contact','0711222444'],['processing_fee_id',session.loanAppState.feePayment.id]]);
+    global.FormData = class { constructor(){ return manualLoanForm; } };
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    await new Promise(r=>setTimeout(r,150));
+    __assert(DB.loans.some(l=>l.clientId===manualClient.id && l.productId===manualStarterProduct.id), "a real loan application submitted using the real manually-confirmed processing fee genuinely succeeds, exactly like a real STK-confirmed one would");
 
     session.loanAppState = null;
   }
@@ -3823,16 +3888,17 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(DB.loans.length === loansBeforeNoFee, "no real loan was created for an application missing its real, required processing fee payment — enforced server-side");
     __assert(toasts.length > toastsBeforeNoFee && /processing fee/i.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing processing fee) genuinely surfaces to the officer as a real toast");
 
-    // The real Processing Fee section genuinely shows nothing at all
-    // before the fee is actually paid — no manual controls of any kind —
-    // and only appears, read-only, once initiateProcessingFee()/
-    // confirmProcessingFee() (real functions the regression suite calls
-    // directly, standing in for a real independent payment this sandbox
-    // has no live M-Pesa connection to complete any other way) have
-    // actually produced a real Confirmed fee payment on file.
+    // Before the fee is actually paid, the real Processing Fee section
+    // now shows the real, temporary manual-entry fallback (see 85a2 above)
+    // rather than nothing — and, separately, still genuinely appears
+    // read-only once initiateProcessingFee()/confirmProcessingFee() (real
+    // functions the regression suite calls directly, standing in for a
+    // real independent payment this sandbox has no live M-Pesa connection
+    // to complete any other way) have actually produced a real Confirmed
+    // fee payment on file.
     session.loanAppState = { idNumber: wkFrontendClient.idNumber||'', matchedClient: wkFrontendClient, productId: 'pr_ln_starter', notFound:false, feePhone: wkFrontendClient.phone, feePayment: null };
     let feeSectionHtml = renderLoanApplicationForm();
-    __assert(!feeSectionHtml.includes('Payment for Processing Fee'), "the real Processing Fee section genuinely shows nothing at all before this real client has actually paid — no manual 'pay now' prompt of any kind");
+    __assert(feeSectionHtml.includes('Payment for Processing Fee') && feeSectionHtml.includes('id="loanapp-manual-fee-amount"'), "the real Processing Fee section genuinely shows the real, temporary manual-entry fallback before this real client has actually paid, not nothing");
     await initiateProcessingFee();
     __assert(session.loanAppState.feePayment && session.loanAppState.feePayment.id, "the real initiate call genuinely creates a real fee payment record, even though the real STK push itself cannot complete in this sandbox");
     await confirmProcessingFee('QGX9TT61SV');
@@ -5309,8 +5375,9 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(spinnerHtml.includes('class="dots-spinner"') && (spinnerHtml.match(/<i style="transform:rotate\(/g)||[]).length === 8, "the real loadingDotsHtml() genuinely renders a real 8-dot ring, each with its own real static rotation");
     __assert(__rawIndexHtml.includes('@keyframes dotsSpinnerPulse'), "the real shared dots-spinner CSS pulse animation genuinely exists");
     __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
-    __assert(__srcForBanCheck.includes("root.innerHTML = `<div class=\"loading-screen\">Loading Dashboard......</div>`"), "the real one-time, full-page loading screen shown right after login genuinely reads 'Loading Dashboard......', not the old generic 'Loading your Rhinocash data…' text");
-    __assert(!__srcForBanCheck.includes('loginSuccess') && !__srcForBanCheck.includes('Login successful'), "the real login button's own separate 'Login successful… redirecting' state is genuinely gone — session.loggedIn now flips true right away, so the real app shell (and its own 'Loading Dashboard......' screen) takes over the exact same real wait that message used to cover, instead of the two overlapping");
+    __assert(__srcForBanCheck.includes('<span>Loading Dashboard... <svg class="loading-screen-spinner"') && __srcForBanCheck.includes('class="loading-screen"'), "the real one-time, full-page loading screen shown right after login genuinely reads 'Loading Dashboard...' with a real spinning-arrows icon, not the old generic 'Loading your Rhinocash data…' text");
+    __assert(__rawIndexHtml.includes('.loading-screen-spinner{') && __rawIndexHtml.includes('animation:loginSpin'), "the real Loading Dashboard icon genuinely spins, reusing the exact same real loginSpin animation the login button's own spinner already uses");
+    __assert(!__srcForBanCheck.includes('loginSuccess') && !__srcForBanCheck.includes('Login successful'), "the real login button's own separate 'Login successful… redirecting' state is genuinely gone — session.loggedIn now flips true right away, so the real app shell (and its own 'Loading Dashboard...' screen) takes over the exact same real wait that message used to cover, instead of the two overlapping");
     __assert(typeof session.loginSuccess === 'undefined', "the real session object genuinely no longer carries a loginSuccess field at all");
   }
 

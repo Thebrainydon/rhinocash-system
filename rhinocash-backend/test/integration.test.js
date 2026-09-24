@@ -390,7 +390,7 @@ async function api(method, path, { token, body } = {}) {
   }
 
   // ---- 11d. Real short-term, single-repayment loan product catalog
-  // (Starter/Jijenge/Ibuka/Mavuno/Fly + their 6-week "Special" variants) —
+  // (Starter/Jijenge/Inuka/Mavuno/Fly + their 6-week "Special" variants) —
   // a flat rate for the loan's whole real term, repaid once; and real
   // backend-enforced New Loan / Repeat Loan validation on POST /api/loans ----
   {
@@ -643,6 +643,26 @@ async function api(method, path, { token, body } = {}) {
     // A DIFFERENT product genuinely never matches, even for the same client.
     const wrongProductFilter = await api('GET', `/api/loans/processing-fee/confirmed?client_id=${feeClient.json.client.id}&product_id=${feeIbuka.id}&unconsumed=1`, { token: officerToken });
     assert(wrongProductFilter.status === 200 && wrongProductFilter.json.feePayments.length === 0, 'product_id genuinely excludes a real confirmed fee payment made for a different product, even for the same client');
+
+    // ---- Temporary manual-confirm path (POST /api/loans/processing-fee/manual) ----
+    const manualNoFee = await api('POST', '/api/loans/processing-fee/manual', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: legacyProduct.id } });
+    assert(manualNoFee.status === 400, 'a real manual-confirm request for a product that does not require a processing fee is genuinely refused, same as the real initiate path');
+
+    const manualDefault = await api('POST', '/api/loans/processing-fee/manual', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id } });
+    assert(manualDefault.status === 201 && manualDefault.json.fee.status === 'Confirmed' && Number(manualDefault.json.fee.amount) === 600, 'a real manual-confirm request with no amount given genuinely defaults to the real product\'s own flat processing fee, and is immediately Confirmed — no phone/STK/receipt round trip needed');
+    assert(manualDefault.json.fee.mpesa_receipt_number === 'MANUAL', 'a real manually-confirmed fee payment genuinely carries the honest MANUAL placeholder receipt, never a fabricated real-looking Safaricom code');
+
+    const manualCustomAmount = await api('POST', '/api/loans/processing-fee/manual', { token: officerToken, body: { client_id: otherFeeClient.json.client.id, product_id: feeStarter.id, amount: 350 } });
+    assert(manualCustomAmount.status === 201 && Number(manualCustomAmount.json.fee.amount) === 350, 'a real manual-confirm request genuinely honors an explicitly typed amount, not just the product default');
+
+    const manualBadAmount = await api('POST', '/api/loans/processing-fee/manual', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, amount: -50 } });
+    assert(manualBadAmount.status === 400, 'a real manual-confirm request with a non-positive amount is genuinely refused');
+
+    // The real manually-confirmed payment is a genuinely real, spendable
+    // Confirmed fee payment — it works for a real loan application exactly
+    // like an STK-confirmed one does.
+    const manualLoan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: feeClient.json.client.id, product_id: feeStarter.id, principal: 4000, loan_category: 'New Loan', guarantor: 'G', guarantor_contact: '0700000000', processing_fee_id: manualDefault.json.fee.id } });
+    assert(manualLoan.status === 201 && manualLoan.json.loan.processing_fee_receipt === 'MANUAL', 'a real manually-confirmed processing fee payment genuinely works to submit a real loan application, same as a real STK-confirmed one');
   }
 
   // ---- 11f. Daily Disbursements — real per-day, per-branch disbursement

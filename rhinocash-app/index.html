@@ -283,7 +283,8 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .notif-dot{width:8px; height:8px; border-radius:50%; background:var(--rust); margin-top:5px; flex-shrink:0;}
 .notif-dot.read{background:var(--line);}
 .section-note{background:var(--blue-bg); color:var(--navy); border-radius:9px; padding:11px 14px; font-size:12.5px; margin-bottom:16px;}
-.loading-screen{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:10px; color:var(--ink-faint); font-size:14px;}
+.loading-screen{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:10px; color:var(--blue); font-size:16px; font-weight:700;}
+.loading-screen-spinner{display:inline-block; width:18px; height:18px; vertical-align:-3px; margin-left:5px; animation:loginSpin 0.8s linear infinite;}
 
 /* ---- Login screen ---- */
 .login-screen{
@@ -1448,7 +1449,7 @@ function progressBar(pct, color){
 // The one real loading indicator every individual page/panel/table uses
 // while its own data is still in flight — a ring of pulsing purple dots,
 // matching the reference design, with no text (the one real exception is
-// the initial post-login "Loading Dashboard......" full-page screen in
+// the initial post-login "Loading Dashboard..." full-page screen in
 // renderApp() itself, shown once, before any page has data to show at
 // all). Each dot is statically rotated to its own position around the
 // ring (via the outer <i>), while its own inner <b> runs the identical
@@ -1956,7 +1957,7 @@ function initPendingCharts(){
 function renderApp(){
   const root = document.getElementById('root');
   if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
-  if(!DB){ root.innerHTML = `<div class="loading-screen">Loading Dashboard......</div>`; return; }
+  if(!DB){ root.innerHTML = `<div class="loading-screen"><span>Loading Dashboard... <svg class="loading-screen-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg></span></div>`; return; }
   const menu = SIDEBAR_MENUS[session.role] || [];
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
@@ -2226,7 +2227,7 @@ async function doLogin(ev){
     // move into the real app shell immediately rather than lingering on
     // the login screen while loadCoreData() (which can take a few seconds
     // on a slow connection) runs. renderApp() itself shows the real, one-
-    // time "Loading Dashboard......" full-page screen for exactly this
+    // time "Loading Dashboard..." full-page screen for exactly this
     // wait, since DB is still null at this point. session.authenticated
     // (not session.loggedIn) is what renderApp() itself gates the app
     // shell on — session.loggedIn stays false until loadCoreData() has
@@ -5603,12 +5604,11 @@ function renderLoanApplicationForm(){
       <form onsubmit="return submitLoanApp(event)">
         <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
         <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
-        <div class="section-note">${st.matchedClient ? `${escapeHtml(st.matchedClient.name)} — ${branchName(st.matchedClient.branch)}` : (st.notFound ? 'No client found with that ID number.' : '')}</div>
         <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; session.loanAppState.feePayment=null; session.loanAppState.feePhone=''; renderApp(); checkExistingProcessingFee();">
           <option value="">-- Loan Product --</option>
           ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
         </select></div>
-        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
+        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required ${product?`min="${product.minAmt}" max="${product.maxAmt}"`:''} placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
         <div class="field"><label>Loan Duration</label><select name="term" required>
           <option value="">-- Select --</option>
           ${product ? (product.termWeeks
@@ -5619,7 +5619,7 @@ function renderLoanApplicationForm(){
         <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
         <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
         <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
-        ${st.matchedClient && product && product.processingFeeAmount!=null && st.feePayment && st.feePayment.status==='Confirmed' ? renderProcessingFeeSection(st, product) : ""}
+        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product) : ""}
         <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this)">
           <option value="">-- Select --</option>
           <option>New Loan</option><option>Repeat Loan</option>
@@ -5674,24 +5674,54 @@ async function checkExistingProcessingFee(){
     if(fee) cur.feePayment = { id: fee.id, status: 'Confirmed', amount: fee.amount, receiptNumber: fee.mpesa_receipt_number };
   });
 }
-// Real, read-only, automatic-only processing fee display — this form
-// never offers a way to request or manually confirm a payment (no phone
-// picker, no "Request Payment" button, no M-Pesa receipt code field):
-// it only ever shows up once checkExistingProcessingFee() has already
-// found a real, already-Confirmed payment on file for this exact client
-// and product (e.g. paid earlier, independently of this form). A client
-// who has not yet paid shows nothing here at all — matching the
-// requested design exactly. The hidden processing_fee_id is what lets
-// POST /api/loans accept the application at all for a fee-requiring product.
+// Automatic-detect display (unchanged): once checkExistingProcessingFee()
+// finds a real, already-Confirmed payment on file for this exact client
+// and product (e.g. paid earlier, independently of this form), it shows
+// read-only, and the hidden processing_fee_id is what lets POST
+// /api/loans accept the application at all for a fee-requiring product.
+//
+// TEMPORARY, at explicit request: when no such payment has been found
+// yet, this now also offers a real, direct manual-entry fallback (an
+// editable amount, defaulting to the product's own real fee, plus a
+// "Mark as Paid" button hitting the new real POST /api/loans/processing-
+// fee/manual) — skipping the phone/STK/receipt-code round trip this form
+// deliberately never offered. Meant to be removed again once a real
+// client-facing processing-fee picker is enforced.
 function renderProcessingFeeSection(st, product){
   const fee = st.feePayment;
+  if(fee && fee.status==='Confirmed'){
+    return `
+      <div class="field" style="border:1px solid var(--border,#ddd); border-radius:8px; padding:12px; background:#FAFAF8;">
+        <label style="font-weight:700;">Payment for Processing Fee</label>
+        <div style="color:var(--green,#2c6e49); font-weight:700; margin-top:4px;">${fmt(fee.amount!=null?fee.amount:product.processingFeeAmount)} paid — Receipt ${escapeHtml(fee.receiptNumber||'')}</div>
+        <input type="hidden" name="processing_fee_id" value="${escapeHtml(fee.id)}">
+      </div>
+    `;
+  }
   return `
     <div class="field" style="border:1px solid var(--border,#ddd); border-radius:8px; padding:12px; background:#FAFAF8;">
       <label style="font-weight:700;">Payment for Processing Fee</label>
-      <div style="color:var(--green,#2c6e49); font-weight:700; margin-top:4px;">${fmt(fee.amount!=null?fee.amount:product.processingFeeAmount)} paid — Receipt ${escapeHtml(fee.receiptNumber||'')}</div>
-      <input type="hidden" name="processing_fee_id" value="${escapeHtml(fee.id)}">
+      <div class="hint" style="margin:2px 0 8px;">No confirmed payment on file yet — enter the amount and mark it paid manually for now.</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="loanapp-manual-fee-amount" type="number" min="1" step="1" value="${product.processingFeeAmount}" style="flex:1;">
+        <button type="button" class="btn btn-sm btn-outline" onclick="manuallyConfirmProcessingFee()">Mark as Paid</button>
+      </div>
     </div>
   `;
+}
+function manuallyConfirmProcessingFee(){
+  const st = session.loanAppState;
+  const product = DB.products.find(p=>p.id===st.productId);
+  if(!st.matchedClient || !product || product.processingFeeAmount==null) return;
+  const input = document.getElementById('loanapp-manual-fee-amount');
+  const amount = input ? Number(input.value) : product.processingFeeAmount;
+  if(!amount || amount <= 0){ toast('Enter a valid processing fee amount'); return; }
+  return withRequest('manual-processing-fee', async ()=>{
+    const res = await api.post('/api/loans/processing-fee/manual', { client_id: st.matchedClient.id, product_id: product.id, amount });
+    session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
+    toast('Processing fee marked as paid');
+    renderApp();
+  });
 }
 // initiateProcessingFee()/confirmProcessingFee() are no longer wired to
 // any button on this form (per the requested design, the form only ever

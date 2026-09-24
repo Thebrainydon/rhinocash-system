@@ -283,8 +283,12 @@ async function seedDemoData() {
     ['pr_ln_starter_special', 'Starter Special', 30, 3000, 5000, 6],
     ['pr_ln_jijenge', 'Jijenge', 20, 6000, 10000, 4],
     ['pr_ln_jijenge_special', 'Jijenge Special', 30, 6000, 10000, 6],
-    ['pr_ln_ibuka', 'Ibuka', 20, 11000, 15000, 4],
-    ['pr_ln_ibuka_special', 'Ibuka Special', 30, 11000, 15000, 6],
+    // The id keeps its original 'ibuka' spelling (an internal identifier,
+    // never shown to a real user, and already referenced by real
+    // existing loans/tests) — only the real, user-facing display name
+    // was ever actually misspelled, and only that changes here.
+    ['pr_ln_ibuka', 'Inuka', 20, 11000, 15000, 4],
+    ['pr_ln_ibuka_special', 'Inuka Special', 30, 11000, 15000, 6],
     ['pr_ln_mavuno', 'Mavuno', 20, 16000, 20000, 4],
     ['pr_ln_mavuno_special', 'Mavuno Special', 30, 16000, 20000, 6],
     ['pr_ln_fly', 'Fly', 20, 21000, 25000, 4],

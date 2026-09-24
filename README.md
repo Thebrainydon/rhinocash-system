@@ -54,9 +54,10 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
   `rhinocash-backend/docs/STATUS_REPORT.md` for current test status.
 - Login gives explicit "Processing… please wait" feedback on the button
   itself while credentials are being verified, then moves straight into
-  the real app shell, which shows a real "Loading Dashboard......"
-  full-page screen for the rest of the wait (fetching the account's own
-  data) — never a static button with an unexplained pause.
+  the real app shell, which shows a real "Loading Dashboard..." screen
+  (with a real spinning-arrows icon, reusing the login button's own
+  spinner) for the rest of the wait (fetching the account's own data) —
+  never a static button with an unexplained pause.
 - JSON API responses are gzip-compressed (`src/router.js`, using only
   `node:zlib`) when the client supports it — a large reduction in bytes
   transferred for the bulk LoanBook/Collections endpoints, which matters
@@ -113,7 +114,7 @@ TEST_DATABASE_URL=postgres://rhinocash:yourpassword@localhost:5432/rhinocash_tes
   bash test/run-frontend.sh
 ```
 
-At last verification: **1,199 backend tests and 1,044 frontend tests,
+At last verification: **1,205 backend tests and 1,054 frontend tests,
 all passing** against a real PostgreSQL database — see
 `rhinocash-backend/docs/STATUS_REPORT.md` for the full test history.
 
@@ -181,15 +182,26 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   full real product catalog, real client-ID lookup, and real server-side
   New Loan/Repeat Loan enforcement all already existed), with real Loan
   Duration in days, a real live "Waiting {Role}"/disbursed-date
-  Disbursement column tracking the real 4-step approval chain, and a
-  purely automatic, read-only Processing Fee display — no phone picker,
-  no "Request Payment" button, no manual M-Pesa receipt code field —
-  that shows a real already-paid fee's amount and receipt the moment one
-  is found, and nothing at all otherwise. Saving shows the requested
-  two-bar sequence: a real greenish "Processing... please wait" bar
-  while the request is in flight, replaced by a real gray "success" bar,
-  then a real redirect to Undisbursed Loans — both bars centered on the
-  page, matching the real reference site's own centered messages.
+  Disbursement column tracking the real 4-step approval chain, and real
+  min/max HTML5 validation on Loan Amount tied to the selected product's
+  own range, so an out-of-range value triggers the browser's own native
+  validation message, matching the reference exactly. The matched-client
+  confirmation banner that used to render below Client Id Number is
+  gone, matching the reference's own cleaner layout. The weekly product
+  previously misspelled "Ibuka" is now "Inuka" (its internal id is
+  unchanged, since real loans/tests already reference it). Processing
+  Fee now offers a real, temporary manual-entry fallback — type the
+  amount and click Mark as Paid, reaching a new real backend endpoint
+  that marks a real `loan_fee_payments` row Confirmed immediately (a
+  clear `MANUAL` placeholder receipt, honestly distinguishable from a
+  genuine Safaricom one) — skipping the phone/STK/receipt-code round
+  trip, meant to be removed again once a real client-facing fee picker
+  is enforced; a real already-Confirmed payment still shows read-only
+  exactly as before. Saving shows the requested two-bar sequence: a real
+  greenish "Processing... please wait" bar while the request is in
+  flight, replaced by a real gray "success" bar, then a real redirect to
+  Undisbursed Loans — both bars centered on the page, matching the real
+  reference site's own centered messages.
 - **Clients -> Add Client** — complete: saving now shows the same real
   centered "Uploading... please wait" / "success" bar sequence (in
   place of the old full-screen percentage overlay and checkmark modal),
@@ -240,12 +252,14 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   pulse animation) matching the reference design, with no text. The one
   real exception is the initial, one-time screen shown right after
   login, before any page has data to render at all, which now reads
-  "Loading Dashboard......". This also fixed a real, related gap: the
-  login button's own "Login successful… redirecting" state used to
-  cover that same real wait while staying on the login screen —
+  "Loading Dashboard..." with a real spinning-arrows icon (the exact
+  same real SVG/animation as the login button's own spinner, reused for
+  visual consistency). This also fixed a real, related gap: the login
+  button's own "Login successful… redirecting" state used to cover that
+  same real wait while staying on the login screen —
   `session.authenticated` (new) now flips true immediately once
   credentials are verified, moving into the real app shell (and its own
-  "Loading Dashboard......" screen) right away, while `session.loggedIn`
+  "Loading Dashboard..." screen) right away, while `session.loggedIn`
   itself still only flips true once the account's data has actually
   finished loading — preserving the existing safeguard where a stray,
   already-tolerated 401 from one of that data load's own many
@@ -267,7 +281,7 @@ repository — see `.gitignore` and `rhinocash-backend/.gitignore`.
   actually exists) had nothing to show on a freshly seeded database.
 - **Loan Officer's Undisbursed Loans — real weekly installments, Edit,
   Print** — complete: every real `term_weeks` product (Starter, Jijenge,
-  Ibuka, Mavuno, Fly and their "Special" variants) now genuinely repays
+  Inuka, Mavuno, Fly and their "Special" variants) now genuinely repays
   in real equal weekly installments — principal and interest both
   amortized across every real week, rounded to the nearest real
   shilling with the last week absorbing the remainder — replacing the

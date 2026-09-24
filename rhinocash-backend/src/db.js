@@ -588,7 +588,7 @@ CREATE TABLE IF NOT EXISTS loans (
 -- Real processing-fee payments collected up front, before a loan
 -- application can even be submitted, for products that require one
 -- (loan_products.processing_fee_amount set — the real weekly Starter/
--- Jijenge/Ibuka/Mavuno/Fly catalog). Deliberately scoped by (client_id,
+-- Jijenge/Inuka/Mavuno/Fly catalog). Deliberately scoped by (client_id,
 -- product_id), not loan_id, since the fee is paid BEFORE the loan record
 -- exists; loan_id is filled in once the application that consumed this
 -- payment is actually created, so one confirmed payment can never be
