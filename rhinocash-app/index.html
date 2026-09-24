@@ -2395,14 +2395,14 @@ function computeStats(officerId, branchIds){
     : (branchIds && branchIds.length
         ? DB.payments.filter(p=>{ const l=DB.loans.find(x=>x.id===p.loanId); return l && branchIds.includes(l.branchId); })
         : DB.payments);
-  const collectionsMTD = paymentsScope.filter(p=>p.status!=="Unposted" && isThisMonth(p.date)).reduce((s,p)=>s+p.amount,0);
-  const interestIncomeMTD = paymentsScope.filter(p=>p.status!=="Unposted" && isThisMonth(p.date)).reduce((s,p)=>s+(p.allocated.interest||0),0);
+  const collectionsMTD = paymentsScope.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && isThisMonth(p.date)).reduce((s,p)=>s+p.amount,0);
+  const interestIncomeMTD = paymentsScope.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && isThisMonth(p.date)).reduce((s,p)=>s+(p.allocated.interest||0),0);
   const dueMTD = activeScope.flatMap(l=>l.schedule).filter(r=>r.dueDate && isThisMonth(r.dueDate)).reduce((s,r)=>s+r.totalDue,0);
   const otcPct = dueMTD>0 ? Math.min(150, collectionsMTD/dueMTD*100) : 100;
 
   const prevMonthDate = new Date(); prevMonthDate.setMonth(prevMonthDate.getMonth()-1);
   const isPrevMonth = d => { const x=new Date(d); return x.getFullYear()===prevMonthDate.getFullYear() && x.getMonth()===prevMonthDate.getMonth(); };
-  const collectionsPrev = paymentsScope.filter(p=>p.status!=="Unposted" && isPrevMonth(p.date)).reduce((s,p)=>s+p.amount,0);
+  const collectionsPrev = paymentsScope.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && isPrevMonth(p.date)).reduce((s,p)=>s+p.amount,0);
   const duePrev = activeScope.flatMap(l=>l.schedule).filter(r=>r.dueDate && isPrevMonth(r.dueDate)).reduce((s,r)=>s+r.totalDue,0);
   const collPctPrev = duePrev>0 ? Math.min(150, collectionsPrev/duePrev*100) : 100;
 
@@ -2429,7 +2429,7 @@ function computeStats(officerId, branchIds){
 
   const today = todayISO();
   const dueToday = activeScope.flatMap(l=>l.schedule).filter(r=>r.dueDate===today).reduce((s,r)=>s+r.totalDue,0);
-  const collectedToday = paymentsScope.filter(p=>p.status!=="Unposted" && p.date.slice(0,10)===today).reduce((s,p)=>s+p.amount,0);
+  const collectedToday = paymentsScope.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && p.date.slice(0,10)===today).reduce((s,p)=>s+p.amount,0);
   const todayPct = dueToday>0 ? Math.min(100, collectedToday/dueToday*100) : 0;
 
   const monthStart = todayISO().slice(0,8)+"01";
@@ -2614,7 +2614,7 @@ function arrearsBanner(st){
 }
 function orgCounts(){
   return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
-    <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.branches.length}</div><div class="kpi-label" style="margin-top:2px;">Active Branches</div></div><div style="font-size:22px;">🏢</div></div></div>
+    <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.branches.filter(b=>b.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Branches</div></div><div style="font-size:22px;">🏢</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.staff.filter(s=>s.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Staff</div></div><div style="font-size:22px;">🪪</div></div></div>
   </div>`;
 }

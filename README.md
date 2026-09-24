@@ -49,6 +49,15 @@ INITIAL_ADMIN_PASSWORD='YourPasswordHere' node seed.js --demo
 
 ## Recent improvements
 
+- Completed a full cross-module data-integrity audit of the Loan Officer
+  system (how Accounting/Clients/LoanBook/Payments/My Account/Dashboard
+  actually depend on and feed each other, not just whether each page
+  loads) before starting Manager-role work — see
+  `rhinocash-backend/docs/CROSS_MODULE_AUDIT.md` for the full dependency
+  maps, findings, and corrections made (client status now auto-promotes
+  at disbursement, the Dashboard and Collection Rates no longer
+  double-count reversed payments, and the Active Branches tile now
+  actually filters by branch status).
 - Migrated the database layer from SQLite to PostgreSQL — see
   `rhinocash-backend/docs/POSTGRESQL.md` for the architecture and
   `rhinocash-backend/docs/STATUS_REPORT.md` for current test status.

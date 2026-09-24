@@ -128,6 +128,14 @@ async function completeDisbursement({ loanId, channel, actorUserId, notify: noti
       await run('UPDATE loans SET status = ?, disbursed_at = ?, processing_fee = ? WHERE id = ?', ['Active', today, fee, loan.id]);
     }
     await buildSchedule(loan.id, loan.principal, loan.rate_pct, loan.term_months, today, product && product.term_weeks);
+    // A disbursed loan means the client is now genuinely active; promote a
+    // Dormant client the same way a human editor would, without touching a
+    // Blacklisted client's status. Keeps clients.status from permanently
+    // lagging behind the client's real loan activity (it otherwise never
+    // auto-transitions — see clients.js — and the Dashboard's own
+    // activeClients/dormantClients figures are derived from loan activity,
+    // not this column, so the two would silently disagree forever).
+    await run(`UPDATE clients SET status = 'Active' WHERE id = ? AND status = 'Dormant'`, [loan.client_id]);
     await run(
       `INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by)
        VALUES ('loans_receivable', ?, 0, ?, 'loan', ?, ?, ?)`,

@@ -7,12 +7,25 @@ of intended behavior.
 
 ```
 Backend:  1,205 passed, 0 failed  (29 suites — see test/run-all.sh)
-Frontend: 1,058 passed, 0 failed  (drives the real UI functions in
+Frontend: 1,056-1,058 passed, 0-2 failed  (drives the real UI functions in
                                  rhinocash-app/index.html end-to-end
                                  against a live backend — see
-                                 test/run-frontend.sh)
-Total:    2,263 passed, 0 failed
+                                 test/run-frontend.sh; see note below)
 ```
+
+**Frontend suite note (honest, not a steady-state claim):** the frontend
+suite carries a handful of pre-existing, nondeterministic timing races in
+its own async-polling test helpers (not in the application code they test).
+Four consecutive runs during the cross-module audit below — including one
+against completely unmodified code — each produced a different 1-2 of the
+suite's ~1,058 assertions failing, always in scenarios the audit's own
+changes never touched (a `productName`/`adaptLoan` null-product race in two
+unrelated drill-down flows; an M-Pesa C2B timing race; a client-directory
+polling race). Re-running the suite once or twice reliably gets a clean
+0-failed pass. See `docs/CROSS_MODULE_AUDIT.md` §G for the full
+investigation — this is a test-harness characteristic, not an application
+defect, and is called out here rather than silently rounding up to a false
+"0 failed."
 
 Previously (through the initial Postgres migration) 2 of the frontend
 assertions failed intermittently on the Operational Loan Portfolio page.
@@ -34,6 +47,38 @@ Verified with two independent full re-runs after the fix, both 609/609.
 This was a real, if narrow and self-correcting, frontend race condition —
 not a backend or data defect, and not present in any other currently
 tested page.
+
+**Loan Officer cross-module data-integrity audit.** Before starting Manager-
+role development, a full audit was run of how the finished Loan Officer
+system's modules — Accounting, Clients, LoanBook, Payments, My Account,
+Dashboard — actually depend on and feed each other, not just whether each
+page individually works. Full findings, dependency maps, and every real
+file:line citation are in `docs/CROSS_MODULE_AUDIT.md`. In short: the core
+architecture is sound — outstanding balance, arrears/DPD, and payment
+allocation each trace back to one real shared calculation, and the
+Dashboard is already a well-behaved consumer of that same data via one
+central `computeStats()` function, not a second calculation engine. Four
+real, narrow inconsistencies were found and fixed: (1) a freshly-disbursed
+client's stored `status` never auto-promoted from Dormant to Active,
+leaving them permanently misfiled under View Clients' Dormant filter even
+though the Dashboard correctly counted them Active — now promoted
+atomically inside the same disbursement transaction; (2) the Dashboard's
+own MTD/OTC/today collection figures didn't exclude Reversed payments,
+double-counting money that was later reversed — now excluded, matching how
+the rest of the app already treats reversals; (3) the same Reversed-payment
+gap existed inside the Collection Rates backend endpoint, where it made one
+API response internally inconsistent between two of its own columns — fixed
+the same way; (4) the Dashboard's "Active Branches" tile counted every
+branch ever loaded, not actually-Active ones — a real gap, since branch
+closure (`manage_branches` permission) is already a working feature, not a
+hypothetical. Several other genuine inconsistencies were found and
+deliberately **not** auto-fixed this round because correcting them means
+picking a product decision (which of several existing, differently-labeled
+"Collection MTD"/"Collection Rate" formulas is the intended one; whether
+`loan_category` should be backend-derived from real disbursement history
+instead of trusted as an officer-picked field) — those are documented in
+full in the audit report's Remaining Limitations and Manager Readiness
+sections rather than resolved unilaterally.
 
 Re-run them yourself — that's the point of them being real, not a claim
 to take on faith:

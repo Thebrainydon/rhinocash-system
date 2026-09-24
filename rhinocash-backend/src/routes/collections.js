@@ -581,7 +581,7 @@ function register(router) {
     if (loanIds.length) {
       const idPh = loanIds.map(() => '?').join(',');
       (await all(`SELECT * FROM loan_schedule WHERE loan_id IN (${idPh})`, loanIds)).forEach(r => { (scheduleByLoan[r.loan_id] || (scheduleByLoan[r.loan_id] = [])).push(r); });
-      (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status != 'Unposted'`, loanIds)).forEach(p => { (paymentsByLoan[p.loan_id] || (paymentsByLoan[p.loan_id] = [])).push(p); });
+      (await all(`SELECT * FROM payments WHERE loan_id IN (${idPh}) AND status NOT IN ('Unposted', 'Reversed')`, loanIds)).forEach(p => { (paymentsByLoan[p.loan_id] || (paymentsByLoan[p.loan_id] = [])).push(p); });
     }
 
     const officerGroups = {};
