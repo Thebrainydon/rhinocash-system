@@ -2459,6 +2459,12 @@ function computeStats(officerId, branchIds){
   const activeClientIds = new Set(activeScope.map(l=>l.clientId));
   const activeClients = activeClientIds.size;
   const dormantClients = Math.max(0, totalClients - activeClients);
+  // Same "Unfunded" definition as the backend's own GET /api/clients
+  // (clients.js: NOT EXISTS a loan in Disbursed/Active/Completed) —
+  // checked against ALL of the client's loans company-wide, not just
+  // this scope's loansScope, to stay byte-consistent with that
+  // authoritative backend definition rather than inventing a second one.
+  const unfundedClients = clientsScope.filter(c=>!DB.loans.some(l=>l.clientId===c.id && ["Disbursed","Active","Completed"].includes(l.status))).length;
 
   const performingLoans = activeScope.filter(l=>loanArrearsDays(l)===0).length;
   const arrearsLoans = activeScope.filter(l=>loanArrearsDays(l)>0);
@@ -2483,7 +2489,7 @@ function computeStats(officerId, branchIds){
 
   return {clientsScope, loansScope, activeScope, disbursedMTD, loansMTDCount, disbursedYTD, loansYTDCount,
     collectionsMTD, interestIncomeMTD, otcPct, collectionsPrev, collPctPrev, undisbursedCount:undisbursed.length, undisbursedAmt,
-    totalClients, activeClients, dormantClients, performingLoans, arrearsAmt, arrearsOpen, par, portfolioOutstanding,
+    totalClients, activeClients, dormantClients, unfundedClients, performingLoans, arrearsAmt, arrearsOpen, par, portfolioOutstanding,
     newLoans, repeatLoans, dueToday, collectedToday, todayPct};
 }
 /* Builds the full per-officer indicator matrix: New Loans / Repeat Loans / Arrears / Performing / Revenue,
@@ -2588,8 +2594,10 @@ function productPieData(loansScope){
   active.forEach(l=>{ byProduct[l.productName] = (byProduct[l.productName]||0) + loanBalance(l); });
   return Object.entries(byProduct).map(([label,value],i)=>({label, value, color:PALETTE[i%PALETTE.length]}));
 }
-function olbByOfficerPieData(){
-  return DB.staff.filter(s=>s.role==="Loan Officer").map((o,i)=>{
+function olbByOfficerPieData(branchIds){
+  let officers = DB.staff.filter(s=>s.role==="Loan Officer");
+  if(branchIds && branchIds.length) officers = officers.filter(o=>branchIds.includes(o.branch));
+  return officers.map((o,i)=>{
     const bal = activeLoans().filter(l=>l.officerId===o.id).reduce((s,l)=>s+loanBalance(l),0);
     return {label:o.name, value:bal, color:PALETTE[i%PALETTE.length]};
   });
@@ -2650,6 +2658,7 @@ function statGrid(st){
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.activeClients}</div><div class="kpi-label" style="margin-top:2px;">Active Clients</div></div><div style="font-size:22px;">🧑‍💼</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.dormantClients}</div><div class="kpi-label" style="margin-top:2px;">Dormant Clients</div></div><div style="font-size:22px;">💤</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.performingLoans}</div><div class="kpi-label" style="margin-top:2px;">Performing</div></div><div style="font-size:22px;">⚖️</div></div></div>
+    <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${st.unfundedClients}</div><div class="kpi-label" style="margin-top:2px;">Unfunded Clients</div></div><div style="font-size:22px;">👤</div></div></div>
   </div>`;
 }
 function arrearsBanner(st){
@@ -2664,15 +2673,29 @@ function orgCounts(){
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.staff.filter(s=>s.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Staff</div></div><div style="font-size:22px;">🪪</div></div></div>
   </div>`;
 }
-function staffPerformanceTable(highlightId, branchIds){
+// Branch-scoped counterpart to orgCounts() above, for roles managing a
+// single branch (Manager) — "Active Branches" doesn't mean anything at
+// that scope (it would always read 1), so this replaces it with the
+// second real staff-composition figure a branch Manager actually needs:
+// how many of their Active staff are themselves Loan Officers.
+function branchStaffCounts(branchIds){
+  const inBranch = DB.staff.filter(s=>branchIds.includes(s.branch));
+  const activeStaff = inBranch.filter(s=>s.status==='Active').length;
+  const activeOfficers = inBranch.filter(s=>s.status==='Active' && s.role==='Loan Officer').length;
+  return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
+    <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${activeStaff}</div><div class="kpi-label" style="margin-top:2px;">Active Staff</div></div><div style="font-size:22px;">🪪</div></div></div>
+    <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${activeOfficers}</div><div class="kpi-label" style="margin-top:2px;">Active Loan Officers</div></div><div style="font-size:22px;">🧑‍💼</div></div></div>
+  </div>`;
+}
+function staffPerformanceTable(highlightId, branchIds, scopeLabel){
   const ranked = rankedOfficerScores(branchIds);
   const rows = ranked.map((r,i)=>`<tr style="${r.officer.id===highlightId?'background:var(--blue-bg); font-weight:700;':''}">
       <td>${escapeHtml(r.officer.name)}</td><td>${r.score.toFixed(1)}%</td><td>${i+1} of ${ranked.length}</td></tr>`).join("");
-  return `<div class="card"><div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Performance <small>composite score — disbursement, collection &amp; PAR${branchIds?' — your region':''}</small></div>
+  return `<div class="card"><div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Performance <small>composite score — disbursement, collection &amp; PAR${branchIds?' — '+(scopeLabel||'your region'):''}</small></div>
     <div class="table-wrap"><table><tr><th>Staff</th><th>Average</th><th>Position</th></tr>
     ${rows || `<tr><td colspan="3" class="empty">No loan officers in scope.</td></tr>`}</table></div></div>`;
 }
-function performanceIndicatorsTable(highlightId, branchIds){
+function performanceIndicatorsTable(highlightId, branchIds, scopeLabel){
   const rows = buildIndicatorMatrix(branchIds);
   const scoreBadge = (v) => `<span class="badge ${v>=80?'green':v>=40?'amber':'red'}">${v.toFixed(1)}%</span>`;
   const trs = rows.map(r=>{
@@ -2687,7 +2710,7 @@ function performanceIndicatorsTable(highlightId, branchIds){
       <td style="background:var(--blue-bg); font-weight:800; color:var(--navy);">${r.avgScore.toFixed(1)}%</td>
     </tr>`;
   }).join("");
-  return `<div class="card"><div class="card-title">Performance Indicators <small>per loan officer, this month — New Loans, Repeat Loans, Arrears, Performing &amp; Revenue${branchIds?' — your region':''}</small></div>
+  return `<div class="card"><div class="card-title">Performance Indicators <small>per loan officer, this month — New Loans, Repeat Loans, Arrears, Performing &amp; Revenue${branchIds?' — '+(scopeLabel||'your region'):''}</small></div>
     <div class="table-wrap"><table>
       <tr>
         <th rowspan="2">Staff</th>
@@ -2970,6 +2993,7 @@ function renderManagerDashboard(){
     ${kpiTiles(st)}
     ${statGrid(st)}
     ${arrearsBanner(st)}
+    ${branchStaffCounts(myBranchIds)}
 
     <div class="card">
       <div class="card-title">Loans Waiting for Your Approval <small>${waitingQueue.length} at ${bName}</small></div>
@@ -2979,16 +3003,20 @@ function renderManagerDashboard(){
     </div>
 
     <div class="grid2">
-      ${pieCard("Branch Loan Status Distribution", bName, loanStatusPie(st.loansScope))}
-      ${pieCard("Branch Loan Products", "by outstanding balance", productPieData(st.loansScope))}
+      ${pieCard("Client Loans Analysis","by loan size, "+bName, clientBracketPie(st.loansScope))}
+      ${pieCard("Branch Clients' Loan Cycles","repeat-borrowing depth", loanCyclePie(st.clientsScope))}
+    </div>
+    <div class="grid2">
+      ${pieCard("Branch Loan Products Distribution","by outstanding balance", productPieData(st.loansScope))}
+      ${pieCard("OLB Distribution — Branch Officers","peer comparison, within "+bName, olbByOfficerPieData(myBranchIds))}
     </div>
     <div class="card">
       <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>${bName} daily disbursed amount</small></div>
       ${lineChart(disbursementTrendPoints(st.loansScope))}
     </div>
 
-    ${staffPerformanceTable(null, myBranchIds)}
-    ${performanceIndicatorsTable(null, myBranchIds)}
+    ${staffPerformanceTable(null, myBranchIds, 'your branch')}
+    ${performanceIndicatorsTable(null, myBranchIds, 'your branch')}
   `;
 }
 function renderAdvancedDashboard(){
