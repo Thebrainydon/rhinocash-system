@@ -411,16 +411,17 @@ const NAV = [
   {id:"notifications", num:9, label:"Notifications"},
   {id:"audit", num:10, label:"Audit Logs"},
   {id:"staff", num:11, label:"Company Staff"},
+  {id:"staff-leaves", num:11.1, label:"Staff Leaves"},
   {id:"support", num:12, label:"Support Center"},
   {id:"account", num:13, label:"My Account"},
 ];
 const NAV_PERMISSIONS = {
-  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","support","account"],
-  "Manager": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","staff","support","account"],
-  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","support","account"],
-  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","support","account"],
+  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","support","account"],
+  "Manager": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","staff","staff-leaves","support","account"],
+  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","support","account"],
+  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","support","account"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","investors","reports","notifications","support","account"],
-  "CEO": ["dashboard","clients","accounting","branches","investors","reports","staff","notifications","support","account"],
+  "CEO": ["dashboard","clients","accounting","branches","investors","reports","staff","staff-leaves","notifications","support","account"],
   "Director": ["dashboard","clients","accounting","branches","investors","reports","audit","notifications","support","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
   "Loan Officer": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","support","account"],
@@ -497,7 +498,14 @@ function isSectionAllowed(section){
   // after any per-user Admin-set restriction. This is a UI hint only;
   // the backend enforces the real boundary on every request regardless.
   const modules = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules;
-  if(modules && modules.length) return modules.includes(section);
+  if(modules && modules.length){
+    // "staff-leaves" is a sub-page of the "Staff" module (see MODULE_LIST),
+    // not a separate real backend module — same reasoning as "notifications"
+    // above: a per-user restriction list built from the 10 real module keys
+    // never contains "staff-leaves" itself, so alias it to "staff" here.
+    if(section==="staff-leaves") return modules.includes("staff");
+    return modules.includes(section);
+  }
   return true;
 }
 
@@ -521,7 +529,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Applications","Pending Loan Approvals","Approved Loans","Active Loans","Disbursements","Collection MTD","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Restructuring","Loan Write-offs","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payment Summary","Payments Report","Validate Payments","Payment Exceptions","Payment Reversals","Payment Reconciliation"]},
     {section:"Collections", icon:"🧾", items:["Today's Collections","Collection Targets","Collection Performance","Collection Sheet","Collection Reports","Collection Rates","Arrears Management","Promise to Pay","Recovery Actions","Escalated Accounts"]},
-    {section:"Staff & Team", icon:"🧑‍🤝‍🧑", items:["Loan Officers","Team Performance","Staff Work Plans","Staff Attendance","Staff Targets","Target Assignment","Performance Reviews","Staff Activity","Staff Leave Requests","Salary Advance Requests"]},
+    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Loan Officers","Team Performance","Staff Work Plans","Staff Attendance","Staff Targets","Target Assignment","Performance Reviews","Staff Activity","Salary Advance Requests"]},
     {section:"Approvals", icon:"✅", items:["Loan Approvals","Waiting for Manager","Approved Loans","Rejected Loans","Returned Applications","Escalated Loans","Approval History"]},
     {section:"Branch Performance", icon:"📈", items:["Portfolio Overview","Loan Book","Disbursement Performance","Collection Performance","Collection Rate","PAR Analysis","Arrears","Default Rate","Branch Revenue","Branch Targets","Target Achievement"]},
     {section:"Reports", icon:"📑", items:["Portfolio Report","Collection Report","Arrears Report","Disbursement Report","Loan Officer Report","Client Report","Branch Performance Report","Staff Performance Report","Financial Summary","Exception Report"]},
@@ -808,6 +816,7 @@ const LABEL_ROUTES = {
   "User Activity": {section:"audit"},
   "Salary Advance": {section:"account"},
   "Salary Advance Requests": {section:"staff"},
+  "Staff Leaves": {section:"staff-leaves"},
   "Salary Records": {section:"accounting", subtab:"Expenses"},
   // Approvals & permissions (Admin)
   "Roles": {section:"dashboard"},
@@ -2391,6 +2400,7 @@ function renderSection(){
     case "notifications": return renderNotifications();
     case "audit": return renderAudit();
     case "staff": return renderStaff();
+    case "staff-leaves": return renderStaffLeavesPage();
     case "support": return renderSupport();
     case "account": return renderAccount();
     case "placeholder": return renderPlaceholder();
@@ -3785,11 +3795,11 @@ function renderCEODashboard(){
       <div class="card-title">Pending Staff Requests <small>${pendingLeave.length + pendingAdvances.length} awaiting a decision</small></div>
       <div class="table-wrap"><table><tr><th>Type</th><th>Staff</th><th>Details</th><th></th></tr>
         ${pendingLeave.map(l=>`<tr><td>Leave (${l.leave_type})</td><td>${staffName(l.user_id)}</td><td>${l.start_date} → ${l.end_date}</td>
-          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Approved'))">Approve</button>
-          <button class="btn btn-sm btn-red" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Rejected'))">Reject</button></td></tr>`).join("")}
+          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Approved'), {mutates:true})">Approve</button>
+          <button class="btn btn-sm btn-red" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Rejected'), {mutates:true})">Reject</button></td></tr>`).join("")}
         ${pendingAdvances.map(a=>`<tr><td>Salary Advance</td><td>${staffName(a.user_id)}</td><td>${fmt(a.amount)}${a.reason?' — '+escapeHtml(a.reason):''}</td>
-          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Approved'))">Approve</button>
-          <button class="btn btn-sm btn-red" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Rejected'))">Reject</button></td></tr>`).join("")}
+          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Approved'), {mutates:true})">Approve</button>
+          <button class="btn btn-sm btn-red" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Rejected'), {mutates:true})">Reject</button></td></tr>`).join("")}
       </table></div>
     </div>` : ""}
 
@@ -3960,11 +3970,11 @@ function renderDirectorDashboard(){
       <div class="card-title">Pending Staff Requests <small>${pendingLeave.length + pendingAdvances.length} awaiting a decision</small></div>
       <div class="table-wrap"><table><tr><th>Type</th><th>Staff</th><th>Details</th><th></th></tr>
         ${pendingLeave.map(l=>`<tr><td>Leave (${l.leave_type})</td><td>${staffName(l.user_id)}</td><td>${l.start_date} → ${l.end_date}</td>
-          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Approved'))">Approve</button>
-          <button class="btn btn-sm btn-red" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Rejected'))">Reject</button></td></tr>`).join("")}
+          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Approved'), {mutates:true})">Approve</button>
+          <button class="btn btn-sm btn-red" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Rejected'), {mutates:true})">Reject</button></td></tr>`).join("")}
         ${pendingAdvances.map(a=>`<tr><td>Salary Advance</td><td>${staffName(a.user_id)}</td><td>${fmt(a.amount)}${a.reason?' — '+escapeHtml(a.reason):''}</td>
-          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Approved'))">Approve</button>
-          <button class="btn btn-sm btn-red" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Rejected'))">Reject</button></td></tr>`).join("")}
+          <td><button class="btn btn-sm btn-green" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Approved'), {mutates:true})">Approve</button>
+          <button class="btn btn-sm btn-red" onclick="withRequest('decide-advance', ()=>decideSalaryAdvance('${a.id}','Rejected'), {mutates:true})">Reject</button></td></tr>`).join("")}
       </table></div>
     </div>` : ""}
 
@@ -11126,6 +11136,61 @@ function submitStaffDirFilter(ev){
   const f = Object.fromEntries(new FormData(ev.target));
   Object.keys(f).forEach(k=>{ if(!f[k]) delete f[k]; });
   return loadStaffDirectory(f, 1);
+}
+// Employees > Staff Leaves — real leave requests already loaded once at
+// login (GET /api/leave-requests, no mine=1 — see loadCoreData()), which
+// the backend itself already scopes correctly per caller: a Manager gets
+// their own direct reports' requests, an Admin/manage_users holder gets
+// everyone's. Filtered here to the selected calendar year by start_date,
+// since the backend endpoint doesn't take a year filter and there's no
+// need to add one for what's already a small, already-fetched list.
+// "Approvals" reuses the exact same real decide action (decideLeaveRequest
+// -> POST /api/leave-requests/:id/decide) the CEO/Director dashboards'
+// "Pending Staff Requests" card already uses — not a decorative column —
+// so a Manager can act on a request right from this same list, with the
+// backend's own canDecideOn() remaining the real authority on whether
+// they're actually allowed to.
+function renderStaffLeavesPage(){
+  const curYear = new Date().getFullYear();
+  const year = session.staffLeavesYear || curYear;
+  const yearOptions = [curYear, curYear-1, curYear-2];
+  const rows = (DB.leaveRequests||[])
+    .filter(l => new Date(l.start_date).getFullYear() === year)
+    .sort((a,b)=> new Date(b.start_date) - new Date(a.start_date));
+  const trs = rows.map(l=>{
+    const duration = daysBetween(l.start_date, l.end_date) + 1;
+    const approvalsCell = l.status==='Pending'
+      ? `<button class="btn btn-sm btn-green" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Approved'), {mutates:true})">Approve</button>
+         <button class="btn btn-sm btn-red" onclick="withRequest('decide-leave', ()=>decideLeaveRequest('${l.id}','Rejected'), {mutates:true})">Reject</button>`
+      : `${escapeHtml(l.status)} by ${escapeHtml(staffName(l.decided_by))}${l.decided_at?`<br><span class="hint">${new Date(l.decided_at).toLocaleDateString()}</span>`:''}`;
+    const statusBadge = `<span class="badge ${l.status==='Approved'?'green':l.status==='Rejected'?'red':'amber'}">${escapeHtml(l.status)}</span>`;
+    return `<tr>
+      <td>${escapeHtml(staffName(l.user_id))}</td>
+      <td>${fmtDDMMYYYY(l.start_date)} – ${fmtDDMMYYYY(l.end_date)}</td>
+      <td>${duration} day${duration===1?'':'s'}</td>
+      <td>${escapeHtml(l.leave_type)}</td>
+      <td>${escapeHtml(l.reason || '—')}</td>
+      <td>${approvalsCell}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  }).join("");
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+          <h3 style="color:var(--navy); margin:0;">${year} Staff Leaves</h3>
+        </div>
+        <select onchange="session.staffLeavesYear=Number(this.value); renderApp();" class="btn btn-sm btn-outline">
+          ${yearOptions.map(y=>`<option value="${y}" ${year===y?'selected':''}>${y}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Employee</th><th>Leave Period</th><th>Duration</th><th>Leave Type</th><th>Reason for Leave</th><th>Approvals</th><th>Status</th></tr>
+        ${trs || `<tr><td colspan="7" class="empty">No staff leave requests for ${year}.</td></tr>`}
+      </table></div>
+    </div>
+  `;
 }
 function renderStaff(){
   const state = DB.acctPages.staffdir;
