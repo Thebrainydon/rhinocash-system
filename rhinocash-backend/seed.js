@@ -44,7 +44,7 @@ async function seedModules() {
 
   const roleModules = {
     loan_officer: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'reports', 'support', 'account'],
-    manager: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'reports', 'staff', 'support', 'account'],
+    manager: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'reports', 'staff', 'support', 'account'],
     operational_manager: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'reports', 'staff', 'support', 'account'],
     regional_manager: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'reports', 'staff', 'support', 'account'],
     // Accountant needs 'loanbook' too, not just 'payments'/'accounting' —

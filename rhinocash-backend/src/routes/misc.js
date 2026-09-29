@@ -417,6 +417,21 @@ function register(router) {
     res.json({ ok: true });
   });
 
+  // ---- System Announcements ----
+  router.get('/api/announcements', requireAuth, async (req, res) => {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const rows = await all('SELECT * FROM system_announcements ORDER BY created_at DESC LIMIT ?', [limit]);
+    res.json({ announcements: rows });
+  });
+  router.post('/api/announcements', requireAuth, requirePermission('manage_system_settings'), async (req, res, next) => {
+    const b = req.body;
+    if (!b.title || !b.body) return next({ status: 400, message: 'title and body are required' });
+    const id = 'ann_' + crypto.randomUUID();
+    await run('INSERT INTO system_announcements (id, title, body, posted_by) VALUES (?,?,?,?)', [id, b.title, b.body, req.user.id]);
+    await logAction(req, { action: 'Posted system announcement', module: 'support', recordType: 'Announcement', recordId: id, newValue: b.title });
+    res.status(201).json({ announcement: await get('SELECT * FROM system_announcements WHERE id = ?', [id]) });
+  });
+
   // ---- Leave ----
   router.get('/api/leave-requests', requireAuth, async (req, res) => {
     const mine = req.query.mine === '1';

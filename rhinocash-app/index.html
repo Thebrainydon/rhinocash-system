@@ -413,12 +413,14 @@ const NAV = [
   {id:"staff", num:11, label:"Company Staff"},
   {id:"staff-leaves", num:11.1, label:"Staff Leaves"},
   {id:"staff-portfolios", num:11.2, label:"Staff Portfolios"},
+  {id:"staff-workplans", num:11.3, label:"Daily Workplan"},
+  {id:"business-analytics", num:8.1, label:"Business Analytics"},
   {id:"support", num:12, label:"Support Center"},
   {id:"account", num:13, label:"My Account"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account"],
-  "Manager": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
+  "Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","investors","reports","notifications","support","account"],
@@ -500,12 +502,15 @@ function isSectionAllowed(section){
   // the backend enforces the real boundary on every request regardless.
   const modules = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules;
   if(modules && modules.length){
-    // "staff-leaves"/"staff-portfolios" are sub-pages of the "Staff" module
-    // (see MODULE_LIST), not separate real backend modules — same reasoning
-    // as "notifications" above: a per-user restriction list built from the
-    // 10 real module keys never contains either of them, so alias both to
-    // "staff" here.
-    if(section==="staff-leaves" || section==="staff-portfolios") return modules.includes("staff");
+    // "staff-leaves"/"staff-portfolios"/"staff-workplans" are sub-pages of
+    // the "Staff" module (see MODULE_LIST), not separate real backend
+    // modules — same reasoning as "notifications" above: a per-user
+    // restriction list built from the 10 real module keys never contains
+    // any of them, so alias all three to "staff" here.
+    if(section==="staff-leaves" || section==="staff-portfolios" || section==="staff-workplans") return modules.includes("staff");
+    // "business-analytics" is likewise a sub-page of "Reports", not its
+    // own real module.
+    if(section==="business-analytics") return modules.includes("reports");
     return modules.includes(section);
   }
   return true;
@@ -526,17 +531,15 @@ const SIDEBAR_MENUS = {
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
   ],
   "Manager": [
-    {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Cashflow","Branch Cash Position","Pending Approvals","Expense Requests"]},
-    {section:"Clients", icon:"👥", items:["All Branch Clients","Add Client","Create a Lead","Interactions","Client Leads","Client Follow-up","Client Verification","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Applications","Pending Loan Approvals","Approved Loans","Active Loans","Disbursements","Collection MTD","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Restructuring","Loan Write-offs","View Loans"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payment Summary","Payments Report","Validate Payments","Payment Exceptions","Payment Reversals","Payment Reconciliation"]},
-    {section:"Collections", icon:"🧾", items:["Today's Collections","Collection Targets","Collection Performance","Collection Sheet","Collection Reports","Collection Rates","Arrears Management","Promise to Pay","Recovery Actions","Escalated Accounts"]},
-    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Team Performance","Staff Work Plans","Staff Attendance","Staff Targets","Target Assignment","Performance Reviews","Staff Activity","Salary Advance Requests"]},
-    {section:"Approvals", icon:"✅", items:["Loan Approvals","Waiting for Manager","Approved Loans","Rejected Loans","Returned Applications","Escalated Loans","Approval History"]},
-    {section:"Branch Performance", icon:"📈", items:["Portfolio Overview","Loan Book","Disbursement Performance","Collection Performance","Collection Rate","PAR Analysis","Arrears","Default Rate","Branch Revenue","Branch Targets","Target Achievement"]},
-    {section:"Reports", icon:"📑", items:["Portfolio Report","Collection Report","Arrears Report","Disbursement Report","Loan Officer Report","Client Report","Branch Performance Report","Staff Performance Report","Financial Summary","Exception Report"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
-    {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket","Manager Help Center","Knowledge Base","System Documentation","System Status","Support Contacts","Report an Issue","Escalate an Issue"]},
+    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees"]},
+    {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow"]},
+    {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches"]},
+    {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"]},
+    {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","View Loans"]},
+    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
+    {section:"My Account", icon:"🪪", items:["View Details","My Workplan","Leave Application","Salary Advance","Update Details"]},
+    {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Operational Manager": [
     {section:"Operations", icon:"⚙️", items:["Operations Overview","Daily Operations","Operational Calendar","Operational Targets","Operational Tasks","Pending Actions","Operational Alerts","Escalations"]},
@@ -652,6 +655,14 @@ const LABEL_ROUTES = {
   "Open New Branch": {section:"branches", subtab:"Open New Branch"},
   "Branch Opening Requests": {section:"branches", subtab:"Open New Branch"},
   "Regions": {section:"branches", subtab:"Regions"},
+  "View Regions": {section:"branches", subtab:"Regions"},
+  "View Branches": {section:"branches", subtab:"Branch Directory"},
+  "Loan Summary": {section:"branches", subtab:"Loan Summary"},
+  // Business Analytics
+  "Loan Sizes": {section:"business-analytics", subtab:"Loan Sizes"},
+  "Portfolio Breakdown": {section:"business-analytics", subtab:"Portfolio Breakdown"},
+  "Targets & Accruals": {section:"business-analytics", subtab:"Targets & Accruals"},
+  "Business Performance": {section:"business-analytics", subtab:"Business Performance"},
   "Region Management": {section:"branches", subtab:"Regions"},
   "Branch Setup": {section:"branches", subtab:"Open New Branch"},
   "Branch Closure Requests": {section:"branches", subtab:"Branch Directory"},
@@ -671,6 +682,7 @@ const LABEL_ROUTES = {
   // route would coincidentally match the same real page) — a real bug
   // this comment now documents rather than reintroduces.
   "Interactions": {section:"clients", subtab:"Interactions"},
+  "Default Groups": {section:"clients", subtab:"Client Groups"},
   "Client Status": {section:"clients", subtab:"All Clients"},
   "Dormant Clients": {section:"clients", subtab:"All Clients"},
   "Client Registration": {section:"clients", subtab:"Add Client"},
@@ -678,6 +690,7 @@ const LABEL_ROUTES = {
   // LoanBook
   "Create Loan Application": {section:"loanbook", subtab:"Create Application"},
   "Loan Application": {section:"loanbook", subtab:"Loan Applications"},
+  "Create Application": {section:"loanbook", subtab:"Create Application"},
   "Loan Applications": {section:"loanbook", subtab:"Loan Applications"},
   "View Loans": {section:"loanbook", subtab:"View Loans"},
   "Operational Loan Portfolio": {section:"loanbook", subtab:"Operational Loan Portfolio"},
@@ -740,6 +753,12 @@ const LABEL_ROUTES = {
   "Payment Validation": {section:"payments", subtab:"Unposted Payments"},
   "Payment Queue": {section:"payments", subtab:"Unposted Payments"},
   "Overpayments": {section:"payments", subtab:"Overpayments"},
+  // "Merged Payments" is the same real Processed Payments list — every
+  // posted payment already carries its own real principal/interest
+  // allocation split merged into one row (see renderProcessedPayments()),
+  // rather than a separate ledger this label would otherwise imply.
+  "Merged Payments": {section:"payments", subtab:"Processed Payments"},
+  "Validate Payment": {section:"payments", subtab:"Unposted Payments"},
   "Payment Exceptions": {section:"payments", subtab:"Overpayments"},
   "Prepayments": {section:"payments", subtab:"Prepayments"},
   "Processed Payments": {section:"payments", subtab:"Processed Payments"},
@@ -762,6 +781,10 @@ const LABEL_ROUTES = {
   "M-Pesa Reconciliation": {section:"payments", subtab:"M-Pesa Reconciliation"},
   "Cash Reconciliation": {section:"payments", subtab:"M-Pesa Reconciliation"},
   "Utility Payments": {section:"accounting", subtab:"Utility Payments"},
+  // "Petty Cashbook" is the same real branch cash ledger "Branch Cash
+  // Position" already routed to — a running record of real cash inflows/
+  // outflows, just under the label the reference design uses for it.
+  "Petty Cashbook": {section:"accounting", subtab:"Cashflow"},
   "Expenses": {section:"accounting", subtab:"Expenses"},
   "Expense Requests": {section:"accounting", subtab:"Expenses"},
   "Staff Expenses": {section:"accounting", subtab:"Expenses"},
@@ -820,6 +843,8 @@ const LABEL_ROUTES = {
   "Salary Advance Requests": {section:"staff"},
   "Staff Leaves": {section:"staff-leaves"},
   "Staff Portfolios": {section:"staff-portfolios"},
+  "Daily Workplan": {section:"staff-workplans"},
+  "View Employees": {section:"staff"},
   "Salary Records": {section:"accounting", subtab:"Expenses"},
   // Approvals & permissions (Admin)
   "Roles": {section:"dashboard"},
@@ -865,6 +890,7 @@ const LABEL_ROUTES = {
   "Profile": {section:"account", subtab:"Investor Profile"},
   "Investor Profile": {section:"account", subtab:"Investor Profile"},
   "Update Details": {section:"account", subtab:"Update Details"},
+  "My Workplan": {section:"account", subtab:"My Work Plan"},
   "Security Settings": {section:"account", subtab:"Security & Login"},
   "Security": {section:"account", subtab:"Security & Login"},
   "Security & Login": {section:"account", subtab:"Security & Login"},
@@ -910,6 +936,10 @@ const LABEL_ROUTES = {
   // System & Help
   "Create a Ticket": {section:"support"},
   "Raised Ticket": {section:"support"},
+  "Create Ticket": {section:"support"},
+  "Knowledge Base": {section:"support", subtab:"FAQ / Knowledge Base"},
+  "System Announcements": {section:"support", subtab:"System Announcements"},
+  "Contact Support": {section:"support"},
   "Support Contacts": {section:"support"},
   "Report an Issue": {section:"support"},
   "Escalate an Issue": {section:"support"},
@@ -990,6 +1020,10 @@ function sidebarNavigate(itemLabel){
   // "Raised Ticket" still opens that dashboard for everyone, including
   // the Loan Officer, since that list is exactly where a raised ticket lives.
   if(itemLabel === 'Create a Ticket' && session.role === 'Loan Officer'){ session.sidebarOpen = false; openCreateSupportTicketModal(); return; }
+  // "Leave Application" is likewise a quick action — the real Apply for
+  // Leave modal (the same one the Manager Dashboard welcome card's own
+  // "Apply Leave" link already opens), not a separate page.
+  if(itemLabel === 'Leave Application'){ session.sidebarOpen = false; openModal('apply-leave'); return; }
   // Real navigation always collapses every OTHER real expanded sidebar
   // section — clicking an item in a different menu means "I'm done with
   // whatever I had open before", so it closes on its own, matching the
@@ -1312,6 +1346,7 @@ async function loadCoreData(){
     }
     if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/clients').then(r=>{ DB.clients = r.clients.map(adaptClient); }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/leads').then(r=>{ DB.leads = r.leads.map(l=>({id:l.id, name:l.name, phone:l.phone, source:l.source, status:l.status, notes:l.notes, createdAt:l.created_at})); }).catch(()=>{}));
+    if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/client-groups').then(r=>{ DB.groups = r.groups.map(g=>({id:g.id, branchId:g.branch_id, name:g.name, meetingDay:g.meeting_day, memberIds:g.members.map(m=>m.id), memberNames:g.members.map(m=>m.name)})); }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('loanbook')) calls.push(api.get('/api/loans').then(r=>{ DB.loans = r.loans.map(adaptLoan); }).catch(()=>{}));
     // Dashboards/computeStats() need the FULL set to compute correct
     // MTD/collection/arrears figures — they must never silently operate on
@@ -1586,16 +1621,6 @@ async function convertLead(leadId){
   if(lead) lead.status="Converted";
   toast(`${lead? lead.name : c.name} converted to client`);
   return c;
-}
-// Client Groups have no backend model yet (no group/chama table exists in
-// the database) — kept as local-only UI state rather than fabricating a
-// fake API call. Real persistence for this feature is a stated gap, not
-// a hidden one; see docs/STATUS_REPORT.md.
-function addGroup(name, meetingDay, memberIds){
-  const g = {id:uid("grp"), name, meetingDay, memberIds};
-  DB.groups.unshift(g);
-  memberIds.forEach(id=>{ const c=DB.clients.find(x=>x.id===id); if(c) c.groupId=g.id; });
-  save();
 }
 async function createLoanApplication(data){
   const payload = { client_id:data.clientId, product_id:data.productId, principal:Number(data.principal),
@@ -2431,6 +2456,8 @@ function renderSection(){
     case "staff": return renderStaff();
     case "staff-leaves": return renderStaffLeavesPage();
     case "staff-portfolios": return renderStaffPortfoliosPage();
+    case "staff-workplans": return renderTeamWorkplansPage();
+    case "business-analytics": return renderBusinessAnalyticsModule();
     case "support": return renderSupport();
     case "account": return renderAccount();
     case "placeholder": return renderPlaceholder();
@@ -2657,6 +2684,57 @@ function disbursementTrendPoints(loansScope){
   return points;
 }
 
+// ==================== Business Analytics ====================
+// Four real views built entirely from already-established, already
+// branch-scoped computations — clientBracketPie/productPieData (used on
+// the Dashboard's own pie section), staffPortfolioRows' real per-officer
+// outstanding-interest total (Staff Portfolios), performanceIndicatorsTable
+// (the real per-officer target/actual/score matrix), and kpiTiles/
+// disbursementTrendPoints (the Dashboard's own KPI tiles + trend line).
+// No new calculation invented here — just repackaged into their own pages.
+function businessAnalyticsBranchIds(){
+  const meRaw = DB.me;
+  return session.role==="Manager" ? [meRaw.branch_id] : null;
+}
+function renderLoanSizesPage(st, bName){
+  return pieCard("Loan Sizes", "by real loan size"+(bName?", "+bName:""), clientBracketPie(st.loansScope));
+}
+function renderPortfolioBreakdownPage(st, bName){
+  return pieCard("Portfolio Breakdown", "by real outstanding balance"+(bName?", "+bName:""), productPieData(st.loansScope));
+}
+function renderTargetsAccrualsPage(branchIds){
+  const {totals} = staffPortfolioRows(branchIds);
+  return `
+    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div><div class="detail-label" style="margin:0;">Accrued (Uncollected) Interest <span class="hint">— real outstanding interest across active loans</span></div>
+      <div style="font-size:22px; font-weight:800; color:var(--navy); margin-top:4px;">${fmt(totals.activeInterest)}</div></div>
+    </div>
+    ${performanceIndicatorsTable(null, branchIds, 'your branch')}
+  `;
+}
+function renderBusinessPerformancePage(st, bName){
+  return `
+    ${kpiTiles(st)}
+    ${arrearsBanner(st)}
+    <div class="card">
+      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>${bName?bName+' — ':''}daily disbursed amount</small></div>
+      ${lineChart(disbursementTrendPoints(st.loansScope))}
+    </div>
+  `;
+}
+function renderBusinessAnalyticsModule(){
+  const tabs = ["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"];
+  const active = tabs.includes(session.subtab) ? session.subtab : "Loan Sizes";
+  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('business-analytics','${t}')">${t}</div>`).join("")}</div>`;
+  const branchIds = businessAnalyticsBranchIds();
+  const st = computeStats(null, branchIds);
+  const bName = branchIds && branchIds.length===1 ? branchName(branchIds[0]) : null;
+  if(active==="Portfolio Breakdown") return tabsHtml + renderPortfolioBreakdownPage(st, bName);
+  if(active==="Targets & Accruals") return tabsHtml + renderTargetsAccrualsPage(branchIds);
+  if(active==="Business Performance") return tabsHtml + renderBusinessPerformancePage(st, bName);
+  return tabsHtml + renderLoanSizesPage(st, bName);
+}
+
 function kpiTiles(st){
   const prevMonthName = new Date(new Date().setMonth(new Date().getMonth()-1)).toLocaleString('en-KE',{month:'short', year:'numeric'});
   const curMonthName = new Date().toLocaleString('en-KE',{month:'short', year:'numeric'});
@@ -2874,6 +2952,7 @@ function renderStaffPortfoliosPage(){
     if(row) return renderStaffPortfolioDrillTable(row.officer, category, category==="arrears"?row.arrearsLoansList:row.performingLoansList);
     session.staffPortfolioView = null;
   }
+  const trendPoints = disbursementTrendPoints(computeStats(null, branchIds).loansScope);
   const trs = rows.map(r=>`<tr>
     <td>${escapeHtml(r.officer.name)}</td>
     <td>${r.totalClients}</td>
@@ -2886,6 +2965,10 @@ function renderStaffPortfoliosPage(){
     <td>${fmtNum(r.totalArrears)}${r.totalArrears>0?` <a onclick="openStaffPortfolioDrill('${r.officer.id}','arrears')" style="color:var(--blue); cursor:pointer; text-decoration:underline;">View</a>`:''}</td>
   </tr>`).join("");
   return `
+    <div class="card">
+      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursement Trend <small>daily disbursed amount, within scope</small></div>
+      ${lineChart(trendPoints)}
+    </div>
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
@@ -2901,6 +2984,72 @@ function renderStaffPortfoliosPage(){
           <td>Totals</td><td>${totals.totalClients}</td><td>${totals.activeClients}</td><td>${fmtNum(totals.activePrincipal)}</td>
           <td>${fmtNum(totals.activeInterest)}</td><td>${fmtNum(totals.unpaidPenalties)}</td><td>${totals.loansInArrears}</td>
           <td>${totals.performingLoans}</td><td>${fmtNum(totals.totalArrears)}</td>
+        </tr>` : ""}
+      </table></div>
+    </div>
+  `;
+}
+
+// ==================== Branches & Regions > Loan Summary ====================
+// Same real per-entity portfolio rollup as Staff Portfolios above, grouped
+// by branch instead of officer — reusing the identical, already-proven
+// computational primitives. A Manager's own DB.loans/DB.clients are
+// already server-scoped to just their branch, so this naturally reduces
+// to a single real row for them, exactly like every other Branches &
+// Regions tab already does for a single-branch role; other roles with
+// real company-wide visibility (Admin/CEO/Operational Manager/Regional
+// Manager) see every real branch.
+function branchLoanSummaryRows(branchIds){
+  let branches = DB.branches.filter(b=>b.status==='Active');
+  if(branchIds && branchIds.length) branches = branches.filter(b=>branchIds.includes(b.id));
+  const rows = branches.map(b=>{
+    const clientsOf = DB.clients.filter(c=>c.branch===b.id);
+    const loansOf = DB.loans.filter(l=>l.branchId===b.id);
+    const activeLoansOf = loansOf.filter(l=>["Active","Disbursed"].includes(l.status));
+    const activeClientIds = new Set(activeLoansOf.map(l=>l.clientId));
+    const performingLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)===0);
+    const arrearsLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)>0);
+    return {
+      branch:b,
+      totalClients: clientsOf.length,
+      activeClients: activeClientIds.size,
+      activePrincipal: activeLoansOf.reduce((s,l)=>s+loanOutstandingPrincipal(l),0),
+      activeInterest: activeLoansOf.reduce((s,l)=>s+loanOutstandingInterest(l),0),
+      loansInArrears: arrearsLoansOf.length,
+      performingLoans: performingLoansOf.length,
+      totalArrears: arrearsLoansOf.reduce((s,l)=>s+loanArrearsAmount(l),0),
+    };
+  });
+  const totals = rows.reduce((t,r)=>({
+    totalClients:t.totalClients+r.totalClients, activeClients:t.activeClients+r.activeClients,
+    activePrincipal:t.activePrincipal+r.activePrincipal, activeInterest:t.activeInterest+r.activeInterest,
+    loansInArrears:t.loansInArrears+r.loansInArrears, performingLoans:t.performingLoans+r.performingLoans,
+    totalArrears:t.totalArrears+r.totalArrears,
+  }), {totalClients:0, activeClients:0, activePrincipal:0, activeInterest:0, loansInArrears:0, performingLoans:0, totalArrears:0});
+  return {rows, totals};
+}
+function renderBranchLoanSummaryPage(){
+  const branchIds = businessAnalyticsBranchIds();
+  const {rows, totals} = branchLoanSummaryRows(branchIds);
+  const trs = rows.map(r=>`<tr class="clickable" onclick="openBranchDetails('${r.branch.id}')">
+    <td>${escapeHtml(r.branch.name)}</td>
+    <td>${r.totalClients}</td>
+    <td>${r.activeClients}</td>
+    <td>${fmtNum(r.activePrincipal)}</td>
+    <td>${fmtNum(r.activeInterest)}</td>
+    <td>${r.loansInArrears}</td>
+    <td>${r.performingLoans}</td>
+    <td>${fmtNum(r.totalArrears)}</td>
+  </tr>`).join("");
+  return `
+    <div class="card">
+      <div class="card-title">Loan Summary <small>${branchIds?'your branch':'company-wide'}</small></div>
+      <div class="table-wrap"><table>
+        <tr><th>Branch</th><th>Total Clients</th><th>Active Clients</th><th>Active Principal</th><th>Active Interest</th><th>Loans in Arrears</th><th>Performing Loans</th><th>Total Arrears</th></tr>
+        ${trs || `<tr><td colspan="8" class="empty">No branches in scope.</td></tr>`}
+        ${rows.length>1 ? `<tr style="font-weight:700; background:#F5F4F1;">
+          <td>Totals</td><td>${totals.totalClients}</td><td>${totals.activeClients}</td><td>${fmtNum(totals.activePrincipal)}</td>
+          <td>${fmtNum(totals.activeInterest)}</td><td>${totals.loansInArrears}</td><td>${totals.performingLoans}</td><td>${fmtNum(totals.totalArrears)}</td>
         </tr>` : ""}
       </table></div>
     </div>
@@ -4865,11 +5014,15 @@ function renderClientGroups(){
 function submitAddGroup(ev){
   ev.preventDefault();
   const f = new FormData(ev.target);
+  const name = f.get("name"), meetingDay = f.get("meetingDay");
   const members = Array.from(ev.target.members.selectedOptions).map(o=>o.value);
-  addGroup(f.get("name"), f.get("meetingDay"), members);
-  toast("Group created");
-  renderApp();
-  return false;
+  return withRequest('add-group', async ()=>{
+    const res = await api.post('/api/client-groups', { name, meeting_day: meetingDay, member_ids: members });
+    const g = res.group;
+    DB.groups.unshift({id:g.id, branchId:g.branch_id, name:g.name, meetingDay:g.meeting_day, memberIds:g.members.map(m=>m.id), memberNames:g.members.map(m=>m.name)});
+    members.forEach(id=>{ const c=DB.clients.find(x=>x.id===id); if(c) c.groupId=g.id; });
+    toast("Group created");
+  }, {mutates:true});
 }
 function defaultLeadsBrowserState(){
   return { category:'Unboarded', from:'2023-01-01', to: new Date().toISOString().slice(0,10), q:'' };
@@ -10772,11 +10925,12 @@ function renderInvestorObligationsPage(){
 }
 
 function renderBranchesModule(){
-  const tabs = ["Branch Directory","Regions","Open New Branch","Organizational Overview"];
+  const tabs = ["Branch Directory","Regions","Loan Summary","Open New Branch","Organizational Overview"];
   const active = session.subtab || "Branch Directory";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('branches','${t}')">${t}</div>`).join("")}</div>`;
   if(session.selectedBranchId) return tabsHtml + renderBranchDetailsPage(session.selectedBranchId);
   if(active==="Regions") return tabsHtml + renderRegionsPage();
+  if(active==="Loan Summary") return tabsHtml + renderBranchLoanSummaryPage();
   if(active==="Open New Branch") return tabsHtml + renderOpenNewBranchPage();
   if(active==="Organizational Overview") return tabsHtml + renderOrgOverviewPage();
   return tabsHtml + renderBranchDirectoryPage();
@@ -11584,11 +11738,12 @@ function renderLoanOfficerRaisedTickets(){
 function renderSupport(){
   if(session.role === "Investor") return renderInvestorSupport();
   if(session.role === "Loan Officer" && session.subtab==="Raised Ticket") return renderLoanOfficerRaisedTickets();
-  const tabs = ["Tickets","FAQ / Knowledge Base"];
+  const tabs = ["Tickets","FAQ / Knowledge Base","System Announcements"];
   const active = session.subtab || "Tickets";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('support','${t}')">${t}</div>`).join("")}</div>`;
   if(session.selectedTicketId) return tabsHtml + renderTicketDetail(session.selectedTicketId);
   if(active==="FAQ / Knowledge Base") return tabsHtml + renderFaqPage();
+  if(active==="System Announcements") return tabsHtml + renderAnnouncementsPage();
   return tabsHtml + renderTicketsListPage();
 }
 async function loadTicketDashboard(){
@@ -11863,10 +12018,55 @@ async function deleteFaqArticle(id){
   await loadFaq(DB.faqArticles?DB.faqArticles.filters:{});
 }
 
+// ==================== System Announcements ====================
+async function loadAnnouncements(){
+  return withRequest('load-announcements', async ()=>{
+    const res = await api.get('/api/announcements');
+    DB.announcements = res.announcements;
+  });
+}
+function renderAnnouncementsPage(){
+  if(!DB.announcements){ loadAnnouncements(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const canPost = session.role === 'Admin';
+  return `
+    <div class="card">
+      <div class="card-title">System Announcements <small>${DB.announcements.length} notice(s)</small></div>
+      ${DB.announcements.map(a=>`<div style="padding:12px 0; border-bottom:1px solid var(--line);">
+        <strong>${escapeHtml(a.title)}</strong>
+        <div class="hint" style="margin-top:4px;">${escapeHtml(a.body)}</div>
+        <div class="hint" style="margin-top:4px;">${staffName(a.posted_by)} — ${new Date(a.created_at).toLocaleString()}</div>
+      </div>`).join("") || `<div class="empty">No announcements yet.</div>`}
+    </div>
+    ${canPost ? `<div class="card" style="max-width:640px;">
+      <div class="card-title">Post Announcement</div>
+      <form onsubmit="return submitNewAnnouncement(event)">
+        <div class="field"><label>Title</label><input name="title" required></div>
+        <div class="field"><label>Body</label><textarea name="body" rows="3" required></textarea></div>
+        <button class="btn btn-primary btn-sm" type="submit">Post</button>
+      </form>
+    </div>` : ""}
+  `;
+}
+function submitNewAnnouncement(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  return withRequest('add-announcement', async ()=>{
+    await api.post('/api/announcements', f);
+    toast("Announcement posted");
+    DB.announcements = null;
+    await loadAnnouncements();
+  }, {mutates:true});
+}
+
 /* ---------- 11. My Account ---------- */
 function renderAccount(){
   if(session.role === "Investor") return renderInvestorAccount();
-  if(session.role === "Loan Officer" && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
+  // renderLoanOfficerWorkPlan() has no Loan-Officer-specific content at all
+  // (it reads session.userName generically and calls the same real,
+  // role-agnostic GET/POST /api/workplans/me) — Manager's own "My
+  // Workplan" reuses it exactly, same as Loan Officer, rather than a
+  // second copy of the same real page.
+  if((session.role === "Loan Officer" || session.role === "Manager") && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
   if(session.role === "Loan Officer" && session.subtab==="Salary Advance") return renderLoanOfficerSalaryAdvance();
   if(session.role === "Loan Officer" && session.subtab==="Update Details") return renderLoanOfficerUpdateDetails();
   // Any other subtab — including "View Details" itself, no subtab at all,
@@ -11878,7 +12078,7 @@ function renderAccount(){
   if(session.role === "Loan Officer") return renderLoanOfficerViewDetails();
   const roleTabs = {
     "Loan Officer": ["View Details","My Work Plan","Salary Advance","Update Details"],
-    "Manager": ["View Details","Branch Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
+    "Manager": ["View Details","My Work Plan","Salary Advance","Update Details"],
     "Regional Manager": ["View Details","Regional Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Operational Manager": ["View Details","Operational Responsibilities","My Targets & Performance","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
     "Accountant": ["View Details","Financial Responsibilities","Leave & Attendance","Salary Advance","Update Details","Security & Login"],
@@ -12837,6 +13037,121 @@ function renderLoanOfficerWorkPlan(){
   `;
 }
 
+// ==================== Employees > Daily Workplan (Manager's team view) ====================
+// Same real per-day target/achieved shape as My Workplan above, for every
+// real direct report at once — GET /api/workplans (team, not /me), scoped
+// server-side exactly like Staff Leaves' own leave-requests list.
+function defaultTeamWorkplansState(){ return { date: todayISO() }; }
+async function loadTeamWorkplans(date){
+  return withRequest('load-team-workplans:'+date, async ()=>{
+    const res = await api.get('/api/workplans?date='+date);
+    DB.teamWorkplans = res;
+  });
+}
+function toggleTeamWorkplanCard(userId){
+  if(!session.teamWorkplansCollapsed) session.teamWorkplansCollapsed = {};
+  session.teamWorkplansCollapsed[userId] = !session.teamWorkplansCollapsed[userId];
+  renderApp();
+}
+function renderTeamWorkplansPage(){
+  const st = session.teamWorkplansState || (session.teamWorkplansState = defaultTeamWorkplansState());
+  if(!DB.teamWorkplans || DB.teamWorkplans.date !== st.date){ loadTeamWorkplans(st.date); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const d = DB.teamWorkplans;
+  const collapsed = session.teamWorkplansCollapsed || {};
+  const header = `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">Staff Workplans</h3>
+      </div>
+      <div class="pill-row" style="align-items:center; margin-top:12px;">
+        <input type="date" value="${st.date}" onchange="session.teamWorkplansState.date=this.value; DB.teamWorkplans=null; renderApp();">
+        <span style="flex:1 1 auto;"></span>
+        <button class="btn btn-outline btn-sm" onclick="openTeamWorkPlanSetupModal()">➕ Create</button>
+      </div>
+    </div>
+  `;
+  const staffCards = d.staff.map(s=>{ const isCollapsed = !!collapsed[s.userId]; return `
+    <div class="card">
+      <div class="card-title" style="background:#EFEAFB; color:#6B4FA0; cursor:pointer; justify-content:space-between;" onclick="toggleTeamWorkplanCard('${s.userId}')">
+        <span>👤 ${escapeHtml(s.userName)}</span>
+        <span>${isCollapsed ? '▸' : '▾'}</span>
+      </div>
+      ${!isCollapsed ? `
+      <div class="table-wrap"><table>
+        <tr><th>Visitation</th><th>Target</th><th>Locations</th><th>Clients Visited</th><th>Achieved</th></tr>
+        ${LO_WORKPLAN_CATEGORIES.map(c=>{ const f = s[c.key]; return `<tr>
+          <td>${c.label}</td><td>${f.target||0}</td><td>${f.locations?escapeHtml(f.locations):'None'}</td>
+          <td>${f.clientsVisited && f.clientsVisited.length ? escapeHtml(f.clientsVisited.join(', ')):'None'}</td><td>${f.achieved||0}</td>
+        </tr>`; }).join("")}
+      </table></div>
+      <div class="card-title" style="background:var(--blue-bg); margin-top:14px;">Comments</div>
+      <div class="empty">No Comments</div>
+      ` : ``}
+    </div>
+  `; }).join("") || `<div class="card"><div class="empty">No staff report to you yet.</div></div>`;
+  return header + staffCards;
+}
+
+// "+ Create" — the Manager's own real Daily Workplan Setup modal, reused
+// with one addition (a staff picker) so it can write on behalf of any
+// real direct report via POST /api/workplans/:userId, not just the
+// caller's own /me. Same 4 real visitation categories, same shape.
+function openTeamWorkPlanSetupModal(){
+  const st = session.teamWorkplansState || defaultTeamWorkplansState();
+  const d = DB.teamWorkplans;
+  session.teamWorkplanSetupUserId = (d && d.staff.length) ? d.staff[0].userId : null;
+  openModal('team-workplan-setup');
+}
+function submitTeamWorkPlanSetup(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const userId = f.userId;
+  return withRequest('team-workplan-setup', async ()=>{
+    await api.post(`/api/workplans/${userId}`, {
+      date: f.date,
+      reAppraisalTarget: f.reAppraisalTarget, reAppraisalLocations: f.reAppraisalLocations,
+      collectionTarget: f.collectionTarget, collectionLocations: f.collectionLocations,
+      onboardingTarget: f.onboardingTarget, onboardingLocations: f.onboardingLocations,
+      prospectTarget: f.prospectTarget, prospectLocations: f.prospectLocations,
+    });
+    session.teamWorkplansState.date = f.date;
+    DB.teamWorkplans = null;
+    toast("Workplan saved");
+    closeModal();
+  }, {mutates:true});
+}
+function renderTeamWorkPlanSetupModal(){
+  const st = session.teamWorkplansState || defaultTeamWorkplansState();
+  const d = DB.teamWorkplans;
+  const staffList = (d && d.staff) || [];
+  const selectedId = session.teamWorkplanSetupUserId || (staffList[0] && staffList[0].userId);
+  const selected = staffList.find(s=>s.userId===selectedId);
+  const field = (cat) => selected ? selected[cat] : { target:0, locations:'' };
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Daily Workplan Setup</h3>
+      <form onsubmit="return submitTeamWorkPlanSetup(event)">
+        <div class="field"><label>Staff Member</label>
+          <select name="userId" onchange="session.teamWorkplanSetupUserId=this.value; renderApp();">
+            ${staffList.map(s=>`<option value="${s.userId}" ${s.userId===selectedId?'selected':''}>${escapeHtml(s.userName)}</option>`).join("") || `<option value="">No staff report to you</option>`}
+          </select>
+        </div>
+        ${LO_WORKPLAN_CATEGORIES.map(c=>{ const f = field(c.key); return `
+          <div class="card-title" style="background:var(--blue-bg); margin-top:14px;">${c.label}</div>
+          <div class="field"><label>No of Clients</label><input type="number" min="0" name="${c.key}Target" value="${f.target||0}"></div>
+          <div class="field"><label>Visiting Locations</label><textarea name="${c.key}Locations" rows="2" placeholder="Separate with comma(,)">${escapeHtml(f.locations||'')}</textarea></div>
+        `; }).join("")}
+        <div class="field" style="margin-top:14px;"><label>Plan Date</label><input type="date" name="date" value="${st.date}"></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">💾 Save</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 // ==================== Branch/Regional/Operational/Financial/System/Executive/Governance Responsibilities — real, reused data ====================
 function renderBranchResponsibilities(){
   const me = DB.me||{};
@@ -13648,6 +13963,7 @@ function renderModal(){
   else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
+  else if(modal.type === "team-workplan-setup") body = renderTeamWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
   else return "";

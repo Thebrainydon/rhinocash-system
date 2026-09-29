@@ -534,6 +534,38 @@ CREATE TABLE IF NOT EXISTS daily_workplans (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_workplans_user_date ON daily_workplans(user_id, plan_date);
 
+-- Client Groups (chama / group-lending circles) — Clients > Default Groups.
+-- Branch-scoped like every other client record; membership is a real
+-- many-to-many join table rather than a denormalized id list, so a
+-- client's group memberships stay queryable both ways.
+CREATE TABLE IF NOT EXISTS client_groups (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL REFERENCES branches(id),
+  name TEXT NOT NULL,
+  meeting_day TEXT,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE TABLE IF NOT EXISTS client_group_members (
+  group_id TEXT NOT NULL REFERENCES client_groups(id) ON DELETE CASCADE,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  PRIMARY KEY (group_id, client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_client_group_members_client ON client_group_members(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_groups_branch ON client_groups(branch_id);
+
+-- System & Help > System Announcements — company-wide notices any
+-- authenticated user can read; only an Admin (manage_system_settings) can
+-- post one. Deliberately separate from the per-user notifications table:
+-- these are broadcast, not addressed to one recipient.
+CREATE TABLE IF NOT EXISTS system_announcements (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  posted_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now()
+);
+
 -- ===================== Loans =====================
 CREATE TABLE IF NOT EXISTS loan_products (
   id TEXT PRIMARY KEY,
@@ -1215,6 +1247,25 @@ async function initSchema() {
     'ALTER TABLE branch_proposals ADD CONSTRAINT branch_proposals_proposed_by_fk FOREIGN KEY (proposed_by) REFERENCES users(id)');
   await ensureConstraint('branch_proposals_decided_by_fk',
     'ALTER TABLE branch_proposals ADD CONSTRAINT branch_proposals_decided_by_fk FOREIGN KEY (decided_by) REFERENCES users(id)');
+  // Manager's sidebar gained a real "Branches & Regions" section (View
+  // Regions/View Branches/Loan Summary) — role_modules is only ever
+  // populated once, at seed time (seed.js's own roleModules map), so an
+  // already-seeded database (this one included) never picks up a role's
+  // new module from a seed.js edit alone. Backfilled here the same
+  // idempotent way ensureColumn/ensureConstraint patch already-initialized
+  // databases, so an existing deployment gets it on next boot, not just a
+  // fresh seed. Guarded with WHERE EXISTS rather than a bare INSERT: this
+  // runs on EVERY boot, including the very first one on a brand new
+  // database — before seed.js has populated roles/modules at all — where
+  // an unguarded insert would violate role_modules' own FK constraints.
+  // On a fresh install this is a harmless no-op (seed.js's own
+  // roleModules.manager list already includes 'branches' directly); on an
+  // already-seeded database, both rows already exist and the insert
+  // genuinely applies.
+  await rawRun(`INSERT INTO role_modules (role_id, module_id)
+    SELECT 'manager', 'branches'
+    WHERE EXISTS (SELECT 1 FROM roles WHERE id = 'manager') AND EXISTS (SELECT 1 FROM modules WHERE id = 'branches')
+    ON CONFLICT DO NOTHING`);
 }
 
 // Explicit startup self-test: prove the database can actually be written

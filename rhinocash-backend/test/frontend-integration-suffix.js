@@ -2795,25 +2795,31 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     await submitSalaryAdvanceRequest({ preventDefault(){}, target:{} });
     __assert(DB.mySalaryAdvances.some(s=>s.reason==='Frontend test advance'), "a real salary advance request was submitted via the actual form handler");
 
-    // Manager gets a distinct tab set (Branch Responsibilities, not My Work Plan).
+    // Manager's My Account is now a short, real tab set (View Details, My
+    // Work Plan, Salary Advance, Update Details) — Branch Responsibilities/
+    // Leave & Attendance/My Targets & Performance/Security & Login were
+    // dropped per the reference sidebar redesign; "My Work Plan" now
+    // reuses the exact same real per-day workplan page Loan Officer's own
+    // My Account already has (see renderAccount()'s own shared check).
     let mk11 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mk11; } };
     await doLogin({ preventDefault(){}, target:{} });
     goTo('account');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Branch Responsibilities'), "Manager's My Account tab bar shows Branch Responsibilities, a genuinely distinct tab set from Loan Officer's — not a copy");
-    goTo('account','Branch Responsibilities');
+    __assert(html.includes('My Work Plan') && !html.includes('Branch Responsibilities'), "Manager's My Account tab bar now shows the real, reduced tab set (My Work Plan), not the old Branch Responsibilities tab");
+    goTo('account','My Work Plan');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Team') && html.includes('Kisumu'), "Branch Responsibilities shows the real branch and real team roster");
+    __assert(html.includes('My Workplan'), "Manager's own My Work Plan tab genuinely renders the real, shared workplan page");
 
-    // Real Leave & Attendance: submit through the actual UI function — still
-    // a real capability for Manager (unlike Loan Officer, whose menu no
-    // longer offers it), so its real frontend coverage now lives here.
-    goTo('account','Leave & Attendance');
+    // Real "Leave Application": Manager's sidebar item is now a quick-action
+    // modal (openModal('apply-leave')), same as every dashboard's own
+    // "Apply Leave" link — not a dedicated tab anymore — so its real
+    // frontend coverage now exercises that modal's own real submit handler.
+    openModal('apply-leave');
     const mgrLeaveForm = new Map([['leave_type','Annual'],['start_date','2026-12-10'],['end_date','2026-12-12'],['reason','Frontend test leave']]);
     global.FormData = class { constructor(){ return mgrLeaveForm; } };
-    await submitLeaveRequest({ preventDefault(){}, target:{} });
-    __assert(DB.myLeaveRequests.some(l=>l.reason==='Frontend test leave'), "a real leave request was submitted via the actual form handler");
+    await submitApplyLeave({ preventDefault(){}, target:{} });
+    __assert(DB.leaveRequests.some(l=>l.reason==='Frontend test leave'), "a real leave request was submitted via the actual Apply for Leave modal's form handler");
 
     // Accountant gets Financial Responsibilities (real pending workload, no fake numbers).
     let acf4 = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);

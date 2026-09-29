@@ -419,6 +419,50 @@ function register(router) {
     await logAction(req, { action: 'Converted lead to client', module: 'clients', recordType: 'Lead', recordId: lead.id, newValue: clientId });
     res.json({ client: await get('SELECT * FROM clients WHERE id = ?', [clientId]) });
   });
+
+  // ---- Client Groups (chama / group-lending circles) ----
+  router.get('/api/client-groups', requireAuth, requireModule('clients'), async (req, res) => {
+    const scope = await branchScopeSQL(req.user);
+    const groups = await all(`SELECT * FROM client_groups WHERE ${scope.clause} ORDER BY created_at DESC`, scope.params);
+    const members = groups.length
+      ? await all(
+          `SELECT m.group_id, c.id, c.name FROM client_group_members m JOIN clients c ON c.id = m.client_id
+           WHERE m.group_id IN (${groups.map(() => '?').join(',')}) ORDER BY c.name`,
+          groups.map(g => g.id)
+        )
+      : [];
+    res.json({
+      groups: groups.map(g => ({
+        ...g,
+        members: members.filter(m => m.group_id === g.id).map(m => ({ id: m.id, name: m.name })),
+      })),
+    });
+  });
+  router.post('/api/client-groups', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const b = req.body;
+    if (!b.name) return next({ status: 400, message: 'name is required' });
+    let branchId;
+    try { branchId = await resolveWriteBranchId(req.user, b.branch_id); } catch (e) { return next(e); }
+    const memberIds = Array.isArray(b.member_ids) ? b.member_ids : [];
+    // Every member must be a real client this caller can actually see —
+    // never let a group silently pull in a client from outside scope.
+    for (const clientId of memberIds) {
+      const client = await get('SELECT branch_id FROM clients WHERE id = ?', [clientId]);
+      if (!client) return next({ status: 400, message: `Client ${clientId} not found` });
+      try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    }
+    const id = 'grp_' + crypto.randomUUID();
+    await run('INSERT INTO client_groups (id, branch_id, name, meeting_day, created_by) VALUES (?,?,?,?,?)',
+      [id, branchId, b.name, b.meeting_day || null, req.user.id]);
+    for (const clientId of memberIds) {
+      await run('INSERT INTO client_group_members (group_id, client_id) VALUES (?,?)', [id, clientId]);
+    }
+    await logAction(req, { action: 'Created client group', module: 'clients', recordType: 'ClientGroup', recordId: id, newValue: b.name });
+    const members = memberIds.length
+      ? await all(`SELECT id, name FROM clients WHERE id IN (${memberIds.map(() => '?').join(',')})`, memberIds)
+      : [];
+    res.status(201).json({ group: { ...(await get('SELECT * FROM client_groups WHERE id = ?', [id])), members } });
+  });
 }
 
 module.exports = { register };
