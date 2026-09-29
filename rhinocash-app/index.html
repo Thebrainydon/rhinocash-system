@@ -1067,7 +1067,7 @@ function notify(){ /* real notifications now come from GET /api/notifications */
 // Configurable at runtime (e.g. by a hosting page setting
 // window.RHINOCASH_API_BASE before this script loads) — defaults to a
 // local backend on the standard port from the backend's own README.
-const API_BASE = (typeof window!=='undefined' && window.RHINOCASH_API_BASE) || 'http://localhost:4000';
+const API_BASE = (typeof window!=='undefined' && window.RHINOCASH_API_BASE) || 'https://rhinocash-backend.onrender.com';
 // The bearer token lives in memory ONLY — never localStorage/sessionStorage
 // (both are readable by any injected script; an XSS bug elsewhere in the
 // page would hand over the session). The real tradeoff: a hard page
