@@ -412,16 +412,17 @@ const NAV = [
   {id:"audit", num:10, label:"Audit Logs"},
   {id:"staff", num:11, label:"Company Staff"},
   {id:"staff-leaves", num:11.1, label:"Staff Leaves"},
+  {id:"staff-portfolios", num:11.2, label:"Staff Portfolios"},
   {id:"support", num:12, label:"Support Center"},
   {id:"account", num:13, label:"My Account"},
 ];
 const NAV_PERMISSIONS = {
-  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","support","account"],
-  "Manager": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","staff","staff-leaves","support","account"],
-  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","support","account"],
-  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","support","account"],
+  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account"],
+  "Manager": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
+  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
+  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","notifications","staff","staff-leaves","staff-portfolios","support","account"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","investors","reports","notifications","support","account"],
-  "CEO": ["dashboard","clients","accounting","branches","investors","reports","staff","staff-leaves","notifications","support","account"],
+  "CEO": ["dashboard","clients","accounting","branches","investors","reports","staff","staff-leaves","staff-portfolios","notifications","support","account"],
   "Director": ["dashboard","clients","accounting","branches","investors","reports","audit","notifications","support","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
   "Loan Officer": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","support","account"],
@@ -499,11 +500,12 @@ function isSectionAllowed(section){
   // the backend enforces the real boundary on every request regardless.
   const modules = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules;
   if(modules && modules.length){
-    // "staff-leaves" is a sub-page of the "Staff" module (see MODULE_LIST),
-    // not a separate real backend module — same reasoning as "notifications"
-    // above: a per-user restriction list built from the 10 real module keys
-    // never contains "staff-leaves" itself, so alias it to "staff" here.
-    if(section==="staff-leaves") return modules.includes("staff");
+    // "staff-leaves"/"staff-portfolios" are sub-pages of the "Staff" module
+    // (see MODULE_LIST), not separate real backend modules — same reasoning
+    // as "notifications" above: a per-user restriction list built from the
+    // 10 real module keys never contains either of them, so alias both to
+    // "staff" here.
+    if(section==="staff-leaves" || section==="staff-portfolios") return modules.includes("staff");
     return modules.includes(section);
   }
   return true;
@@ -529,7 +531,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Applications","Pending Loan Approvals","Approved Loans","Active Loans","Disbursements","Collection MTD","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Restructuring","Loan Write-offs","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payment Summary","Payments Report","Validate Payments","Payment Exceptions","Payment Reversals","Payment Reconciliation"]},
     {section:"Collections", icon:"🧾", items:["Today's Collections","Collection Targets","Collection Performance","Collection Sheet","Collection Reports","Collection Rates","Arrears Management","Promise to Pay","Recovery Actions","Escalated Accounts"]},
-    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Loan Officers","Team Performance","Staff Work Plans","Staff Attendance","Staff Targets","Target Assignment","Performance Reviews","Staff Activity","Salary Advance Requests"]},
+    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Team Performance","Staff Work Plans","Staff Attendance","Staff Targets","Target Assignment","Performance Reviews","Staff Activity","Salary Advance Requests"]},
     {section:"Approvals", icon:"✅", items:["Loan Approvals","Waiting for Manager","Approved Loans","Rejected Loans","Returned Applications","Escalated Loans","Approval History"]},
     {section:"Branch Performance", icon:"📈", items:["Portfolio Overview","Loan Book","Disbursement Performance","Collection Performance","Collection Rate","PAR Analysis","Arrears","Default Rate","Branch Revenue","Branch Targets","Target Achievement"]},
     {section:"Reports", icon:"📑", items:["Portfolio Report","Collection Report","Arrears Report","Disbursement Report","Loan Officer Report","Client Report","Branch Performance Report","Staff Performance Report","Financial Summary","Exception Report"]},
@@ -817,6 +819,7 @@ const LABEL_ROUTES = {
   "Salary Advance": {section:"account"},
   "Salary Advance Requests": {section:"staff"},
   "Staff Leaves": {section:"staff-leaves"},
+  "Staff Portfolios": {section:"staff-portfolios"},
   "Salary Records": {section:"accounting", subtab:"Expenses"},
   // Approvals & permissions (Admin)
   "Roles": {section:"dashboard"},
@@ -1395,6 +1398,27 @@ function loanOutstandingPrincipal(loan){
     const paidRatio = r.totalDue>0 ? Math.min(1,(r.paidAmount||0)/r.totalDue) : 0;
     return s + r.principalDue*(1-paidRatio);
   },0);
+}
+// Same paid-ratio split as loanOutstandingPrincipal above, applied to the
+// interest portion of each installment instead of the principal portion.
+function loanOutstandingInterest(loan){
+  if(!loan.schedule || !loan.schedule.length) return 0;
+  return loan.schedule.reduce((s,r)=>{
+    const paidRatio = r.totalDue>0 ? Math.min(1,(r.paidAmount||0)/r.totalDue) : 0;
+    return s + r.interestDue*(1-paidRatio);
+  },0);
+}
+function loanUnpaidPenalty(loan){
+  return (loan.schedule||[]).reduce((s,r)=>s+Math.max(0,(r.penaltyDue||0)-(r.penaltyPaid||0)),0);
+}
+// The real last installment due date — the same "maturity" concept the
+// backend's own loans/view and maturity-pipeline routes compute, derived
+// here from the loan's own already-loaded schedule since those two are
+// backend-paginated report endpoints this plain client-side loan object
+// was never fetched through.
+function loanMaturityDate(loan){
+  if(!loan.schedule || !loan.schedule.length) return null;
+  return loan.schedule.reduce((max,r)=> (!max || r.dueDate>max) ? r.dueDate : max, null);
 }
 function isOverdue(row){ return row.status!=="Paid" && new Date(row.dueDate) < new Date(); }
 function loanArrearsDays(loan){
@@ -2349,6 +2373,11 @@ function goTo(section, subtab){
   // openReceipt() re-sets this immediately after goTo() on the one real
   // call path that genuinely wants a specific receipt shown.
   session.selectedReceiptId = null;
+  // Same reasoning as selectedReceiptId above: a stale drill-down (an
+  // officer's Performing Loans/Arrears list) must not still be showing the
+  // next time the sidebar's own "Staff Portfolios" item is clicked — that
+  // item should always land back on the Loan Summary table.
+  session.staffPortfolioView = null;
   renderApp();
 }
 // Opening/closing the mobile sidebar toggles classes directly on the
@@ -2401,6 +2430,7 @@ function renderSection(){
     case "audit": return renderAudit();
     case "staff": return renderStaff();
     case "staff-leaves": return renderStaffLeavesPage();
+    case "staff-portfolios": return renderStaffPortfoliosPage();
     case "support": return renderSupport();
     case "account": return renderAccount();
     case "placeholder": return renderPlaceholder();
@@ -2742,6 +2772,139 @@ function performanceIndicatorsTable(highlightId, branchIds, scopeLabel){
     </table></div>
     <div class="hint" style="margin-top:10px;">Arrears Score is the change in PAR (percentage points of portfolio) from the start of the month to today — positive means arrears shrank; negative means they grew. Avg is the mean of the five category scores.</div>
   </div>`;
+}
+
+// ==================== Employees > Staff Portfolios ====================
+// Per-loan-officer portfolio summary (Employees > Staff Portfolios' "Loan
+// Summary" table) and its two drill-down lists (Performing Loans / Total
+// Arrears). Built entirely from the officer's own already-loaded, already
+// branch-scoped DB.clients/DB.loans — same real data every other Manager
+// dashboard figure comes from, no separate endpoint.
+function staffPortfolioRows(branchIds){
+  let officers = DB.staff.filter(s=>s.role==="Loan Officer");
+  if(branchIds && branchIds.length) officers = officers.filter(o=>branchIds.includes(o.branch));
+  const rows = officers.map(o=>{
+    let clientsOf = DB.clients.filter(c=>c.officerId===o.id);
+    let loansOf = DB.loans.filter(l=>l.officerId===o.id);
+    if(branchIds && branchIds.length){
+      clientsOf = clientsOf.filter(c=>branchIds.includes(c.branch));
+      loansOf = loansOf.filter(l=>branchIds.includes(l.branchId));
+    }
+    const activeLoansOf = loansOf.filter(l=>["Active","Disbursed"].includes(l.status));
+    const activeClientIds = new Set(activeLoansOf.map(l=>l.clientId));
+    const performingLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)===0);
+    const arrearsLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)>0);
+    return {
+      officer:o,
+      totalClients: clientsOf.length,
+      activeClients: activeClientIds.size,
+      activePrincipal: activeLoansOf.reduce((s,l)=>s+loanOutstandingPrincipal(l),0),
+      activeInterest: activeLoansOf.reduce((s,l)=>s+loanOutstandingInterest(l),0),
+      unpaidPenalties: activeLoansOf.reduce((s,l)=>s+loanUnpaidPenalty(l),0),
+      loansInArrears: arrearsLoansOf.length,
+      performingLoans: performingLoansOf.length,
+      totalArrears: arrearsLoansOf.reduce((s,l)=>s+loanArrearsAmount(l),0),
+      performingLoansList: performingLoansOf,
+      arrearsLoansList: arrearsLoansOf,
+    };
+  });
+  const totals = rows.reduce((t,r)=>({
+    totalClients:t.totalClients+r.totalClients, activeClients:t.activeClients+r.activeClients,
+    activePrincipal:t.activePrincipal+r.activePrincipal, activeInterest:t.activeInterest+r.activeInterest,
+    unpaidPenalties:t.unpaidPenalties+r.unpaidPenalties, loansInArrears:t.loansInArrears+r.loansInArrears,
+    performingLoans:t.performingLoans+r.performingLoans, totalArrears:t.totalArrears+r.totalArrears,
+  }), {totalClients:0, activeClients:0, activePrincipal:0, activeInterest:0, unpaidPenalties:0, loansInArrears:0, performingLoans:0, totalArrears:0});
+  return {rows, totals};
+}
+function exportStaffPortfoliosCSV(){
+  const {rows} = staffPortfolioRows(session.staffPortfolioBranchIds);
+  exportRowsToCsv('staff-portfolios.csv',
+    ['officerName','totalClients','activeClients','activePrincipal','activeInterest','unpaidPenalties','loansInArrears','performingLoans','totalArrears'],
+    rows.map(r=>({officerName:r.officer.name, totalClients:r.totalClients, activeClients:r.activeClients,
+      activePrincipal:Math.round(r.activePrincipal), activeInterest:Math.round(r.activeInterest),
+      unpaidPenalties:Math.round(r.unpaidPenalties), loansInArrears:r.loansInArrears,
+      performingLoans:r.performingLoans, totalArrears:Math.round(r.totalArrears)})));
+}
+function openStaffPortfolioDrill(officerId, category){
+  session.staffPortfolioView = {officerId, category};
+  renderApp();
+}
+function closeStaffPortfolioDrill(){
+  session.staffPortfolioView = null;
+  renderApp();
+}
+function renderStaffPortfolioDrillTable(officer, category, list){
+  const isArrears = category==="arrears";
+  const total = isArrears ? list.reduce((s,l)=>s+loanArrearsAmount(l),0) : list.length;
+  const title = isArrears ? `${escapeHtml(officer.name)} Arrears (${fmtNum(total)})` : `${escapeHtml(officer.name)} Performing Loans (${total})`;
+  const trs = list.map(l=>{
+    const c = DB.clients.find(x=>x.id===l.clientId);
+    const maturity = loanMaturityDate(l);
+    return `<tr>
+      <td>${c?escapeHtml(c.name):'—'}</td>
+      <td>${c?escapeHtml(c.phone||'—'):'—'}</td>
+      <td>${fmtNum(l.principal)}</td>
+      <td>${l.disbursedAt?fmtDDMMYYYY(l.disbursedAt.slice(0,10)):'—'}</td>
+      <td>${isArrears?fmtNum(loanArrearsAmount(l)):fmtNum(loanUnpaidPenalty(l))}</td>
+      <td>${fmtNum(loanBalance(l))}</td>
+      <td>${maturity?fmtDDMMYYYY(maturity):'—'}</td>
+    </tr>`;
+  }).join("");
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+        <span class="btn btn-outline btn-sm" onclick="closeStaffPortfolioDrill()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">${title}</h3>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Client</th><th>Contact</th><th>Loan</th><th>Disbursement</th><th>${isArrears?'Arrears':'Penalty'}</th><th>T.Balance</th><th>Maturity</th></tr>
+        ${trs || `<tr><td colspan="7" class="empty">No loans to show.</td></tr>`}
+      </table></div>
+    </div>
+  `;
+}
+function renderStaffPortfoliosPage(){
+  const meRaw = DB.me;
+  const branchIds = session.role==="Manager" ? [meRaw.branch_id] : null;
+  session.staffPortfolioBranchIds = branchIds;
+  const {rows, totals} = staffPortfolioRows(branchIds);
+  if(session.staffPortfolioView){
+    const {officerId, category} = session.staffPortfolioView;
+    const row = rows.find(r=>r.officer.id===officerId);
+    if(row) return renderStaffPortfolioDrillTable(row.officer, category, category==="arrears"?row.arrearsLoansList:row.performingLoansList);
+    session.staffPortfolioView = null;
+  }
+  const trs = rows.map(r=>`<tr>
+    <td>${escapeHtml(r.officer.name)}</td>
+    <td>${r.totalClients}</td>
+    <td>${r.activeClients}</td>
+    <td>${fmtNum(r.activePrincipal)}</td>
+    <td>${fmtNum(r.activeInterest)}</td>
+    <td>${fmtNum(r.unpaidPenalties)}</td>
+    <td>${r.loansInArrears}</td>
+    <td>${r.performingLoans} <a onclick="openStaffPortfolioDrill('${r.officer.id}','performing')" style="color:var(--blue); cursor:pointer; text-decoration:underline;">View</a></td>
+    <td>${fmtNum(r.totalArrears)}${r.totalArrears>0?` <a onclick="openStaffPortfolioDrill('${r.officer.id}','arrears')" style="color:var(--blue); cursor:pointer; text-decoration:underline;">View</a>`:''}</td>
+  </tr>`).join("");
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+          <h3 style="color:var(--navy); margin:0;">Loan Summary</h3>
+        </div>
+        ${generateDropdownHtml('exportStaffPortfoliosCSV()')}
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Loan Officer</th><th>Total Clients</th><th>Active Clients</th><th>Active Principal</th><th>Active Interest</th><th>Unpaid Penalties</th><th>Loans in Arrears</th><th>Performing Loans</th><th>Total Arrears</th></tr>
+        ${trs || `<tr><td colspan="9" class="empty">No loan officers in scope.</td></tr>`}
+        ${rows.length ? `<tr style="font-weight:700; background:#F5F4F1;">
+          <td>Totals</td><td>${totals.totalClients}</td><td>${totals.activeClients}</td><td>${fmtNum(totals.activePrincipal)}</td>
+          <td>${fmtNum(totals.activeInterest)}</td><td>${fmtNum(totals.unpaidPenalties)}</td><td>${totals.loansInArrears}</td>
+          <td>${totals.performingLoans}</td><td>${fmtNum(totals.totalArrears)}</td>
+        </tr>` : ""}
+      </table></div>
+    </div>
+  `;
 }
 
 function renderDashboard(){
