@@ -93,31 +93,6 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(r.status === 200 && r.json.staff.some(s => s.userName === 'Peter Otieno'), 'an Admin (manage_users) genuinely sees every real active staff member\'s workplan, including this officer\'s');
   }
 
-  // ---- Team Daily Workplan "+ Create" (Manager setting a real workplan on behalf of a direct report) ----
-  const officerMe = (await api('GET', '/api/auth/me', { token: officerToken })).json.user;
-  {
-    const r = await api('POST', `/api/workplans/${officerMe.id}`, { token: managerToken, body: { date: today, onboardingTarget: 3, onboardingLocations: 'Nyalenda' } });
-    assert(r.status === 201, 'the Kisumu Manager genuinely creates a real workplan on behalf of their real direct report, through the real "+ Create" endpoint');
-    assert(r.json.plan.onboarding.target === 3, 'the real target just set genuinely persists');
-  }
-  {
-    const check = await api('GET', `/api/workplans?date=${today}`, { token: managerToken });
-    const mine = check.json.staff.find(s => s.userId === officerMe.id);
-    assert(mine.onboarding.target === 3 && mine.onboarding.locations === 'Nyalenda', 'the Manager-set workplan genuinely shows up in a fresh real GET, not just the create response');
-  }
-  {
-    const r = await api('POST', `/api/workplans/${officerMe.id}`, { token: nairobiManagerToken, body: { date: today, onboardingTarget: 9 } });
-    assert(r.status === 403, 'a Manager who is NOT this officer\'s real reporting manager is genuinely rejected setting their workplan — real reporting-line authorization, not merely a UI restriction');
-  }
-  {
-    const r = await api('POST', `/api/workplans/${officerMe.id}`, { token: adminToken, body: { date: today, onboardingTarget: 7 } });
-    assert(r.status === 201, 'an Admin (manage_users) genuinely can also set any real staff member\'s workplan');
-  }
-  {
-    const r = await api('POST', '/api/workplans/nonexistent-user-id', { token: managerToken, body: { date: today } });
-    assert(r.status === 404, 'setting a workplan for a real nonexistent user id is genuinely rejected, not silently accepted');
-  }
-
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

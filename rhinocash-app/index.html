@@ -13173,63 +13173,21 @@ function renderTeamWorkplansPage(){
   return header + staffCards;
 }
 
-// "+ Create" — the Manager's own real Daily Workplan Setup modal, reused
-// with one addition (a staff picker) so it can write on behalf of any
-// real direct report via POST /api/workplans/:userId, not just the
-// caller's own /me. Same 4 real visitation categories, same shape.
+// "+ Create" — the Manager's own Daily Workplan (they log real field
+// visits too, same as a Loan Officer), never a picker over the team:
+// this reuses the exact same real "My Workplan" modal/form/endpoint
+// (openLoWorkPlanSetupModal -> renderLoWorkPlanSetupModal ->
+// submitLoWorkPlanSetup -> POST /api/workplans/me) Loan Officer's own
+// My Account already has, just primed with the team page's own
+// currently-selected date first so the pre-filled values (if the
+// Manager already has a plan for that date) are genuinely current
+// rather than stale/blank.
 function openTeamWorkPlanSetupModal(){
   const st = session.teamWorkplansState || defaultTeamWorkplansState();
-  const d = DB.teamWorkplans;
-  session.teamWorkplanSetupUserId = (d && d.staff.length) ? d.staff[0].userId : null;
-  openModal('team-workplan-setup');
-}
-function submitTeamWorkPlanSetup(ev){
-  ev.preventDefault();
-  const f = Object.fromEntries(new FormData(ev.target));
-  const userId = f.userId;
-  return withRequest('team-workplan-setup', async ()=>{
-    await api.post(`/api/workplans/${userId}`, {
-      date: f.date,
-      reAppraisalTarget: f.reAppraisalTarget, reAppraisalLocations: f.reAppraisalLocations,
-      collectionTarget: f.collectionTarget, collectionLocations: f.collectionLocations,
-      onboardingTarget: f.onboardingTarget, onboardingLocations: f.onboardingLocations,
-      prospectTarget: f.prospectTarget, prospectLocations: f.prospectLocations,
-    });
-    session.teamWorkplansState.date = f.date;
-    DB.teamWorkplans = null;
-    toast("Workplan saved");
-    closeModal();
-  }, {mutates:true});
-}
-function renderTeamWorkPlanSetupModal(){
-  const st = session.teamWorkplansState || defaultTeamWorkplansState();
-  const d = DB.teamWorkplans;
-  const staffList = (d && d.staff) || [];
-  const selectedId = session.teamWorkplanSetupUserId || (staffList[0] && staffList[0].userId);
-  const selected = staffList.find(s=>s.userId===selectedId);
-  const field = (cat) => selected ? selected[cat] : { target:0, locations:'' };
-  return `
-    <div style="position:relative;">
-      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Daily Workplan Setup</h3>
-      <form onsubmit="return submitTeamWorkPlanSetup(event)">
-        <div class="field"><label>Staff Member</label>
-          <select name="userId" onchange="session.teamWorkplanSetupUserId=this.value; renderApp();">
-            ${staffList.map(s=>`<option value="${s.userId}" ${s.userId===selectedId?'selected':''}>${escapeHtml(s.userName)}</option>`).join("") || `<option value="">No staff report to you</option>`}
-          </select>
-        </div>
-        ${LO_WORKPLAN_CATEGORIES.map(c=>{ const f = field(c.key); return `
-          <div class="card-title" style="background:var(--blue-bg); margin-top:14px;">${c.label}</div>
-          <div class="field"><label>No of Clients</label><input type="number" min="0" name="${c.key}Target" value="${f.target||0}"></div>
-          <div class="field"><label>Visiting Locations</label><textarea name="${c.key}Locations" rows="2" placeholder="Separate with comma(,)">${escapeHtml(f.locations||'')}</textarea></div>
-        `; }).join("")}
-        <div class="field" style="margin-top:14px;"><label>Plan Date</label><input type="date" name="date" value="${st.date}"></div>
-        <div style="text-align:right; margin-top:14px;">
-          <button class="btn btn-green" type="submit">💾 Save</button>
-        </div>
-      </form>
-    </div>
-  `;
+  session.loWorkPlanState = { date: st.date, collapsed:false };
+  DB.loWorkPlan = null;
+  loadLoWorkPlan(st.date);
+  openLoWorkPlanSetupModal();
 }
 
 // ==================== Branch/Regional/Operational/Financial/System/Executive/Governance Responsibilities — real, reused data ====================
@@ -14043,7 +14001,6 @@ function renderModal(){
   else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
-  else if(modal.type === "team-workplan-setup") body = renderTeamWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
   else return "";
