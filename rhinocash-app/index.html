@@ -2962,15 +2962,15 @@ function renderManagerDashboard(){
 
   return `
     <div class="card">
-      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:220px;">
-          <div style="font-size:19px; font-weight:800; color:var(--navy);">${escapeHtml(me.name)}</div>
-          <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Manager</div>
-            <div>🏢 ${bName}</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Branch Management Access</div>
+      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0; overflow:hidden;">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft);">
+            <div class="profile-info-row">💼 Manager</div>
+            <div class="profile-info-row">🏢 ${bName}</div>
+            <div class="profile-info-row">🏖️ ${me.leaveDays} Leave Days</div>
+            <div class="profile-info-row" style="border-bottom:none;">👁️ Branch Management Access</div>
           </div>
           <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
