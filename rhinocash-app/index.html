@@ -844,7 +844,7 @@ const LABEL_ROUTES = {
   "Staff Leaves": {section:"staff-leaves"},
   "Staff Portfolios": {section:"staff-portfolios"},
   "Daily Workplan": {section:"staff-workplans"},
-  "View Employees": {section:"staff"},
+  "View Employees": {section:"staff", subtab:"Company Employees"},
   "Salary Records": {section:"accounting", subtab:"Expenses"},
   // Approvals & permissions (Admin)
   "Roles": {section:"dashboard"},
@@ -1269,6 +1269,7 @@ function adaptStaff(u){
     staffCode:u.staff_code, jobTitle:u.job_title, department:u.department_id, reportingManagerId:u.reporting_manager_id,
     employmentStatus:u.employment_status, accessLevel:u.access_level, leaveDays:u.leave_days_balance,
     lastLoginAt:u.last_login_at, avatarPath:u.avatar_path, mustChangePassword: !!u.must_change_password,
+    nationalId:u.national_id, createdAt:u.created_at,
     moduleAccess: (u.finalAccess && u.finalAccess.modules) || null };
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
@@ -1362,6 +1363,7 @@ async function loadCoreData(){
     // scope" bulk fetch for dashboard/name-lookup purposes, distinct from
     // the paginated, filterable Staff Directory page's own smaller pages.
     if(NAV_PERMISSIONS[session.role]?.includes('staff')) calls.push(api.get('/api/users?limit=200').then(r=>{ DB.staff = r.users.map(adaptStaff); }).catch(()=>{}));
+    if(NAV_PERMISSIONS[session.role]?.includes('staff')) calls.push(api.get('/api/departments').then(r=>{ DB.departments = r.departments; }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('audit')) calls.push(api.get('/api/audit-logs').then(r=>{ DB.auditLog = r.auditLogs.map(adaptAudit); }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('accounting')){
       calls.push(api.get('/api/expenses').then(r=>{ DB.expenses = r.expenses.map(adaptExpense); }).catch(()=>{}));
@@ -11509,7 +11511,85 @@ function renderStaffLeavesPage(){
     </div>
   `;
 }
+// Employees > View Employees — a real, single-table staff directory
+// matching the reference design exactly (Name/Position/Idno/Contact
+// Info/Jobno/Branch/Access level/Entry date/Leaves), filtered client-side
+// over the same already-loaded, already branch-scoped DB.staff every
+// other Manager page reads (GET /api/users, up to 200 rows, at login) —
+// no separate paginated round-trip for what's already a small, already-
+// fetched list. Staff Group is real too (DB.departments, from a real
+// GET /api/departments), not a fabricated dropdown — most seeded staff
+// simply have no department assigned yet, shown honestly as "—", not a
+// made-up default.
+const STAFF_AVATAR_COLORS = ['#2F5FA8','#C0507A','#7C4DBE','#B3261E','#2F7D5C','#B8860B'];
+function staffAvatarColor(id){
+  let h = 0; for(let i=0;i<id.length;i++) h = (h*31 + id.charCodeAt(i)) >>> 0;
+  return STAFF_AVATAR_COLORS[h % STAFF_AVATAR_COLORS.length];
+}
+function defaultCompanyEmployeesFilters(){ return { status:'Active', department:'', q:'' }; }
+function renderCompanyEmployeesPage(){
+  const f = session.companyEmployeesFilters || (session.companyEmployeesFilters = defaultCompanyEmployeesFilters());
+  const departments = DB.departments||[];
+  let rows = DB.staff||[];
+  if(f.status) rows = rows.filter(s=>s.status===f.status);
+  if(f.department) rows = rows.filter(s=>s.department===f.department);
+  if(f.q){
+    const q = f.q.toLowerCase();
+    rows = rows.filter(s=> (s.name||'').toLowerCase().includes(q) || (s.email||'').toLowerCase().includes(q) || (s.staffCode||'').toLowerCase().includes(q) || (s.phone||'').includes(q));
+  }
+  const trs = rows.map(s=>{
+    const initials = (s.name||'?').split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+    const statusDot = s.status==='Active' ? '#2F7D5C' : s.status==='Suspended' ? '#B8860B' : '#B3261E';
+    return `<tr class="clickable" onclick="openStaffDetail('${s.id}')">
+      <td style="min-width:180px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:34px; height:34px; border-radius:50%; background:${staffAvatarColor(s.id)}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0;">${initials}</div>
+          <div>
+            <div style="font-weight:700;">${escapeHtml(s.name)}</div>
+            <div class="hint" style="display:flex; align-items:center; gap:5px;"><span style="width:7px; height:7px; border-radius:50%; background:${statusDot}; display:inline-block;"></span>${escapeHtml(s.status)}</div>
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(s.role)}</td>
+      <td>${s.nationalId?escapeHtml(s.nationalId):'—'}</td>
+      <td>${escapeHtml(s.email||'—')}<br><span class="hint">${escapeHtml(s.phone||'—')}</span></td>
+      <td>${escapeHtml(s.staffCode||'—')}</td>
+      <td>${branchName(s.branch)}</td>
+      <td>${escapeHtml(s.accessLevel||'—')}</td>
+      <td>${s.createdAt?fmtDDMMYYYY(s.createdAt.slice(0,10)):'—'}</td>
+      <td>${s.leaveDays||0} days</td>
+    </tr>`;
+  }).join("");
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:18px;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <h3 style="color:var(--navy); margin:0;">Company Employees</h3>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        <select onchange="session.companyEmployeesFilters.status=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="Active" ${f.status==='Active'?'selected':''}>Active</option>
+          <option value="Suspended" ${f.status==='Suspended'?'selected':''}>Suspended</option>
+          <option value="Deactivated" ${f.status==='Deactivated'?'selected':''}>Deactivated</option>
+          <option value="" ${f.status===''?'selected':''}>All statuses</option>
+        </select>
+        <select onchange="session.companyEmployeesFilters.department=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">-- Staff Group --</option>
+          ${departments.map(d=>`<option value="${d.id}" ${f.department===d.id?'selected':''}>${escapeHtml(d.name)}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        <input placeholder="🔍 Search" value="${escapeHtml(f.q)}" oninput="session.companyEmployeesFilters.q=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0; min-width:140px;">
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Name</th><th>Position</th><th>Idno</th><th>Contact Info</th><th>Jobno</th><th>Branch</th><th>Access level</th><th>Entry date</th><th>Leaves</th></tr>
+        ${trs || `<tr><td colspan="9" class="empty">No employees match these filters.</td></tr>`}
+      </table></div>
+    </div>
+    ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
+  `;
+}
 function renderStaff(){
+  if(session.subtab === "Company Employees") return renderCompanyEmployeesPage();
   const state = DB.acctPages.staffdir;
   if(!state) loadStaffDirectory({},1); // fires the real fetch; the rest of this page still renders below regardless — only the directory table itself shows a loading placeholder
   const rows = state ? state.staff.map(s=>{

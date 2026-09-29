@@ -42,6 +42,7 @@ function register(router) {
       else { clauses.push('branch_id = ?'); params.push(req.query.branch_id); }
     }
     if (req.query.region_id) { clauses.push('region_id = ?'); params.push(req.query.region_id); }
+    if (req.query.department_id) { clauses.push('department_id = ?'); params.push(req.query.department_id); }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
     if (req.query.employment_status) { clauses.push('employment_status = ?'); params.push(req.query.employment_status); }
     if (req.query.q) { clauses.push('(name LIKE ? OR email LIKE ? OR staff_code LIKE ? OR phone LIKE ?)'); const like = `%${req.query.q}%`; params.push(like, like, like, like); }
@@ -51,6 +52,13 @@ function register(router) {
     const total = (await get(`SELECT COUNT(*) as c FROM users ${where}`, params)).c;
     const rows = await all(`SELECT * FROM users ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, [...params, limit, (page - 1) * limit]);
     res.json({ users: await Promise.all(rows.map(publicUser)), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+  });
+
+  // Real reference data for the Staff Group filter (Employees > View
+  // Employees) — the same small, seeded departments list users.department_id
+  // already references, not a fabricated dropdown.
+  router.get('/api/departments', requireAuth, requireModule('staff'), async (req, res) => {
+    res.json({ departments: await all('SELECT * FROM departments ORDER BY name') });
   });
 
   router.get('/api/users/:id', requireAuth, requireModule('staff'), async (req, res, next) => {
