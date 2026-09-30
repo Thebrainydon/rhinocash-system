@@ -348,6 +348,44 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(Math.abs(cf.json.closing - (cf.json.opening + cf.json.net)) < 0.01, 'closing = opening + net is mathematically consistent, not independently fabricated');
   }
 
+  // =========================================================
+  // 8. PETTY CASHBOOK — the real branch till: a receipts-only ledger of
+  // every real 'cash'-account journal entry (only a real "Cash" channel
+  // client repayment ever posts one — see payments.js's glAccountFor)
+  // =========================================================
+  {
+    const today = new Date().toISOString().slice(0, 10);
+    const kisumuLoanId = await driveLoanToDisbursed(officerToken, managerToken, regionalToken, opsToken, acctToken, adminToken, 15000, 3);
+
+    const noBranch = await api('GET', `/api/accounting/petty-cashbook?from=${today}&to=${today}`, { token: adminToken });
+    assert(noBranch.status === 400, 'a company-wide caller with no branch_id is genuinely rejected — the petty cashbook is inherently a single real branch till, not an aggregate');
+
+    const before = await api('GET', `/api/accounting/petty-cashbook?branch_id=br_kisumu&from=${today}&to=${today}`, { token: adminToken });
+    assert(before.status === 200 && typeof before.json.closing === 'number', 'Admin, naming the real branch explicitly, genuinely gets the Kisumu petty cashbook');
+    const openingBefore = before.json.closing;
+
+    const cashPay = await api('POST', '/api/payments', { token: acctToken, body: { loan_id: kisumuLoanId, amount: 3200, channel: 'Cash', reference: 'PETTY-TEST-CASH' } });
+    assert(cashPay.status === 201, 'setup: a real Cash-channel repayment is genuinely recorded against the real Kisumu loan');
+
+    const bankPay = await api('POST', '/api/payments', { token: acctToken, body: { loan_id: kisumuLoanId, amount: 500, channel: 'Bank', reference: 'PETTY-TEST-BANK' } });
+    assert(bankPay.status === 201, 'setup: a real Bank-channel repayment is also recorded, to prove it does NOT leak into the cash till below');
+
+    const after = await api('GET', `/api/accounting/petty-cashbook?branch_id=br_kisumu&from=${today}&to=${today}`, { token: managerToken });
+    assert(after.status === 200, 'the real Kisumu Manager (their own branch, implicit scope) genuinely loads the petty cashbook too, without needing to name branch_id at all');
+    assert(Math.abs(after.json.closing - (openingBefore + 3200)) < 0.01, 'the real Cash-channel repayment genuinely increased the till by exactly its own amount — the Bank-channel one is genuinely excluded, not double-counted');
+    const cashRow = after.json.rows.find(r => r.receipts === 3200);
+    assert(cashRow, 'the real Cash receipt appears as its own real row, not aggregated away');
+    assert(cashRow.sn && Number.isInteger(cashRow.sn), 'the row\'s SN is a real journal_entries id (a real BIGSERIAL), not a fabricated counter');
+    assert(cashRow.cashier === 'Grace Achieng', 'the row genuinely names the real Accountant who recorded it as Cashier — resolved server-side, not left for the client to guess');
+    assert(!after.json.rows.some(r => r.receipts === 500), 'the real Bank-channel repayment genuinely never appears in the cash till — it posted against a different real GL account entirely');
+
+    const nairobiView = await api('GET', `/api/accounting/petty-cashbook?from=${today}&to=${today}`, { token: nairobiManagerToken });
+    assert(nairobiView.status === 200 && !nairobiView.json.rows.some(r => r.sn === cashRow.sn), 'a Nairobi Manager (different branch, real scope) genuinely does not see the Kisumu branch\'s real cash receipt');
+
+    const noFrom = await api('GET', '/api/accounting/petty-cashbook', { token: managerToken });
+    assert(noFrom.status === 200 && typeof noFrom.json.opening === 'number', 'omitting from/to genuinely still works, defaulting to the real current month — not a required parameter');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

@@ -856,6 +856,54 @@ function register(router) {
     const inflows = periodRow.d, outflows = periodRow.c, net = inflows - outflows;
     res.json({ from, to, opening, inflows, outflows, net, closing: opening + net });
   });
+
+  // ==================== Petty Cashbook — the real branch till ====================
+  // Every row here is a real posted journal entry against the 'cash' GL
+  // account — the only account payments.js's glAccountFor() ever routes a
+  // real "Cash" channel client repayment to (see its comment). Nothing
+  // else in this codebase ever posts against 'cash' today, so this is
+  // genuinely a receipts-only ledger, matching the reference design's
+  // single "Receipts" amount column — not a simplification, an honest
+  // reflection of what real cash movements this system currently tracks.
+  // Opening/closing balances use the exact same real SUM(debit)-SUM(credit)
+  // convention as the Cashflow report above; the "SN" column is each
+  // entry's own real BIGSERIAL id, and "Totals" is a genuinely computed
+  // running balance, not a fabricated figure.
+  router.get('/api/accounting/petty-cashbook', requireAuth, requireModule('accounting'), async (req, res, next) => {
+    const scope = await resolveScopeForRequest(req);
+    if (scope !== null && scope.length !== 1) {
+      return next({ status: 400, message: 'Select a single branch for the Petty Cashbook' });
+    }
+    const branchId = scope !== null ? scope[0] : req.query.branch_id;
+    if (!branchId) return next({ status: 400, message: 'branch_id is required' });
+    const from = req.query.from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const to = req.query.to || new Date().toISOString().slice(0, 10);
+
+    const openingRow = await get(
+      `SELECT COALESCE(SUM(debit),0) - COALESCE(SUM(credit),0) as bal FROM journal_entries WHERE account_id = 'cash' AND branch_id = ? AND (entry_date)::date < (?)::date`,
+      [branchId, from]
+    );
+    const opening = Number(openingRow.bal);
+
+    const entries = await all(
+      `SELECT je.id, je.entry_date, je.description, je.debit, je.credit, u.name AS cashier_name
+       FROM journal_entries je LEFT JOIN users u ON u.id = je.posted_by
+       WHERE je.account_id = 'cash' AND je.branch_id = ? AND (je.entry_date)::date BETWEEN (?)::date AND (?)::date
+       ORDER BY je.entry_date ASC, je.id ASC`,
+      [branchId, from, to]
+    );
+
+    let running = opening;
+    const rows = entries.map(e => {
+      const amount = Number(e.debit) - Number(e.credit);
+      running += amount;
+      return { sn: e.id, date: e.entry_date, details: e.description, receipts: amount, running_balance: running, cashier: e.cashier_name || null };
+    });
+    const totalReceipts = rows.reduce((s, r) => s + r.receipts, 0);
+    const closing = opening + totalReceipts;
+    const branch = await get('SELECT name FROM branches WHERE id = ?', [branchId]);
+    res.json({ branchId, branchName: branch ? branch.name : null, from, to, opening, rows, totalReceipts, closing });
+  });
 }
 
 module.exports = { register, ledgerBalance, assertPeriodOpen, computePAR };

@@ -781,10 +781,7 @@ const LABEL_ROUTES = {
   "M-Pesa Reconciliation": {section:"payments", subtab:"M-Pesa Reconciliation"},
   "Cash Reconciliation": {section:"payments", subtab:"M-Pesa Reconciliation"},
   "Utility Payments": {section:"accounting", subtab:"Utility Payments"},
-  // "Petty Cashbook" is the same real branch cash ledger "Branch Cash
-  // Position" already routed to — a running record of real cash inflows/
-  // outflows, just under the label the reference design uses for it.
-  "Petty Cashbook": {section:"accounting", subtab:"Cashflow"},
+  "Petty Cashbook": {section:"accounting", subtab:"Petty Cashbook"},
   "Expenses": {section:"accounting", subtab:"Expenses"},
   "Expense Requests": {section:"accounting", subtab:"Expenses"},
   "Staff Expenses": {section:"accounting", subtab:"Expenses"},
@@ -9800,7 +9797,7 @@ function submitStkPush(ev){
 // lists only Requisitions/Utility Payments/Cashflow). Roles with the
 // "Post Accounting Entries" permission (Admin, Accountant) keep full access
 // to every accounting page, including the ones with no sidebar entry yet.
-const ALL_ACCOUNTING_TABS = ["Expenses","Requisitions","Utility Payments","General Ledger","Chart of Accounts","Trial Balance","Profit & Loss","Balance Sheet","Cashflow","Accounting Periods","Adjustments","Portfolio at Risk","Branch Profitability","Approval Aging"];
+const ALL_ACCOUNTING_TABS = ["Expenses","Requisitions","Utility Payments","Petty Cashbook","General Ledger","Chart of Accounts","Trial Balance","Profit & Loss","Balance Sheet","Cashflow","Accounting Periods","Adjustments","Portfolio at Risk","Branch Profitability","Approval Aging"];
 function accountingTabsForRole(role){
   if(CAN_POST_ACCOUNTING(role)) return ALL_ACCOUNTING_TABS;
   const menu = SIDEBAR_MENUS[role] || [];
@@ -9817,6 +9814,7 @@ function renderAccounting(){
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
   if(active==="Requisitions") return DB.requisitionForm ? renderCreateRequisitionPage() : renderRequisitionsPage();
   if(active==="Utility Payments") return DB.utilPaymentDetailId ? renderUtilityPaymentDetailPage() : (DB.utilPaymentForm ? renderCreateUtilityPaymentPage() : renderUtilityPaymentsPage());
+  if(active==="Petty Cashbook") return session.printPettyCashbook ? renderPettyCashbookPrintPage() : renderPettyCashbookPage();
   if(active==="General Ledger") return tabsHtml + renderGeneralLedgerPage();
   if(active==="Chart of Accounts") return tabsHtml + renderChartOfAccountsPage();
   if(active==="Trial Balance") return tabsHtml + renderTrialBalancePage();
@@ -10684,6 +10682,139 @@ function renderCashflowPage(){
       <tr><td><strong>Closing Balance</strong></td><td style="text-align:right;"><strong>${fmt(state.closing)}</strong></td></tr>
     </table>
   </div>`;
+}
+
+// ==================== Petty Cashbook — the real branch till. Every row is
+// a real posted journal entry against the 'cash' GL account, the only
+// account a real "Cash" channel client repayment ever posts against (see
+// the backend route's own comment) — a genuine receipts-only ledger, not
+// a simplification. Weeks are real Monday-Sunday calendar weeks computed
+// from the selected month, matching the reference design's week picker.
+// ====================
+function mondayWeeksForMonth(year, monthIndex0){
+  const first = new Date(year, monthIndex0, 1);
+  const last = new Date(year, monthIndex0+1, 0);
+  let d = new Date(first);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day===0 ? -6 : 1-day));
+  const weeks = [];
+  while(d <= last){
+    const wStart = new Date(d);
+    const wEnd = new Date(d); wEnd.setDate(wEnd.getDate()+6);
+    weeks.push({ start: wStart, end: wEnd });
+    d.setDate(d.getDate()+7);
+  }
+  return weeks;
+}
+function isoDate(d){ const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
+function pettyShortDate(d){ return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function ddmmyyyy(s){ const d = new Date(s); return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`; }
+const PETTY_CASHBOOK_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function pettyCashbookMonthOptions(){
+  const opts = []; const now = new Date();
+  for(let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    opts.push({ value: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label: `${PETTY_CASHBOOK_MONTH_NAMES[d.getMonth()].slice(0,3)} ${d.getFullYear()}` });
+  }
+  return opts;
+}
+function loadPettyCashbook(month, weekIndex){
+  return withRequest('load-petty', async ()=>{
+    const [y,m] = month.split('-').map(Number);
+    const weeks = mondayWeeksForMonth(y, m-1);
+    const today = new Date();
+    let idx = weekIndex;
+    if(idx==null){
+      idx = weeks.findIndex(w=>today>=w.start && today<=w.end);
+      if(idx<0) idx = weeks.length-1;
+    }
+    idx = Math.max(0, Math.min(idx, weeks.length-1));
+    const week = weeks[idx];
+    const res = await api.get(`/api/accounting/petty-cashbook?from=${isoDate(week.start)}&to=${isoDate(week.end)}`);
+    DB.acctPages.petty = { month, weekIndex: idx, weeks, data: res };
+  });
+}
+function changePettyCashbookMonth(month){ return loadPettyCashbook(month, null); }
+function changePettyCashbookWeek(idx){ const state = DB.acctPages.petty; return loadPettyCashbook(state.month, Number(idx)); }
+function pettyCashbookTableHtml(d){
+  return `
+    <div class="table-wrap"><table style="width:100%; border-collapse:collapse;">
+      <tr>
+        <th style="background:var(--purple); color:#fff;">Receipts</th>
+        <th style="background:var(--purple); color:#fff;">Date</th>
+        <th style="background:var(--purple); color:#fff;">Details</th>
+        <th style="background:var(--purple); color:#fff;">SN</th>
+        <th style="background:var(--purple); color:#fff;">Totals</th>
+        <th style="background:var(--purple); color:#fff;">Cashier</th>
+      </tr>
+      <tr><td>${fmtNum(d.opening)}</td><td>${ddmmyyyy(d.from)}</td><td>Balance B/D</td><td></td><td></td><td></td></tr>
+      ${d.rows.map(r=>`<tr><td>${fmtNum(r.receipts)}</td><td>${ddmmyyyy(r.date)}</td><td>${escapeHtml(r.details||'—')}</td><td>${r.sn}</td><td>${fmtNum(r.running_balance)}</td><td>${escapeHtml(r.cashier||'—')}</td></tr>`).join("")}
+      <tr><td>${fmtNum(d.totalReceipts)}</td><td></td><td></td><td></td><td>${fmtNum(d.totalReceipts)}</td><td></td></tr>
+      <tr><td>${fmtNum(d.closing)}</td><td colspan="5">Balance C/F</td></tr>
+      <tr><td>${fmtNum(d.closing)}</td><td colspan="5">Balance B/D</td></tr>
+    </table></div>
+  `;
+}
+function renderPettyCashbookPage(){
+  const state = DB.acctPages.petty;
+  const defaultMonth = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+  if(!state || !state.data){ loadPettyCashbook(state?state.month:defaultMonth, state?state.weekIndex:null); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const [y,m] = state.month.split('-').map(Number);
+  const monthEnd = new Date(y, m, 0);
+  return `
+    <div class="card">
+      <div style="text-align:center; margin-bottom:10px; position:relative;">
+        <span class="btn btn-outline btn-sm page-back-btn" style="position:absolute; left:0; top:0;" onclick="goTo('dashboard')">←</span>
+        <h3 style="margin:0; text-decoration:underline; color:var(--navy);">Petty Cashbook</h3>
+        <div style="color:var(--navy); font-weight:700; margin-top:4px;">For ${PETTY_CASHBOOK_MONTH_NAMES[m-1]} ${y} Ending ${ddmmyyyy(isoDate(monthEnd))}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin:14px 0;">
+        <span style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select onchange="changePettyCashbookMonth(this.value)">
+            ${pettyCashbookMonthOptions().map(o=>`<option value="${o.value}" ${o.value===state.month?'selected':''}>${o.label}</option>`).join("")}
+          </select>
+          <select onchange="changePettyCashbookWeek(this.value)">
+            ${state.weeks.map((w,i)=>`<option value="${i}" ${i===state.weekIndex?'selected':''}>${pettyShortDate(w.start)} - ${pettyShortDate(w.end)}</option>`).join("")}
+          </select>
+        </span>
+        <span class="btn btn-sm" style="background:var(--red); color:#fff;" onclick="printPettyCashbook()">🖨 Print</span>
+      </div>
+      ${pettyCashbookTableHtml(state.data)}
+    </div>
+  `;
+}
+function printPettyCashbook(){
+  session.printPettyCashbook = true;
+  renderApp();
+  setTimeout(()=>{ window.print && window.print(); }, 300);
+}
+function closePettyCashbookPrint(){ session.printPettyCashbook = false; renderApp(); }
+function renderPettyCashbookPrintPage(){
+  const state = DB.acctPages.petty;
+  if(!state || !state.data) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const d = state.data;
+  const now = new Date();
+  const printedStr = `${now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} - ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:true}).toLowerCase()}`;
+  const [y,m] = state.month.split('-').map(Number);
+  return `
+    <div class="card" style="max-width:760px; margin:0 auto;">
+      <div class="pill-row no-print" style="justify-content:space-between;">
+        <span class="btn btn-outline btn-sm" onclick="closePettyCashbookPrint()">← Back</span>
+        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+      </div>
+      <div style="border:1px solid #999; padding:20px; margin-top:10px; position:relative;">
+        <img src="${LOGO_DATA_URI}" style="position:absolute; top:50%; left:50%; width:220px; transform:translate(-50%,-50%) rotate(-18deg); opacity:0.08; pointer-events:none;">
+        <div style="text-align:center;">
+          <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:60px; height:60px; object-fit:contain;">
+          <div style="font-weight:800; color:var(--navy); font-size:16px; text-decoration:underline; margin-top:6px;">${escapeHtml(d.branchName||'—')} branch Petty Cashbook</div>
+          <div class="hint" style="margin-top:4px;">From ${ddmmyyyy(d.from)} to ${ddmmyyyy(d.to)}</div>
+        </div>
+        <div class="hint" style="margin:10px 0 14px;">Printed on ${printedStr} by ${escapeHtml(session.userName)}</div>
+        ${pettyCashbookTableHtml(d)}
+      </div>
+      <div class="hint" style="text-align:center; margin-top:10px;">${escapeHtml(d.branchName||'—')} branch Petty Cashbook for ${PETTY_CASHBOOK_MONTH_NAMES[m-1]} ${y} : Page 1</div>
+    </div>
+  `;
 }
 
 // ==================== Chart of Accounts management ====================
