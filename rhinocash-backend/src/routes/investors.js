@@ -1,6 +1,10 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
 const { hashPassword, verifyPassword, signToken, tokenHash } = require('./../crypto');
+// Same real 15-day password-age policy staff logins use (see
+// routes/auth.js) — investors are a separate principal type, not a
+// second, lesser copy of the policy.
+const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { hasPermission } = require('./../rbac');
@@ -40,8 +44,43 @@ function register(router) {
     const token = signToken({ sub: investor.id, type: 'investor', iat: Date.now(), exp: Date.now() + 12 * 60 * 60 * 1000 });
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
     await run('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?,?,?)', [tokenHash(token), investor.id, expiresAt]);
+
+    let mustChangePassword = !!investor.must_change_password;
+    if (!mustChangePassword) {
+      const changedAt = investor.password_changed_at ? new Date(investor.password_changed_at).getTime() : NaN;
+      const passwordExpired = Number.isNaN(changedAt) || (Date.now() - changedAt) >= PASSWORD_MAX_AGE_MS;
+      if (passwordExpired) {
+        await run('UPDATE investors SET must_change_password=1 WHERE id=?', [investor.id]);
+        mustChangePassword = true;
+      }
+    }
+
     const sysRow = await get("SELECT session_warning_minutes FROM system_settings WHERE id = 1");
-    res.json({ token, investor: { id: investor.id, name: investor.name, amount: investor.amount, profitSharePct: investor.profit_share_pct }, expiresAt, sessionWarningMinutes: sysRow ? sysRow.session_warning_minutes : 5 });
+    res.json({ token, investor: { id: investor.id, name: investor.name, amount: investor.amount, profitSharePct: investor.profit_share_pct, mustChangePassword }, expiresAt, sessionWarningMinutes: sysRow ? sysRow.session_warning_minutes : 5 });
+  });
+
+  // Real investor self-service password change — the exact same real
+  // must_change_password exemption (skip currentPassword when it's
+  // already set) staff's POST /api/auth/change-password gives, on the
+  // investors table instead of users. Previously the frontend's shared
+  // change-password form always posted to the staff-only endpoint, which
+  // requireAuth genuinely rejects for an investor token (its payload.sub
+  // is an investor id, never found in `users`) — a real, previously-
+  // unreachable dead end for any investor trying to change their own
+  // password, not a hypothetical gap.
+  router.post('/api/investor-auth/change-password', requireInvestorAuth, async (req, res, next) => {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8) return next({ status: 400, message: 'New password must be at least 8 characters' });
+    if (!req.investor.must_change_password) {
+      if (!req.investor.password_hash || !verifyPassword(currentPassword || '', req.investor.password_hash, req.investor.password_salt)) {
+        return next({ status: 401, message: 'Current password is incorrect' });
+      }
+    }
+    const { hash, salt } = hashPassword(newPassword);
+    await run('UPDATE investors SET password_hash=?, password_salt=?, must_change_password=0, password_changed_at=iso_now() WHERE id=?', [hash, salt, req.investor.id]);
+    await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ? AND token_hash != ?", [req.investor.id, req.sessionTokenHash]);
+    await logAction(req, { action: 'Password changed', module: 'investors', recordType: 'Investor', recordId: req.investor.id });
+    res.json({ ok: true });
   });
 
   // Real investor logout — investors are a structurally separate
@@ -160,11 +199,12 @@ function register(router) {
     const b = req.body;
     if (!b.name || !b.amount || !b.profit_share_pct) return next({ status: 400, message: 'name, amount and profit_share_pct are required' });
     const id = 'inv_' + crypto.randomUUID();
-    const creds = b.email && b.password ? hashPassword(b.password) : { hash: null, salt: null };
+    const hasCreds = b.email && b.password;
+    const creds = hasCreds ? hashPassword(b.password) : { hash: null, salt: null };
     await run(
-      `INSERT INTO investors (id, name, email, phone, password_hash, password_salt, amount, profit_share_pct, term_months, start_date, status, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,'Active',?)`,
-      [id, b.name, b.email || null, b.phone || null, creds.hash, creds.salt, b.amount, b.profit_share_pct, b.term_months || 6, b.start_date || new Date().toISOString().slice(0, 10), req.user.id]
+      `INSERT INTO investors (id, name, email, phone, password_hash, password_salt, must_change_password, amount, profit_share_pct, term_months, start_date, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,'Active',?)`,
+      [id, b.name, b.email || null, b.phone || null, creds.hash, creds.salt, hasCreds ? 1 : 0, b.amount, b.profit_share_pct, b.term_months || 6, b.start_date || new Date().toISOString().slice(0, 10), req.user.id]
     );
     await logAction(req, { action: 'Created investor', module: 'investors', recordType: 'Investor', recordId: id, newValue: { name: b.name, amount: b.amount } });
     res.status(201).json({ investor: await get('SELECT * FROM investors WHERE id = ?', [id]) });

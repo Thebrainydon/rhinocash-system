@@ -6,13 +6,22 @@ const { run } = require('./db');
 
 async function logAction(req, { action, module, recordType, recordId, previousValue, newValue, reason }) {
   const user = req.user || null;
+  // An investor is a structurally separate principal type with no row in
+  // `users` — audit_logs.user_id is a real FK to users(id), so an
+  // investor's id can never go there (it would violate the constraint,
+  // not just be semantically wrong). Their real name/a readable role
+  // marker still go in user_name/role_id so the trail correctly
+  // attributes the action to them instead of silently falling back to
+  // 'system', which every route calling logAction from a requireAuth
+  // (staff) context is completely unaffected by.
+  const investor = !user && req.investor ? req.investor : null;
   await run(
     `INSERT INTO audit_logs (user_id, user_name, role_id, action, module, record_type, record_id, previous_value, new_value, reason, ip, user_agent)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       user ? user.id : null,
-      user ? user.name : 'system',
-      user ? user.role_id : null,
+      user ? user.name : (investor ? investor.name : 'system'),
+      user ? user.role_id : (investor ? 'investor' : null),
       action,
       module || null,
       recordType || null,

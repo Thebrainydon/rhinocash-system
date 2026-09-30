@@ -1263,6 +1263,13 @@ async function initSchema() {
   // itself idempotent (only ever touches rows still NULL).
   await ensureColumn('users', 'password_changed_at TEXT');
   await rawRun(`UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL`);
+  // Investors are a structurally separate principal type (own table, own
+  // login/session/change-password routes — see routes/investors.js) but
+  // get the exact same real must_change_password/15-day-age policy as
+  // staff, not a lesser version of it.
+  await ensureColumn('investors', 'must_change_password INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('investors', 'password_changed_at TEXT');
+  await rawRun(`UPDATE investors SET password_changed_at = created_at WHERE password_changed_at IS NULL`);
   // A single real company-wide M-Pesa Paybill number — shown identically
   // on every branch in the "Company Branches" view (a company-wide
   // Paybill with per-branch sub-accounts is the real, common setup for a

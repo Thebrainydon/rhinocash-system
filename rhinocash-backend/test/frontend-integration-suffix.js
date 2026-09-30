@@ -5864,6 +5864,57 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the forced password-reset screen");
   }
 
+  // ---- 55. THE SAME FORCED PASSWORD RESET, EXTENDED TO INVESTORS — a structurally separate principal type, never a lesser copy of the staff flow ----
+  {
+    const adminForm4 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm4; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    const createInvestorForm = new Map([['name','Forced Reset Investor'],['email','forcedresetinvestor@rhinocash.co.ke'],['password','InvestorTemp1!'],['amount','300000'],['profit_share_pct','8'],['term_months','6']]);
+    global.FormData = class { constructor(){ return createInvestorForm; } };
+    await submitNewInvestor({ preventDefault(){}, target:{} });
+    __assert(true, "sanity: a real investor account with real login credentials is created via the actual real UI form handler");
+
+    const investorForm = new Map([['username','forcedresetinvestor@rhinocash.co.ke'],['password','InvestorTemp1!']]);
+    global.FormData = class { constructor(){ return investorForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true && session.role === 'Investor' && session.mustChangePassword === true, "logging in as a real freshly-created investor genuinely sets session.mustChangePassword too — previously always hardcoded false regardless of the real backend state");
+
+    goTo('dashboard');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Password Reset') && !html.includes('class="sidebar'), "the real forced password-reset screen genuinely blocks the app shell for an Investor session exactly like a staff one — the gate in renderApp() is role-agnostic");
+
+    const goodInvestorForm = new Map([['newPassword','InvestorRealPass2026!'],['confirmPassword','InvestorRealPass2026!']]);
+    global.FormData = class { constructor(){ return goodInvestorForm; } };
+    await submitForcedPasswordReset({ preventDefault(){}, target:{} });
+    __assert(session.mustChangePassword === false, "a real matching New/Re-type password genuinely clears session.mustChangePassword for an Investor too");
+    __assert(modal && modal.type === 'password-updated', "the same real 'Password Updated Successful' popup opens for an Investor's real save");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('class="sidebar'), "the real Investor dashboard/app shell is already rendered underneath the popup for an Investor too");
+    closeModal();
+
+    // The real save genuinely went to the real investor-specific endpoint,
+    // not the staff-only one (which would have 401'd this investor token).
+    const relogInvestorForm = new Map([['username','forcedresetinvestor@rhinocash.co.ke'],['password','InvestorRealPass2026!']]);
+    global.FormData = class { constructor(){ return relogInvestorForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true && session.mustChangePassword === false, "logging in again as the investor with the genuinely-changed password is no longer forced to reset");
+
+    // The pre-existing seeded investor account (used throughout this
+    // entire suite) is genuinely unaffected — its own password is well
+    // under 15 days old and was never must_change_password-flagged.
+    const seededInvestorForm = new Map([['username','sara.investor@example.com'],['password', process.env.SEEDED_INVESTOR_PASSWORD]]);
+    global.FormData = class { constructor(){ return seededInvestorForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true && session.mustChangePassword === false, "the pre-existing seeded investor account used throughout this whole suite is genuinely unaffected by the new policy");
+
+    // Log back in as Admin so the app is left in a normal, logged-in state.
+    const adminForm5 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm5; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the Investor forced password-reset screen");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

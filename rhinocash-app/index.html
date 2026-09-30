@@ -2287,10 +2287,12 @@ function renderForgotPassword(){
 // whenever session.mustChangePassword is true (a fresh account, an Admin/
 // forgot-password reset, or the password's 15-day age policy), reusing the
 // exact same .login-screen family every other pre-dashboard screen already
-// uses. Saves via the same real POST /api/auth/change-password every other
-// "change my password" form in this app calls — currentPassword is
-// correctly omitted, matching that endpoint's own must_change_password
-// exemption (see auth.js), not a second, parallel save path.
+// uses. Saves via the same real POST /api/auth/change-password (staff) or
+// POST /api/investor-auth/change-password (Investor — a structurally
+// separate principal type, never a row in `users`) every other "change my
+// password" form for that same principal type already calls —
+// currentPassword is correctly omitted, matching both endpoints' own
+// must_change_password exemption, not a second, parallel save path.
 async function submitForcedPasswordReset(ev){
   ev.preventDefault();
   if(pwResetState.submitting) return false;
@@ -2300,7 +2302,8 @@ async function submitForcedPasswordReset(ev){
   pwResetState = { submitting:true, error:"" };
   renderApp();
   try{
-    await api.post('/api/auth/change-password', { newPassword: f.newPassword });
+    const endpoint = session.role === "Investor" ? '/api/investor-auth/change-password' : '/api/auth/change-password';
+    await api.post(endpoint, { newPassword: f.newPassword });
     session.mustChangePassword = false;
     pwResetState = { submitting:false, error:"" };
     // renderApp() (inside openModal()) now shows the real dashboard, since
@@ -2434,7 +2437,7 @@ async function doLogin(ev){
       session.userName = result.investor.name;
       session.investorId = result.investor.id;
       session.userId = null;
-      session.mustChangePassword = false;
+      session.mustChangePassword = !!result.investor.mustChangePassword;
     } else {
       session.role = ROLE_ID_TO_DISPLAY[result.user.role_id] || result.user.role_id;
       session.userName = result.user.name;
@@ -14753,8 +14756,14 @@ function submitChangePassword(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   if(f.newPassword !== f.confirmPassword){ toast("New password and confirmation don't match"); return false; }
+  // renderSecurityLogin() (the page this form lives on) is reachable by
+  // Investor too — a structurally separate principal type, never a row
+  // in `users`, so their real save must go to their own real endpoint,
+  // not the staff-only one (which requireAuth genuinely rejects for an
+  // investor token).
+  const endpoint = session.role === "Investor" ? '/api/investor-auth/change-password' : '/api/auth/change-password';
   return withRequest('change-password', async ()=>{
-    await api.post('/api/auth/change-password', { currentPassword: f.currentPassword, newPassword: f.newPassword });
+    await api.post(endpoint, { currentPassword: f.currentPassword, newPassword: f.newPassword });
     session.mustChangePassword = false;
     toast("Password changed");
   }, {mutates:true});
