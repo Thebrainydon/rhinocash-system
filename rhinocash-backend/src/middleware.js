@@ -3,7 +3,7 @@
 // piece the spec calls out specifically: "Do NOT rely only on hiding
 // sidebar items" — every one of these runs on the server, not the client.
 'use strict';
-const { get } = require('./db');
+const { get, run } = require('./db');
 const { verifyToken, tokenHash } = require('./crypto');
 const { hasModuleAccess, hasPermission } = require('./rbac');
 
@@ -26,6 +26,10 @@ async function requireAuth(req, res, next) {
   if (user.status !== 'Active') return next({ status: 403, message: `Account is ${user.status.toLowerCase()}` });
   req.user = user;
   req.sessionTokenHash = session.token_hash;
+  // Backs the single-active-session login block (routes/auth.js) — a
+  // session only counts as blocking a second login while it's genuinely
+  // still being used, not merely un-expired. See that file's own comment.
+  await run('UPDATE sessions SET last_seen_at = iso_now() WHERE token_hash = ?', [session.token_hash]);
   next();
 }
 

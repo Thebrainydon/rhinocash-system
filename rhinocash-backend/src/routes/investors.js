@@ -5,6 +5,10 @@ const { hashPassword, verifyPassword, signToken, tokenHash } = require('./../cry
 // routes/auth.js) — investors are a separate principal type, not a
 // second, lesser copy of the policy.
 const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
+// Same real "genuinely used recently" window the staff single-active-
+// session block uses (see routes/auth.js's own comment) — investors get
+// the identical real protection, not a second, lesser copy of it.
+const SESSION_ACTIVE_WINDOW_SQL = "interval '-15 minutes'";
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { hasPermission } = require('./../rbac');
@@ -30,6 +34,7 @@ async function requireInvestorAuth(req, res, next) {
   if (!investor) return next({ status: 401, message: 'Investor not found' });
   req.investor = investor;
   req.sessionTokenHash = session.token_hash;
+  await run('UPDATE sessions SET last_seen_at = iso_now() WHERE token_hash = ?', [session.token_hash]);
   next();
 }
 
@@ -46,7 +51,7 @@ function register(router) {
     // routes/auth.js) — investors are a separate principal type, not a
     // second, lesser copy of the protection.
     const activeSession = await get(
-      "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1",
+      `SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() AND last_seen_at > iso_offset(${SESSION_ACTIVE_WINDOW_SQL}) ORDER BY created_at DESC LIMIT 1`,
       [investor.id]
     );
     if (activeSession) {
@@ -55,7 +60,7 @@ function register(router) {
     const token = signToken({ sub: investor.id, type: 'investor', iat: Date.now(), exp: Date.now() + 12 * 60 * 60 * 1000 });
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
     const ip = req.socket ? req.socket.remoteAddress : null;
-    await run('INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent) VALUES (?,?,?,?,?)', [tokenHash(token), investor.id, expiresAt, ip, req.headers['user-agent'] || null]);
+    await run('INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent, last_seen_at) VALUES (?,?,?,?,?,iso_now())', [tokenHash(token), investor.id, expiresAt, ip, req.headers['user-agent'] || null]);
 
     let mustChangePassword = !!investor.must_change_password;
     if (!mustChangePassword) {

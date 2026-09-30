@@ -75,6 +75,41 @@ async function api(method, path, { token, body, headers } = {}) {
   }
 
   // =========================================================
+  // 3. A STALE-BUT-NOT-EXPIRED SESSION (the real bug report: the owner
+  //    closed their browser/app without hitting Logout, so the real
+  //    client-side idle-logout JS never got a chance to call the real
+  //    logout endpoint — the session is still technically un-expired, but
+  //    it was last genuinely used well outside the real 15-minute active
+  //    window) does NOT block that same real account holder's next login.
+  //    This is the exact real scenario a bare expires_at/revoked_at check
+  //    got wrong, locking a legitimate account holder out of their own
+  //    account for up to a real 12 hours over nothing.
+  // =========================================================
+  {
+    const login1 = await api('POST', '/api/auth/login', { body: { email: 'officer@rhinocash.co.ke', password: process.env.SEEDED_OFFICER_PASSWORD } });
+    assert(login1.status === 200, 'sanity: a real session is established');
+
+    // Backdate only this real session's own real last_seen_at — expires_at
+    // stays genuinely 12 real hours out, exactly like an abandoned but
+    // not-yet-expired real session — rather than faking the check itself.
+    await run(`UPDATE sessions SET last_seen_at = iso_offset(interval '-20 minutes') WHERE user_id = (SELECT id FROM users WHERE email = ?)`, ['officer@rhinocash.co.ke']);
+
+    const login2 = await api('POST', '/api/auth/login', { body: { email: 'officer@rhinocash.co.ke', password: process.env.SEEDED_OFFICER_PASSWORD } });
+    assert(login2.status === 200, 'a real login for the SAME real account holder succeeds when their own existing session has genuinely not been used in over 15 real minutes, even though it has not technically expired yet — nobody else logged in, so this must never be blocked');
+    await api('POST', '/api/auth/logout', { token: login2.json.token });
+
+    // The inverse: a session genuinely used within the last real 15
+    // minutes DOES still block, proving this is a real, live window check
+    // and not just a blanket "never block" regression from the fix above.
+    const login3 = await api('POST', '/api/auth/login', { body: { email: 'officer@rhinocash.co.ke', password: process.env.SEEDED_OFFICER_PASSWORD } });
+    assert(login3.status === 200, 'sanity: a fresh real session is established again');
+    await run(`UPDATE sessions SET last_seen_at = iso_offset(interval '-10 minutes') WHERE user_id = (SELECT id FROM users WHERE email = ?)`, ['officer@rhinocash.co.ke']);
+    const stillBlocked = await api('POST', '/api/auth/login', { body: { email: 'officer@rhinocash.co.ke', password: process.env.SEEDED_OFFICER_PASSWORD } });
+    assert(stillBlocked.status === 409, 'a real session genuinely used only 10 real minutes ago — still inside the real active window — correctly still blocks a second login');
+    await run(`UPDATE sessions SET revoked_at = iso_now() WHERE user_id = (SELECT id FROM users WHERE email = ?) AND revoked_at IS NULL`, ['officer@rhinocash.co.ke']);
+  }
+
+  // =========================================================
   // 3. ADMIN'S EXPLICIT PER-SESSION REVOKE (System Administration >
   //    Active Sessions) also genuinely clears the real block, exactly
   //    like the account holder's own logout does.

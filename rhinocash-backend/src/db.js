@@ -1347,6 +1347,20 @@ async function initSchema() {
     SELECT 'manager', 'branches'
     WHERE EXISTS (SELECT 1 FROM roles WHERE id = 'manager') AND EXISTS (SELECT 1 FROM modules WHERE id = 'branches')
     ON CONFLICT DO NOTHING`);
+  // Backs the single-active-session login block (see routes/auth.js /
+  // routes/investors.js): a session only counts as "genuinely still in
+  // use" — and so blocks a second login — while it has real, recent
+  // activity, not merely because its token hasn't technically expired or
+  // been revoked yet. Without this, a session whose owner simply closed
+  // their browser/app (so the client-side idle-timeout JS never got to
+  // run its own real logout call) stays "active" for its full 12-hour
+  // TTL, locking that same real account holder out of their own account
+  // for hours over nothing. Bumped by requireAuth/requireInvestorAuth on
+  // every authenticated request; backfilled from created_at so an
+  // already-running deployment's existing sessions don't look
+  // artificially stale the instant this column appears.
+  await ensureColumn('sessions', 'last_seen_at TEXT');
+  await rawRun('UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL');
 }
 
 // Explicit startup self-test: prove the database can actually be written

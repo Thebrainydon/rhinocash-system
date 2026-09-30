@@ -19,6 +19,16 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // self-service forms' hidden-current-password-field logic) sees exactly
 // the same must_change_password=1 it already knows how to handle.
 const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
+// How recently a session must genuinely have been used to still count as
+// "active" for the single-active-session login block below. Deliberately
+// well above the frontend's own 5-minute idle-logout window (which, under
+// normal conditions, already calls a real POST /api/auth/logout right
+// around then) — this is only a safety net for when that client-side
+// timer never got to run at all (the tab/app was closed or killed, or
+// the device lost connectivity), so a session sitting idle purely because
+// its owner is reading something on screen without a fresh request isn't
+// mistaken for abandoned and used to block their own next real login.
+const SESSION_ACTIVE_WINDOW_SQL = "interval '-15 minutes'";
 
 async function publicUser(u) {
   if (!u) return null;
@@ -68,12 +78,13 @@ function register(router) {
     // Single active session per account — credentials are already verified
     // at this point, so it's safe to tell the caller exactly why they're
     // blocked. A second real login attempt while a first real session is
-    // still genuinely active (not expired, not already logged out) never
+    // still genuinely active (not expired, not already logged out, AND
+    // genuinely used recently — see SESSION_ACTIVE_WINDOW_SQL above) never
     // gets to spawn a competing session; the account holder is told which
     // real browser that other session is on and sent to log out there
     // first, rather than silently taking over or silently failing.
     const activeSession = await get(
-      "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1",
+      `SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() AND last_seen_at > iso_offset(${SESSION_ACTIVE_WINDOW_SQL}) ORDER BY created_at DESC LIMIT 1`,
       [user.id]
     );
     if (activeSession) {
@@ -87,7 +98,7 @@ function register(router) {
     const token = signToken({ sub: user.id, role: user.role_id, iat: Date.now(), exp: Date.now() + SESSION_TTL_MS });
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
     await run(
-      'INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent) VALUES (?,?,?,?,?)',
+      'INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent, last_seen_at) VALUES (?,?,?,?,?,iso_now())',
       [tokenHash(token), user.id, expiresAt, ip, req.headers['user-agent'] || null]
     );
     req.user = user;
