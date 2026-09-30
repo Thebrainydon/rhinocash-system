@@ -3069,14 +3069,127 @@ function renderPortfolioBreakdownPage(st, bName){
     ${pieCard("Portfolio Breakdown", "paid &amp; outstanding vs real arrears aging"+(bName?", "+bName:""), portfolioBreakdownPieData(d))}
   `;
 }
-function renderTargetsAccrualsPage(branchIds){
-  const {totals} = staffPortfolioRows(branchIds);
+// ---- Targets & Accruals — matches the requested reference design: one
+// selected real calendar month, a per-Loan-Officer row of the same 5
+// real metric groups (New Loans/Repeat Loans/Performing/Arrears/Revenue)
+// already established for a Loan Officer's own "View Details ->
+// Performance" panel (renderLoViewDetailsPerformancePanel above), just
+// team-wide for one month instead of one officer's whole year — served by
+// the real GET /api/targets/team-performance endpoint (targets.js), which
+// shares its per-officer computation with /api/users/me/performance. The
+// "+" button before each Target number opens a real modal that sets/
+// updates that exact officer+metric+month's real target via the existing
+// POST /api/targets / PATCH /api/targets/:id endpoints — never a
+// display-only number.
+const TARGETS_ACCRUALS_METRICS = [
+  {key:"newLoans", label:"New Loans", metric:"new_loans", showPct:true},
+  {key:"repeatLoans", label:"Repeat Loans", metric:"repeat_loans", showPct:true},
+  {key:"performing", label:"Performing", metric:"performing", showPct:true},
+  {key:"arrears", label:"Arrears", metric:"arrears", showPct:false},
+  {key:"revenue", label:"Revenue", metric:"collection", showPct:true},
+];
+function defaultTargetsAccrualsState(){
+  const now = new Date();
+  return { period: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` };
+}
+function targetsAccrualsMonthOptions(){
+  const opts = []; const now = new Date();
+  for(let i=0;i<12;i++){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); opts.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }
+  return opts;
+}
+function targetsAccrualsMonthLabel(period){
+  const [y,m] = period.split("-");
+  return new Date(Number(y), Number(m)-1, 1).toLocaleString('en-KE',{month:'long', year:'numeric'});
+}
+async function fetchTeamPerformance(period){
+  const res = await api.get('/api/targets/team-performance?period='+encodeURIComponent(period));
+  DB.teamPerformance = res;
+}
+async function loadTeamPerformance(period){
+  return withRequest('load-team-performance:'+period, ()=>fetchTeamPerformance(period));
+}
+function openSetTargetModal(officerId, officerName, metric, metricLabel, period, targetId, currentValue){
+  openModal('set-target', { officerId, officerName, metric, metricLabel, period, targetId: targetId||null, currentValue: currentValue||"" });
+}
+function renderSetTargetModal(){
+  const m = modal;
   return `
-    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-      <div><div class="detail-label" style="margin:0;">Accrued (Uncollected) Interest <span class="hint">— real outstanding interest across active loans</span></div>
-      <div style="font-size:22px; font-weight:800; color:var(--navy); margin-top:4px;">${fmt(totals.activeInterest)}</div></div>
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 6px;">Set ${escapeHtml(m.metricLabel)} Target</h3>
+      <div class="hint" style="text-align:center; margin-bottom:18px;">${escapeHtml(m.officerName)} — ${targetsAccrualsMonthLabel(m.period)}</div>
+      <form onsubmit="return submitTeamTargetValue(event)">
+        <div class="field"><label>Target Value</label><input name="target_value" type="number" min="1" step="1" value="${m.currentValue||""}" required autofocus></div>
+        <div style="text-align:right; margin-top:14px;">
+          <button class="btn btn-green" type="submit">Save Target</button>
+        </div>
+      </form>
     </div>
-    ${performanceIndicatorsTable(null, branchIds, 'your branch')}
+  `;
+}
+// Named distinctly from the pre-existing submitSetTarget()/setTarget()
+// (Staff module's own real target-setting form, further down this file)
+// — a same-named function here would silently shadow that one via plain
+// function-declaration hoisting in this shared top-level script scope,
+// since the later declaration in file order always wins.
+function submitTeamTargetValue(ev){
+  ev.preventDefault();
+  const m = modal;
+  const f = Object.fromEntries(new FormData(ev.target));
+  const value = Number(f.target_value);
+  if(!value || value<=0){ toast("Enter a positive target value"); return false; }
+  return withRequest('set-team-target', async ()=>{
+    if(m.targetId) await api.patch(`/api/targets/${m.targetId}`, { target_value: value });
+    else await api.post('/api/targets', { recipient_user_id: m.officerId, metric: m.metric, period: m.period, period_type: 'monthly', target_value: value });
+    await fetchTeamPerformance(m.period);
+    toast("Target saved");
+    closeModal();
+  }, {mutates:true});
+}
+function renderTargetsAccrualsPage(branchIds, bName){
+  const tas = session.targetsAccrualsState || (session.targetsAccrualsState = defaultTargetsAccrualsState());
+  const fresh = DB.teamPerformance && DB.teamPerformance.period === tas.period;
+  if(!fresh) loadTeamPerformance(tas.period);
+  const officers = fresh ? DB.teamPerformance.officers : null;
+  const cols = TARGETS_ACCRUALS_METRICS;
+  const totalCols = 1 + cols.length*2;
+  const totals = officers ? cols.reduce((acc,c)=>{
+    acc[c.key] = { target: officers.reduce((s,o)=>s+o[c.key].target,0), actual: officers.reduce((s,o)=>s+o[c.key].actual,0) };
+    return acc;
+  }, {}) : null;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Targets &amp; Actuals</span> ${bName?`<small>${bName}</small>`:""}</div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.targetsAccrualsState.period=this.value; DB.teamPerformance=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${targetsAccrualsMonthOptions().map(p=>`<option value="${p}" ${p===tas.period?"selected":""}>${targetsAccrualsMonthLabel(p)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap"><table>
+        <tr>
+          <th rowspan="2" style="vertical-align:middle;">Loan Officer</th>
+          ${cols.map(c=>`<th colspan="2">${c.label}</th>`).join("")}
+        </tr>
+        <tr>
+          ${cols.map(()=>`<th>Target</th><th>Actual</th>`).join("")}
+        </tr>
+        ${!officers ? `<tr><td colspan="${totalCols}" class="empty">${loadingDotsHtml()}</td></tr>` :
+          (officers.length ? officers.map(o=>{
+            const safeName = escapeHtml(o.name).replace(/'/g,"&#39;");
+            return `<tr>
+            <td>${escapeHtml(o.name)}</td>
+            ${cols.map(c=>{
+              const g = o[c.key];
+              const pct = c.showPct && g.target>0 ? ` <span style="color:#C0389B; font-size:11px; font-weight:700;">${(g.actual/g.target*100).toFixed(0)}%</span>` : "";
+              return `<td><span onclick="openSetTargetModal('${o.id}','${safeName}','${c.metric}','${c.label}','${tas.period}',${g.targetId?`'${g.targetId}'`:"null"},${g.target||""})" title="Set target" style="display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:50%; background:var(--blue-bg); color:var(--navy); font-weight:800; cursor:pointer; margin-right:5px; font-size:12px; line-height:1;">+</span>${fmtNum(g.target)}</td><td>${fmtNum(g.actual)}${pct}</td>`;
+            }).join("")}
+          </tr>`;}).join("") : `<tr><td colspan="${totalCols}" class="empty">No Loan Officers Found</td></tr>`)}
+        ${officers && officers.length ? `<tr style="font-weight:700; background:#F5F4F1;">
+          <td>Total</td>
+          ${cols.map(c=>`<td>${fmtNum(totals[c.key].target)}</td><td>${fmtNum(totals[c.key].actual)}</td>`).join("")}
+        </tr>` : ""}
+      </table></div>
+    </div>
   `;
 }
 function renderBusinessPerformancePage(st, bName){
@@ -3096,13 +3209,13 @@ function renderBusinessAnalyticsModule(){
   const branchIds = businessAnalyticsBranchIds();
   const st = computeStats(null, branchIds);
   const bName = branchIds && branchIds.length===1 ? branchName(branchIds[0]) : null;
-  // Loan Sizes and Portfolio Breakdown match reference designs that
-  // navigate via their own "←" back arrow (see each page's own
-  // card-title), not a horizontal tab strip — the sidebar's own Business
-  // Analytics submenu items already provide the same navigation the tabs
-  // bar duplicated. Targets & Accruals / Business Performance keep it.
+  // Loan Sizes, Portfolio Breakdown and Targets & Accruals all match
+  // reference designs that navigate via their own "←" back arrow (see
+  // each page's own card-title), not a horizontal tab strip — the
+  // sidebar's own Business Analytics submenu items already provide the
+  // same navigation the tabs bar duplicated. Business Performance keeps it.
   if(active==="Portfolio Breakdown") return renderPortfolioBreakdownPage(st, bName);
-  if(active==="Targets & Accruals") return tabsHtml + renderTargetsAccrualsPage(branchIds);
+  if(active==="Targets & Accruals") return renderTargetsAccrualsPage(branchIds, bName);
   if(active==="Business Performance") return tabsHtml + renderBusinessPerformancePage(st, bName);
   return renderLoanSizesPage(st, bName, branchIds);
 }
@@ -15295,6 +15408,7 @@ function renderModal(){
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
   else if(modal.type === "idle-logged-out") body = renderIdleLoggedOutModal();
   else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
+  else if(modal.type === "set-target") body = renderSetTargetModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];

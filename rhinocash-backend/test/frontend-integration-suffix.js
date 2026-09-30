@@ -6046,6 +6046,75 @@ apiRequest = async function(method, path, body){
     __assert(toasts.length > pbToastsBefore && toasts[toasts.length-1].msg.includes('Exported'), "the real Excel File export genuinely runs end-to-end and confirms via the real toast");
   }
 
+  // ---- 59. BUSINESS ANALYTICS > TARGETS & ACCRUALS: the real per-Loan-
+  // Officer target vs actual table for one selected real month (matching
+  // the requested reference design), served by the real GET
+  // /api/targets/team-performance endpoint, plus the real "+" button
+  // target-setting flow — a real POST /api/targets for a fresh metric/
+  // period, then a real PATCH on that exact same real target for an
+  // update, both driven through the actual UI functions, never
+  // fabricated. ----
+  {
+    let mgrTa = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrTa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.targetsAccrualsState = null; DB.teamPerformance = null;
+    goTo('business-analytics','Targets & Accruals');
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Targets &amp; Actuals'), "the real Targets & Actuals page genuinely renders under Business Analytics > Targets & Accruals");
+    __assert(!html.includes('class="subtabs"'), "the real Targets & Accruals page genuinely has no horizontal subtab bar above it anymore, matching the requested reference design");
+    __assert(html.includes('onclick="goTo(\'dashboard\')"'), "the real Targets & Accruals page genuinely has its own real back arrow now that the tab strip is gone");
+    ['New Loans','Repeat Loans','Performing','Arrears','Revenue'].forEach(label=>__assert(html.includes(label), `the real "${label}" metric group genuinely renders its own column group`));
+    __assert(html.includes('Loan Officer') && html.includes('>Target<') && html.includes('>Actual<'), "the real per-officer table genuinely renders the requested Loan Officer / Target / Actual layout");
+    __assert(Array.isArray(DB.teamPerformance && DB.teamPerformance.officers), "the real team-performance data genuinely loaded from the real backend, not fabricated client-side");
+
+    const officerRow = DB.teamPerformance.officers.find(o=>o.name === staffName('usr_officer'));
+    __assert(!!officerRow, "the real Kisumu officer genuinely appears as a real row in the real team-performance table");
+    __assert(html.includes(fmtNum(officerRow.newLoans.actual)), "the real rendered New Loans Actual genuinely matches the real backend-computed figure, not fabricated client-side");
+    __assert(html.includes('Total'), "a real Totals row genuinely renders below the real per-officer rows");
+
+    // The real "+" button: open the modal for this officer's real
+    // "New Loans" target for the currently-selected real period.
+    const taPeriod = session.targetsAccrualsState.period;
+    openSetTargetModal(officerRow.id, officerRow.name, 'new_loans', 'New Loans', taPeriod, officerRow.newLoans.targetId, officerRow.newLoans.target);
+    renderApp();
+    __assert(modal && modal.type === 'set-target', "the real '+' button genuinely opens the real Set Target modal");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Set New Loans Target'), "the real modal genuinely reflects the exact real metric being targeted");
+
+    const setTargetForm = new Map([['target_value','25']]);
+    global.FormData = class { constructor(){ return setTargetForm; } };
+    await submitTeamTargetValue({ preventDefault(){}, target:{} });
+    __assert(!modal, "the real Set Target modal genuinely closes once the real target is saved");
+    __assert(DB.teamPerformance.officers.find(o=>o.id===officerRow.id).newLoans.target === 25, "the real team-performance table genuinely reflects the real just-created target (25) with no separate refresh step");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(fmtNum(25)), "the real rendered table genuinely shows the real, just-set target value");
+    const createdTargetId = DB.teamPerformance.officers.find(o=>o.id===officerRow.id).newLoans.targetId;
+    __assert(!!createdTargetId, "the newly-created real target's real id genuinely comes back, ready for a future '+' button click to PATCH instead of re-creating");
+
+    // Clicking "+" again for the SAME officer+metric+period now opens
+    // with the real existing target's id — the real update path.
+    const officerRow2 = DB.teamPerformance.officers.find(o=>o.id===officerRow.id);
+    openSetTargetModal(officerRow2.id, officerRow2.name, 'new_loans', 'New Loans', taPeriod, officerRow2.newLoans.targetId, officerRow2.newLoans.target);
+    const updateForm = new Map([['target_value','40']]);
+    global.FormData = class { constructor(){ return updateForm; } };
+    await submitTeamTargetValue({ preventDefault(){}, target:{} });
+    __assert(DB.teamPerformance.officers.find(o=>o.id===officerRow.id).newLoans.target === 40, "a second real '+' button click on the SAME officer+metric+period genuinely PATCHes the real existing target (now 40) rather than creating a duplicate");
+    __assert(DB.teamPerformance.officers.find(o=>o.id===officerRow.id).newLoans.targetId === createdTargetId, "the real targetId genuinely stays the same real row across the update — confirming it was a real PATCH, not a second real POST");
+
+    // A different real month genuinely re-fetches a fresh real
+    // team-performance response, not a stale cached one.
+    const otherPeriod = targetsAccrualsMonthOptions().find(p=>p!==taPeriod);
+    session.targetsAccrualsState.period = otherPeriod;
+    DB.teamPerformance = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    __assert(DB.teamPerformance && DB.teamPerformance.period === otherPeriod, "selecting a different real month in the dropdown genuinely triggers a fresh real fetch for that exact real period");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();

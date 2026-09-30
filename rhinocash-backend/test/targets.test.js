@@ -3,6 +3,7 @@
 // Manager sets Regional Manager targets, CEO/Director set management-level
 // targets — with real branch/region scope enforcement at every level.
 'use strict';
+const { get, run } = require('../src/db');
 const BASE = process.env.BASE_URL || 'http://localhost:4000';
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
@@ -21,7 +22,12 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   const opsMgrToken = await login('opsmanager@rhinocash.co.ke', process.env.SEEDED_OPSMGR_PASSWORD);
   const ceoToken = await login('ceo@rhinocash.co.ke', process.env.SEEDED_CEO_PASSWORD);
   const officerToken = await login('officer@rhinocash.co.ke', process.env.SEEDED_OFFICER_PASSWORD); // Kisumu
-  assert(adminToken && managerToken && managerKisumuToken && regionalToken && opsMgrToken && ceoToken && officerToken, 'all needed accounts log in');
+  // Logged in once and reused everywhere below (never re-logged-in) — the
+  // real single-active-session login block (see concurrentLogin.test.js)
+  // would otherwise genuinely 409 a second real login to this same real
+  // account while its first real session is still active.
+  const accountantToken = await login('accountant@rhinocash.co.ke', process.env.SEEDED_ACCOUNTANT_PASSWORD);
+  assert(adminToken && managerToken && managerKisumuToken && regionalToken && opsMgrToken && ceoToken && officerToken && accountantToken, 'all needed accounts log in');
 
   const officerMe = await api('GET', '/api/auth/me', { token: officerToken });
   const officerId = officerMe.json.user.id;
@@ -156,7 +162,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: managerKisumuToken, body: {} });
     await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: regionalToken, body: {} });
     await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: opsMgrToken, body: {} });
-    await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: (await login('accountant@rhinocash.co.ke', process.env.SEEDED_ACCOUNTANT_PASSWORD)), body: {} });
+    await api('POST', `/api/loans/${loan.json.loan.id}/approve`, { token: accountantToken, body: {} });
     await api('POST', `/api/loans/${loan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
     await api('POST', '/api/payments', { token: officerToken, body: { loan_id: loan.json.loan.id, amount: 12000, channel: 'Cash' } });
 
@@ -201,6 +207,97 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(cancelledEntry && cancelledEntry.status === 'Cancelled' && cancelledEntry.achievementPct > 100, 'a cancelled target remains visible in history with its real achievement preserved, not deleted or zeroed');
     const activeOnlyView = await api('GET', '/api/targets', { token: managerKisumuToken });
     assert(!activeOnlyView.json.targets.some(t => t.id === smallTarget.json.target.id), 'the default (non-history) view correctly excludes the cancelled target');
+  }
+
+  // =========================================================
+  // 8. NEW METRICS (repeat_loans / performing / arrears) + TEAM
+  //    PERFORMANCE — the real backend behind the new Targets & Accruals
+  //    page: 3 newly-supported target metrics (repeat_loans/performing/
+  //    arrears — arrears now a real Ksh amount, never a loan count), and
+  //    the Manager's own team-wide, single-period view the page's "+"
+  //    button reads/writes against.
+  // =========================================================
+  {
+    const loNotAllowed = await api('GET', `/api/targets/team-performance?period=${period}`, { token: officerToken });
+    assert(loNotAllowed.status === 403, 'Loan Officer cannot view team-performance — they are not authorized to set targets');
+
+    const mgrTeam = await api('GET', `/api/targets/team-performance?period=${period}`, { token: managerKisumuToken });
+    assert(mgrTeam.status === 200, 'Kisumu Manager can view their own real team performance for a period');
+    assert(mgrTeam.json.officers.every(o => o.id !== managerKisumuId), 'team-performance lists real Loan Officers only, never the Manager themself');
+    const officerRow = mgrTeam.json.officers.find(o => o.id === officerId);
+    assert(officerRow, "the Kisumu Manager's own real Loan Officer appears in their team-performance list");
+    assert(['newLoans', 'repeatLoans', 'performing', 'arrears', 'revenue'].every(k => k in officerRow), 'each officer row carries all 5 real metric groups');
+    assert(['newLoans', 'repeatLoans', 'performing', 'arrears', 'revenue'].every(k => 'target' in officerRow[k] && 'targetId' in officerRow[k] && 'actual' in officerRow[k]), 'each metric group carries a real target, targetId (for create-vs-update), and actual');
+
+    const otherMgrTeam = await api('GET', `/api/targets/team-performance?period=${period}`, { token: managerToken });
+    assert(!otherMgrTeam.json.officers.some(o => o.id === officerId), "the Nairobi Manager's own team-performance never includes the Kisumu branch's Loan Officer");
+
+    // A fresh client + two real disbursed loans for them (the second is
+    // a genuine repeat loan) to exercise repeat_loans/performing/arrears
+    // for real, isolated from everything else in this suite.
+    const c = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Repeat Metrics Client', phone: '0722900777' } });
+    const products = await api('GET', '/api/loan-products', { token: officerToken });
+    async function disburseRealLoan(principal, term) {
+      const loan = await api('POST', '/api/loans', { token: officerToken, body: { client_id: c.json.client.id, product_id: products.json.products[0].id, principal, term_months: term } });
+      const id = loan.json.loan.id;
+      await api('POST', `/api/loans/${id}/approve`, { token: managerKisumuToken, body: {} });
+      await api('POST', `/api/loans/${id}/approve`, { token: regionalToken, body: {} });
+      await api('POST', `/api/loans/${id}/approve`, { token: opsMgrToken, body: {} });
+      await api('POST', `/api/loans/${id}/approve`, { token: accountantToken, body: {} });
+      await api('POST', `/api/loans/${id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+      return id;
+    }
+    const firstLoanId = await disburseRealLoan(20000, 4);
+    // disbursed_at is stored as a real calendar DATE, not a timestamp — two
+    // loans disbursed the same real day would tie under the app's own
+    // real "repeat iff an earlier-disbursed loan exists" rule (a strict
+    // <, not <=). Back-date the first loan's own real disbursed_at by one
+    // real day so the second one below is a genuine, unambiguous repeat —
+    // the same real multi-day scenario this rule is designed for, not a
+    // same-day edge case.
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    await run('UPDATE loans SET disbursed_at = ? WHERE id = ?', [yesterday, firstLoanId]);
+    const repeatLoanId = await disburseRealLoan(15000, 4);
+    const firstLoanCheck = await get('SELECT status FROM loans WHERE id = ?', [firstLoanId]);
+    const repeatLoanCheck = await get('SELECT status FROM loans WHERE id = ?', [repeatLoanId]);
+    assert(firstLoanCheck.status === 'Active' && repeatLoanCheck.status === 'Active', 'both real test loans genuinely disbursed (status Active) before measuring achievement against them');
+
+    const repeatTarget = await api('POST', '/api/targets', { token: managerKisumuToken, body: { metric: 'repeat_loans', recipient_user_id: officerId, target_value: 1, period } });
+    assert(repeatTarget.status === 201, 'Manager can set a real repeat_loans target for their Loan Officer — a newly supported metric');
+    const repeatReload = await api('GET', `/api/targets/${repeatTarget.json.target.id}`, { token: managerKisumuToken });
+    assert(repeatReload.json.target.achieved >= 1, `real repeat_loans achievement counts the real second loan for the same client (got ${repeatReload.json.target.achieved})`);
+
+    const performingTarget = await api('POST', '/api/targets', { token: managerKisumuToken, body: { metric: 'performing', recipient_user_id: officerId, target_value: 1, period } });
+    const performingReload = await api('GET', `/api/targets/${performingTarget.json.target.id}`, { token: managerKisumuToken });
+    assert(performingReload.json.target.achieved >= 1, `real performing achievement counts currently-performing disbursed loans (got ${performingReload.json.target.achieved})`);
+
+    // Arrears is now a real Ksh AMOUNT, not a loan count — back-date the
+    // repeat loan's earliest real schedule row into genuine overdue
+    // territory and confirm the achieved figure reflects its real
+    // unpaid balance, not a count of 1.
+    const scheduleRow = await get('SELECT total_due, paid_amount FROM loan_schedule WHERE loan_id = ? ORDER BY due_date ASC LIMIT 1', [repeatLoanId]);
+    await run(`UPDATE loan_schedule SET due_date = iso_offset(interval '-10 days') WHERE loan_id = ? AND id = (SELECT id FROM loan_schedule WHERE loan_id = ? ORDER BY due_date ASC LIMIT 1)`, [repeatLoanId, repeatLoanId]);
+    const arrearsTarget = await api('POST', '/api/targets', { token: managerKisumuToken, body: { metric: 'arrears', recipient_user_id: officerId, target_value: 1000, period } });
+    assert(arrearsTarget.status === 201, 'Manager can set a real arrears target for their Loan Officer — a newly supported metric');
+    const arrearsReload = await api('GET', `/api/targets/${arrearsTarget.json.target.id}`, { token: managerKisumuToken });
+    const expectedMin = Number(scheduleRow.total_due) - Number(scheduleRow.paid_amount);
+    assert(arrearsReload.json.target.achieved >= expectedMin - 0.01, `real arrears achievement is a real Ksh amount reflecting the unpaid overdue balance (expected >= ${expectedMin}, got ${arrearsReload.json.target.achieved})`);
+    assert(arrearsReload.json.target.achieved !== 1, 'arrears achievement is genuinely an amount, not the old loan-count definition (which would read exactly 1 here)');
+
+    // The same real backdated arrears now shows up through
+    // team-performance too — the exact figure the "+" button's page reads.
+    const teamAfterArrears = await api('GET', `/api/targets/team-performance?period=${period}`, { token: managerKisumuToken });
+    const officerRowAfter = teamAfterArrears.json.officers.find(o => o.id === officerId);
+    assert(officerRowAfter.arrears.actual >= expectedMin - 0.01, `team-performance's own arrears.actual for this officer reflects the same real unpaid amount (got ${officerRowAfter.arrears.actual})`);
+    assert(officerRowAfter.repeatLoans.targetId === repeatTarget.json.target.id, "team-performance's repeatLoans.targetId correctly points at the real target just created, letting the '+' button PATCH instead of re-creating");
+
+    // The "+" button's update path: a second POST for the SAME
+    // officer+metric+period would create a duplicate row — the real
+    // page instead PATCHes the existing target's id it got back above.
+    const updatedViaPatch = await api('PATCH', `/api/targets/${officerRowAfter.repeatLoans.targetId}`, { token: managerKisumuToken, body: { target_value: 2 } });
+    assert(updatedViaPatch.status === 200 && updatedViaPatch.json.target.target_value === 2, "the '+' button's update path (PATCH on the real targetId) genuinely changes the real stored target value");
+    const teamAfterPatch = await api('GET', `/api/targets/team-performance?period=${period}`, { token: managerKisumuToken });
+    assert(teamAfterPatch.json.officers.find(o => o.id === officerId).repeatLoans.target === 2, 'team-performance reflects the real updated target value immediately, with no separate refresh step needed');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

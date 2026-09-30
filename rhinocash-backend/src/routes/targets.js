@@ -18,7 +18,7 @@ const ALLOWED_RECIPIENT_ROLES = {
   director: ['operational_manager', 'regional_manager', 'manager', 'loan_officer'],
   admin: ['operational_manager', 'regional_manager', 'manager', 'loan_officer', 'accountant'],
 };
-const VALID_METRICS = ['disbursement', 'new_loans', 'collection', 'collection_rate', 'portfolio', 'new_clients'];
+const VALID_METRICS = ['disbursement', 'new_loans', 'collection', 'collection_rate', 'portfolio', 'new_clients', 'repeat_loans', 'arrears', 'performing'];
 const VALID_PERIOD_TYPES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
 function canSetTargets(roleId) {
@@ -170,11 +170,104 @@ async function computeAchievement(target) {
     sql += ' GROUP BY l.id';
     const rows = await all(sql, params);
     achieved = rows.reduce((sum, row) => sum + Math.max(0, row.bal), 0);
+  } else if (target.metric === 'repeat_loans') {
+    // Same "Repeat" definition used everywhere else in this app (Dashboard's
+    // computeStats, /api/users/me/performance below): a loan is Repeat iff
+    // its client has an earlier-disbursed loan anywhere in the system.
+    const scope = branchInClause(branchIds);
+    let sql = `SELECT COUNT(*) as v FROM loans l WHERE ${scope.clause} AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
+               AND EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`;
+    const params = [...scope.params, start, end];
+    if (officerId) { sql += ' AND l.officer_id = ?'; params.push(officerId); }
+    achieved = (await get(sql, params)).v;
+  } else if (target.metric === 'performing') {
+    // A real snapshot as of the period's own end date: disbursed, not
+    // written off/closed, and carrying no overdue-unpaid schedule row.
+    const scope = branchInClause(branchIds);
+    let sql = `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE ${scope.clause} AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
+               AND l.status NOT IN ('Written Off','Closed')
+               AND NOT EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`;
+    const params = [...scope.params, end, end];
+    if (officerId) { sql += ' AND l.officer_id = ?'; params.push(officerId); }
+    achieved = (await get(sql, params)).v;
+  } else if (target.metric === 'arrears') {
+    // A real Ksh amount — the sum of unpaid balance on overdue schedule
+    // rows as of the period's end date, same "Arrears Breakdown(PAR)"
+    // definition Portfolio Breakdown already uses, not a loan count.
+    const loanScope = branchIds === null ? '1=1' : (branchIds.length ? `l.branch_id IN (${branchIds.map(() => '?').join(',')})` : '1=0');
+    const params = [...(branchIds || []), end];
+    let sql = `SELECT COALESCE(SUM(s.total_due - s.paid_amount),0) as v FROM loan_schedule s JOIN loans l ON l.id = s.loan_id
+               WHERE ${loanScope} AND l.disbursed_at IS NOT NULL AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due`;
+    if (officerId) { sql += ' AND l.officer_id = ?'; params.push(officerId); }
+    achieved = (await get(sql, params)).v;
   }
 
   const remaining = Math.max(0, target.target_value - achieved);
   const achievementPct = target.target_value > 0 ? (achieved / target.target_value * 100) : 0;
   return { achieved, remaining, achievementPct, periodStart: start, periodEnd: end };
+}
+
+// The exact 5-metric breakdown (New Loans / Repeat Loans / Performing /
+// Arrears / Revenue, each with a real Actual and, wherever one has been
+// set, a real Target) for ONE officer over ONE monthly period — the same
+// underlying computation whether it's an officer looking at their own
+// year-long history (/api/users/me/performance below) or a Manager looking
+// at their whole team for one month (team-performance below). Every actual
+// is a real SQL aggregation, never estimated; every target is a real row
+// looked up from the same `targets` table the rest of this file manages,
+// so the "+" button on either page is always setting/updating a real
+// target, never a display-only number.
+async function computeOfficerPeriodMetrics(officerId, period) {
+  const { start, end } = periodDateRange(period, 'monthly');
+
+  const newLoans = (await get(
+    `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
+       AND NOT EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
+    [officerId, start, end]
+  )).v;
+  const repeatLoans = (await get(
+    `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
+       AND EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
+    [officerId, start, end]
+  )).v;
+  // Performing/Arrears are a real snapshot "as of this period" — never
+  // computed for a period that has not genuinely begun yet.
+  const monthHasStarted = start <= new Date().toISOString().slice(0, 10);
+  const performing = !monthHasStarted ? 0 : (await get(
+    `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
+       AND l.status NOT IN ('Written Off','Closed')
+       AND NOT EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`,
+    [officerId, end, end]
+  )).v;
+  // A real Ksh amount (the real unpaid balance on overdue schedule rows),
+  // not a loan count — matches Portfolio Breakdown's own "Arrears
+  // Breakdown(PAR)" definition for the same concept.
+  const arrears = !monthHasStarted ? 0 : (await get(
+    `SELECT COALESCE(SUM(s.total_due - s.paid_amount),0) as v FROM loan_schedule s JOIN loans l ON l.id = s.loan_id
+       WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due`,
+    [officerId, end]
+  )).v;
+  const revenue = (await get(
+    `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE l.officer_id = ? AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`,
+    [officerId, start, end]
+  )).v;
+
+  const targetLookup = (metric) => get(
+    `SELECT id, target_value FROM targets WHERE recipient_user_id = ? AND metric = ? AND period = ? AND period_type = 'monthly' AND status != 'Cancelled' ORDER BY created_at DESC LIMIT 1`,
+    [officerId, metric, period]
+  );
+  const [newLoansT, repeatLoansT, performingT, arrearsT, revenueT] = await Promise.all([
+    targetLookup('new_loans'), targetLookup('repeat_loans'), targetLookup('performing'), targetLookup('arrears'), targetLookup('collection'),
+  ]);
+  const group = (actual, row) => ({ target: row ? row.target_value : 0, targetId: row ? row.id : null, actual });
+
+  return {
+    newLoans: group(newLoans, newLoansT),
+    repeatLoans: group(repeatLoans, repeatLoansT),
+    performing: group(performing, performingT),
+    arrears: group(arrears, arrearsT),
+    revenue: group(revenue, revenueT),
+  };
 }
 
 function register(router) {
@@ -276,6 +369,37 @@ function register(router) {
     res.json({ users: rows });
   });
 
+  // ==================== Team performance (Manager/Regional Manager/etc ->
+  // Business Analytics -> Targets & Accruals) ====================
+  // The same 5-metric breakdown as /api/users/me/performance below, but for
+  // every Loan Officer (or other recipient role) in the CALLER's own real
+  // downward scope, for ONE selected period — the exact shape the Targets &
+  // Accruals page's per-officer table needs, including each metric's real
+  // target row id so its "+" button can tell create (POST /api/targets)
+  // from update (PATCH /api/targets/:id) for that officer+metric+period.
+  // Must be registered BEFORE GET /api/targets/:id below — same routing-
+  // order lesson as /api/targets/eligible-recipients just above: the
+  // router matches in registration order, so ':id' would otherwise
+  // swallow this literal path too.
+  router.get('/api/targets/team-performance', requireAuth, requireModule('reports'), async (req, res, next) => {
+    const actor = req.user;
+    if (!canSetTargets(actor.role_id)) return next({ status: 403, message: 'Your role is not authorized to view team performance' });
+    const now = new Date();
+    const period = req.query.period || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (!/^\d{4}-\d{2}$/.test(period)) return next({ status: 400, message: 'period must look like "2026-09"' });
+
+    const allowedRoles = ALLOWED_RECIPIENT_ROLES[actor.role_id] || [];
+    if (!allowedRoles.length) return res.json({ period, officers: [] });
+    let rows = await all(`SELECT id, name, role_id, branch_id FROM users WHERE role_id IN (${allowedRoles.map(() => '?').join(',')}) AND status = 'Active' ORDER BY name`, allowedRoles);
+    if (actor.role_id === 'manager') rows = rows.filter(u => u.branch_id === actor.branch_id);
+    else if (actor.role_id === 'regional_manager') { const scope = (await branchIdsInScope(actor)) || []; rows = rows.filter(u => scope.includes(u.branch_id)); }
+
+    const officers = await Promise.all(rows.map(async u => ({
+      id: u.id, name: u.name, ...(await computeOfficerPeriodMetrics(u.id, period)),
+    })));
+    res.json({ period, officers });
+  });
+
   router.get('/api/targets/:id', requireAuth, async (req, res, next) => {
     const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
@@ -337,65 +461,7 @@ function register(router) {
     const months = [];
     for (let m = 1; m <= 12; m++) {
       const period = `${year}-${String(m).padStart(2, '0')}`;
-      const start = `${period}-01`;
-      const endDay = new Date(Number(year), m, 0).getDate();
-      const end = `${period}-${String(endDay).padStart(2, '0')}`;
-
-      // New/Repeat here is derived from real disbursement history — the
-      // same rule the Dashboard's own computeStats() uses (a loan is
-      // "Repeat" iff its client has an earlier-disbursed loan anywhere in
-      // the system, regardless of officer) — rather than trusting the
-      // stored, officer-picked, optional loans.loan_category column,
-      // which can be blank or mislabeled. See docs/CROSS_MODULE_AUDIT.md
-      // §E.2/H.1 for why the two definitions previously disagreed.
-      const newLoans = (await get(
-        `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
-           AND NOT EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
-        [officerId, start, end]
-      )).v;
-      const repeatLoans = (await get(
-        `SELECT COUNT(*) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date BETWEEN (?)::date AND (?)::date
-           AND EXISTS (SELECT 1 FROM loans p WHERE p.client_id = l.client_id AND p.disbursed_at IS NOT NULL AND p.disbursed_at < l.disbursed_at)`,
-        [officerId, start, end]
-      )).v;
-      // Performing/Arrears are a real snapshot "as of this month" — never
-      // computed for a month that has not genuinely begun yet, which
-      // would otherwise fabricate a future condition no one can know yet.
-      const monthHasStarted = start <= new Date().toISOString().slice(0, 10);
-      const performing = !monthHasStarted ? 0 : (await get(
-        `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
-           AND l.status NOT IN ('Written Off','Closed')
-           AND NOT EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`,
-        [officerId, end, end]
-      )).v;
-      const arrears = !monthHasStarted ? 0 : (await get(
-        `SELECT COUNT(DISTINCT l.id) as v FROM loans l WHERE l.officer_id = ? AND l.disbursed_at IS NOT NULL AND (l.disbursed_at)::date <= (?)::date
-           AND l.status NOT IN ('Written Off','Closed')
-           AND EXISTS (SELECT 1 FROM loan_schedule s WHERE s.loan_id = l.id AND (s.due_date)::date <= (?)::date AND s.paid_amount < s.total_due)`,
-        [officerId, end, end]
-      )).v;
-      const revenue = (await get(
-        `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE l.officer_id = ? AND p.status != 'Unposted' AND (p.created_at)::date BETWEEN (?)::date AND (?)::date`,
-        [officerId, start, end]
-      )).v;
-
-      const newLoansTarget = (await get(
-        `SELECT target_value as v FROM targets WHERE recipient_user_id = ? AND metric = 'new_loans' AND period = ? AND period_type = 'monthly' AND status != 'Cancelled' ORDER BY created_at DESC LIMIT 1`,
-        [officerId, period]
-      ));
-      const revenueTarget = (await get(
-        `SELECT target_value as v FROM targets WHERE recipient_user_id = ? AND metric = 'collection' AND period = ? AND period_type = 'monthly' AND status != 'Cancelled' ORDER BY created_at DESC LIMIT 1`,
-        [officerId, period]
-      ));
-
-      months.push({
-        month: m, period,
-        newLoans: { target: newLoansTarget ? newLoansTarget.v : 0, actual: newLoans },
-        repeatLoans: { target: 0, actual: repeatLoans },
-        performing: { target: 0, actual: performing },
-        arrears: { target: 0, actual: arrears },
-        revenue: { target: revenueTarget ? revenueTarget.v : 0, actual: revenue },
-      });
+      months.push({ month: m, period, ...(await computeOfficerPeriodMetrics(officerId, period)) });
     }
     res.json({ year, months });
   });
