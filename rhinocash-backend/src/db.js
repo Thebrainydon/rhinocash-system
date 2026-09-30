@@ -1248,6 +1248,21 @@ async function initSchema() {
   // Kenyan microfinance outfit, not a per-branch number), so it lives once
   // here rather than duplicated onto every branches row.
   await ensureColumn('organization_settings', 'paybill TEXT');
+  // Admin > Roles & Access Control > Create Role: the 8 real seeded
+  // roles (loan_officer..director) are structural — deeply wired into
+  // the frontend's sidebar/module-permission dispatch by exact role
+  // name — so is_system distinguishes them (1) from a role created
+  // through this real endpoint (0), letting the Roles page classify and
+  // protect them correctly without a second, duplicate "custom roles"
+  // table. description/status/created_at are real, persisted fields a
+  // created role actually has; existing rows get status='Active' and
+  // is_system=1 (both true) and a NULL description (the frontend's
+  // ROLE_DESCRIPTIONS map is the fallback for those, never overwritten
+  // here so a real future edit is never silently clobbered by a reseed).
+  await ensureColumn('roles', 'description TEXT');
+  await ensureColumn('roles', "status TEXT NOT NULL DEFAULT 'Active'");
+  await ensureColumn('roles', 'is_system INTEGER NOT NULL DEFAULT 1');
+  await ensureColumn('roles', 'created_at TEXT NOT NULL DEFAULT iso_now()');
   // Vendor/Utility Payments: a real 2-stage approval workflow (submit ->
   // CEO decides -> Accountant decides & pays), replacing the old
   // immediate-Paid-on-creation model. submitted_by is the real requester

@@ -12,6 +12,10 @@ async function api(method, path, { token, body } = {}) {
   return { status: res.status, json };
 }
 async function login(email, password) { const r = await api('POST', '/api/auth/login', { body: { email, password } }); return r.json && r.json.token; }
+async function get_role(id, token) {
+  const r = await api('GET', '/api/roles?with_counts=1', { token });
+  return (r.json && r.json.roles.find(x => x.id === id)) || null;
+}
 
 (async () => {
   const adminToken = await login('admin@rhinocash.co.ke', process.env.SEEDED_ADMIN_PASSWORD);
@@ -238,14 +242,102 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     await api('PUT', '/api/roles/accountant/permissions/write_off_loans', { token: adminToken, body: { allowed: !!wasAllowed } });
   }
 
-  // AA. System roles are genuinely protected — there is no real endpoint that can delete or duplicate a system role.
+  // AA. System roles are genuinely protected — there is no real endpoint that can delete a system role, and POST /api/roles genuinely refuses to overwrite/duplicate one.
   {
     const del = await api('DELETE', '/api/roles/loan_officer');
     assert(del.status === 401 || del.status === 404, 'AA: there is no unauthenticated way to even reach a role-delete action');
     const delAuthed = await api('DELETE', '/api/roles/loan_officer', { token: adminToken });
     assert(delAuthed.status === 404, 'AA: even as Admin, there is genuinely no real endpoint to delete a system role — the architecture protects them structurally, not just via a permission check');
-    const dup = await api('POST', '/api/roles', { token: adminToken, body: { id: 'loan_officer', name: 'Loan Officer 2', default_access_level: 'x' } });
-    assert(dup.status === 404, 'AA: there is genuinely no real endpoint to create a duplicate/custom role either — this version of Rhinocash only supports its real, structural system roles');
+    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Loan Officer 2', code: 'loan_officer', access_level: 'Portfolio Access', permissions: [] } });
+    assert(dupCode.status === 409, 'AA: creating a role with an existing system role\'s real code is genuinely rejected, never silently overwriting it');
+    const untouched = await get_role('loan_officer', adminToken);
+    assert(untouched.name === 'Loan Officer' && untouched.is_system === 1, 'AA: the real system role itself is genuinely unchanged after that rejected attempt');
+  }
+
+  // ==================== Admin > Roles & Access Control > Create Role ====================
+  // Real coverage for POST /api/roles: the endpoint this version's
+  // architecture can safely support (a real role definition + real
+  // permission matrix), reusing the exact same roles/permissions/
+  // role_permissions tables and Admin-only/audit conventions as every
+  // other Admin-exclusive mutation above.
+
+  // BB. Unauthenticated/unauthorized requests are rejected server-side, not just hidden in the UI.
+  {
+    const anon = await api('POST', '/api/roles', { body: { name: 'Branch Ops Supervisor', code: 'branch_ops_supervisor_bb1', access_level: 'Portfolio Access', permissions: [] } });
+    assert(anon.status === 401, 'BB: POST /api/roles requires real authentication');
+    const managerAttempt = await api('POST', '/api/roles', { token: managerToken, body: { name: 'Branch Ops Supervisor', code: 'branch_ops_supervisor_bb2', access_level: 'Portfolio Access', permissions: [] } });
+    assert(managerAttempt.status === 403, 'BB: a non-Admin (Manager) genuinely cannot create a role, even one holding manage_users indirectly through nothing');
+    const ceoAttempt = await api('POST', '/api/roles', { token: ceoToken, body: { name: 'Branch Ops Supervisor', code: 'branch_ops_supervisor_bb3', access_level: 'Portfolio Access', permissions: [] } });
+    assert(ceoAttempt.status === 403, 'BB: even the CEO (who holds manage_users for the staff endpoints) cannot create a role — role creation stays Admin-exclusive');
+  }
+
+  // CC. Field validation — every check runs on the real backend, never assumed to be frontend-only.
+  {
+    const noName = await api('POST', '/api/roles', { token: adminToken, body: { code: 'no_name_role', access_level: 'Portfolio Access', permissions: [] } });
+    assert(noName.status === 400, 'CC: a missing Role Name is genuinely rejected');
+    const shortName = await api('POST', '/api/roles', { token: adminToken, body: { name: 'AB', code: 'short_name_role', access_level: 'Portfolio Access', permissions: [] } });
+    assert(shortName.status === 400, 'CC: a too-short Role Name is genuinely rejected');
+    const noCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'No Code Role', access_level: 'Portfolio Access', permissions: [] } });
+    assert(noCode.status === 400, 'CC: a missing Role Code is genuinely rejected');
+    const badCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Code Role', code: 'Not A Valid Code!', access_level: 'Portfolio Access', permissions: [] } });
+    assert(badCode.status === 400, 'CC: a Role Code with spaces/uppercase/punctuation is genuinely rejected, not silently normalized');
+    const badLevel = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Level Role', code: 'bad_level_role', access_level: 'Not A Real Access Level', permissions: [] } });
+    assert(badLevel.status === 400, 'CC: an access level that doesn\'t match any real existing role\'s access level is genuinely rejected — never a second, free-form access-level system');
+    const badPerm = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Perm Role', code: 'bad_perm_role', access_level: 'Portfolio Access', permissions: ['not_a_real_permission'] } });
+    assert(badPerm.status === 400, 'CC: an unknown permission id is genuinely rejected, never silently ignored');
+    const stillAbsent = await get_role('bad_perm_role', adminToken);
+    assert(stillAbsent === null, 'CC: a request rejected for an invalid permission id genuinely leaves no partially-created role behind');
+  }
+
+  // DD. A real role is created correctly, with its real permission matrix, and is genuinely visible afterwards.
+  let createdRoleCode;
+  {
+    const before = await api('GET', '/api/roles?with_counts=1', { token: adminToken });
+    const rolesBefore = before.json.roles.length;
+
+    const create = await api('POST', '/api/roles', {
+      token: adminToken,
+      body: {
+        name: 'Branch Operations Supervisor', code: 'branch_operations_supervisor_dd',
+        access_level: 'Branch Management Access', description: 'Supervises day-to-day branch operations.', status: 'Active',
+        permissions: ['record_payments', 'record_payments', 'manage_branches'], // deliberate duplicate to prove dedup below
+      },
+    });
+    assert(create.status === 201, 'DD: Admin genuinely can create a real new role');
+    createdRoleCode = create.json.role.id;
+    assert(create.json.role.name === 'Branch Operations Supervisor' && create.json.role.default_access_level === 'Branch Management Access', 'DD: the real created role record reflects exactly what was submitted');
+    assert(create.json.role.is_system === 0, 'DD: a role created through this endpoint is genuinely classified as non-system (Custom), never marked as a protected system role');
+    assert(!('password_hash' in create.json.role) && !('password_salt' in create.json.role), 'DD: the response never leaks an unrelated credential field');
+
+    const perms = await api('GET', `/api/roles/${createdRoleCode}/permissions`, { token: adminToken });
+    const allowed = perms.json.permissions.filter(p => p.allowed === 1).map(p => p.permission_id).sort();
+    assert(JSON.stringify(allowed) === JSON.stringify(['manage_branches', 'record_payments']), 'DD: the real role_permissions relationships are created correctly, and a duplicate permission id in the request never creates a duplicate/conflicting relationship');
+    assert(perms.json.permissions.length === 10, 'DD: every real permission gets an explicit row (allowed 0 or 1), not just the ones granted');
+
+    const after = await api('GET', '/api/roles?with_counts=1', { token: adminToken });
+    assert(after.json.roles.length === rolesBefore + 1, 'DD: the new role genuinely appears in the real Roles listing — not spliced in client-side, a fresh GET actually returns one more real row');
+    const newRow = after.json.roles.find(r => r.id === createdRoleCode);
+    assert(newRow.permissionCount === 2 && newRow.userCount === 0, 'DD: the listing\'s real, server-computed counts for the new role are exactly right — 2 real permissions granted, 0 real users yet assigned');
+
+    const existingRole = after.json.roles.find(r => r.id === 'manager');
+    assert(existingRole.name === 'Manager' && existingRole.is_system === 1, 'DD: a real pre-existing system role is completely unaffected by creating an unrelated new one');
+  }
+
+  // EE. Duplicate name/code are rejected — the same real role can't be created twice.
+  {
+    const dupName = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Branch Operations Supervisor', code: 'a_different_code_ee', access_level: 'Portfolio Access', permissions: [] } });
+    assert(dupName.status === 409, 'EE: a duplicate Role Name is genuinely rejected, even under a different code');
+    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'A Different Name', code: createdRoleCode, access_level: 'Portfolio Access', permissions: [] } });
+    assert(dupCode.status === 409, 'EE: a duplicate Role Code is genuinely rejected, even under a different name');
+  }
+
+  // FF. Audit — the real audit log records this creation with a real actor, action and role, and never a secret.
+  {
+    const audit = await api('GET', `/api/audit-logs?entity=Role&record_id=${createdRoleCode}`, { token: adminToken });
+    assert(audit.status === 200 && audit.json.auditLogs.some(a => a.action === 'Created role'), 'FF: a real audit entry genuinely records this role\'s creation');
+    const entry = audit.json.auditLogs.find(a => a.action === 'Created role');
+    assert(entry.user_id && entry.user_name === 'Rhinocash System Administrator', 'FF: the real audit entry records the real actor who created it');
+    assert(JSON.stringify(entry).toLowerCase().indexOf('password') === -1 && JSON.stringify(entry).toLowerCase().indexOf('token') === -1, 'FF: the real audit entry never leaks a credential or token of any kind');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

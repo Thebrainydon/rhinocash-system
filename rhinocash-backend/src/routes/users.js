@@ -1,5 +1,5 @@
 'use strict';
-const { all, get, run } = require('./../db');
+const { all, get, run, transaction } = require('./../db');
 const { hashPassword, generateTempPassword } = require('./../crypto');
 const { requireAuth, requireModule, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
@@ -216,6 +216,71 @@ function register(router) {
     const u = await get('SELECT email FROM users WHERE id = ?', [req.params.id]);
     const rows = u ? await all('SELECT * FROM login_attempts WHERE email = ? ORDER BY created_at DESC LIMIT 50', [u.email]) : [];
     res.json({ loginHistory: rows });
+  });
+
+  // Admin > Roles & Access Control > Create Role. The 8 real roles this
+  // app ships with are structural — SIDEBAR_MENUS/NAV_PERMISSIONS/
+  // ROLE_ID_TO_DISPLAY on the frontend dispatch navigation and module
+  // access by exact role name, not by anything this endpoint could set —
+  // so a role created here is a genuine, persisted role DEFINITION (real
+  // row in `roles`, real role_permissions matrix, is_system=0), but a
+  // user assigned to it would have no matching sidebar/module access
+  // until the frontend is separately extended to recognize it. That's a
+  // real, reported limitation (see the Create Role page's own note), not
+  // something this endpoint pretends to solve — it does exactly what the
+  // current architecture can safely support: define the role.
+  router.post('/api/roles', requireAuth, requirePermission('manage_users'), requireAdminOnly('create a new role'), async (req, res, next) => {
+    const b = req.body;
+    const name = String(b.name || '').trim();
+    if (name.length < 3 || name.length > 60) return next({ status: 400, message: 'Role Name must be between 3 and 60 characters' });
+
+    const code = String(b.code || '').trim().toLowerCase();
+    if (!code) return next({ status: 400, message: 'Role Code is required' });
+    if (!/^[a-z][a-z0-9_]{2,49}$/.test(code)) {
+      return next({ status: 400, message: 'Role Code must start with a letter and contain only lowercase letters, numbers and underscores (3–50 characters total)' });
+    }
+
+    const accessLevel = String(b.access_level || '').trim();
+    if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
+    const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+    if (!knownLevels.includes(accessLevel)) {
+      return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+    }
+
+    const status = b.status || 'Active';
+    if (!['Active', 'Inactive'].includes(status)) return next({ status: 400, message: 'Status must be Active or Inactive' });
+
+    const description = b.description != null ? String(b.description).trim().slice(0, 500) : null;
+
+    const requestedPermissionIds = Array.isArray(b.permissions) ? [...new Set(b.permissions)] : [];
+    const allPermissions = await all('SELECT id FROM permissions');
+    const validPermissionIds = new Set(allPermissions.map(p => p.id));
+    const invalidPermissionIds = requestedPermissionIds.filter(p => !validPermissionIds.has(p));
+    if (invalidPermissionIds.length) {
+      return next({ status: 400, message: `Unknown permission id(s): ${invalidPermissionIds.join(', ')}` });
+    }
+
+    const existingById = await get('SELECT id FROM roles WHERE id = ?', [code]);
+    if (existingById) return next({ status: 409, message: `A role with code "${code}" already exists` });
+    const existingByName = await get('SELECT id FROM roles WHERE name = ?', [name]);
+    if (existingByName) return next({ status: 409, message: `A role named "${name}" already exists` });
+
+    await transaction(async () => {
+      await run(
+        'INSERT INTO roles (id, name, default_access_level, description, status, is_system, created_at) VALUES (?,?,?,?,?,0,iso_now())',
+        [code, name, accessLevel, description, status]
+      );
+      for (const p of allPermissions) {
+        await run('INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES (?,?,?)', [code, p.id, requestedPermissionIds.includes(p.id) ? 1 : 0]);
+      }
+      await logAction(req, {
+        action: 'Created role', module: 'roles', recordType: 'Role', recordId: code,
+        newValue: { name, code, accessLevel, status, description, permissions: requestedPermissionIds },
+      });
+    });
+
+    const created = await get('SELECT * FROM roles WHERE id = ?', [code]);
+    res.status(201).json({ role: created });
   });
 
   router.get('/api/roles', requireAuth, async (req, res) => {

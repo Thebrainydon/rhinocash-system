@@ -17,18 +17,27 @@ const crypto = require('node:crypto');
 const DEMO = process.argv.includes('--demo');
 
 async function seedRoles() {
+  // description is real, persisted data (Admin > Roles & Access Control >
+  // Roles reads it directly) — only ever set here on first insert
+  // (ON CONFLICT DO NOTHING), so a real Admin edit is never clobbered by
+  // a later reseed. is_system=1 marks these as the 8 structural roles
+  // this application's sidebar/module-permission dispatch is wired to by
+  // exact name, distinct from a role created via POST /api/roles.
   const roles = [
-    ['loan_officer', 'Loan Officer', 'Portfolio Access'],
-    ['manager', 'Manager', 'Branch Management Access'],
-    ['operational_manager', 'Operational Manager', 'Operations & Branch Expansion Access'],
-    ['regional_manager', 'Regional Manager', 'Regional Management Access'],
-    ['accountant', 'Accountant', 'Accounting & Financial Access'],
-    ['admin', 'Admin', 'Master System Administration Access'],
-    ['ceo', 'CEO', 'Executive Management Access'],
-    ['director', 'Director', 'Strategic & Governance Access'],
+    ['loan_officer', 'Loan Officer', 'Portfolio Access', 'Front-line lending — manages their own client portfolio, submits loan applications, and records payments within their branch.'],
+    ['manager', 'Manager', 'Branch Management Access', 'Runs a single branch — approves loans, manages branch staff, and oversees day-to-day branch operations.'],
+    ['operational_manager', 'Operational Manager', 'Operations & Branch Expansion Access', 'Company-wide operations oversight — branch expansion, cross-branch loan approvals and operational performance.'],
+    ['regional_manager', 'Regional Manager', 'Regional Management Access', 'Oversees every branch in their region — regional loan approvals, branch performance and staff across the region.'],
+    ['accountant', 'Accountant', 'Accounting & Financial Access', 'Financial control — posts accounting entries, reconciles payments, and holds the final loan-approval step.'],
+    ['admin', 'Admin', 'Master System Administration Access', 'Master System Administrator — the only role with full system configuration, user management and role/permission authority.'],
+    ['ceo', 'CEO', 'Executive Management Access', 'Executive oversight of company-wide performance, portfolio health and financial results.'],
+    ['director', 'Director', 'Strategic & Governance Access', 'Governance and ownership oversight — capital, shareholders, board matters and strategic risk.'],
   ];
-  for (const [id, name, level] of roles) {
-    await run('INSERT INTO roles (id, name, default_access_level) VALUES (?,?,?) ON CONFLICT DO NOTHING', [id, name, level]);
+  for (const [id, name, level, description] of roles) {
+    await run(
+      `INSERT INTO roles (id, name, default_access_level, description, status, is_system) VALUES (?,?,?,?,'Active',1) ON CONFLICT DO NOTHING`,
+      [id, name, level, description]
+    );
   }
 }
 
