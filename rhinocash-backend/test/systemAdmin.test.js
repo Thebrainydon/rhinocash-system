@@ -5,17 +5,49 @@
 const BASE = process.env.BASE_URL || 'http://localhost:4000';
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
+// This file logs into the same seeded accounts repeatedly, purely for
+// convenience — never to test concurrent-session semantics itself (that's
+// what section 2, Active Sessions, explicitly does with its own real,
+// per-session Admin revoke). Now that a real single-active-session policy
+// exists, a later login for an account already logged in earlier in this
+// file (and never logged back out, or Admin-revoked) gets genuinely
+// rejected (409). Rather than hand-add an explicit logout before every
+// such repeat call, this real map tracks the most recent real token issued
+// per email; on hitting that exact real block, it logs that prior session
+// out (exactly what a real second device would have to do) and retries
+// once. A login that fails for any OTHER reason (maintenance mode, wrong
+// password, etc.) never touches the existing session.
+const __activeLoginToken = new Map();
 async function api(method, path, { token, body } = {}) {
-  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  let json = null; try { json = await res.json(); } catch { /* no body */ }
-  return { status: res.status, json };
+  const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
+  const doFetch = async () => {
+    const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    let json = null; try { json = await res.json(); } catch { /* no body */ }
+    return { status: res.status, json };
+  };
+  let result = await doFetch();
+  if (isLogin && result.status === 409 && result.json && result.json.code === 'ALREADY_LOGGED_IN' && body && body.email) {
+    const key = String(body.email).toLowerCase();
+    const prior = __activeLoginToken.get(key);
+    if (prior) {
+      await fetch(BASE + (path === '/api/auth/login' ? '/api/auth/logout' : '/api/investor-auth/logout'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${prior}` },
+      }).catch(() => {});
+      __activeLoginToken.delete(key);
+      result = await doFetch();
+    }
+  }
+  if (isLogin && result.status === 200 && result.json && result.json.token && body && body.email) {
+    __activeLoginToken.set(String(body.email).toLowerCase(), result.json.token);
+  }
+  return result;
 }
 async function login(email, password) { const r = await api('POST', '/api/auth/login', { body: { email, password } }); return r.json && r.json.token; }
 
 (async () => {
-  const adminToken = await login('admin@rhinocash.co.ke', process.env.SEEDED_ADMIN_PASSWORD);
+  let adminToken = await login('admin@rhinocash.co.ke', process.env.SEEDED_ADMIN_PASSWORD);
   const ceoToken = await login('ceo@rhinocash.co.ke', process.env.SEEDED_CEO_PASSWORD);
-  const managerToken = await login('manager.kisumu@rhinocash.co.ke', process.env.SEEDED_MANAGER_KISUMU_PASSWORD);
+  let managerToken = await login('manager.kisumu@rhinocash.co.ke', process.env.SEEDED_MANAGER_KISUMU_PASSWORD);
   const officerToken = await login('officer@rhinocash.co.ke', process.env.SEEDED_OFFICER_PASSWORD);
   assert(adminToken && ceoToken && managerToken && officerToken, 'all needed accounts log in');
 
@@ -75,14 +107,23 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     const blockedLogin = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
     assert(blockedLogin.status === 403 && blockedLogin.json.code === 'MAINTENANCE_MODE' && blockedLogin.json.error.includes('Scheduled upgrade'), 'a real non-Admin login is genuinely blocked with the real configured maintenance message — not a cosmetic flag that does nothing, and not accidentally swallowed by the router\'s generic 5xx handling');
 
-    // Admin can still log in during their own maintenance window.
+    // Admin can still log in during their own maintenance window. This
+    // fresh login becomes the account's one real active session (under the
+    // real single-active-session policy, it genuinely logs the earlier one
+    // out to do so) — adminToken is reassigned to it so the rest of this
+    // section keeps using a real, currently-valid admin session.
     const adminStillWorks = await api('POST', '/api/auth/login', { body: { email: 'admin@rhinocash.co.ke', password: process.env.SEEDED_ADMIN_PASSWORD } });
     assert(adminStillWorks.status === 200, 'Admin can still genuinely log in during maintenance mode — otherwise nobody could ever turn it back off');
+    adminToken = adminStillWorks.json.token;
 
     const disabled = await api('PUT', '/api/system/maintenance', { token: adminToken, body: { enabled: false } });
     assert(disabled.status === 200 && disabled.json.maintenanceMode === false, 'Admin can genuinely disable maintenance mode again');
+    // Same reasoning as adminToken above — this fresh login genuinely
+    // becomes the manager's one active session, so managerToken is
+    // reassigned to it for the rest of the file to keep using.
     const unblockedLogin = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
     assert(unblockedLogin.status === 200, 'a real non-Admin login genuinely works again once maintenance mode is disabled');
+    managerToken = unblockedLogin.json.token;
   }
 
   // =========================================================

@@ -6,6 +6,7 @@ const { logAction } = require('./../audit');
 const { computeFinalAccess } = require('./../rbac');
 const email = require('./../integrations/email');
 const crypto = require('node:crypto');
+const { describeBrowser } = require('./../userAgent');
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // A real, enforced password-age policy — 15 days since password_changed_at
@@ -62,6 +63,22 @@ function register(router) {
       );
       if (recentFailsRow.n >= 5) return next({ status: 429, message: 'Too many failed attempts. Try again later.' });
       return next({ status: 401, message: 'Invalid credentials' });
+    }
+
+    // Single active session per account — credentials are already verified
+    // at this point, so it's safe to tell the caller exactly why they're
+    // blocked. A second real login attempt while a first real session is
+    // still genuinely active (not expired, not already logged out) never
+    // gets to spawn a competing session; the account holder is told which
+    // real browser that other session is on and sent to log out there
+    // first, rather than silently taking over or silently failing.
+    const activeSession = await get(
+      "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1",
+      [user.id]
+    );
+    if (activeSession) {
+      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'already logged in elsewhere', ip]);
+      return next({ status: 409, message: `Your account is currently logged in on ${describeBrowser(activeSession.user_agent)}. Kindly logout first to access your account.`, code: 'ALREADY_LOGGED_IN' });
     }
 
     await run('INSERT INTO login_attempts (email, success, ip) VALUES (?,1,?)', [email, ip]);

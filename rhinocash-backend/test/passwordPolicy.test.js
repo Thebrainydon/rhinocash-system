@@ -12,10 +12,43 @@ const { get, run } = require('../src/db');
 const BASE = process.env.BASE_URL || 'http://localhost:4000';
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
+// This file logs into the same seeded accounts repeatedly across many
+// independent sections, purely for convenience — never to test concurrent-
+// session semantics itself. Now that a real single-active-session policy
+// exists (a second login while a first is still active is genuinely
+// blocked), a later section's login for an account an earlier section
+// already logged into — and never logged back out — gets genuinely
+// rejected (409). Rather than hand-add an explicit logout before every
+// such repeat call, this real map tracks the most recent real token issued
+// per email; on hitting that exact real block, it logs that prior session
+// out (exactly what a real second device would have to do) and retries
+// once — every call site below keeps behaving exactly as it did before
+// this policy existed. A login that fails for any OTHER reason (wrong
+// password, etc.) never touches the existing session.
+const __activeLoginToken = new Map();
 async function api(method, path, { token, body } = {}) {
-  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  let json = null; try { json = await res.json(); } catch { /* no body */ }
-  return { status: res.status, json };
+  const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
+  const doFetch = async () => {
+    const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    let json = null; try { json = await res.json(); } catch { /* no body */ }
+    return { status: res.status, json };
+  };
+  let result = await doFetch();
+  if (isLogin && result.status === 409 && result.json && result.json.code === 'ALREADY_LOGGED_IN' && body && body.email) {
+    const key = String(body.email).toLowerCase();
+    const prior = __activeLoginToken.get(key);
+    if (prior) {
+      await fetch(BASE + (path === '/api/auth/login' ? '/api/auth/logout' : '/api/investor-auth/logout'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${prior}` },
+      }).catch(() => {});
+      __activeLoginToken.delete(key);
+      result = await doFetch();
+    }
+  }
+  if (isLogin && result.status === 200 && result.json && result.json.token && body && body.email) {
+    __activeLoginToken.set(String(body.email).toLowerCase(), result.json.token);
+  }
+  return result;
 }
 
 (async () => {

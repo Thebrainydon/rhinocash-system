@@ -12,6 +12,53 @@ const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhi
 // <style> block (never extracted) needs the raw file itself to check.
 const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhinocash-app/index.html', 'utf8');
 
+// This suite logs into the same seeded accounts repeatedly across
+// hundreds of independent sections, purely for each section's own
+// convenience — it was never testing "can the same account hold two
+// sessions at once" (the real single-active-session policy itself is
+// covered by the backend's own dedicated concurrentLogin.test.js and
+// logout.test.js suites). Now that a real second login while a first is
+// still active is genuinely blocked (409), a later section's doLogin()
+// for an account an earlier section already logged into — and never
+// logged back out — would get real-rejected. Rather than hand-add an
+// explicit logout before every such repeat call, wrap the REAL
+// apiRequest() the real doLogin() itself calls: this real map tracks the
+// most recent real token issued per email, and on hitting that exact
+// real block on a login call, logs that prior session out for real
+// (exactly what a genuine second device would have to do) and retries
+// once — every existing call site below keeps behaving exactly as it did
+// before this policy existed. A login that fails for any OTHER reason
+// (wrong password, lockout, maintenance mode, etc.) never touches the
+// existing session.
+const __realApiRequest = apiRequest;
+const __activeFrontendLoginToken = new Map();
+apiRequest = async function(method, path, body){
+  const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
+  try{
+    const result = await __realApiRequest(method, path, body);
+    if(isLogin && result && result.token && body && body.email){
+      __activeFrontendLoginToken.set(String(body.email).toLowerCase(), result.token);
+    }
+    return result;
+  }catch(e){
+    if(isLogin && e && e.code === 'ALREADY_LOGGED_IN' && body && body.email){
+      const key = String(body.email).toLowerCase();
+      const prior = __activeFrontendLoginToken.get(key);
+      if(prior){
+        const savedAuthToken = authToken;
+        authToken = prior;
+        try{ await __realApiRequest('POST', path === '/api/auth/login' ? '/api/auth/logout' : '/api/investor-auth/logout'); }catch(_){ /* already gone is fine */ }
+        authToken = savedAuthToken;
+        __activeFrontendLoginToken.delete(key);
+        const retryResult = await __realApiRequest(method, path, body);
+        if(retryResult && retryResult.token) __activeFrontendLoginToken.set(key, retryResult.token);
+        return retryResult;
+      }
+    }
+    throw e;
+  }
+};
+
 (async () => {
   // ---- 1. Login screen renders with no data at all (DB is null pre-login) ----
   {

@@ -8,6 +8,7 @@ const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { hasPermission } = require('./../rbac');
+const { describeBrowser } = require('./../userAgent');
 const crypto = require('node:crypto');
 
 // Investors are a separate principal type from staff `users` — they never
@@ -41,9 +42,20 @@ function register(router) {
     if (!investor || !investor.password_hash || !verifyPassword(password || '', investor.password_hash, investor.password_salt)) {
       return next({ status: 401, message: 'Invalid credentials' });
     }
+    // Same real single-active-session policy staff logins enforce (see
+    // routes/auth.js) — investors are a separate principal type, not a
+    // second, lesser copy of the protection.
+    const activeSession = await get(
+      "SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > iso_now() ORDER BY created_at DESC LIMIT 1",
+      [investor.id]
+    );
+    if (activeSession) {
+      return next({ status: 409, message: `Your account is currently logged in on ${describeBrowser(activeSession.user_agent)}. Kindly logout first to access your account.`, code: 'ALREADY_LOGGED_IN' });
+    }
     const token = signToken({ sub: investor.id, type: 'investor', iat: Date.now(), exp: Date.now() + 12 * 60 * 60 * 1000 });
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
-    await run('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?,?,?)', [tokenHash(token), investor.id, expiresAt]);
+    const ip = req.socket ? req.socket.remoteAddress : null;
+    await run('INSERT INTO sessions (token_hash, user_id, expires_at, ip, user_agent) VALUES (?,?,?,?,?)', [tokenHash(token), investor.id, expiresAt, ip, req.headers['user-agent'] || null]);
 
     let mustChangePassword = !!investor.must_change_password;
     if (!mustChangePassword) {

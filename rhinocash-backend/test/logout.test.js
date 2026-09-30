@@ -6,8 +6,8 @@
 const BASE = process.env.BASE_URL || 'http://localhost:4000';
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else { fail++; console.error('FAIL:', msg); } }
-async function api(method, path, { token, body } = {}) {
-  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+async function api(method, path, { token, body, headers } = {}) {
+  const res = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
   let json = null; try { json = await res.json(); } catch { /* no body */ }
   return { status: res.status, json };
 }
@@ -31,18 +31,59 @@ async function api(method, path, { token, body } = {}) {
   }
 
   // =========================================================
-  // 2. LOGOUT NEVER AFFECTS OTHER SESSIONS
+  // 2. SINGLE-ACTIVE-SESSION LOGIN BLOCK — a second real login for an
+  //    account that already has a real, active session is genuinely
+  //    rejected (409), naming the real browser that other session is on;
+  //    the blocked attempt never disturbs the real, still-active first
+  //    session; logging that one out first genuinely allows a fresh,
+  //    distinct second session to begin.
   // =========================================================
   {
-    const session1 = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
-    const session2 = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
-    assert(session1.json.token !== session2.json.token, 'two real logins for the same real user genuinely produce two distinct real sessions');
+    const session1 = await api('POST', '/api/auth/login', {
+      body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD },
+      headers: { 'User-Agent': 'Mozilla/5.0 Chrome/120.0.0.0 Safari/537.36' },
+    });
+    assert(session1.status === 200, 'sanity: the real first login succeeds and establishes a real active session');
 
+    const blocked = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    assert(blocked.status === 409 && blocked.json.code === 'ALREADY_LOGGED_IN', 'a real second login attempt while the real first session is still genuinely active is rejected, not silently allowed to spawn a competing session');
+    assert(typeof blocked.json.error === 'string' && blocked.json.error.includes('Chrome') && blocked.json.error.includes('Kindly logout first'), 'the real rejection message genuinely names the real browser the existing session is on (from its real stored User-Agent) and tells the account holder to log out there first');
+
+    // A wrong-password attempt against this same account must still just
+    // 401 — the real concurrent-session state is never revealed to a
+    // caller who hasn't even proven they know the real password.
+    const wrongPassword = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: 'definitely-wrong' } });
+    assert(wrongPassword.status === 401, 'a wrong-password attempt against an account with a real active session elsewhere still genuinely just fails on credentials, never leaking the ALREADY_LOGGED_IN state to an unproven caller');
+
+    // The blocked attempt(s) above never touched the real, still-active first session.
+    const session1StillWorks = await api('GET', '/api/auth/me', { token: session1.json.token });
+    assert(session1StillWorks.status === 200, 'the real, still-active first session remains genuinely unaffected by a real blocked second login attempt');
+
+    // Logging the first session out for real now genuinely allows a fresh, distinct second session.
     await api('POST', '/api/auth/logout', { token: session1.json.token });
+    const session2 = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    assert(session2.status === 200 && session2.json.token !== session1.json.token, 'once the real first session is genuinely logged out, a real fresh login succeeds with a genuinely distinct new token');
+
     const session1Check = await api('GET', '/api/auth/me', { token: session1.json.token });
-    assert(session1Check.status === 401, 'the real logged-out session (session1) cannot authenticate');
+    assert(session1Check.status === 401, 'the real logged-out first session (session1) still cannot authenticate');
     const session2Check = await api('GET', '/api/auth/me', { token: session2.json.token });
-    assert(session2Check.status === 200, 'the real OTHER session (session2, same user, different login) remains genuinely unaffected — logout never accidentally revokes a different session');
+    assert(session2Check.status === 200, 'the real new session (session2) genuinely works');
+
+    // Investors get the exact same real protection — a structurally
+    // separate principal type, never a second, lesser copy of the policy.
+    const invSession1 = await api('POST', '/api/investor-auth/login', { body: { email: 'sara.investor@example.com', password: process.env.SEEDED_INVESTOR_PASSWORD } });
+    assert(invSession1.status === 200, 'sanity: the real first investor login succeeds');
+    const invBlocked = await api('POST', '/api/investor-auth/login', { body: { email: 'sara.investor@example.com', password: process.env.SEEDED_INVESTOR_PASSWORD } });
+    assert(invBlocked.status === 409 && invBlocked.json.code === 'ALREADY_LOGGED_IN', 'a real second investor login attempt while the real first investor session is still active is genuinely rejected too');
+    await api('POST', '/api/investor-auth/logout', { token: invSession1.json.token });
+    const invSession2 = await api('POST', '/api/investor-auth/login', { body: { email: 'sara.investor@example.com', password: process.env.SEEDED_INVESTOR_PASSWORD } });
+    assert(invSession2.status === 200, 'once the real first investor session is logged out, a fresh real investor login succeeds');
+    await api('POST', '/api/investor-auth/logout', { token: invSession2.json.token });
+
+    // Leave both accounts with no real active session, so later sections
+    // logging into them fresh aren't genuinely blocked by this section's
+    // own leftover real session.
+    await api('POST', '/api/auth/logout', { token: session2.json.token });
   }
 
   // =========================================================
@@ -82,6 +123,10 @@ async function api(method, path, { token, body } = {}) {
     await api('POST', '/api/investor-auth/logout', { token: invLogin.json.token });
     const staffStillWorks = await api('GET', '/api/auth/me', { token: staffLogin.json.token });
     assert(staffStillWorks.status === 200, 'logging out a real investor session never affects a real, unrelated staff session');
+
+    // Leave the admin account with no real active session, so section 5's
+    // own fresh admin login isn't genuinely blocked by this one.
+    await api('POST', '/api/auth/logout', { token: staffLogin.json.token });
   }
 
   // =========================================================

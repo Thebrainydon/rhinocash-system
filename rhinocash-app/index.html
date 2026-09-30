@@ -2465,7 +2465,12 @@ async function doLogin(ev){
     try{
       result = await apiRequest('POST', '/api/auth/login', { email: f.username, password: f.password });
     }catch(staffErr){
-      if(staffErr.status === 429){ throw staffErr; } // real lockout — don't mask it by trying the investor path
+      // A real lockout or a real "already logged in elsewhere" block must
+      // never be masked by silently falling through to try the investor
+      // path next — that fallback exists only to cover a genuinely
+      // different principal type using the same login form, not to retry
+      // past a real, specific rejection of this exact staff account.
+      if(staffErr.status === 429 || staffErr.code === 'ALREADY_LOGGED_IN'){ throw staffErr; }
       result = await apiRequest('POST', '/api/investor-auth/login', { email: f.username, password: f.password });
       isInvestor = true;
     }
