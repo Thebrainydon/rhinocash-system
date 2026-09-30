@@ -191,8 +191,12 @@ async function seedChartOfAccounts() {
 }
 
 async function seedRegionsAndDepartments() {
-  await run('INSERT INTO regions (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', ['rg_central', 'Central Region']);
-  await run('INSERT INTO regions (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', ['rg_coastwest', 'Coast & Western Region']);
+  await run('INSERT INTO regions (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', ['rg_lower_coast', 'Lower Coast']);
+  await run('INSERT INTO regions (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', ['rg_mt_kenya', 'Mt. Kenya']);
+  await run('INSERT INTO regions (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', ['rg_upper_coast', 'Upper Coast']);
+  // A real single company-wide Paybill — never overwritten on a reseed if
+  // an Admin has since genuinely changed it.
+  await run(`INSERT INTO organization_settings (id, paybill) VALUES (1, ?) ON CONFLICT (id) DO NOTHING`, ['400200']);
   for (const d of ['Credit', 'Operations', 'Finance', 'Executive', 'Board', 'IT & Systems']) {
     await run('INSERT INTO departments (id, name) VALUES (?,?) ON CONFLICT DO NOTHING', [d.toLowerCase().replace(/[^a-z]+/g, '_'), d]);
   }
@@ -228,10 +232,53 @@ async function seedInitialAdmin() {
 }
 
 async function seedDemoData() {
+  // The full real branch list for the 3 real regions (Lower Coast/Mt.
+  // Kenya/Upper Coast) — every one genuinely created here, standing in
+  // for the real Admin action, matching the reference "Company Regions"/
+  // "Company Branches" design exactly. The 2 pre-existing branch IDs
+  // (br_nairobi, br_kisumu — dozens of existing tests hardcode these by
+  // ID) are kept, but renamed/relocated onto 2 of these real reference
+  // towns (Likoni, Ukunda) rather than existing as their own separate
+  // "Nairobi CBD"/"Kisumu" rows alongside a genuinely duplicate real
+  // Likoni/Ukunda branch. br_kisumu stays paired with br_mombasa under
+  // Lower Coast (as they already were) so the existing "Regional Manager
+  // scoped to Kisumu+Mombasa" test coverage keeps holding.
   const branches = [
-    ['br_nairobi', 'Nairobi CBD', 'Nairobi', 'rg_central'],
-    ['br_kisumu', 'Kisumu', 'Kisumu', 'rg_coastwest'],
-    ['br_mombasa', 'Mombasa', 'Mombasa', 'rg_coastwest'],
+    ['br_nairobi', 'Likoni', 'Likoni', 'rg_upper_coast'],
+    ['br_kisumu', 'Ukunda', 'Ukunda', 'rg_lower_coast'],
+    ['br_mombasa', 'Mombasa', 'Mombasa', 'rg_lower_coast'],
+    ['br_kwale', 'Kwale', 'Kwale', 'rg_lower_coast'],
+    ['br_changamwe', 'Changamwe', 'Changamwe', 'rg_lower_coast'],
+    ['br_msambweni', 'Msambweni', 'Msambweni', 'rg_lower_coast'],
+    ['br_lungalunga', 'Lungalunga', 'Lungalunga', 'rg_lower_coast'],
+    ['br_kinango', 'Kinango', 'Kinango', 'rg_lower_coast'],
+    ['br_minjila', 'Minjila', 'Minjila', 'rg_lower_coast'],
+    ['br_kagio', 'Kagio', 'Kagio', 'rg_mt_kenya'],
+    ['br_maua', 'Maua', 'Maua', 'rg_mt_kenya'],
+    ['br_nyahururu', 'Nyahururu', 'Nyahururu', 'rg_mt_kenya'],
+    ['br_kangari', 'Kangari', 'Kangari', 'rg_mt_kenya'],
+    ['br_wote', 'Wote', 'Wote', 'rg_mt_kenya'],
+    ['br_nkubu', 'Nkubu', 'Nkubu', 'rg_mt_kenya'],
+    ['br_runyenjes', 'Runyenjes', 'Runyenjes', 'rg_mt_kenya'],
+    ['br_ruiru', 'Ruiru', 'Ruiru', 'rg_mt_kenya'],
+    ['br_karatina', 'Karatina', 'Karatina', 'rg_mt_kenya'],
+    ['br_chuka', 'Chuka', 'Chuka', 'rg_mt_kenya'],
+    ['br_kitui', 'Kitui', 'Kitui', 'rg_mt_kenya'],
+    ['br_embakasi', 'Embakasi', 'Embakasi', 'rg_mt_kenya'],
+    ['br_nyeri', 'Nyeri', 'Nyeri', 'rg_mt_kenya'],
+    ['br_malindi', 'Malindi', 'Malindi', 'rg_upper_coast'],
+    ['br_mariakani', 'Mariakani', 'Mariakani', 'rg_upper_coast'],
+    ['br_kilifi', 'Kilifi', 'Kilifi', 'rg_upper_coast'],
+    ['br_mtwapa', 'Mtwapa', 'Mtwapa', 'rg_upper_coast'],
+    ['br_taveta', 'Taveta', 'Taveta', 'rg_upper_coast'],
+    ['br_voi', 'Voi', 'Voi', 'rg_upper_coast'],
+    ['br_mpeketoni', 'Mpeketoni', 'Mpeketoni', 'rg_upper_coast'],
+    ['br_loitoktok', 'Loitoktok', 'Loitoktok', 'rg_upper_coast'],
+    ['br_kibwezi', 'Kibwezi', 'Kibwezi', 'rg_upper_coast'],
+    ['br_wudanyi', 'Wudanyi', 'Wudanyi', 'rg_upper_coast'],
+    ['br_kaloleni', 'Kaloleni', 'Kaloleni', 'rg_upper_coast'],
+    ['br_bamba', 'Bamba', 'Bamba', 'rg_upper_coast'],
+    ['br_gongoni', 'Gongoni', 'Gongoni', 'rg_upper_coast'],
   ];
   for (const [id, name, loc, region] of branches) {
     await run('INSERT INTO branches (id, name, location, region_id, status) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING', [id, name, loc, region, 'Active']);
@@ -311,14 +358,14 @@ async function seedDemoData() {
   }
 
   const demoStaff = [
-    ['usr_opsmgr', 'Esther Wanjiku', 'opsmanager@rhinocash.co.ke', '0711000001', 'operational_manager', 'br_nairobi', 'rg_central', 'usr_ceo'],
-    ['usr_regional', 'Daniel Kiptoo', 'regional@rhinocash.co.ke', '0711000002', 'regional_manager', 'br_kisumu', 'rg_coastwest', 'usr_opsmgr'],
-    ['usr_manager', 'David Kariuki', 'manager@rhinocash.co.ke', '0711000003', 'manager', 'br_nairobi', 'rg_central', 'usr_opsmgr'],
-    ['usr_manager_kisumu', 'Faith Njeri', 'manager.kisumu@rhinocash.co.ke', '0711000004', 'manager', 'br_kisumu', 'rg_coastwest', 'usr_regional'],
-    ['usr_accountant', 'Grace Achieng', 'accountant@rhinocash.co.ke', '0711000005', 'accountant', 'br_nairobi', 'rg_central', 'usr_ceo'],
-    ['usr_officer', 'Peter Otieno', 'officer@rhinocash.co.ke', '0711000006', 'loan_officer', 'br_kisumu', 'rg_coastwest', 'usr_manager_kisumu'],
-    ['usr_ceo', 'James Mwangi', 'ceo@rhinocash.co.ke', '0711000007', 'ceo', 'br_nairobi', 'rg_central', null],
-    ['usr_director', 'Naomi Kilonzo', 'director@rhinocash.co.ke', '0711000008', 'director', 'br_nairobi', 'rg_central', null],
+    ['usr_opsmgr', 'Esther Wanjiku', 'opsmanager@rhinocash.co.ke', '0711000001', 'operational_manager', 'br_nairobi', 'rg_upper_coast', 'usr_ceo'],
+    ['usr_regional', 'Daniel Kiptoo', 'regional@rhinocash.co.ke', '0711000002', 'regional_manager', 'br_kisumu', 'rg_lower_coast', 'usr_opsmgr'],
+    ['usr_manager', 'David Kariuki', 'manager@rhinocash.co.ke', '0711000003', 'manager', 'br_nairobi', 'rg_upper_coast', 'usr_opsmgr'],
+    ['usr_manager_kisumu', 'Faith Njeri', 'manager.kisumu@rhinocash.co.ke', '0711000004', 'manager', 'br_kisumu', 'rg_lower_coast', 'usr_regional'],
+    ['usr_accountant', 'Grace Achieng', 'accountant@rhinocash.co.ke', '0711000005', 'accountant', 'br_nairobi', 'rg_upper_coast', 'usr_ceo'],
+    ['usr_officer', 'Peter Otieno', 'officer@rhinocash.co.ke', '0711000006', 'loan_officer', 'br_kisumu', 'rg_lower_coast', 'usr_manager_kisumu'],
+    ['usr_ceo', 'James Mwangi', 'ceo@rhinocash.co.ke', '0711000007', 'ceo', 'br_nairobi', 'rg_upper_coast', null],
+    ['usr_director', 'Naomi Kilonzo', 'director@rhinocash.co.ke', '0711000008', 'director', 'br_nairobi', 'rg_upper_coast', null],
   ];
   console.log('================================================================');
   console.log('  DEMO / TEST ACCOUNTS  (development only — not for production)');

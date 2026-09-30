@@ -7,13 +7,36 @@ const crypto = require('node:crypto');
 const { branchIdsInScope } = require('./../rbac');
 
 function register(router) {
+  // Real company-wide Staff/Client counts per branch, plus the one real
+  // company-wide Paybill number — the same deliberate "not scoped to the
+  // caller's own branch" policy already applied to GET /api/regions, for
+  // the same reason: this is a company-structure overview, not per-branch
+  // business data, and every authenticated role can already see the bare
+  // branch list itself company-wide. Gated behind ?with_counts=1: this
+  // endpoint is also the one every page's initial bulk-load already calls
+  // just for a plain branch list/dropdown, and running 2 extra grouped
+  // COUNT queries on every one of those calls — genuinely cheap alone,
+  // but multiplied across how often this endpoint is hit — is real,
+  // needless latency for callers who never asked for the counts.
   router.get('/api/branches', requireAuth, async (req, res) => {
     const clauses = ['1=1']; const params = [];
     if (req.query.region_id) { clauses.push('region_id = ?'); params.push(req.query.region_id); }
     if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
     if (req.query.manager_id) { clauses.push('manager_id = ?'); params.push(req.query.manager_id); }
     if (req.query.q) { clauses.push('(name LIKE ? OR code LIKE ? OR location LIKE ?)'); const like = `%${req.query.q}%`; params.push(like, like, like); }
-    res.json({ branches: await all(`SELECT * FROM branches WHERE ${clauses.join(' AND ')} ORDER BY name`, params) });
+    const rows = await all(`SELECT * FROM branches WHERE ${clauses.join(' AND ')} ORDER BY name`, params);
+    if (!req.query.with_counts) return res.json({ branches: rows });
+    const branchIds = rows.map(b => b.id);
+    const staffCounts = {}, clientCounts = {};
+    if (branchIds.length) {
+      const ph = branchIds.map(() => '?').join(',');
+      (await all(`SELECT branch_id, COUNT(*) as c FROM users WHERE branch_id IN (${ph}) AND status = 'Active' GROUP BY branch_id`, branchIds))
+        .forEach(row => { staffCounts[row.branch_id] = Number(row.c); });
+      (await all(`SELECT branch_id, COUNT(*) as c FROM clients WHERE branch_id IN (${ph}) GROUP BY branch_id`, branchIds))
+        .forEach(row => { clientCounts[row.branch_id] = Number(row.c); });
+    }
+    const org = await get('SELECT paybill FROM organization_settings WHERE id = 1');
+    res.json({ branches: rows.map(r => ({ ...r, staffCount: staffCounts[r.id] || 0, clientCount: clientCounts[r.id] || 0, paybill: org ? org.paybill : null })) });
   });
 
   // Single-record lookup — the frontend previously had to fetch the
@@ -35,10 +58,16 @@ function register(router) {
   // policy (GET /api/branches already lists every real branch to any
   // authenticated staff member, not just the caller's own): Branches &
   // Regions is a company-structure overview, not per-branch business data.
+  // Same ?with_counts=1 opt-in as GET /api/branches above, for the same
+  // reason: this endpoint is also called on every real session's initial
+  // bulk-load (populating the shared DB.regions dropdown array for every
+  // role), not just the Company Regions page — the real aggregation
+  // queries below should never tax every one of those plain-list calls.
   router.get('/api/regions', requireAuth, async (req, res) => {
     let rows = await all('SELECT * FROM regions ORDER BY name');
     if (req.query.status) rows = rows.filter(r => r.status === req.query.status);
     if (req.query.q) { const q = req.query.q.toLowerCase(); rows = rows.filter(r => r.name.toLowerCase().includes(q)); }
+    if (!req.query.with_counts) return res.json({ regions: rows });
     const regionIds = rows.map(r => r.id);
     const staffCounts = {}, clientCounts = {};
     if (regionIds.length) {

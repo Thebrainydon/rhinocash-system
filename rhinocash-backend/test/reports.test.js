@@ -118,7 +118,7 @@ async function investorLogin(email, password) { const r = await api('POST', '/ap
     assert(ranking.json.branches.every((b, i) => i === 0 || ranking.json.branches[i - 1].collectionRate >= b.collectionRate), 'branches are genuinely ranked by real collection rate, descending');
 
     const regionalRanking = await api('GET', '/api/reports/branch-ranking', { token: regionalToken });
-    assert(regionalRanking.json.branches.every(b => ['br_kisumu', 'br_mombasa'].includes(b.branchId)) && !regionalRanking.json.branches.some(b => b.branchId === 'br_nairobi'), 'a real Regional Manager\'s branch ranking is genuinely scoped to only their own real region (Kisumu + Mombasa) — never the out-of-region Nairobi branch');
+    assert(regionalRanking.json.branches.some(b => b.branchId === 'br_kisumu') && regionalRanking.json.branches.some(b => b.branchId === 'br_mombasa') && !regionalRanking.json.branches.some(b => b.branchId === 'br_nairobi'), 'a real Regional Manager\'s branch ranking genuinely includes their own real region\'s branches (Kisumu + Mombasa) — never the out-of-region Nairobi branch');
   }
 
   // =========================================================

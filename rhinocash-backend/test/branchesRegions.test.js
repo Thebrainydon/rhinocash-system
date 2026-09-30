@@ -105,12 +105,12 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
 
   // K. Branch scope enforcement via the branch performance endpoint.
   {
-    const nairobiBranch = (await api('GET', '/api/branches?q=Nairobi', { token: adminToken })).json.branches[0];
+    const nairobiBranch = (await api('GET', '/api/branches?q=Likoni', { token: adminToken })).json.branches[0];
     if (nairobiBranch) {
       const wrongBranchAccess = await api('GET', `/api/branches/${nairobiBranch.id}/performance`, { token: managerToken });
-      assert(wrongBranchAccess.status === 403, 'K: Kisumu Manager cannot view Nairobi branch performance — real scope enforcement, not previously checked at all');
+      assert(wrongBranchAccess.status === 403, 'K: Kisumu Manager cannot view Likoni branch performance — real scope enforcement, not previously checked at all');
     }
-    const kisumuBranch = (await api('GET', '/api/branches?q=Kisumu', { token: adminToken })).json.branches[0];
+    const kisumuBranch = (await api('GET', '/api/branches?q=Ukunda', { token: adminToken })).json.branches[0];
     if (kisumuBranch) {
       const ownBranchAccess = await api('GET', `/api/branches/${kisumuBranch.id}/performance`, { token: managerToken });
       assert(ownBranchAccess.status === 200, 'the same Manager CAN view their own real branch performance');
@@ -135,8 +135,8 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   {
     const filtered = await api('GET', '/api/branches?status=Active', { token: adminToken });
     assert(filtered.json.branches.every(b => b.status === 'Active'), 'U/V: branch status filter genuinely narrows results server-side');
-    const searched = await api('GET', '/api/branches?q=Kisumu', { token: adminToken });
-    assert(searched.json.branches.some(b => b.name.includes('Kisumu')), 'U/V: branch search genuinely matches real branch names');
+    const searched = await api('GET', '/api/branches?q=Ukunda', { token: adminToken });
+    assert(searched.json.branches.some(b => b.name.includes('Ukunda')), 'U/V: branch search genuinely matches real branch names');
   }
 
   // W/X/Y. Real integration with existing branch-profitability/PAR/target endpoints (not duplicated here).
@@ -169,7 +169,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(branch.status === 201, 'AA: setup — a real branch is created inside that region');
     const branchId = branch.json.branch.id;
 
-    const before = await api('GET', '/api/regions', { token: managerToken });
+    const before = await api('GET', '/api/regions?with_counts=1', { token: managerToken });
     const beforeRow = before.json.regions.find(r => r.id === regionId);
     assert(beforeRow && beforeRow.staffCount === 0 && beforeRow.clientCount === 0, 'AA: a freshly-created region genuinely starts at 0 real staff and 0 real clients, not a fabricated placeholder');
 
@@ -186,14 +186,32 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
 
     // A Manager whose own branch is Kisumu, nowhere near this new region,
     // still sees its real counts — this view is genuinely company-wide.
-    const after = await api('GET', '/api/regions', { token: managerToken });
+    const after = await api('GET', '/api/regions?with_counts=1', { token: managerToken });
     const afterRow = after.json.regions.find(r => r.id === regionId);
     assert(afterRow && afterRow.staffCount === 1, 'AA: the real new staff member is genuinely counted for their own region, visible even to a Manager scoped to a different branch entirely');
     assert(afterRow && afterRow.clientCount === 2, 'AA: both real new clients are genuinely counted for their branch\'s region');
 
-    const kisumuRegion = after.json.regions.find(r => r.name === 'Coast & Western Region');
+    const kisumuRegion = after.json.regions.find(r => r.name === 'Lower Coast');
     assert(kisumuRegion && !(kisumuRegion.staffCount > before.json.regions.find(r => r.id === kisumuRegion.id).staffCount),
       'AA: the new staff/client counts genuinely stayed isolated to their own real region, not leaked into an unrelated one');
+
+    // BB. GET /api/branches carries the same real, company-wide per-branch
+    // Staff/Client counts, plus the one real shared company Paybill —
+    // genuinely gated behind ?with_counts=1, so every other real caller of
+    // this endpoint (e.g. a plain branch dropdown) never pays for the
+    // extra aggregation queries it never asked for.
+    const bareBranches = await api('GET', '/api/branches', { token: managerToken });
+    assert(bareBranches.status === 200 && bareBranches.json.branches[0].staffCount === undefined,
+      'BB: without ?with_counts=1, GET /api/branches genuinely returns bare branch rows — the aggregation is opt-in, not silently always-on');
+    const branchesView = await api('GET', '/api/branches?with_counts=1', { token: managerToken });
+    const branchRow = branchesView.json.branches.find(b => b.id === branchId);
+    assert(branchRow && branchRow.staffCount === 1 && branchRow.clientCount === 2,
+      'BB: GET /api/branches genuinely reports the real staff/client counts for a branch outside the caller\'s own branch — same company-wide policy as regions');
+    const kisumuBranchRow = branchesView.json.branches.find(b => b.id === 'br_kisumu');
+    assert(kisumuBranchRow && typeof kisumuBranchRow.paybill === 'string' && kisumuBranchRow.paybill.length > 0,
+      'BB: every real branch genuinely carries the one real company-wide Paybill number, not a per-branch fabrication');
+    assert(kisumuBranchRow.paybill === branchRow.paybill,
+      'BB: the real Paybill is genuinely identical across every real branch — one real company-wide value, not independently generated per row');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -98,7 +98,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   // =========================================================
   {
     const wrongRegion = await api('POST', '/api/targets', { token: regionalToken, body: { metric: 'collection', recipient_user_id: (await api('GET', '/api/auth/me', { token: managerToken })).json.user.id, target_value: 500000, period } });
-    assert(wrongRegion.status === 403, 'Regional Manager (Coast & Western) cannot target the Nairobi (Central region) Manager — out of region scope');
+    assert(wrongRegion.status === 403, 'Regional Manager (Lower Coast) cannot target the Nairobi (Mt. Kenya region) Manager — out of region scope');
 
     const created = await api('POST', '/api/targets', { token: regionalToken, body: { metric: 'collection', recipient_user_id: managerKisumuId, target_value: 800000, period } });
     assert(created.status === 201, 'Regional Manager sets a real target for a Manager within their own region');

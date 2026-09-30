@@ -74,8 +74,11 @@ const pool = new Pool({
   connectionString: DATABASE_URL,
   // Modest pool ceiling — this is a microfinance branch-office app, not a
   // high-concurrency consumer service; a real production deployment can
-  // raise this via PGPOOL_MAX if it genuinely needs to.
-  max: Number(process.env.PGPOOL_MAX) || 10,
+  // raise this via PGPOOL_MAX if it genuinely needs to. Company-wide
+  // reports fan out one branch-scoped query set per branch (now up to 35
+  // real branches), so the ceiling needs enough headroom that those don't
+  // queue behind each other.
+  max: Number(process.env.PGPOOL_MAX) || 40,
 });
 pool.on('error', (err) => {
   // A pool-level error (e.g. an idle client's connection was dropped by
@@ -1239,6 +1242,12 @@ async function initSchema() {
   await ensureColumn('users', 'national_id TEXT');
   await ensureColumn('users', 'gender TEXT');
   await ensureColumn('users', "basic_salary NUMERIC(14,2) NOT NULL DEFAULT 0");
+  // A single real company-wide M-Pesa Paybill number — shown identically
+  // on every branch in the "Company Branches" view (a company-wide
+  // Paybill with per-branch sub-accounts is the real, common setup for a
+  // Kenyan microfinance outfit, not a per-branch number), so it lives once
+  // here rather than duplicated onto every branches row.
+  await ensureColumn('organization_settings', 'paybill TEXT');
   // Vendor/Utility Payments: a real 2-stage approval workflow (submit ->
   // CEO decides -> Accountant decides & pays), replacing the old
   // immediate-Paid-on-creation model. submitted_by is the real requester

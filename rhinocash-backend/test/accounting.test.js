@@ -284,7 +284,7 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const validOtp = await otpFor(officerToken);
     const bulk = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: {
       rows: [
-        { branch: 'Kisumu', item_description: 'Office cleaning', cost: 2500, recipient_mpesa_number: '0722000111', mpesa_name: 'Clean Co', journal_account: 'Rent expense' },
+        { branch: 'Ukunda', item_description: 'Office cleaning', cost: 2500, recipient_mpesa_number: '0722000111', mpesa_name: 'Clean Co', journal_account: 'Rent expense' },
         { branch: 'Nonexistent Branch', item_description: 'Bad branch row', cost: 100, journal_account: 'Rent expense' },
         { item_description: '', cost: 100 },
       ],

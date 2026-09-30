@@ -656,7 +656,7 @@ const LABEL_ROUTES = {
   "Branch Opening Requests": {section:"branches", subtab:"Open New Branch"},
   "Regions": {section:"branches", subtab:"Regions"},
   "View Regions": {section:"branches", subtab:"Regions"},
-  "View Branches": {section:"branches", subtab:"Branch Directory"},
+  "View Branches": {section:"branches", subtab:"Company Branches"},
   "Loan Summary": {section:"branches", subtab:"Loan Summary"},
   // Business Analytics
   "Loan Sizes": {section:"business-analytics", subtab:"Loan Sizes"},
@@ -1138,6 +1138,10 @@ async function apiRequest(method, path, body){
     if(session.loggedIn){
       authToken = null; session.loggedIn = false; session.authenticated = false; session.section="dashboard";
       DB = null;
+      // A background load from the ending session may still be in flight —
+      // its dedup key must not go on blocking the identically-keyed load a
+      // freshly logged-in session makes next.
+      inFlight.clear();
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
       broadcastSessionEnded();
       openModal('session-expired');
@@ -2239,6 +2243,7 @@ if(sessionChannel){
     if(ev.data === 'session-ended' && session.loggedIn){
       authToken = null; session.loggedIn = false; session.authenticated = false; session.section = "dashboard";
       DB = null; session.justLoggedOut = false;
+      inFlight.clear();
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
       openModal('session-expired');
     }
@@ -2374,6 +2379,7 @@ async function confirmLogout(){
   session.selectedClientId = null; session.selectedLoanId = null; session.selectedStaffId = null;
   session.role = "Admin"; session.userName = ""; session.section = "dashboard"; session.subtab = null;
   DB = null;
+  inFlight.clear();
   // A deliberate, blocking second step (matching the requested design)
   // instead of dropping straight back to the login screen — the real
   // logout work above is already fully done by this point; this modal is
@@ -11206,8 +11212,9 @@ function renderBranchesModule(){
   const active = session.subtab || "Branch Directory";
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('branches','${t}')">${t}</div>`).join("")}</div>`;
   if(session.selectedBranchId) return tabsHtml + renderBranchDetailsPage(session.selectedBranchId);
-  if(active==="Regions") return tabsHtml + renderRegionsPage();
+  if(active==="Regions") return renderRegionsPage();
   if(active==="Loan Summary") return renderBranchLoanSummaryPage();
+  if(active==="Company Branches") return renderCompanyBranchesPage();
   if(active==="Open New Branch") return tabsHtml + renderOpenNewBranchPage();
   if(active==="Organizational Overview") return tabsHtml + renderOrgOverviewPage();
   return tabsHtml + renderBranchDirectoryPage();
@@ -11366,6 +11373,7 @@ async function closeBranch(branchId, reason){
 async function loadRegions(filters){
   return withRequest('load-regions', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
+    params.set('with_counts','1');
     const res = await api.get('/api/regions?'+params.toString());
     DB.acctPages.regions = { regions: res.regions, filters: filters||{} };
     DB.regions = res.regions; // keep the shared reference fresh for dropdowns elsewhere
@@ -11415,6 +11423,44 @@ async function toggleRegionStatus(id, status){
   await api.patch(`/api/regions/${id}`, { status });
   toast("Region updated");
   await loadRegions(DB.acctPages.regions?DB.acctPages.regions.filters:{});
+}
+
+// ---- Company Branches (Manager sidebar: Branches & Regions > View
+// Branches) — deliberately its own page/state, not a reuse of the shared
+// "Branch Directory" tab (which many other roles' sidebars also alias to,
+// e.g. Admin's "All Branches"/"Branch Overview"), since this reference
+// design's columns (Paybill/Staff/Clients) are specific to this one menu
+// item. GET /api/branches already returns real, company-wide Staff/
+// Client counts and the real company Paybill (see branches.js) — the
+// same "not scoped to the caller's own branch" policy as Regions above. ----
+async function loadCompanyBranches(filters){
+  return withRequest('load-company-branches', async ()=>{
+    const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
+    params.set('with_counts','1');
+    const res = await api.get('/api/branches?'+params.toString());
+    DB.acctPages.companyBranches = { branches: res.branches, filters: filters||{} };
+  });
+}
+function renderCompanyBranchesPage(){
+  const state = DB.acctPages.companyBranches;
+  if(!state){ loadCompanyBranches({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const sorted = state.branches.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <div class="card">
+      <div class="card-title">Company Branches</div>
+      <div class="table-wrap"><table>
+        <tr><th></th><th>Branch</th><th>Paybill</th><th>Staff</th><th>Clients</th><th>Status</th></tr>
+        ${sorted.map((b,idx)=>`<tr>
+          <td>${idx+1}</td>
+          <td>${escapeHtml(b.name)}</td>
+          <td>${escapeHtml(b.paybill||'—')}</td>
+          <td>${b.staffCount}</td>
+          <td>${b.clientCount}</td>
+          <td><span class="badge ${b.status==='Active'?'green':'grey'}">${b.status}</span></td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">No branches yet.</td></tr>`}
+      </table></div>
+    </div>
+  `;
 }
 
 // ---- Open New Branch — the real existing proposal workflow, now actually surfaced in the UI ----

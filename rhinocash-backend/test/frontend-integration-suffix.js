@@ -44,7 +44,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
   // ---- 4. Real data actually loaded from the backend into DB.* ----
   {
     __assert(DB !== null, "DB is populated after login");
-    __assert(Array.isArray(DB.branches) && DB.branches.length === 3, "real branches loaded (3 seeded)");
+    __assert(Array.isArray(DB.branches) && DB.branches.length === 35, "real branches loaded (35 seeded)");
     __assert(Array.isArray(DB.staff) && DB.staff.length >= 9, "real staff loaded (Admin sees the whole directory)");
     __assert(DB.staff.some(s => s.name === "Peter Otieno" && s.role === "Loan Officer"), "adaptStaff correctly translated role_id 'loan_officer' -> 'Loan Officer'");
     __assert(DB.me && DB.me.email === "admin@rhinocash.co.ke", "DB.me holds the real authenticated user's own record");
@@ -531,7 +531,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     await doLogin({ preventDefault(){}, target:{} });
     goTo('dashboard');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Manager') && html.includes('Kisumu'), "Manager dashboard shows real role and real branch name");
+    __assert(html.includes('Manager') && html.includes('Ukunda'), "Manager dashboard shows real role and real branch name");
     __assert(html.includes('Loans Waiting for Your Approval'), "Manager dashboard has a real branch-scoped approval queue section");
     const htmlNoLogo3 = html.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/g, '');
     __assert(!htmlNoLogo3.includes('undefined') && !htmlNoLogo3.includes('NaN'), "Manager dashboard has no undefined/NaN leakage");
@@ -734,7 +734,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
 
     // Real user creation through the actual form handler.
     const createForm = new Map([['name','Frontend Staff Test'],['phone','0722900444'],['email','frontendstafftest@rhinocash.co.ke'],
-      ['jobTitle','Loan Officer'],['department','Credit'],['branch','br_nairobi'],['regionId','rg_central'],
+      ['jobTitle','Loan Officer'],['department','Credit'],['branch','br_nairobi'],['regionId','rg_upper_coast'],
       ['reportingManagerId',''],['employmentStatus','Full-time'],['role','Loan Officer'],['accessLevel','']]);
     global.FormData = class { constructor(){ return createForm; } };
     const staffBefore = DB.staff.length;
@@ -1315,7 +1315,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
 
     // Bulk Upload (Import Utility Payments): real CSV parse + OTP + real batch create, through the actual UI functions.
     openBulkUploadModal();
-    const utilCsv = "Branch,Item description,Cost,Recipient mpesa number,Mpesa name,Journal account\nKisumu,Office cleaning,2500,0722000111,Clean Co,Rent expense\n";
+    const utilCsv = "Branch,Item description,Cost,Recipient mpesa number,Mpesa name,Journal account\nUkunda,Office cleaning,2500,0722000111,Clean Co,Rent expense\n";
     handleBulkUploadFileChange({ target: { files: [{ name:'utility.csv', __content: utilCsv }] } });
     __assert(DB.bulkUploadForm.rows && DB.bulkUploadForm.rows.length === 1, "handleBulkUploadFileChange() through the actual UI function genuinely parsed the real CSV row");
     __assert(DB.bulkUploadForm.rows[0].item_description === 'Office cleaning' && DB.bulkUploadForm.rows[0].cost === '2500', "the parsed row genuinely carries the real CSV cell values under the right column keys");
@@ -1514,13 +1514,13 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(DB.acctPages.branchdir.branches.length > 0, "real branch directory data loaded via the actual UI loader");
     goTo('branches','Branch Directory');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Kisumu') || html.includes('Nairobi'), "Branch Directory shows real seeded branch names");
+    __assert(html.includes('Ukunda') || html.includes('Likoni'), "Branch Directory shows real seeded branch names");
 
     // Real search filter through the actual UI function.
-    const searchForm = new Map([['q','Kisumu']]);
+    const searchForm = new Map([['q','Ukunda']]);
     global.FormData = class { constructor(){ return searchForm; } };
     await submitBranchDirFilter({ preventDefault(){}, target:{} });
-    __assert(DB.acctPages.branchdir.branches.every(b=>b.name.includes('Kisumu')||b.code&&b.code.includes('Kisumu')||b.location&&b.location.includes('Kisumu')), "real branch search filter genuinely narrows results server-side");
+    __assert(DB.acctPages.branchdir.branches.every(b=>b.name.includes('Ukunda')||b.code&&b.code.includes('Ukunda')||b.location&&b.location.includes('Ukunda')), "real branch search filter genuinely narrows results server-side");
 
     // Branch Details: real aggregation of 3 real endpoints, no local recalculation.
     const kisumuBranch = DB.acctPages.branchdir.branches[0];
@@ -1623,7 +1623,7 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     await doLogin({ preventDefault(){}, target:{} });
     goTo('dashboard');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Branches in') && (html.includes('Kisumu')||html.includes('Mombasa')), "Regional Manager's dashboard now shows a real, region-scoped list of their real branches — previously missing entirely");
+    __assert(html.includes('Branches in') && (html.includes('Ukunda')||html.includes('Mombasa')), "Regional Manager's dashboard now shows a real, region-scoped list of their real branches — previously missing entirely");
     const htmlNoLogo12 = html.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/g, '');
     __assert(!htmlNoLogo12.includes('undefined') && !htmlNoLogo12.includes('NaN'), "Regional Manager dashboard's new branch card has no undefined/NaN leakage");
 

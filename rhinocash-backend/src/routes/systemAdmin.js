@@ -36,7 +36,7 @@ function register(router) {
   });
   router.put('/api/system/organization', requireAuth, requirePermission('manage_system_settings'), requireAdminOnly, async (req, res, next) => {
     await ensureOrgRow();
-    const fields = ['company_name', 'trading_name', 'registration_number', 'address', 'phone', 'email', 'website', 'currency', 'timezone', 'financial_year_start_month'];
+    const fields = ['company_name', 'trading_name', 'registration_number', 'address', 'phone', 'email', 'website', 'currency', 'timezone', 'financial_year_start_month', 'paybill'];
     const before = await get('SELECT * FROM organization_settings WHERE id = 1');
     const sets = []; const params = [];
     fields.forEach(f => { if (req.body[f] !== undefined) { sets.push(`${f} = ?`); params.push(req.body[f]); } });

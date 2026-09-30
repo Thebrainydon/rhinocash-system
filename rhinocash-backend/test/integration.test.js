@@ -695,7 +695,7 @@ async function api(method, path, { token, body } = {}) {
     const todayStr = today.toISOString().slice(0, 10);
     const todayEntry = dd.json.days.find(day => day.date === todayStr);
     assert(todayEntry, 'the real day this loan was genuinely disbursed on genuinely appears in the real calendar data');
-    const kisumuEntry = todayEntry.entries.find(e => e.branchName === 'Kisumu');
+    const kisumuEntry = todayEntry.entries.find(e => e.branchName === 'Ukunda');
     assert(kisumuEntry && kisumuEntry.amount >= 4000, 'the real day\'s entry is genuinely grouped by the real branch name, with the real disbursed amount for that day');
 
     // A real month with no real disbursements in it genuinely comes back empty.
