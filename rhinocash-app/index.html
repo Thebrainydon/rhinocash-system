@@ -6145,7 +6145,7 @@ function submitCreateClientGroup(){
   }, {mutates:true});
 }
 function defaultLeadsBrowserState(){
-  return { category:'Unboarded', from:'2023-01-01', to: new Date().toISOString().slice(0,10), q:'' };
+  return { category:'Unboarded', from:'2023-01-01', to: new Date().toISOString().slice(0,10), q:'', officerId:'' };
 }
 async function loadLeadsBrowser(){
   const st = session.leadsBrowserState || (session.leadsBrowserState = defaultLeadsBrowserState());
@@ -6154,6 +6154,7 @@ async function loadLeadsBrowser(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.q) params.set('q', st.q);
+    if(st.officerId) params.set('officer_id', st.officerId);
     const res = await api.get('/api/leads?'+params.toString());
     DB.leadsBrowser = { rows: res.leads, stateKey: JSON.stringify(st) };
   });
@@ -6212,6 +6213,10 @@ function renderClientLeads(){
         <input type="date" value="${escapeHtml(st.from)}" onchange="session.leadsBrowserState.from=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
         <span class="hint" style="flex-shrink:0;">~</span>
         <input type="date" value="${escapeHtml(st.to)}" onchange="session.leadsBrowserState.to=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
+        ${hasOfficerVisibility() ? `<select onchange="session.leadsBrowserState.officerId=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
       </div>
       <div class="table-wrap"><table>
         <tr><th>Name</th><th>Idno</th><th>Contact</th><th>Branch</th><th>Client Location</th><th>Other Info</th><th>Creator</th><th>Date Created</th><th>Interactions</th><th>Status</th></tr>

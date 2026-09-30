@@ -223,6 +223,15 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
       const mgrLeadRow = leadsWithOfficer.json.leads.find(l => l.id === mgrLead.json.lead.id);
       assert(!!mgrLeadRow && mgrLeadRow.officer_name === officerMe.name, 'AH: the real assigned Loan Officer\'s own real name is genuinely joined into the leads browser, not left as a bare id');
 
+      // AK. The real ?officer_id= filter — the Client Leads page's own new
+      // requested Loan Officer filter, same rule as /api/clients/interactions.
+      const leadsByRealOfficer = await api('GET', `/api/leads?status=Unboarded&officer_id=${officerMe.id}`, { token: managerToken });
+      assert(leadsByRealOfficer.status === 200 && leadsByRealOfficer.json.leads.some(l => l.id === mgrLead.json.lead.id), 'AK: a Manager filtering leads by this exact real Loan Officer genuinely sees the real lead assigned to them');
+      const leadsByOtherUser = await api('GET', `/api/leads?status=Unboarded&officer_id=usr_manager_kisumu`, { token: managerToken });
+      assert(leadsByOtherUser.status === 200 && !leadsByOtherUser.json.leads.some(l => l.id === mgrLead.json.lead.id), 'AK: filtering by a real different user\'s id genuinely excludes this officer\'s own real assigned lead');
+      const leadsOfficerFilterIgnored = await api('GET', `/api/leads?status=Unboarded&officer_id=usr_manager_kisumu`, { token: officerToken });
+      assert(leadsOfficerFilterIgnored.status === 200 && leadsOfficerFilterIgnored.json.leads.some(l => l.id === officerOwnLead.json.lead.id), "AK: a Loan Officer's own real ?officer_id= query is genuinely ignored — they only ever see their own real leads regardless");
+
       // The real, central point of this whole fix: converting a Manager-
       // assigned lead genuinely carries the REAL intended officer onto the
       // new client — not the converting Manager (who is never a real Loan

@@ -364,6 +364,10 @@ function register(router) {
     else if (req.query.status) { clauses.push('cl.status = ?'); params.push(req.query.status); }
     if (req.query.from) { clauses.push('(cl.created_at)::date >= ?'); params.push(req.query.from); }
     if (req.query.to) { clauses.push('(cl.created_at)::date <= ?'); params.push(req.query.to); }
+    // Same real "only meaningful for someone who can see other real Loan
+    // Officers" rule as /api/clients/interactions — a Loan Officer's own
+    // ?officer_id= is ignored, since they only ever see their own leads anyway.
+    if (req.query.officer_id && req.user.role_id !== 'loan_officer') { clauses.push('cl.officer_id = ?'); params.push(req.query.officer_id); }
     if (req.query.q) {
       clauses.push('(cl.name LIKE ? OR cl.phone LIKE ? OR cl.national_id LIKE ?)');
       const like = `%${req.query.q}%`; params.push(like, like, like);

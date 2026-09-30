@@ -6544,6 +6544,66 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('Manager filter test interaction'), "sanity: the real Loan Officer still sees their own real client's real interaction, unfiltered");
   }
 
+  // ---- 63. CLIENTS > CLIENT LEADS: the exact same real, shared Client
+  // Leads browser the Loan Officer already uses, now with the requested
+  // real "-- Loan Officer --" filter for any role with real staff
+  // visibility — the backend's GET /api/leads now also supports
+  // ?officer_id= (see clients.js), mirroring Interactions above. ----
+  {
+    let mgrCl = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrCl; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    // A real lead, explicitly assigned to the real Kisumu Loan Officer,
+    // through the actual Create Client Lead modal flow.
+    openCreateLeadModal();
+    DB.leadForm.name = 'Client Leads Filter Test';
+    DB.leadForm.phone = '0722900666';
+    DB.leadForm.officer_id = 'usr_officer';
+    await submitCreateLead({ preventDefault(){}, target:{} });
+
+    session.leadsBrowserState = null;
+    goTo('clients','Client Leads');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Unboarded Leads') && html.includes('Unboarded Leads') && html.includes('Onboarded Leads'), "the real Client Leads page genuinely renders with its real category dropdown, unchanged");
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter on Client Leads too");
+    __assert(html.includes('Client Leads Filter Test'), "the real just-created, officer-assigned lead genuinely appears in the real, unfiltered list");
+
+    session.leadsBrowserState.officerId = 'usr_officer';
+    DB.leadsBrowser = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client Leads Filter Test'), "filtering by this exact real Loan Officer genuinely still shows their own real assigned lead");
+
+    // A still-showing real "added as a lead" toast (real toasts only
+    // auto-dismiss after a real 3.2s timeout) would otherwise make this
+    // real client's name appear to be "in the page" even once it's
+    // genuinely gone from the real table — cleared so this check is
+    // genuinely about real table membership only.
+    toasts.length = 0;
+    session.leadsBrowserState.officerId = 'usr_manager_kisumu';
+    DB.leadsBrowser = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('Client Leads Filter Test'), "filtering by a real different user's id genuinely excludes this officer's own real assigned lead — the filter is real, not decorative");
+
+    // The exact same shared page, for the Loan Officer who has no one to
+    // filter by — genuinely unchanged, no picker shown at all.
+    let ofCl = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofCl; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.leadsBrowserState = null;
+    goTo('clients','Client Leads');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Client Leads page genuinely has no Loan Officer filter — their own real leads need no picker");
+    __assert(html.includes('Client Leads Filter Test'), "sanity: the real Loan Officer still sees their own real assigned lead, unfiltered");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();
