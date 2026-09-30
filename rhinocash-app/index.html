@@ -452,6 +452,34 @@ const ACCESS_LEVEL_BY_ROLE = {
   "Regional Manager":"Regional Management Access", "Admin":"Full System Access", "Accountant":"Accounting & Financial Access",
   "CEO":"Executive Management Access", "Director":"Strategic & Governance Access", "Investor":"Investor Access",
 };
+/* Admin > Roles & Access Control > Roles — short, factual descriptions of
+   what each real system role actually does in this app (not marketing
+   copy). Investor is deliberately absent: it's a structurally separate
+   principal type (its own `investors` table/login, never a row in the
+   real `roles` table — see auth.js/investors.js), not one of the 8 real
+   staff roles this page reads from GET /api/roles. */
+const ROLE_DESCRIPTIONS = {
+  "Loan Officer": "Front-line lending — manages their own client portfolio, submits loan applications, and records payments within their branch.",
+  "Manager": "Runs a single branch — approves loans, manages branch staff, and oversees day-to-day branch operations.",
+  "Regional Manager": "Oversees every branch in their region — regional loan approvals, branch performance and staff across the region.",
+  "Operational Manager": "Company-wide operations oversight — branch expansion, cross-branch loan approvals and operational performance.",
+  "Accountant": "Financial control — posts accounting entries, reconciles payments, and holds the final loan-approval step.",
+  "Admin": "Master System Administrator — the only role with full system configuration, user management and role/permission authority.",
+  "CEO": "Executive oversight of company-wide performance, portfolio health and financial results.",
+  "Director": "Governance and ownership oversight — capital, shareholders, board matters and strategic risk.",
+};
+/* Groups the real permission ids (GET /api/permissions — see seed.js's
+   seedPermissions()) into display categories for the Role Details view.
+   Purely a presentation grouping — every id/label here is real, not
+   invented; a permission with no entry falls back to "Other" so a future
+   real permission never silently disappears from the page. */
+const PERMISSION_CATEGORIES = {
+  approve_loans: "Loan Operations", disburse_loans: "Loan Operations", write_off_loans: "Loan Operations",
+  record_payments: "Payments", reverse_payment: "Payments",
+  post_accounting_entries: "Accounting",
+  manage_branches: "Branch Management", open_new_branch: "Branch Management",
+  manage_users: "System Administration", manage_system_settings: "System Administration",
+};
 /* Modules a user's access can be scoped to. Each maps to a real nav section
    this prototype actually gates; a few spec-named modules (Collections,
    Disbursements, Investor Management, Risk Management, System Administration)
@@ -853,9 +881,9 @@ const LABEL_ROUTES = {
   "Staff Portfolios": {section:"staff-portfolios"},
   "Daily Workplan": {section:"staff-workplans"},
   "View Employees": {section:"staff", subtab:"Company Employees"},
+  "Roles": {section:"staff", subtab:"Roles"},
   "Salary Records": {section:"accounting", subtab:"Expenses"},
   // Approvals & permissions (Admin)
-  "Roles": {section:"dashboard"},
   "Permission Matrix": {section:"dashboard"},
   "Access Control": {section:"dashboard"},
   "Approval Permissions": {section:"dashboard"},
@@ -1049,7 +1077,7 @@ function sidebarNavigate(itemLabel){
 
 /* ---------------- State ---------------- */
 let DB = null;
-let session = { loggedIn:false, authenticated:false, loggingIn:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false, clientAccountOpen:false, clientAccountState:null };
+let session = { loggedIn:false, authenticated:false, loggingIn:false, loggingOut:false, justLoggedOut:false, role:"Admin", userName:"Amina Yusuf", userId:null, investorId:null, section:"dashboard", subtab:null, selectedClientId:null, selectedLoanId:null, selectedStaffId:null, selectedReceiptId:null, selectedBranchId:null, selectedRoleId:null, selectedInvestorId:null, selectedMpesaTxId:null, selectedTicketId:null, paymentsReportFilter:null, sidebarOpen:false, ceoPeriod:"month", sidebarExpanded:{}, placeholderLabel:null, mustChangePassword:false, sessionExpiresAt:null, sessionWarningMinutes:null, loanStatusState:null, pendingPaymentsState:null, ticketsState:null, c2bPaymentsState:null, expectedCashflowState:null, clientInteractionsState:null, leadsBrowserState:null, clientExportFields:null, clientHistoryTab:null, clientNotesOpen:false, clientAccountOpen:false, clientAccountState:null };
 let loginError = "";
 // Real, backend-driven forgot-password recovery screen — not a second auth
 // mechanism, just a public UI for POST /api/auth/forgot-password.
@@ -11927,8 +11955,148 @@ function renderCompanyEmployeesPage(){
     ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
   `;
 }
+// ---- Admin > Roles & Access Control > Roles — the real system roles
+// from GET /api/roles (?with_counts=1 for the real, server-computed
+// userCount/permissionCount/lastModifiedAt — never a client-side/
+// hardcoded count), following the exact same loadX()/DB.acctPages.<key>/
+// withRequest cache pattern as loadStaffDirectory() above and
+// loadCompanyBranches() (Branches & Regions > View Branches). Only the
+// "Roles" submenu gets a real page for now — Create Role/Role
+// Permissions/Permission Matrix/Access Policies/Access Requests/Access
+// Approvals/Access Audit fall through to the app's existing generic
+// placeholder, same as every other not-yet-built Admin item. ----
+function defaultRolesFilters(){ return { q:'', accessLevel:'' }; }
+async function loadRolesPage(){
+  return withRequest('load-roles', async ()=>{
+    const [rolesRes, permsRes] = await Promise.all([
+      api.get('/api/roles?with_counts=1'),
+      api.get('/api/permissions'),
+    ]);
+    DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, allPermissions: permsRes.permissions };
+  });
+}
+function renderRolesPage(){
+  const state = DB.acctPages.roles;
+  if(!state){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const f = session.rolesFilters || (session.rolesFilters = defaultRolesFilters());
+  let rows = state.roles;
+  if(f.q){
+    const q = f.q.toLowerCase();
+    rows = rows.filter(r => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || (ROLE_DESCRIPTIONS[r.name]||'').toLowerCase().includes(q));
+  }
+  if(f.accessLevel) rows = rows.filter(r => r.default_access_level === f.accessLevel);
+  const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level))].sort();
+  const trs = rows.map(r => `<tr class="clickable" onclick="openRoleDetail('${r.id}')">
+      <td><strong>${escapeHtml(r.name)}</strong><br><span class="hint">${escapeHtml(r.id)}</span></td>
+      <td>${escapeHtml(r.default_access_level)}</td>
+      <td class="hint">${escapeHtml(ROLE_DESCRIPTIONS[r.name] || '—')}</td>
+      <td>${r.userCount} <span class="hint">(${r.activeUserCount} active)</span></td>
+      <td>${r.permissionCount} of ${state.permissionsTotal}</td>
+      <td><span class="badge green">Active</span> <span class="badge blue" style="margin-left:4px;">System</span></td>
+      <td class="hint">${r.lastModifiedAt ? timeAgo(r.lastModifiedAt) : 'Never modified'}</td>
+      <td onclick="event.stopPropagation();"><button class="btn btn-sm btn-outline" onclick="openRoleDetail('${r.id}')">View</button></td>
+    </tr>`).join("");
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:6px;">
+        <div>
+          <h3 style="color:var(--navy); margin:0;">Roles</h3>
+          <div class="hint" style="margin-top:4px; max-width:640px;">The real system roles Rhinocash uses to control sidebar navigation, module access and approval authority across the whole application. Investor is a separate, portal-only principal type and isn't a staff role, so it isn't listed here.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openModal('create-role-info')">+ Create Role</button>
+      </div>
+      <div class="pill-row" style="flex-wrap:wrap; gap:8px; margin:14px 0;">
+        <input placeholder="🔍 Search role or description" value="${escapeHtml(f.q)}" oninput="session.rolesFilters.q=this.value; renderApp();" class="btn btn-sm btn-outline" style="min-width:220px; flex-shrink:0;">
+        <select onchange="session.rolesFilters.accessLevel=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">All access levels</option>
+          ${accessLevels.map(a=>`<option value="${escapeHtml(a)}" ${f.accessLevel===a?'selected':''}>${escapeHtml(a)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Role</th><th>Access Level</th><th>Description</th><th>Assigned Users</th><th>Permissions</th><th>Status</th><th>Last Updated</th><th></th></tr>
+        ${trs || `<tr><td colspan="8" class="empty">No roles match these filters.</td></tr>`}
+      </table></div>
+    </div>
+    ${session.selectedRoleId ? renderRoleDetailPanel(session.selectedRoleId) : ""}
+  `;
+}
+function openRoleDetail(id){ session.selectedRoleId = id; loadRoleDetail(id); renderApp(); }
+function closeRoleDetail(){ session.selectedRoleId = null; renderApp(); }
+async function loadRoleDetail(id){
+  return withRequest('load-role-detail', async ()=>{
+    const [permsRes, auditRes] = await Promise.all([
+      api.get(`/api/roles/${id}/permissions`),
+      api.get(`/api/audit-logs?entity=Role&record_id=${id}&limit=10`),
+    ]);
+    DB.acctPages.roleDetail = { roleId: id, permissions: permsRes.permissions, auditLog: auditRes.auditLogs };
+  });
+}
+function renderRoleDetailPanel(id){
+  const state = DB.acctPages.roles;
+  const role = state && state.roles.find(r=>r.id===id);
+  if(!role) return "";
+  const detail = (DB.acctPages.roleDetail && DB.acctPages.roleDetail.roleId===id) ? DB.acctPages.roleDetail : null;
+  if(!detail) loadRoleDetail(id);
+  const assignedUsers = (DB.staff||[]).filter(s=>s.role===role.name);
+  const permLookup = {};
+  (detail ? detail.permissions : []).forEach(p=>{ permLookup[p.permission_id] = !!p.allowed; });
+  const allPerms = state.allPermissions || [];
+  const categorized = {};
+  allPerms.forEach(p=>{ const cat = PERMISSION_CATEGORIES[p.id] || 'Other'; (categorized[cat] = categorized[cat] || []).push(p); });
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <h3 style="color:var(--navy); margin:0;">${escapeHtml(role.name)}</h3>
+        <span class="btn btn-outline btn-sm" onclick="closeRoleDetail()" style="border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; padding:0;">✕</span>
+      </div>
+      <div class="grid2">
+        <div>
+          <div class="detail-label">Role ID</div><div>${escapeHtml(role.id)}</div>
+          <div class="detail-label" style="margin-top:10px;">Access Level</div><div>${escapeHtml(role.default_access_level)}</div>
+          <div class="detail-label" style="margin-top:10px;">Description</div><div>${escapeHtml(ROLE_DESCRIPTIONS[role.name] || '—')}</div>
+          <div class="detail-label" style="margin-top:10px;">Status</div><div><span class="badge green">Active</span> <span class="badge blue" style="margin-left:4px;">System role</span></div>
+          <div class="detail-label" style="margin-top:10px;">Created</div><div class="hint">Built into Rhinocash — system roles ship with the platform, they aren't user-created records</div>
+          <div class="detail-label" style="margin-top:10px;">Last Updated</div><div class="hint">${role.lastModifiedAt ? new Date(role.lastModifiedAt).toLocaleString() : 'No permission changes recorded yet'}</div>
+        </div>
+        <div>
+          <div class="detail-label">Assigned Users (${assignedUsers.length})</div>
+          ${assignedUsers.length ? `<div class="table-wrap" style="margin-top:6px;"><table><tr><th>Name</th><th>Branch</th><th>Status</th></tr>
+            ${assignedUsers.slice(0,10).map(s=>`<tr class="clickable" onclick="goTo('staff'); openStaffDetail('${s.id}')"><td>${escapeHtml(s.name)}</td><td>${branchName(s.branch)}</td><td><span class="badge ${s.status==='Active'?'green':s.status==='Suspended'?'amber':'red'}">${s.status}</span></td></tr>`).join("")}
+          </table></div>${assignedUsers.length>10 ? `<div class="hint" style="margin-top:6px;">+${assignedUsers.length-10} more — see Employees → View Employees</div>` : ""}` : `<div class="empty">No users currently hold this role.</div>`}
+        </div>
+      </div>
+
+      <div class="card-title" style="margin-top:18px;">Permissions ${detail ? `<small>${role.permissionCount} of ${state.permissionsTotal} granted</small>` : ''}</div>
+      ${!detail ? `<div class="empty">${loadingDotsHtml()}</div>` : Object.entries(categorized).map(([cat, perms]) => `
+        <div style="margin-bottom:10px;">
+          <div style="font-weight:700; color:var(--navy); font-size:12.5px; margin-bottom:4px;">${escapeHtml(cat)}</div>
+          <div class="pill-row" style="flex-wrap:wrap; gap:6px;">
+            ${perms.map(p=>`<span class="badge ${permLookup[p.id]?'green':'grey'}">${permLookup[p.id]?'✓':'✕'} ${escapeHtml(p.label)}</span>`).join("")}
+          </div>
+        </div>`).join("")}
+
+      <div class="card-title" style="margin-top:18px;">Recent Role Activity <small>from the real audit log</small></div>
+      ${!detail ? "" : (detail.auditLog.length ? `<div class="table-wrap"><table><tr><th>When</th><th>Actor</th><th>Action</th></tr>
+        ${detail.auditLog.map(a=>`<tr><td class="hint">${new Date(a.created_at).toLocaleString()}</td><td>${escapeHtml(a.user_name||'—')}</td><td>${escapeHtml(a.action)}</td></tr>`).join("")}
+      </table></div>` : `<div class="empty">No recorded changes to this role yet.</div>`)}
+    </div>
+  `;
+}
+function renderCreateRoleInfoModal(){
+  return `
+    <div class="modal-head"><h3>Create Role</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="hint" style="margin-bottom:14px;">
+      Rhinocash's system roles (${ROLES.filter(r=>r!=='Investor').join(', ')}) are structural — each one is wired directly into its own sidebar menu, module access and approval workflow across the whole application, not stored as a free-form, user-created record. This version of Rhinocash doesn't support creating an entirely new role, since a role with no matching navigation, permissions or workflow behavior would leave anyone assigned to it unable to use the system.
+    </div>
+    <div class="hint" style="margin-bottom:18px;">
+      To grant a staff member broader or narrower access within their existing role, use <strong>Employees → View Employees</strong> to edit their Access Level and module access. A role's own permission matrix can be adjusted under <strong>Roles &amp; Access Control → Role Permissions</strong>.
+    </div>
+    <div class="pill-row"><button class="btn btn-primary btn-sm" onclick="closeModal()">Got it</button></div>
+  `;
+}
 function renderStaff(){
   if(session.subtab === "Company Employees") return renderCompanyEmployeesPage();
+  if(session.subtab === "Roles") return renderRolesPage();
   const state = DB.acctPages.staffdir;
   if(!state) loadStaffDirectory({},1); // fires the real fetch; the rest of this page still renders below regardless — only the directory table itself shows a loading placeholder
   const rows = state ? state.staff.map(s=>{
@@ -14341,6 +14509,7 @@ function renderModal(){
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
+  else if(modal.type === "create-role-info") body = renderCreateRoleInfoModal();
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];

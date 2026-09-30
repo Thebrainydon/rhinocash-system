@@ -154,6 +154,100 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   // S/T: no frontend-only bypass — every mutation above was rejected at the real API layer with the real token, not a UI-only restriction.
   assert(true, 'S/T: every authorization check above was performed directly against the real API with a real authenticated token — none of this relied on a frontend permission check that a direct API call could bypass');
 
+  // ==================== Admin > Roles & Access Control > Roles ====================
+  // Real coverage for GET /api/roles (?with_counts=1), GET /api/permissions,
+  // GET /api/roles/:id/permissions and the ?record_id filter added to
+  // GET /api/audit-logs, all backing the new Admin > Roles page.
+
+  // U. Unauthenticated requests are rejected — same real auth gate as every other endpoint.
+  {
+    const r = await api('GET', '/api/roles');
+    assert(r.status === 401, 'U: GET /api/roles requires real authentication, same as every other endpoint');
+  }
+
+  // V. The real, authoritative role list — the 8 real seeded roles, no duplicates invented.
+  {
+    const r = await api('GET', '/api/roles', { token: adminToken });
+    assert(r.status === 200, 'V: an authenticated user can list the real system roles');
+    const ids = r.json.roles.map(x => x.id).sort();
+    assert(JSON.stringify(ids) === JSON.stringify(['accountant', 'admin', 'ceo', 'director', 'loan_officer', 'manager', 'operational_manager', 'regional_manager']), 'V: the real roles table holds exactly the 8 real seeded staff roles — Investor is a separate principal type, never a row here, so it is correctly absent');
+    assert(r.json.roles.every(x => x.userCount === undefined), 'V: without ?with_counts=1, GET /api/roles returns the bare role rows — no aggregation, matching the same opt-in pattern already used by GET /api/branches and GET /api/regions');
+  }
+
+  // W. ?with_counts=1 returns real, server-computed counts — never hard-coded, never a client-array length.
+  {
+    const before = await api('GET', '/api/roles?with_counts=1', { token: adminToken });
+    assert(before.status === 200 && typeof before.json.permissionsTotal === 'number' && before.json.permissionsTotal > 0, 'W: GET /api/roles?with_counts=1 returns a real permissionsTotal denominator');
+    const officerRow = before.json.roles.find(x => x.id === 'loan_officer');
+    const officerUserCountBefore = officerRow.userCount;
+
+    const created = await api('POST', '/api/users', { token: adminToken, body: { name: 'Roles Count Officer', email: 'rolescountofficer@rhinocash.co.ke', role_id: 'loan_officer' } });
+    assert(created.status === 201, 'W: setup — a real new Loan Officer is created');
+
+    const after = await api('GET', '/api/roles?with_counts=1', { token: adminToken });
+    const officerRowAfter = after.json.roles.find(x => x.id === 'loan_officer');
+    assert(officerRowAfter.userCount === officerUserCountBefore + 1, 'W: userCount genuinely increases by exactly one real new user of that role — not a hard-coded/stale number');
+    assert(officerRowAfter.activeUserCount >= 1, 'W: activeUserCount reflects real Active-status users of the role');
+
+    const adminRow = after.json.roles.find(x => x.id === 'admin');
+    assert(adminRow.permissionCount === 10, "W: the real Admin role genuinely has all 10 real permissions allowed, per the real seeded role_permissions matrix");
+    const loRow = after.json.roles.find(x => x.id === 'loan_officer');
+    assert(loRow.permissionCount === 1, "W: the real Loan Officer role genuinely has exactly 1 permission allowed (record_payments), per the real seeded matrix — not fabricated");
+  }
+
+  // X. Per-role permission detail — real allowed/denied pairs, matching the real seeded matrix exactly.
+  {
+    const perms = await api('GET', '/api/permissions', { token: adminToken });
+    assert(perms.status === 200 && perms.json.permissions.length === 10, 'X: the real permissions table holds the 10 real seeded permissions');
+
+    const adminPerms = await api('GET', '/api/roles/admin/permissions', { token: adminToken });
+    assert(adminPerms.status === 200, 'X: a role\'s real permission matrix can be read');
+    assert(adminPerms.json.permissions.every(p => p.allowed === 1), 'X: every real permission is genuinely allowed for the real Admin role');
+
+    const officerPerms = await api('GET', '/api/roles/loan_officer/permissions', { token: adminToken });
+    const recordPayments = officerPerms.json.permissions.find(p => p.permission_id === 'record_payments');
+    const approveLoans = officerPerms.json.permissions.find(p => p.permission_id === 'approve_loans');
+    assert(recordPayments && recordPayments.allowed === 1, 'X: the real Loan Officer role genuinely has record_payments allowed');
+    assert(approveLoans && approveLoans.allowed === 0, 'X: the real Loan Officer role genuinely does NOT have approve_loans allowed — never fabricated as granted');
+  }
+
+  // Y. Only Admin can edit a role's real permission matrix — server-enforced, not a hidden frontend button.
+  {
+    const blocked = await api('PUT', '/api/roles/manager/permissions/manage_system_settings', { token: managerToken, body: { allowed: true } });
+    assert(blocked.status === 403, 'Y: a non-Admin (Manager) genuinely cannot edit any role\'s real permission matrix, even their own role\'s');
+    const ceoBlocked = await api('PUT', '/api/roles/manager/permissions/manage_system_settings', { token: ceoToken, body: { allowed: true } });
+    assert(ceoBlocked.status === 403, 'Y: even the CEO (who holds manage_users) cannot edit the real role permission matrix — that stays Admin-exclusive, same as the other Admin-only sub-actions above');
+  }
+
+  // Z. Role permission changes are genuinely audited, with actor/action/affected role/timestamp — never credentials.
+  {
+    const before = await api('GET', '/api/roles/accountant/permissions', { token: adminToken });
+    const wasAllowed = before.json.permissions.find(p => p.permission_id === 'write_off_loans').allowed;
+    const flip = await api('PUT', '/api/roles/accountant/permissions/write_off_loans', { token: adminToken, body: { allowed: !wasAllowed } });
+    assert(flip.status === 200, 'Z: Admin genuinely can edit a real role\'s permission matrix');
+
+    const audit = await api('GET', '/api/audit-logs?entity=Role&record_id=accountant', { token: adminToken });
+    assert(audit.status === 200 && audit.json.auditLogs.length > 0, 'Z: the ?record_id filter genuinely narrows the real audit log to just this one role\'s entries');
+    assert(audit.json.auditLogs.every(a => a.record_type === 'Role' && a.record_id === 'accountant'), 'Z: every returned entry genuinely belongs to the real accountant role, not another record');
+    const latest = audit.json.auditLogs[0];
+    assert(latest.action === 'Changed role permission matrix' && latest.user_id, 'Z: the real audit entry records a real actor and a real action, not a fabricated placeholder');
+    assert(JSON.stringify(latest).indexOf('password') === -1 && JSON.stringify(latest).indexOf('hash') === -1, 'Z: the real audit entry never leaks a credential/hash of any kind');
+
+    // Restore the real matrix to its original seeded state so this test's
+    // side effect never leaks into a later, unrelated assertion.
+    await api('PUT', '/api/roles/accountant/permissions/write_off_loans', { token: adminToken, body: { allowed: !!wasAllowed } });
+  }
+
+  // AA. System roles are genuinely protected — there is no real endpoint that can delete or duplicate a system role.
+  {
+    const del = await api('DELETE', '/api/roles/loan_officer');
+    assert(del.status === 401 || del.status === 404, 'AA: there is no unauthenticated way to even reach a role-delete action');
+    const delAuthed = await api('DELETE', '/api/roles/loan_officer', { token: adminToken });
+    assert(delAuthed.status === 404, 'AA: even as Admin, there is genuinely no real endpoint to delete a system role — the architecture protects them structurally, not just via a permission check');
+    const dup = await api('POST', '/api/roles', { token: adminToken, body: { id: 'loan_officer', name: 'Loan Officer 2', default_access_level: 'x' } });
+    assert(dup.status === 404, 'AA: there is genuinely no real endpoint to create a duplicate/custom role either — this version of Rhinocash only supports its real, structural system roles');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

@@ -219,7 +219,25 @@ function register(router) {
   });
 
   router.get('/api/roles', requireAuth, async (req, res) => {
-    res.json({ roles: await all('SELECT * FROM roles') });
+    const roles = await all('SELECT * FROM roles ORDER BY name');
+    if (!req.query.with_counts) return res.json({ roles });
+    // Real, server-computed counts for the Admin > Roles page — never
+    // hard-coded, and never derived from a client-side array that could be
+    // truncated by a list endpoint's own page-size cap. permissionsTotal is
+    // the same denominator for every role (the one real permissions table),
+    // so it's returned once rather than duplicated onto every row.
+    const permissionsTotal = (await get('SELECT COUNT(*) as c FROM permissions')).c;
+    const withCounts = await Promise.all(roles.map(async (role) => {
+      const userCount = (await get('SELECT COUNT(*) as c FROM users WHERE role_id = ?', [role.id])).c;
+      const activeUserCount = (await get('SELECT COUNT(*) as c FROM users WHERE role_id = ? AND status = ?', [role.id, 'Active'])).c;
+      const permissionCount = (await get('SELECT COUNT(*) as c FROM role_permissions WHERE role_id = ? AND allowed = 1', [role.id])).c;
+      const lastAudit = await get(
+        `SELECT created_at FROM audit_logs WHERE record_type = 'Role' AND record_id = ? ORDER BY created_at DESC LIMIT 1`,
+        [role.id]
+      );
+      return { ...role, userCount, activeUserCount, permissionCount, lastModifiedAt: lastAudit ? lastAudit.created_at : null };
+    }));
+    res.json({ roles: withCounts, permissionsTotal });
   });
   router.get('/api/modules', requireAuth, async (req, res) => {
     res.json({ modules: await all('SELECT * FROM modules') });
