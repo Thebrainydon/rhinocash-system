@@ -607,7 +607,7 @@ const SIDEBAR_MENUS = {
     {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client","Client Growth","Active Clients","New Clients","Dormant Clients","Client Retention","Client Acquisition","Client Trends"]},
     {section:"Performance", icon:"🏆", items:["Staff Performance","Loan Officer Performance","Branch Performance","Target Achievement","Leaderboards","Productivity","Performance Trends"]},
     {section:"Risk", icon:"⚠️", items:["Portfolio Risk","PAR Analysis","Defaults","Write-offs","Recoveries","Credit Risk","Concentration Risk"]},
-    {section:"Liquidity", icon:"💧", items:["Cash Position","Expected Collections","Expected Disbursements","Cash Forecast","Liquidity Trends","Funding Requirements"]},
+    {section:"Liquidity", icon:"💧", items:["Cash Position","Expected Collections","Expected Disbursements","Cash Forecast","Liquidity Trends","Funding Requirements","Utility Payments"]},
     {section:"Revenue & Profit", icon:"💰", items:["Revenue Analysis","Expense Analysis","Profit Analysis","Profit Margins","Revenue Sources","Profit Trends"]},
     {section:"Business Intelligence", icon:"🧠", items:["Trends","Forecasts","Opportunities","Performance Alerts","Anomalies","Growth Opportunities","Risk Signals","Management Insights"]},
     {section:"Reports", icon:"📑", items:["Executive Report","Management Report","Portfolio Report","Branch Report","Financial Summary","Risk Report","Growth Report","Annual Performance Report"]},
@@ -5936,7 +5936,7 @@ function submitDocument(ev,clientId){
 function statusBadge(status){
   const map = {
     Pending:"amber", Approved:"blue", Active:"green", Disbursed:"green", Closed:"grey", Completed:"grey",
-    Rejected:"red", Declined:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue",
+    Rejected:"red", Declined:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue", "CEO Approved":"blue",
     "Waiting for Manager":"amber", "Waiting for Regional Manager":"amber", "Waiting for Operational Manager":"amber", "Waiting for Accountant":"amber",
     "Approved for Disbursement":"blue", "Disbursement Pending":"amber", "Returned for Correction":"red",
     Posted:"green", Unposted:"amber", Overpayment:"blue", Reversed:"grey", Paid:"green",
@@ -9816,7 +9816,7 @@ function renderAccounting(){
   const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
   if(active==="Requisitions") return DB.requisitionForm ? renderCreateRequisitionPage() : renderRequisitionsPage();
-  if(active==="Utility Payments") return DB.utilPaymentForm ? renderCreateUtilityPaymentPage() : renderUtilityPaymentsPage();
+  if(active==="Utility Payments") return DB.utilPaymentDetailId ? renderUtilityPaymentDetailPage() : (DB.utilPaymentForm ? renderCreateUtilityPaymentPage() : renderUtilityPaymentsPage());
   if(active==="General Ledger") return tabsHtml + renderGeneralLedgerPage();
   if(active==="Chart of Accounts") return tabsHtml + renderChartOfAccountsPage();
   if(active==="Trial Balance") return tabsHtml + renderTrialBalancePage();
@@ -10065,13 +10065,10 @@ function submitCreateRequisition(ev){
   }, {mutates:true});
 }
 
-// ==================== Vendor/Utility Payments — real expense creation with utility-specific fields ====================
-// Display statuses "Approved"/"Declined" are sent through to the backend
-// verbatim (no local relabeling) so the filter is genuinely wired against
-// the real status column — it's simply that every payment created today
-// still goes straight to 'Paid' (see submitUtilityPayment), the same as
-// before this page's redesign. Nothing here fabricates rows to fill those
-// filters; an empty result for "Approved"/"Pending"/"Declined" is honest.
+// ==================== Vendor/Utility Payments — real 2-stage-approval
+// card-grid list, matching the reference design. Real statuses only
+// (Pending/CEO Approved/Paid/Declined/Cancelled) — nothing here fabricates
+// an "Approved" row to fill a filter that has none.
 async function loadUtilityPayments(filters){
   return withRequest('load-utility', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
@@ -10089,6 +10086,7 @@ function submitUtilPaymentFilter(ev){
     filters.from = `${f.month}-01`; filters.to = `${f.month}-${String(last).padStart(2,'0')}`; }
   return loadUtilityPayments(filters);
 }
+const UTIL_PAYMENT_STATUSES = ["Pending","CEO Approved","Paid","Declined","Cancelled"];
 function renderUtilityPaymentsPage(){
   const state = DB.acctPages.util;
   if(!state){ loadUtilityPayments({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
@@ -10107,18 +10105,162 @@ function renderUtilityPaymentsPage(){
       </div>
       <form onsubmit="return submitUtilPaymentFilter(event)">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <select name="status" style="width:150px;">
-            <option value="">All statuses</option>
-            ${["Approved","Pending","Declined"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}
+          <select name="status" onchange="this.form.requestSubmit()" style="width:150px;">
+            <option value="">Select</option>
+            ${UTIL_PAYMENT_STATUSES.map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}
           </select>
-          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}" style="width:140px;">
+          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}" onchange="this.form.requestSubmit()" style="width:140px;">
         </div>
         <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
           <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:200px;" onchange="this.form.requestSubmit()">
         </div>
       </form>
-      <div class="table-wrap"><table><tr><th>Type</th><th>Provider</th><th>Reference</th><th>Amount</th><th>Branch</th><th>Status</th><th>Date</th></tr>
-      ${state.utilityPayments.map(u=>`<tr><td>${u.utility_type}</td><td>${escapeHtml(u.provider||'—')}</td><td>${escapeHtml(u.account_reference||'—')}</td><td>${fmt(u.amount)}</td><td>${branchName(u.branch_id)}</td><td>${statusBadge(u.status)}</td><td>${new Date(u.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No utility payments match these filters.</td></tr>`}</table></div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        ${state.utilityPayments.map(u=>{
+          const total = (u.items||[]).reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
+          const created = new Date(u.created_at);
+          return `
+          <div class="card" style="border:1px solid var(--line); box-shadow:none;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+              <div><strong>From ${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))} for ${escapeHtml(branchName(u.branch_id))}</strong></div>
+              ${statusBadge(u.status)}
+            </div>
+            <div class="table-wrap"><table><tr><th>Item</th><th>Qty</th><th>Cost</th></tr>
+              ${(u.items||[]).map(it=>`<tr><td>${escapeHtml(it.description)}</td><td>${it.accountant_qty ?? it.ceo_qty ?? it.qty}</td><td>${fmt(it.accountant_cost ?? it.ceo_cost ?? it.cost)}</td></tr>`).join("")}
+            </table></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+              <span class="hint">Ref #${u.payment_no||'—'} · ${created.toLocaleDateString()} - ${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:6px;">
+              <span>${(u.items||[]).length} Item(s) ${escapeHtml(u.status)}</span>
+              <strong>${fmt(total)}</strong>
+            </div>
+            <div style="text-align:right; margin-top:10px;">
+              <span class="btn btn-outline btn-sm" onclick="openUtilityPaymentDetail('${u.id}')">Open</span>
+            </div>
+          </div>`;
+        }).join("") || `<div class="empty">No vendor/utility payments match these filters.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+// ---- Vendor Payment detail ("Open") — the real CEO/Accountant approval
+// matrix (Request/CEO/Accountant columns per item), wired to the real
+// ceo-decide/accountant-decide/cancel endpoints. Whichever stage's
+// decision-maker is viewing sees editable qty/cost fields for that stage
+// only; everyone else sees the real figures already recorded, read-only.
+function loadUtilityPaymentDetail(id){
+  return withRequest('load-utility-detail', async ()=>{
+    const res = await api.get(`/api/utility-payments/${id}`);
+    DB.utilPaymentDetail = res.utilityPayment;
+    const draft = {};
+    (res.utilityPayment.items||[]).forEach(it=>{ draft[it.id] = { qty: it.qty, cost: it.cost }; });
+    DB.utilDecideDraft = draft;
+  });
+}
+function openUtilityPaymentDetail(id){
+  DB.utilPaymentDetailId = id;
+  DB.utilPaymentDetail = null;
+  DB.utilDecideDraft = {};
+  loadUtilityPaymentDetail(id);
+  renderApp();
+}
+function closeUtilityPaymentDetail(){
+  DB.utilPaymentDetailId = null;
+  DB.utilPaymentDetail = null;
+  DB.utilDecideDraft = null;
+  renderApp();
+}
+function updateUtilDecideDraft(itemId, field, value){
+  if(!DB.utilDecideDraft[itemId]) DB.utilDecideDraft[itemId] = {};
+  DB.utilDecideDraft[itemId][field] = value;
+}
+function utilDecideItemsPayload(){
+  return Object.entries(DB.utilDecideDraft||{}).map(([id,v])=>({ id, qty:Number(v.qty), cost:Number(v.cost) }));
+}
+function ceoDecideUtilityPayment(decision){
+  const id = DB.utilPaymentDetailId;
+  let reason;
+  if(decision==='Declined'){ reason = prompt('Reason (optional):'); if(reason===null) return; }
+  return withRequest('ceo-decide-utility', async ()=>{
+    await api.post(`/api/utility-payments/${id}/ceo-decide`, { decision, items: decision==='Approved' ? utilDecideItemsPayload() : undefined, reason: reason||undefined });
+    toast(`Vendor payment ${decision.toLowerCase()}`);
+    await loadUtilityPaymentDetail(id);
+    await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
+  }, {mutates:true});
+}
+function accountantDecideUtilityPayment(decision){
+  const id = DB.utilPaymentDetailId;
+  let reason;
+  if(decision==='Declined'){ reason = prompt('Reason (optional):'); if(reason===null) return; }
+  return withRequest('acct-decide-utility', async ()=>{
+    await api.post(`/api/utility-payments/${id}/accountant-decide`, { decision, items: decision==='Approved' ? utilDecideItemsPayload() : undefined, reason: reason||undefined });
+    toast(decision==='Approved' ? "Vendor payment approved and paid" : "Vendor payment declined");
+    await loadUtilityPaymentDetail(id);
+    await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
+  }, {mutates:true});
+}
+function cancelUtilityPaymentRequest(){
+  const id = DB.utilPaymentDetailId;
+  if(!confirm('Cancel this vendor payment request?')) return;
+  return withRequest('cancel-utility', async ()=>{
+    await api.post(`/api/utility-payments/${id}/cancel`, {});
+    toast("Vendor payment cancelled");
+    closeUtilityPaymentDetail();
+    await loadUtilityPayments(DB.acctPages.util?DB.acctPages.util.filters:{});
+  }, {mutates:true});
+}
+function renderUtilityPaymentDetailPage(){
+  const u = DB.utilPaymentDetail;
+  if(!u) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const items = u.items||[];
+  const created = new Date(u.created_at);
+  const isCeoStage = u.status === 'Pending';
+  const isAcctStage = u.status === 'CEO Approved';
+  const canCeoDecide = isCeoStage && (session.role==='CEO' || session.role==='Admin');
+  const canAcctDecide = isAcctStage && (session.role==='Accountant' || session.role==='Admin');
+  const canCancel = ['Pending','CEO Approved'].includes(u.status) && (u.submitted_by===session.userId || session.role==='Admin');
+  const rowTotal = it => Number(it.accountant_cost ?? it.ceo_cost ?? it.cost) || 0;
+  const grandTotal = items.reduce((s,it)=>s+rowTotal(it),0);
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; margin-bottom:14px;">
+        <span class="btn btn-outline btn-sm page-back-btn" onclick="closeUtilityPaymentDetail()">←</span>
+        <h3 style="flex:1; text-align:center; margin:0 34px 0 0; color:var(--navy);">Vendor Payment #${u.payment_no||'—'}</h3>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+        <div><strong>Recipient Details:</strong> ${escapeHtml(u.recipient_mpesa_number||'—')} - ${escapeHtml(u.recipient_name||u.mpesa_name||'—')}</div>
+        ${statusBadge(u.status)}
+      </div>
+      <div class="hint" style="margin-bottom:14px;">From ${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}, ${escapeHtml(branchName(u.branch_id))} Branch on ${created.toLocaleDateString()} - ${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+      <div class="table-wrap"><table>
+        <tr>
+          <th rowspan="2">Item details</th>
+          <th colspan="3">Qty Approvals</th>
+          <th colspan="3">Cost Approvals</th>
+          <th rowspan="2">Total</th>
+        </tr>
+        <tr><th>Request</th><th>CEO</th><th>Accountant</th><th>Request</th><th>CEO</th><th>Accountant</th></tr>
+        ${items.map(it=>`<tr>
+          <td>${escapeHtml(it.description)}</td>
+          <td>${it.qty}</td>
+          <td>${canCeoDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.qty ?? it.qty}" style="width:70px;" oninput="updateUtilDecideDraft('${it.id}','qty',this.value)">` : (it.ceo_qty ?? '—')}</td>
+          <td>${canAcctDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.qty ?? (it.ceo_qty ?? it.qty)}" style="width:70px;" oninput="updateUtilDecideDraft('${it.id}','qty',this.value)">` : (it.accountant_qty ?? '—')}</td>
+          <td>${fmt(it.cost)}</td>
+          <td>${canCeoDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.cost ?? it.cost}" style="width:90px;" oninput="updateUtilDecideDraft('${it.id}','cost',this.value)">` : (it.ceo_cost!=null ? fmt(it.ceo_cost) : '—')}</td>
+          <td>${canAcctDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.cost ?? (it.ceo_cost ?? it.cost)}" style="width:90px;" oninput="updateUtilDecideDraft('${it.id}','cost',this.value)">` : (it.accountant_cost!=null ? fmt(it.accountant_cost) : '—')}</td>
+          <td>${fmt(rowTotal(it))}</td>
+        </tr>`).join("")}
+        <tr><td colspan="7" style="text-align:right;"><strong>Grand Total</strong></td><td><strong>${fmt(grandTotal)}</strong></td></tr>
+      </table></div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:16px;">
+        ${canCancel ? `<button class="btn btn-outline" onclick="cancelUtilityPaymentRequest()">Cancel Request</button>` : ""}
+        ${canCeoDecide ? `<button class="btn btn-red" onclick="ceoDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green" onclick="ceoDecideUtilityPayment('Approved')">Approve</button>` : ""}
+        ${canAcctDecide ? `<button class="btn btn-red" onclick="accountantDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green" onclick="accountantDecideUtilityPayment('Approved')">Approve &amp; Pay</button>` : ""}
+      </div>
+      ${u.ceo_decision_reason ? `<div class="hint" style="margin-top:10px;">CEO note: ${escapeHtml(u.ceo_decision_reason)}</div>` : ""}
+      ${u.decision_reason ? `<div class="hint" style="margin-top:4px;">Accountant note: ${escapeHtml(u.decision_reason)}</div>` : ""}
     </div>
   `;
 }

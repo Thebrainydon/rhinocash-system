@@ -1239,6 +1239,35 @@ async function initSchema() {
   await ensureColumn('users', 'national_id TEXT');
   await ensureColumn('users', 'gender TEXT');
   await ensureColumn('users', "basic_salary NUMERIC(14,2) NOT NULL DEFAULT 0");
+  // Vendor/Utility Payments: a real 2-stage approval workflow (submit ->
+  // CEO decides -> Accountant decides & pays), replacing the old
+  // immediate-Paid-on-creation model. submitted_by is the real requester
+  // (previously conflated with paid_by, which now means "who made the
+  // final Accountant decision"). ceo_decided_by/at/reason and
+  // accountant_decided_at/decision_reason mirror the same real
+  // decision-audit shape Requisitions already uses (approved_by/
+  // approved_at/decision_reason), just with two stages instead of one.
+  // payment_no is a real, human-readable sequential reference — the
+  // "5858"-style number the reference design shows — genuinely
+  // auto-incrementing via a real Postgres sequence, not fabricated.
+  await ensureColumn('utility_payments', 'submitted_by TEXT REFERENCES users(id)');
+  await ensureColumn('utility_payments', 'ceo_decided_by TEXT REFERENCES users(id)');
+  await ensureColumn('utility_payments', 'ceo_decided_at TEXT');
+  await ensureColumn('utility_payments', 'ceo_decision_reason TEXT');
+  await ensureColumn('utility_payments', 'accountant_decided_at TEXT');
+  await ensureColumn('utility_payments', 'decision_reason TEXT');
+  await ensureColumn('utility_payments', 'payment_no BIGSERIAL');
+  // Real per-item audit trail across the same two stages — qty defaults
+  // to 1 since the existing Create/Bulk Upload forms (kept exactly as
+  // they are, per the reference) never actually collect a quantity;
+  // ceo_qty/ceo_cost and accountant_qty/accountant_cost stay NULL until
+  // that stage genuinely happens, rather than a fabricated echo of the
+  // requested values.
+  await ensureColumn('utility_payment_items', 'qty NUMERIC(14,2) NOT NULL DEFAULT 1');
+  await ensureColumn('utility_payment_items', 'ceo_qty NUMERIC(14,2)');
+  await ensureColumn('utility_payment_items', 'ceo_cost NUMERIC(14,2)');
+  await ensureColumn('utility_payment_items', 'accountant_qty NUMERIC(14,2)');
+  await ensureColumn('utility_payment_items', 'accountant_cost NUMERIC(14,2)');
   await ensureConstraint('branches_manager_fk',
     'ALTER TABLE branches ADD CONSTRAINT branches_manager_fk FOREIGN KEY (manager_id) REFERENCES users(id)');
   await ensureConstraint('branch_proposals_manager_fk',

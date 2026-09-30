@@ -304,18 +304,25 @@ function register(router) {
     res.json({ ok: true });
   });
 
-  // ==================== Utility Payments — a real expense with utility-specific fields, not a second engine ====================
+  // ==================== Vendor/Utility Payments — a real 2-stage approval
+  // workflow: submit (Pending) -> CEO decides (CEO Approved/Declined) ->
+  // Accountant decides (Paid, with the real expense/journal entries only
+  // now created — or Declined). Neither decision maker is required to
+  // accept the request as submitted: each may adjust an item's real qty/
+  // cost before approving, and that adjusted value — not the original
+  // request — is what the next stage (and the final posted amount) uses.
+  // ====================
   router.get('/api/utility-payments', requireAuth, requireModule('accounting'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) {
       if (scope.length === 0) clauses.push('1=0');
-      else { clauses.push(`branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
+      else { clauses.push(`up.branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
     }
-    if (req.query.status) { clauses.push('status = ?'); params.push(req.query.status); }
-    if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
-    if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
-    let rows = await all(`SELECT * FROM utility_payments WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, params);
+    if (req.query.status) { clauses.push('up.status = ?'); params.push(req.query.status); }
+    if (req.query.from) { clauses.push('(up.created_at)::date >= ?'); params.push(req.query.from); }
+    if (req.query.to) { clauses.push('(up.created_at)::date <= ?'); params.push(req.query.to); }
+    let rows = await all(`SELECT up.*, u.name AS submitted_by_name FROM utility_payments up LEFT JOIN users u ON u.id = up.submitted_by WHERE ${clauses.join(' AND ')} ORDER BY up.created_at DESC LIMIT 200`, params);
     if (req.query.q) {
       const q = req.query.q.toLowerCase();
       rows = rows.filter(u => (u.provider || '').toLowerCase().includes(q) || (u.account_reference || '').toLowerCase().includes(q) || (u.utility_type || '').toLowerCase().includes(q));
@@ -332,13 +339,28 @@ function register(router) {
     res.json({ utilityPayments: rows.map(r => ({ ...r, items: itemsByPay[r.id] || [] })) });
   });
 
+  router.get('/api/utility-payments/:id', requireAuth, requireModule('accounting'), async (req, res, next) => {
+    const pay = await get(
+      `SELECT up.*, u.name AS submitted_by_name FROM utility_payments up LEFT JOIN users u ON u.id = up.submitted_by WHERE up.id = ?`,
+      [req.params.id]
+    );
+    if (!pay) return next({ status: 404, message: 'Vendor payment not found' });
+    try { await assertRecordInScope(req.user, pay.branch_id, 'vendor payment'); } catch (e) { return next(e); }
+    const items = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [pay.id]);
+    res.json({ utilityPayment: { ...pay, items } });
+  });
+
   // Real "Vendor Payment Form": Payment Method + Recipient Mpesa Number &
   // Name, one or more {description, expense_account_id, cost} line items
   // (one M-Pesa/bank disbursement can span several differently-allocated
   // expense lines), OTP-confirmed the same way as Requisitions and the
   // Bulk Upload path (the same generic requisition_otps confirmation code
-  // — it was never actually requisition-specific).
-  router.post('/api/utility-payments', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+  // — it was never actually requisition-specific). Only requireModule
+  // here, not requirePermission('post_accounting_entries') — submitting a
+  // real request no longer posts anything; only the Accountant's final
+  // decision does, so anyone with accounting access (same as Requisitions)
+  // can genuinely submit one.
+  router.post('/api/utility-payments', requireAuth, requireModule('accounting'), async (req, res, next) => {
     const b = req.body;
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) return next({ status: 400, message: 'At least one item is required' });
@@ -357,7 +379,6 @@ function register(router) {
       [req.user.id, tokenHash(String(b.otp_code))]
     );
     if (!otp) return next({ status: 400, message: 'Invalid or expired OTP code', code: 'INVALID_OTP' });
-    try { await assertPeriodOpen(); } catch (e) { return next(e); }
 
     const resolvedItems = [];
     for (const it of items) {
@@ -375,27 +396,18 @@ function register(router) {
     const amount = resolvedItems.reduce((s, it) => s + it.cost, 0);
     const branchId = req.user.branch_id;
     const combinedDescription = resolvedItems.map(it => it.description).join('; ');
-    const expId = 'exp_' + crypto.randomUUID();
     const id = 'util_' + crypto.randomUUID();
     await transaction(async () => {
       await run('UPDATE requisition_otps SET used = 1 WHERE id = ?', [otp.id]);
-      await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
-        [expId, 'Vendor Payment', amount, `${b.recipient_name || ''} ${b.recipient_mpesa_number || ''}`.trim(), branchId, 'Paid', req.user.id, req.user.id, req.user.id]);
+      await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, submitted_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, 'Vendor Payment', b.recipient_name || null, b.recipient_mpesa_number || null, amount, branchId, b.payment_method, 'Pending', req.user.id, combinedDescription, b.recipient_mpesa_number || null, b.recipient_name || null, resolvedItems.length === 1 ? resolvedItems[0].expense_account_id : null]);
       for (const it of resolvedItems) {
-        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'utility', ?, ?, ?)`,
-          [it.expense_account_id || 'operating_expense', it.cost, it.description, expId, branchId, req.user.id]);
-      }
-      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('bank', 0, ?, ?, 'utility', ?, ?, ?)`,
-        [amount, combinedDescription, expId, branchId, req.user.id]);
-      await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, expense_id, paid_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id, 'Vendor Payment', b.recipient_name || null, b.recipient_mpesa_number || null, amount, branchId, b.payment_method, 'Paid', expId, req.user.id, combinedDescription, b.recipient_mpesa_number || null, b.recipient_name || null, resolvedItems.length === 1 ? resolvedItems[0].expense_account_id : null]);
-      for (const it of resolvedItems) {
-        await run('INSERT INTO utility_payment_items (id, utility_payment_id, description, expense_account_id, cost) VALUES (?,?,?,?,?)',
-          ['upi_' + crypto.randomUUID(), id, it.description, it.expense_account_id, it.cost]);
+        await run('INSERT INTO utility_payment_items (id, utility_payment_id, description, expense_account_id, qty, cost) VALUES (?,?,?,?,?,?)',
+          ['upi_' + crypto.randomUUID(), id, it.description, it.expense_account_id, 1, it.cost]);
       }
     });
-    await logAction(req, { action: 'Paid vendor via Utility Payments', module: 'accounting', recordType: 'UtilityPayment', recordId: id, newValue: { amount, itemCount: resolvedItems.length } });
+    await logAction(req, { action: 'Submitted vendor payment request', module: 'accounting', recordType: 'UtilityPayment', recordId: id, newValue: { amount, itemCount: resolvedItems.length } });
     const created = await get('SELECT * FROM utility_payments WHERE id = ?', [id]);
     const createdItems = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [id]);
     res.status(201).json({ utilityPayment: { ...created, items: createdItems } });
@@ -406,10 +418,11 @@ function register(router) {
   // same way a single requisition is (reusing the same generic
   // requisition_otps confirmation code — it isn't actually specific to
   // requisitions, just "prove you have your own phone" for any accounting
-  // submission). Each row becomes its own real utility_payment + balanced
-  // journal entry; a bad row is skipped and reported, not silently dropped
-  // and not allowed to abort rows that were valid.
-  router.post('/api/utility-payments/bulk', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+  // submission). Each row becomes its own real Pending utility_payment,
+  // same two-stage approval as a single Vendor Payment Form submission —
+  // a bad row is skipped and reported, not silently dropped and not
+  // allowed to abort rows that were valid.
+  router.post('/api/utility-payments/bulk', requireAuth, requireModule('accounting'), async (req, res, next) => {
     const b = req.body;
     const rows = Array.isArray(b.rows) ? b.rows : [];
     if (!rows.length) return next({ status: 400, message: 'No rows to import' });
@@ -419,7 +432,6 @@ function register(router) {
       [req.user.id, tokenHash(String(b.otp_code))]
     );
     if (!otp) return next({ status: 400, message: 'Invalid or expired OTP code', code: 'INVALID_OTP' });
-    try { await assertPeriodOpen(); } catch (e) { return next(e); }
 
     const scopeIsCompanyWide = (await branchIdsInScope(req.user)) === null;
     const created = [];
@@ -445,22 +457,116 @@ function register(router) {
           expenseAccountId = acct.id;
         }
         const amount = Number(r.cost);
-        const expId = 'exp_' + crypto.randomUUID();
         const id = 'util_' + crypto.randomUUID();
-        await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
-          [expId, 'Vendor Payment — ' + r.item_description, amount, r.mpesa_name || '', branchId, 'Paid', req.user.id, req.user.id, req.user.id]);
-        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'utility', ?, ?, ?)`,
-          [expenseAccountId || 'operating_expense', amount, r.item_description, expId, branchId, req.user.id]);
-        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('bank', 0, ?, ?, 'utility', ?, ?, ?)`,
-          [amount, r.item_description, expId, branchId, req.user.id]);
-        await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, expense_id, paid_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [id, 'Vendor Payment', r.mpesa_name || null, r.recipient_mpesa_number || null, amount, branchId, 'bank', 'Paid', expId, req.user.id, r.item_description, r.recipient_mpesa_number || null, r.mpesa_name || null, expenseAccountId]);
+        await run(`INSERT INTO utility_payments (id, utility_type, provider, account_reference, amount, branch_id, payment_method, status, submitted_by, item_description, recipient_mpesa_number, mpesa_name, expense_account_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, 'Vendor Payment', r.mpesa_name || null, r.recipient_mpesa_number || null, amount, branchId, 'bank', 'Pending', req.user.id, r.item_description, r.recipient_mpesa_number || null, r.mpesa_name || null, expenseAccountId]);
+        await run('INSERT INTO utility_payment_items (id, utility_payment_id, description, expense_account_id, qty, cost) VALUES (?,?,?,?,?,?)',
+          ['upi_' + crypto.randomUUID(), id, r.item_description, expenseAccountId, 1, amount]);
         created.push(id);
       }
     });
-    await logAction(req, { action: 'Bulk-imported utility payments', module: 'accounting', recordType: 'UtilityPayment', recordId: null, newValue: { created: created.length, errors: errors.length } });
+    await logAction(req, { action: 'Bulk-submitted vendor payment requests', module: 'accounting', recordType: 'UtilityPayment', recordId: null, newValue: { created: created.length, errors: errors.length } });
     res.status(created.length ? 201 : 400).json({ created: created.length, errors });
+  });
+
+  // Stage 1 — CEO (or Admin) decides. Approving may adjust any item's real
+  // qty/cost first (req.body.items: [{id, qty, cost}]) — whatever isn't
+  // adjusted keeps its originally requested value. Never posts anything;
+  // that's still only ever the Accountant's final decision below.
+  router.post('/api/utility-payments/:id/ceo-decide', requireAuth, async (req, res, next) => {
+    const pay = await get('SELECT * FROM utility_payments WHERE id = ?', [req.params.id]);
+    if (!pay) return next({ status: 404, message: 'Vendor payment not found' });
+    const decision = req.body.decision;
+    if (!['Approved', 'Declined'].includes(decision)) return next({ status: 400, message: 'decision must be Approved or Declined' });
+    if (pay.status !== 'Pending') return next({ status: 409, message: `Cannot decide on a vendor payment in ${pay.status} status` });
+    if (!['ceo', 'admin'].includes(req.user.role_id)) return next({ status: 403, message: 'Only the CEO (or an Admin) can make this decision' });
+    try { await assertRecordInScope(req.user, pay.branch_id, 'vendor payment'); } catch (e) { return next(e); }
+    if (decision === 'Declined') {
+      await run("UPDATE utility_payments SET status = 'Declined', ceo_decided_by = ?, ceo_decided_at = iso_now(), ceo_decision_reason = ? WHERE id = ?",
+        [req.user.id, req.body.reason || null, pay.id]);
+    } else {
+      const items = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [pay.id]);
+      const adjustments = Array.isArray(req.body.items) ? req.body.items : [];
+      for (const it of items) {
+        const adj = adjustments.find(a => a.id === it.id);
+        const qty = (adj && Number(adj.qty) > 0) ? Number(adj.qty) : it.qty;
+        const cost = (adj && Number(adj.cost) > 0) ? Number(adj.cost) : it.cost;
+        await run('UPDATE utility_payment_items SET ceo_qty = ?, ceo_cost = ? WHERE id = ?', [qty, cost, it.id]);
+      }
+      await run("UPDATE utility_payments SET status = 'CEO Approved', ceo_decided_by = ?, ceo_decided_at = iso_now(), ceo_decision_reason = ? WHERE id = ?",
+        [req.user.id, req.body.reason || null, pay.id]);
+    }
+    await logAction(req, { action: `Vendor payment ${decision.toLowerCase()} (CEO)`, module: 'accounting', recordType: 'UtilityPayment', recordId: pay.id, reason: req.body.reason });
+    if (pay.submitted_by) await notify(pay.submitted_by, 'system', `Vendor payment ${decision.toLowerCase()} by CEO`, `Your vendor payment request (${pay.amount}) was ${decision.toLowerCase()} by the CEO.`);
+    const updated = await get('SELECT * FROM utility_payments WHERE id = ?', [pay.id]);
+    const updatedItems = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [pay.id]);
+    res.json({ utilityPayment: { ...updated, items: updatedItems } });
+  });
+
+  // Stage 2 — Accountant (or Admin) makes the final decision. Approving is
+  // the one real moment money actually moves: the real expense + balanced
+  // journal entries are created here (using each item's real, possibly
+  // Accountant-adjusted final cost), never at submission or at the CEO
+  // stage — mirroring exactly how Requisitions' own /pay route is the one
+  // real posting moment, not its own earlier /decide.
+  router.post('/api/utility-payments/:id/accountant-decide', requireAuth, requirePermission('post_accounting_entries'), async (req, res, next) => {
+    const pay = await get('SELECT * FROM utility_payments WHERE id = ?', [req.params.id]);
+    if (!pay) return next({ status: 404, message: 'Vendor payment not found' });
+    const decision = req.body.decision;
+    if (!['Approved', 'Declined'].includes(decision)) return next({ status: 400, message: 'decision must be Approved or Declined' });
+    if (pay.status !== 'CEO Approved') return next({ status: 409, message: `Cannot decide on a vendor payment in ${pay.status} status — it must be CEO Approved first` });
+    try { await assertRecordInScope(req.user, pay.branch_id, 'vendor payment'); } catch (e) { return next(e); }
+    if (decision === 'Declined') {
+      await run("UPDATE utility_payments SET status = 'Declined', accountant_decided_at = iso_now(), decision_reason = ? WHERE id = ?", [req.body.reason || null, pay.id]);
+      await logAction(req, { action: 'Vendor payment declined (Accountant)', module: 'accounting', recordType: 'UtilityPayment', recordId: pay.id, reason: req.body.reason });
+      if (pay.submitted_by) await notify(pay.submitted_by, 'system', 'Vendor payment declined by Accountant', `Your vendor payment request (${pay.amount}) was declined by the Accountant.`);
+      return res.json({ utilityPayment: await get('SELECT * FROM utility_payments WHERE id = ?', [pay.id]) });
+    }
+    try { await assertPeriodOpen(); } catch (e) { return next(e); }
+    const items = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [pay.id]);
+    const adjustments = Array.isArray(req.body.items) ? req.body.items : [];
+    const finalized = [];
+    for (const it of items) {
+      const adj = adjustments.find(a => a.id === it.id);
+      const baseQty = it.ceo_qty ?? it.qty;
+      const baseCost = it.ceo_cost ?? it.cost;
+      const qty = (adj && Number(adj.qty) > 0) ? Number(adj.qty) : baseQty;
+      const cost = (adj && Number(adj.cost) > 0) ? Number(adj.cost) : baseCost;
+      await run('UPDATE utility_payment_items SET accountant_qty = ?, accountant_cost = ? WHERE id = ?', [qty, cost, it.id]);
+      finalized.push({ ...it, accountant_qty: qty, accountant_cost: cost });
+    }
+    const amount = finalized.reduce((s, it) => s + Number(it.accountant_cost), 0);
+    const branchId = pay.branch_id;
+    const combinedDescription = pay.item_description;
+    const expId = 'exp_' + crypto.randomUUID();
+    await transaction(async () => {
+      await run('INSERT INTO expenses (id, category, amount, note, branch_id, status, submitted_by, approved_by, paid_by) VALUES (?,?,?,?,?,?,?,?,?)',
+        [expId, 'Vendor Payment', amount, `${pay.mpesa_name || ''} ${pay.recipient_mpesa_number || ''}`.trim(), branchId, 'Paid', pay.submitted_by, pay.ceo_decided_by, req.user.id]);
+      for (const it of finalized) {
+        await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES (?, ?, 0, ?, 'utility', ?, ?, ?)`,
+          [it.expense_account_id || 'operating_expense', it.accountant_cost, it.description, expId, branchId, req.user.id]);
+      }
+      await run(`INSERT INTO journal_entries (account_id, debit, credit, description, ref_type, ref_id, branch_id, posted_by) VALUES ('bank', 0, ?, ?, 'utility', ?, ?, ?)`,
+        [amount, combinedDescription, expId, branchId, req.user.id]);
+      await run("UPDATE utility_payments SET status = 'Paid', expense_id = ?, paid_by = ?, accountant_decided_at = iso_now(), decision_reason = ?, amount = ? WHERE id = ?",
+        [expId, req.user.id, req.body.reason || null, amount, pay.id]);
+    });
+    await logAction(req, { action: 'Vendor payment paid (Accountant)', module: 'accounting', recordType: 'UtilityPayment', recordId: pay.id, newValue: { expense_id: expId, amount } });
+    if (pay.submitted_by) await notify(pay.submitted_by, 'system', 'Vendor payment paid', `Your vendor payment request was approved by the Accountant and paid (${amount}).`);
+    const updated = await get('SELECT * FROM utility_payments WHERE id = ?', [pay.id]);
+    const updatedItems = await all('SELECT * FROM utility_payment_items WHERE utility_payment_id = ?', [pay.id]);
+    res.json({ utilityPayment: { ...updated, items: updatedItems } });
+  });
+
+  router.post('/api/utility-payments/:id/cancel', requireAuth, async (req, res, next) => {
+    const pay = await get('SELECT * FROM utility_payments WHERE id = ?', [req.params.id]);
+    if (!pay) return next({ status: 404, message: 'Vendor payment not found' });
+    if (pay.submitted_by !== req.user.id && req.user.role_id !== 'admin') return next({ status: 403, message: 'Only the submitter (or an Admin) can cancel this vendor payment' });
+    if (!['Pending', 'CEO Approved'].includes(pay.status)) return next({ status: 409, message: `Cannot cancel a vendor payment in ${pay.status} status` });
+    await run("UPDATE utility_payments SET status = 'Cancelled' WHERE id = ?", [pay.id]);
+    await logAction(req, { action: 'Cancelled vendor payment', module: 'accounting', recordType: 'UtilityPayment', recordId: pay.id });
+    res.json({ ok: true });
   });
 
   // ==================== Accounting Periods ====================

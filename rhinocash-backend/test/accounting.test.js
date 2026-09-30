@@ -157,61 +157,117 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
-  // 4. UTILITY PAYMENTS (Vendor Payment Form) — real multi-item Submit, OTP-confirmed
+  // 4. UTILITY PAYMENTS (Vendor Payment Form) — real 2-stage
+  //    workflow: Submit (Pending) -> CEO decide -> Accountant
+  //    decide (the one real posting moment, mirroring how
+  //    Requisitions' /pay, not its /decide, is the real posting
+  //    step)
   // =========================================================
   {
     async function otpFor(token) { const r = await api('POST', '/api/requisitions/request-otp', { token, body: {} }); return r.json.otpForTesting; }
 
-    const cashBefore = await api('GET', '/api/accounting/cash-position?branch_id=br_nairobi', { token: adminToken });
     const liabilityAccounts = await api('GET', '/api/accounts?account_type=Liability&status=Active', { token: acctToken });
     const bankLoansAccount = liabilityAccounts.json.accounts.find(a => a.name === 'Bank loans payable');
     assert(bankLoansAccount, 'a real non-Expense (Liability) GL account exists for a vendor payment\'s Journal Account to post against');
 
     const validBody = () => ({ payment_method: 'Mpesa B2C', recipient_mpesa_number: '0722999888', recipient_name: 'Kenya Power', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }] });
 
-    const noOtp = await api('POST', '/api/utility-payments', { token: acctToken, body: validBody() });
+    const noOtp = await api('POST', '/api/utility-payments', { token: officerToken, body: validBody() });
     assert(noOtp.status === 400, 'a vendor payment without an OTP code is genuinely rejected');
 
-    const noItems = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), items: [], otp_code: await otpFor(acctToken) } });
+    const noItems = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), items: [], otp_code: await otpFor(officerToken) } });
     assert(noItems.status === 400, 'a vendor payment with no line items is genuinely rejected');
 
-    const missingRecipient = await api('POST', '/api/utility-payments', { token: acctToken, body: { payment_method: 'Paybill B2B', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }], otp_code: await otpFor(acctToken) } });
+    const missingRecipient = await api('POST', '/api/utility-payments', { token: officerToken, body: { payment_method: 'Paybill B2B', items: [{ description: 'Electricity — Kenya Power', cost: 4500 }], otp_code: await otpFor(officerToken) } });
     assert(missingRecipient.status === 400, "a vendor payment without the recipient's real mpesa number/name is genuinely rejected — every real payment_method is an mpesa channel");
 
-    const badAccount = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), items: [{ description: 'Bogus', cost: 100, expense_account_id: 'not-a-real-account' }], otp_code: await otpFor(acctToken) } });
+    const badAccount = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), items: [{ description: 'Bogus', cost: 100, expense_account_id: 'not-a-real-account' }], otp_code: await otpFor(officerToken) } });
     assert(badAccount.status === 400, 'a vendor payment item naming a non-existent Journal Account is genuinely rejected');
 
-    const paid = await api('POST', '/api/utility-payments', { token: acctToken, body: { ...validBody(), otp_code: await otpFor(acctToken) } });
-    assert(paid.status === 201 && paid.json.utilityPayment.status === 'Paid', 'a real vendor payment is created and immediately Paid, OTP-confirmed');
-    assert(paid.json.utilityPayment.expense_id, 'the vendor payment is genuinely linked to a real expense record');
-    assert(Number(paid.json.utilityPayment.amount) === 4500, 'the vendor payment amount is genuinely the sum of its real line items');
+    const cashBefore = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
 
-    const cashAfter = await api('GET', '/api/accounting/cash-position?branch_id=br_nairobi', { token: adminToken });
-    assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'the real vendor payment genuinely decreased the real branch cash position');
+    const submitted = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), otp_code: await otpFor(officerToken) } });
+    assert(submitted.status === 201 && submitted.json.utilityPayment.status === 'Pending', 'a Loan Officer can genuinely submit a real vendor payment request — it starts Pending, not immediately Paid');
+    assert(!submitted.json.utilityPayment.expense_id, 'a freshly-submitted vendor payment has genuinely not posted any expense yet — that only happens once the real 2-stage approval completes');
+    assert(Number(submitted.json.utilityPayment.amount) === 4500, 'the vendor payment amount is genuinely the sum of its real line items');
+    assert(submitted.json.utilityPayment.payment_no, 'the vendor payment genuinely got a real sequential payment reference number');
+    const vendorPayId = submitted.json.utilityPayment.id;
 
-    const wrongRole = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), otp_code: '000000' } });
-    assert(wrongRole.status === 403, 'a Loan Officer cannot post a vendor payment — requires post_accounting_entries');
+    const cashDuring = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    assert(cashDuring.json.balances.bank === cashBefore.json.balances.bank, 'a merely-submitted (Pending) vendor payment genuinely has not yet touched the real branch cash position');
 
-    const multiItem = await api('POST', '/api/utility-payments', { token: acctToken, body: {
+    const acctTryCeo = await api('POST', `/api/utility-payments/${vendorPayId}/ceo-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(acctTryCeo.status === 403, 'the Accountant (not CEO/Admin) genuinely cannot make the real CEO-stage decision');
+
+    const acctTryPayEarly = await api('POST', `/api/utility-payments/${vendorPayId}/accountant-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(acctTryPayEarly.status === 409, 'the Accountant genuinely cannot pay a vendor payment before the real CEO decision happens');
+
+    const ceoDecide = await api('POST', `/api/utility-payments/${vendorPayId}/ceo-decide`, { token: ceoToken, body: {
+      decision: 'Approved',
+      items: [{ id: submitted.json.utilityPayment.items[0].id, cost: 4300 }],
+    } });
+    assert(ceoDecide.status === 200 && ceoDecide.json.utilityPayment.status === 'CEO Approved', 'the CEO genuinely approves the vendor payment, moving it to CEO Approved');
+    assert(Number(ceoDecide.json.utilityPayment.items[0].ceo_cost) === 4300, 'the CEO\'s real cost adjustment is genuinely persisted on the item');
+
+    const ceoRedecide = await api('POST', `/api/utility-payments/${vendorPayId}/ceo-decide`, { token: ceoToken, body: { decision: 'Approved' } });
+    assert(ceoRedecide.status === 409, 'a vendor payment already past Pending genuinely cannot be CEO-decided a second time');
+
+    const officerTryPay = await api('POST', `/api/utility-payments/${vendorPayId}/accountant-decide`, { token: officerToken, body: { decision: 'Approved' } });
+    assert(officerTryPay.status === 403, 'a Loan Officer genuinely lacks post_accounting_entries — cannot make the final Accountant payment decision');
+
+    const acctDecide = await api('POST', `/api/utility-payments/${vendorPayId}/accountant-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(acctDecide.status === 200 && acctDecide.json.utilityPayment.status === 'Paid', 'the Accountant genuinely makes the final decision, actually posting the vendor payment as Paid');
+    assert(acctDecide.json.utilityPayment.expense_id, 'the vendor payment is genuinely linked to a real expense record only now, at the real posting moment');
+    assert(Number(acctDecide.json.utilityPayment.amount) === 4300, 'the final posted amount genuinely reflects the CEO\'s real cost adjustment (4300), not the originally requested figure');
+
+    const cashAfter = await api('GET', '/api/accounting/cash-position?branch_id=br_kisumu', { token: adminToken });
+    assert(cashAfter.json.balances.bank < cashBefore.json.balances.bank, 'only once fully approved and paid does the real vendor payment genuinely decrease the real branch cash position');
+
+    const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${acctDecide.json.utilityPayment.expense_id}`, { token: adminToken });
+    assert(glCheck.json.entries.length === 2, 'the paid vendor payment posts a real balanced 2-line journal entry');
+    assert(glCheck.json.entries.reduce((s, e) => s + Number(e.debit), 0) === glCheck.json.entries.reduce((s, e) => s + Number(e.credit), 0), 'the vendor payment journal entry is genuinely balanced');
+
+    // Decline paths and cancellation.
+    const declineSubmit = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), otp_code: await otpFor(officerToken) } });
+    const declineId = declineSubmit.json.utilityPayment.id;
+    const ceoDecline = await api('POST', `/api/utility-payments/${declineId}/ceo-decide`, { token: ceoToken, body: { decision: 'Declined', reason: 'Not needed' } });
+    assert(ceoDecline.status === 200 && ceoDecline.json.utilityPayment.status === 'Declined', 'the CEO can genuinely decline a vendor payment request, ending the workflow there');
+    const acctPayDeclined = await api('POST', `/api/utility-payments/${declineId}/accountant-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(acctPayDeclined.status === 409, 'a Declined vendor payment genuinely cannot subsequently be paid');
+
+    const cancelSubmit = await api('POST', '/api/utility-payments', { token: officerToken, body: { ...validBody(), otp_code: await otpFor(officerToken) } });
+    const cancelId = cancelSubmit.json.utilityPayment.id;
+    const otherCancel = await api('POST', `/api/utility-payments/${cancelId}/cancel`, { token: acctToken, body: {} });
+    assert(otherCancel.status === 403, 'only the real submitter (or an Admin) can cancel a vendor payment');
+    const ownCancel = await api('POST', `/api/utility-payments/${cancelId}/cancel`, { token: officerToken, body: {} });
+    assert(ownCancel.status === 200, 'the real submitter can genuinely cancel their own Pending vendor payment');
+    const ceoDecideCancelled = await api('POST', `/api/utility-payments/${cancelId}/ceo-decide`, { token: ceoToken, body: { decision: 'Approved' } });
+    assert(ceoDecideCancelled.status === 409, 'a Cancelled vendor payment genuinely cannot subsequently be CEO-decided');
+
+    const multiItem = await api('POST', '/api/utility-payments', { token: officerToken, body: {
       payment_method: 'BuyGoods (Till)', recipient_mpesa_number: '774411', recipient_name: 'Office Supplies Ltd',
       items: [
         { description: 'Stationery', cost: 300 },
         { description: 'Loan portfolio bad debt top-up', cost: 200, expense_account_id: bankLoansAccount.id },
       ],
-      otp_code: await otpFor(acctToken),
+      otp_code: await otpFor(officerToken),
     } });
-    assert(multiItem.status === 201 && Number(multiItem.json.utilityPayment.amount) === 500, 'a multi-item vendor payment genuinely sums all its real line items (300 + 200)');
-    assert(Array.isArray(multiItem.json.utilityPayment.items) && multiItem.json.utilityPayment.items.length === 2, 'the multi-item vendor payment genuinely persisted both real line items, not a flattened single row');
+    assert(multiItem.status === 201 && Array.isArray(multiItem.json.utilityPayment.items) && multiItem.json.utilityPayment.items.length === 2, 'a multi-item vendor payment genuinely persisted both real line items, not a flattened single row');
     assert(multiItem.json.utilityPayment.items.some(it => it.expense_account_id === bankLoansAccount.id), 'the item that named the real non-Expense "Bank loans payable" account genuinely recorded it — the Journal Account selector is not restricted to Expense accounts');
 
-    const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${multiItem.json.utilityPayment.expense_id}`, { token: adminToken });
-    assert(glCheck.json.entries.length === 3, 'a 2-item vendor payment posts a real 3-line journal entry (one debit per item + one credit) — still real double-entry, just more than 2 lines');
-    assert(glCheck.json.entries.some(e => e.account_id === bankLoansAccount.id), 'one of the real journal lines genuinely debits the real "Bank loans payable" account the item named');
-    assert(glCheck.json.entries.reduce((s, e) => s + Number(e.debit), 0) === glCheck.json.entries.reduce((s, e) => s + Number(e.credit), 0), 'the multi-item vendor payment journal entry is genuinely balanced');
+    await api('POST', `/api/utility-payments/${multiItem.json.utilityPayment.id}/ceo-decide`, { token: ceoToken, body: { decision: 'Approved' } });
+    const multiPay = await api('POST', `/api/utility-payments/${multiItem.json.utilityPayment.id}/accountant-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(multiPay.status === 200 && Number(multiPay.json.utilityPayment.amount) === 500, 'a multi-item vendor payment genuinely sums all its real line items (300 + 200) once fully approved and paid');
+
+    const multiGl = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${multiPay.json.utilityPayment.expense_id}`, { token: adminToken });
+    assert(multiGl.json.entries.length === 3, 'a 2-item vendor payment posts a real 3-line journal entry (one debit per item + one credit) — still real double-entry, just more than 2 lines');
+    assert(multiGl.json.entries.some(e => e.account_id === bankLoansAccount.id), 'one of the real journal lines genuinely debits the real "Bank loans payable" account the item named');
+    assert(multiGl.json.entries.reduce((s, e) => s + Number(e.debit), 0) === multiGl.json.entries.reduce((s, e) => s + Number(e.credit), 0), 'the multi-item vendor payment journal entry is genuinely balanced');
   }
 
   // =========================================================
-  // 4b. UTILITY PAYMENTS BULK IMPORT — real CSV-derived rows, OTP-confirmed
+  // 4b. UTILITY PAYMENTS BULK IMPORT — real CSV-derived rows,
+  //     OTP-confirmed, subject to the same real 2-stage workflow
   // =========================================================
   {
     async function otpFor(token) {
@@ -219,17 +275,14 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
       return r.json.otpForTesting;
     }
 
-    const noOtp = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [{ item_description: 'Printer paper', cost: 500 }] } });
+    const noOtp = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: { rows: [{ item_description: 'Printer paper', cost: 500 }] } });
     assert(noOtp.status === 400, 'bulk import without an OTP code is genuinely rejected');
 
-    const noRows = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [], otp_code: await otpFor(acctToken) } });
+    const noRows = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: { rows: [], otp_code: await otpFor(officerToken) } });
     assert(noRows.status === 400, 'bulk import with no rows is genuinely rejected');
 
-    const wrongRole = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: { rows: [{ item_description: 'Printer paper', cost: 500 }], otp_code: '000000' } });
-    assert(wrongRole.status === 403, 'a Loan Officer cannot bulk-import utility payments either — same post_accounting_entries authority as the single-row form');
-
-    const validOtp = await otpFor(acctToken);
-    const bulk = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: {
+    const validOtp = await otpFor(officerToken);
+    const bulk = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: {
       rows: [
         { branch: 'Kisumu', item_description: 'Office cleaning', cost: 2500, recipient_mpesa_number: '0722000111', mpesa_name: 'Clean Co', journal_account: 'Rent expense' },
         { branch: 'Nonexistent Branch', item_description: 'Bad branch row', cost: 100, journal_account: 'Rent expense' },
@@ -241,16 +294,23 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(bulk.json.created === 1, 'exactly the one genuinely valid row was created — the other two real errors did not silently create anything');
     assert(bulk.json.errors.length === 2, 'both real bad rows (unknown branch, missing item description) are reported, not silently dropped');
 
-    const reuseOtp = await api('POST', '/api/utility-payments/bulk', { token: acctToken, body: { rows: [{ item_description: 'Another item', cost: 50 }], otp_code: validOtp } });
+    const reuseOtp = await api('POST', '/api/utility-payments/bulk', { token: officerToken, body: { rows: [{ item_description: 'Another item', cost: 50 }], otp_code: validOtp } });
     assert(reuseOtp.status === 400 && reuseOtp.json.code === 'INVALID_OTP', 'an already-used OTP code cannot be reused for a second bulk import');
 
     const createdList = await api('GET', '/api/utility-payments?q=Clean Co', { token: acctToken });
     const createdRow = createdList.json.utilityPayments.find(u => u.mpesa_name === 'Clean Co');
-    assert(createdRow && createdRow.item_description === 'Office cleaning' && createdRow.recipient_mpesa_number === '0722000111', 'the real bulk-created row genuinely persisted its item description and mpesa recipient details, searchable via the real q filter');
+    assert(createdRow && createdRow.status === 'Pending' && createdRow.item_description === 'Office cleaning' && createdRow.recipient_mpesa_number === '0722000111', 'the real bulk-created row genuinely persisted Pending, with its item description and mpesa recipient details, searchable via the real q filter');
     assert(createdRow.expense_account_id, 'the bulk row genuinely resolved and stored the real "Rent expense" GL account it named, not a hardcoded fallback');
+    assert(!createdRow.expense_id, 'a bulk-created row genuinely has not posted any expense yet — bulk rows go through the same real 2-stage approval, not an immediate post');
 
-    const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${createdRow.expense_id}`, { token: adminToken });
-    assert(glCheck.json.entries.length === 2 && glCheck.json.entries.some(e => e.account_id === createdRow.expense_account_id), 'the bulk-created row posted a real balanced journal entry against the real named expense account');
+    const bulkCeo = await api('POST', `/api/utility-payments/${createdRow.id}/ceo-decide`, { token: ceoToken, body: { decision: 'Approved' } });
+    assert(bulkCeo.status === 200 && bulkCeo.json.utilityPayment.status === 'CEO Approved', 'the CEO can genuinely approve a bulk-created vendor payment row the same way as a singly-created one');
+
+    const bulkPay = await api('POST', `/api/utility-payments/${createdRow.id}/accountant-decide`, { token: acctToken, body: { decision: 'Approved' } });
+    assert(bulkPay.status === 200 && bulkPay.json.utilityPayment.status === 'Paid' && bulkPay.json.utilityPayment.expense_id, 'the Accountant genuinely makes the final decision on the bulk-created row too, posting it as Paid');
+
+    const glCheck = await api('GET', `/api/journal-entries?ref_type=utility&ref_id=${bulkPay.json.utilityPayment.expense_id}`, { token: adminToken });
+    assert(glCheck.json.entries.length === 2 && glCheck.json.entries.some(e => e.account_id === createdRow.expense_account_id), 'the bulk-created row, once fully approved, posted a real balanced journal entry against the real named expense account');
   }
 
   // =========================================================
