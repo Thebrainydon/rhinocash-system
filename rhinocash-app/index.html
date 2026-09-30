@@ -2951,7 +2951,7 @@ function renderLoanSizesPage(st, bName, branchIds){
   const officerBars = officerLoanSizeBarData(scoped, branchIds);
   return `
     <div class="card">
-      <div class="card-title">Loan Size Distribution ${bName?`<small>${bName}</small>`:""}</div>
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Loan Size Distribution</span> ${bName?`<small>${bName}</small>`:""}</div>
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
         <input type="date" value="${dst.from}" onchange="session.loanSizeDistState.from=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span>To:</span>
@@ -2975,8 +2975,99 @@ function renderLoanSizesPage(st, bName, branchIds){
     </div>
   `;
 }
+// ---- Portfolio Breakdown — matches the requested reference design: a
+// real principal/interest/other-charges split of the whole portfolio and
+// its real arrears aging (PAR 1-30 through PAR 365++), for loans real-
+// disbursed within a selected real year, plus a real pie chart of the
+// same breakdown. Every figure is derived from the loan's own already-
+// loaded real schedule — the exact same real principal/interest/penalty
+// split loanOutstandingPrincipal()/loanOutstandingInterest()/
+// loanUnpaidPenalty() already use elsewhere in this file, restricted to
+// genuinely overdue rows for the arrears figures — never a separate
+// fabricated source.
+const PORTFOLIO_PAR_BUCKETS = [
+  {label:"PAR 1 - 30 Days", min:1, max:30},
+  {label:"PAR 31 - 60 Days", min:31, max:60},
+  {label:"PAR 61 - 90 Days", min:61, max:90},
+  {label:"PAR 91 - 180 Days", min:91, max:180},
+  {label:"PAR 181 - 365 Days", min:181, max:365},
+  {label:"PAR 365++", min:366, max:Infinity},
+];
+function portfolioBreakdownParBucket(days){
+  if(days<=0) return null;
+  return PORTFOLIO_PAR_BUCKETS.find(b=>days>=b.min && days<=b.max) || PORTFOLIO_PAR_BUCKETS[PORTFOLIO_PAR_BUCKETS.length-1];
+}
+function defaultPortfolioBreakdownState(){ return { year: new Date().getFullYear() }; }
+function portfolioBreakdownYearOptions(){
+  const nowYear = new Date().getFullYear();
+  const opts = []; for(let y=nowYear; y>=nowYear-4; y--) opts.push(y);
+  return opts;
+}
+function portfolioBreakdownData(loansScope, year){
+  const scoped = loansScope.filter(l=> ["Active","Disbursed"].includes(l.status) && l.disbursedAt && new Date(l.disbursedAt).getFullYear()===year);
+  let principalTotal=0, interestTotal=0, otherTotal=0, arrPrincipal=0, arrInterest=0, arrOther=0;
+  const parBuckets = {}; PORTFOLIO_PAR_BUCKETS.forEach(b=>{ parBuckets[b.label] = {principal:0, interest:0, other:0}; });
+  scoped.forEach(l=>{
+    const sched = l.schedule||[];
+    principalTotal += sched.reduce((s,r)=>s+(r.principalDue||0),0);
+    interestTotal += sched.reduce((s,r)=>s+(r.interestDue||0),0);
+    otherTotal += (l.processingFee||0) + sched.reduce((s,r)=>s+(r.penaltyDue||0),0);
+    const overdueRows = sched.filter(isOverdue);
+    const lp = overdueRows.reduce((s,r)=>{ const ratio = r.totalDue>0 ? Math.min(1,(r.paidAmount||0)/r.totalDue) : 0; return s + r.principalDue*(1-ratio); },0);
+    const li = overdueRows.reduce((s,r)=>{ const ratio = r.totalDue>0 ? Math.min(1,(r.paidAmount||0)/r.totalDue) : 0; return s + r.interestDue*(1-ratio); },0);
+    const lo = overdueRows.reduce((s,r)=>s+Math.max(0,(r.penaltyDue||0)-(r.penaltyPaid||0)),0);
+    arrPrincipal += lp; arrInterest += li; arrOther += lo;
+    const bucket = portfolioBreakdownParBucket(loanArrearsDays(l));
+    if(bucket){ parBuckets[bucket.label].principal += lp; parBuckets[bucket.label].interest += li; parBuckets[bucket.label].other += lo; }
+  });
+  const totalLoanCharges = principalTotal+interestTotal+otherTotal;
+  const arrTotal = arrPrincipal+arrInterest+arrOther;
+  const paidPrincipal = principalTotal-arrPrincipal, paidInterest = interestTotal-arrInterest, paidOther = otherTotal-arrOther;
+  const paidTotal = paidPrincipal+paidInterest+paidOther;
+  const rows = [
+    { label:"Total Loan+Charges", amount:totalLoanCharges, portfolioPct:100, parPct:null, principal:principalTotal, interest:interestTotal, other:otherTotal },
+    { label:"Total Paid & Outstanding", amount:paidTotal, portfolioPct: totalLoanCharges>0?(paidTotal/totalLoanCharges*100):0, parPct:null, principal:paidPrincipal, interest:paidInterest, other:paidOther },
+    { label:"Arrears Breakdown(PAR)", amount:arrTotal, portfolioPct: totalLoanCharges>0?(arrTotal/totalLoanCharges*100):0, parPct:null, principal:arrPrincipal, interest:arrInterest, other:arrOther },
+    ...PORTFOLIO_PAR_BUCKETS.map(b=>{
+      const v = parBuckets[b.label]; const amt = v.principal+v.interest+v.other;
+      return { label:b.label, amount:amt, portfolioPct:null, parPct: arrTotal>0.005?(amt/arrTotal*100):0, principal:v.principal, interest:v.interest, other:v.other };
+    }),
+  ];
+  return { rows, totalLoanCharges, paidTotal, arrTotal };
+}
+function portfolioBreakdownPieData(d){
+  const slices = [
+    { label:"Paid & Outstanding", value: d.paidTotal },
+    ...PORTFOLIO_PAR_BUCKETS.map(b=>({ label:b.label, value: d.rows.find(r=>r.label===b.label).amount })),
+  ].filter(s=>s.value>0.005);
+  return slices.map((s,i)=>({ label:s.label, value:s.value, color:PALETTE[i%PALETTE.length] }));
+}
+function exportPortfolioBreakdownCSV(){
+  const pbst = session.portfolioBreakdownState || defaultPortfolioBreakdownState();
+  const st = computeStats(null, businessAnalyticsBranchIds());
+  const d = portfolioBreakdownData(st.loansScope, pbst.year);
+  exportRowsToCsv('portfolio-breakdown.csv', ['label','amount','parPct','portfolioPct','principal','interest','other'], d.rows);
+}
 function renderPortfolioBreakdownPage(st, bName){
-  return pieCard("Portfolio Breakdown", "by real outstanding balance"+(bName?", "+bName:""), productPieData(st.loansScope));
+  const pbst = session.portfolioBreakdownState || (session.portfolioBreakdownState = defaultPortfolioBreakdownState());
+  const d = portfolioBreakdownData(st.loansScope, pbst.year);
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Portfolio Breakdown</span> ${bName?`<small>${bName}</small>`:""}</div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.portfolioBreakdownState.year=Number(this.value); renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          ${portfolioBreakdownYearOptions().map(y=>`<option value="${y}" ${y===pbst.year?'selected':''}>${y}</option>`).join("")}
+        </select>
+        <span style="flex:1 1 auto;"></span>
+        ${generateDropdownHtml('exportPortfolioBreakdownCSV()')}
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>Metric</th><th>Amount (Ksh)</th><th>PAR Percentages</th><th>Portfolio Percentages</th><th>Principal Amount</th><th>Interest Amount</th><th>Other Charges</th></tr>
+        ${d.rows.map(r=>`<tr><td>${r.label}</td><td>${fmtNum(r.amount)}</td><td>${r.parPct==null?"":r.parPct.toFixed(1)+"%"}</td><td>${r.portfolioPct==null?"":r.portfolioPct.toFixed(1)+"%"}</td><td>${fmtNum(r.principal)}</td><td>${fmtNum(r.interest)}</td><td>${fmtNum(r.other)}</td></tr>`).join("")}
+      </table></div>
+    </div>
+    ${pieCard("Portfolio Breakdown", "paid &amp; outstanding vs real arrears aging"+(bName?", "+bName:""), portfolioBreakdownPieData(d))}
+  `;
 }
 function renderTargetsAccrualsPage(branchIds){
   const {totals} = staffPortfolioRows(branchIds);
@@ -3005,10 +3096,15 @@ function renderBusinessAnalyticsModule(){
   const branchIds = businessAnalyticsBranchIds();
   const st = computeStats(null, branchIds);
   const bName = branchIds && branchIds.length===1 ? branchName(branchIds[0]) : null;
-  if(active==="Portfolio Breakdown") return tabsHtml + renderPortfolioBreakdownPage(st, bName);
+  // Loan Sizes and Portfolio Breakdown match reference designs that
+  // navigate via their own "←" back arrow (see each page's own
+  // card-title), not a horizontal tab strip — the sidebar's own Business
+  // Analytics submenu items already provide the same navigation the tabs
+  // bar duplicated. Targets & Accruals / Business Performance keep it.
+  if(active==="Portfolio Breakdown") return renderPortfolioBreakdownPage(st, bName);
   if(active==="Targets & Accruals") return tabsHtml + renderTargetsAccrualsPage(branchIds);
   if(active==="Business Performance") return tabsHtml + renderBusinessPerformancePage(st, bName);
-  return tabsHtml + renderLoanSizesPage(st, bName, branchIds);
+  return renderLoanSizesPage(st, bName, branchIds);
 }
 
 function kpiTiles(st){

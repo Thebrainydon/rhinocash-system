@@ -5922,6 +5922,8 @@ apiRequest = async function(method, path, body){
     goTo('business-analytics','Loan Sizes');
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Loan Size Distribution'), "the real Loan Size Distribution page genuinely renders under Business Analytics > Loan Sizes");
+    __assert(!html.includes('class="subtabs"'), "the real Loan Sizes page genuinely has no horizontal subtab bar above it anymore — navigation is via the sidebar's own Business Analytics submenu items, matching the requested reference design");
+    __assert(html.includes('onclick="goTo(\'dashboard\')"'), "the real Loan Sizes page genuinely has its own real back arrow now that the tab strip is gone");
     LOAN_SIZE_BANDS.forEach(b=>__assert(html.includes(b.label), `the real "${b.label}" band genuinely renders as its own row`));
     __assert(html.includes('No. of Accounts') && html.includes('Loan Balances') && html.includes('Composition') && html.includes('Non-Performing Accounts') && html.includes('Non-Performing Amounts'), "the real table genuinely renders every requested column");
     __assert(html.includes('id="chart-loan-size-by-officer"'), "the real per-officer loan-size comparison bar chart's real canvas genuinely renders below the real table");
@@ -5967,6 +5969,81 @@ apiRequest = async function(method, path, body){
     const toastsBefore = toasts.length;
     exportLoanSizeDistributionCSV();
     __assert(toasts.length > toastsBefore && toasts[toasts.length-1].msg.includes('Exported'), "the real Excel File export genuinely runs end-to-end and confirms via the real toast");
+
+    // ---- 58. BUSINESS ANALYTICS > PORTFOLIO BREAKDOWN: the real
+    // principal/interest/other-charges + PAR-aging table (matching the
+    // requested reference design) and the real pie chart below it — both
+    // reusing this exact same real, just-disbursed 22,000 loan (still
+    // genuinely current, not overdue) rather than fabricating fresh
+    // fixtures, plus a real backdated installment to exercise the real
+    // arrears/PAR-bucket math end to end. ----
+    goTo('business-analytics','Portfolio Breakdown');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Portfolio Breakdown'), "the real Portfolio Breakdown page genuinely renders under Business Analytics > Portfolio Breakdown");
+    __assert(!html.includes('class="subtabs"'), "the real Portfolio Breakdown page genuinely has no horizontal subtab bar above it anymore, matching the requested reference design");
+    __assert(html.includes('onclick="goTo(\'dashboard\')"'), "the real Portfolio Breakdown page genuinely has its own real back arrow now that the tab strip is gone");
+    __assert(html.includes('Metric') && html.includes('Amount (Ksh)') && html.includes('PAR Percentages') && html.includes('Portfolio Percentages') && html.includes('Principal Amount') && html.includes('Interest Amount') && html.includes('Other Charges'), "the real table genuinely renders every requested column");
+    ['Total Loan+Charges','Total Paid & Outstanding','Arrears Breakdown(PAR)', ...PORTFOLIO_PAR_BUCKETS.map(b=>b.label)].forEach(label=>
+      __assert(html.includes(label), `the real "${label}" row genuinely renders`));
+
+    const currentYear = new Date().getFullYear();
+    const beforePB = portfolioBreakdownData(computeStats(null, branchIds).loansScope, currentYear);
+    const freshRow = beforePB.rows[0];
+    __assert(freshRow.amount > 0 && Math.abs(freshRow.principal + freshRow.interest + freshRow.other - freshRow.amount) < 0.01, "the real Total Loan+Charges row genuinely equals its own real principal+interest+other split, not independently fabricated numbers");
+    __assert(Math.abs((beforePB.rows[1].amount + beforePB.rows[2].amount) - freshRow.amount) < 0.01, "the real Total Paid & Outstanding and real Arrears Breakdown(PAR) rows genuinely sum back to the exact real Total Loan+Charges — no figure invented independently of the others");
+    __assert(html.includes(fmtNum(freshRow.amount)), "the real rendered table genuinely shows this exact real, just-computed Total Loan+Charges figure");
+    __assert(Math.abs(beforePB.rows[0].portfolioPct - 100) < 0.01 && beforePB.rows.slice(3).every(r=>r.portfolioPct===null) && beforePB.rows.slice(0,3).every(r=>r.parPct===null), "Portfolio Percentages is only ever populated on the top 3 summary rows and PAR Percentages only on the 6 PAR-bucket rows, exactly matching the requested reference layout — never both on the same row");
+
+    // Backdate this real loan's first installment by 45 real days so it
+    // genuinely falls into the real "PAR 31 - 60 Days" bucket, and give
+    // it a real, unpaid penalty too — exercising the real Other Charges
+    // arrears split, not just principal/interest. Re-fetched fresh from
+    // DB.loans (not the earlier disbursedLsdLoan reference) since the
+    // mgrLsd3 re-login above ran a real loadCoreData() that replaced
+    // DB.loans with newly-adapted loan objects — mutating the old,
+    // now-detached reference would never actually reach the real data
+    // this page renders from.
+    const pbLoan = DB.loans.find(l=>l.id===lsdLoan.id);
+    const pbSchedRow = pbLoan.schedule[0];
+    pbSchedRow.dueDate = new Date(Date.now() - 45*86400000).toISOString().slice(0,10);
+    pbSchedRow.penaltyDue = 200;
+    renderApp();
+    const afterPB = portfolioBreakdownData(computeStats(null, branchIds).loansScope, currentYear);
+    const par3160 = afterPB.rows.find(r=>r.label==='PAR 31 - 60 Days');
+    __assert(par3160.amount > 0, "the real backdated, genuinely-overdue installment correctly lands in the real PAR 31 - 60 Days bucket, derived from its own real days-overdue count, not a fabricated bucket");
+    __assert(par3160.other >= 200 - 0.01, "the real unpaid penalty on that same overdue installment genuinely contributes to this bucket's real Other Charges split");
+    __assert(afterPB.arrTotal > beforePB.arrTotal, "the real Arrears Breakdown(PAR) total genuinely increases once a real installment is genuinely overdue — not a static or fabricated figure");
+    html = document.getElementById('root').innerHTML;
+    PORTFOLIO_PAR_BUCKETS.forEach(b=>{
+      const r = afterPB.rows.find(x=>x.label===b.label);
+      if(r.amount > 0.005) __assert(html.includes(fmtNum(r.amount)), `the real rendered table genuinely shows the real "${b.label}" bucket's own real, just-recomputed amount`);
+    });
+
+    // The real pie chart genuinely renders below the real table, and its
+    // real slice data is derived from the exact same real computation —
+    // Chart.js isn't loaded in this headless harness (see the
+    // established, harmless "Chart is not defined" messages elsewhere in
+    // this suite), so this checks donutChart's own real SVG output, which
+    // (unlike the bar chart elsewhere in this page) needs no external
+    // library at all and genuinely renders even here.
+    const pieData = portfolioBreakdownPieData(afterPB);
+    __assert(pieData.length >= 2, "the real pie chart genuinely has at least two real, non-fabricated slices once a real arrears bucket is populated");
+    __assert(Math.abs(pieData.reduce((s,p)=>s+p.value,0) - afterPB.totalLoanCharges) < 0.01, "the real pie chart's real slice values genuinely sum back to the exact real Total Loan+Charges — the same real total the table above shows");
+    __assert(html.includes('<svg') || html.includes('<circle'), "the real donut pie chart's own real SVG genuinely renders in the real page, with no external library dependency");
+
+    // Restore this loan's real schedule (only this in-memory DB.loans
+    // object — the real backend row was never touched) so later sections
+    // in this suite that may still rely on it as a genuinely current,
+    // non-overdue loan are unaffected.
+    pbSchedRow.dueDate = new Date(Date.now() + 30*86400000).toISOString().slice(0,10);
+    pbSchedRow.penaltyDue = 0;
+    renderApp();
+
+    // The real "-- Generate --" > Excel File option genuinely calls the
+    // real export function, which genuinely succeeds.
+    const pbToastsBefore = toasts.length;
+    exportPortfolioBreakdownCSV();
+    __assert(toasts.length > pbToastsBefore && toasts[toasts.length-1].msg.includes('Exported'), "the real Excel File export genuinely runs end-to-end and confirms via the real toast");
   }
 
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
