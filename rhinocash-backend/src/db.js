@@ -1252,6 +1252,17 @@ async function initSchema() {
   // the `email` column's own UNIQUE constraint already gives that check.
   await ensureColumn('users', 'date_of_birth TEXT');
   await rawRun(`CREATE UNIQUE INDEX IF NOT EXISTS users_national_id_unique ON users (national_id) WHERE national_id IS NOT NULL`);
+  // Real password-age policy: every genuine password-set event (self-
+  // service change, Admin reset, forgot-password) stamps this; the login
+  // route compares it against a 15-day threshold to force a change, the
+  // same real must_change_password flag/flow every other forced-change
+  // path already uses — never a second, parallel "needs reset" signal.
+  // Left nullable (no DEFAULT) so a fresh ALTER never claims every
+  // existing row's password was "just set" — the one-time backfill below
+  // stamps each existing row with its own real created_at instead, and is
+  // itself idempotent (only ever touches rows still NULL).
+  await ensureColumn('users', 'password_changed_at TEXT');
+  await rawRun(`UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL`);
   // A single real company-wide M-Pesa Paybill number — shown identically
   // on every branch in the "Company Branches" view (a company-wide
   // Paybill with per-branch sub-accounts is the real, common setup for a

@@ -1100,6 +1100,10 @@ let loginError = "";
 // mechanism, just a public UI for POST /api/auth/forgot-password.
 let forgotPasswordOpen = false;
 let forgotPasswordState = { submitting:false, submitted:false, error:"" };
+// The forced password-reset screen (session.mustChangePassword) — a real
+// backend-enforced gate (a fresh account, an Admin/forgot-password reset,
+// or the password's 15-day age policy), never a client-only redirect.
+let pwResetState = { submitting:false, error:"" };
 let toasts = [];
 let modal = null; // {type, ...}
 
@@ -2105,6 +2109,12 @@ function renderApp(){
   const root = document.getElementById('root');
   if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
   if(!DB){ root.innerHTML = `<div class="loading-screen"><span>Loading Dashboard... <svg class="loading-screen-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg></span></div>`; return; }
+  // A real, server-computed gate (session.mustChangePassword, set from the
+  // real login response) — blocks every normal screen, not just hidden UI,
+  // until the user genuinely sets a new password via the same real
+  // POST /api/auth/change-password every other "change my password" form
+  // in this app already uses.
+  if(session.mustChangePassword){ root.innerHTML = renderForcedPasswordReset() + (modal ? renderModal() : ""); return; }
   const menu = SIDEBAR_MENUS[session.role] || [];
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
@@ -2266,6 +2276,72 @@ function renderForgotPassword(){
             </form>
             <div class="login-back"><a onclick="closeForgotPassword()">← Back to Login</a></div>
           `}
+        </div>
+        <div class="login-footer">Copyright © Rhinocash Limited 2026</div>
+      </div>
+    </div>
+  `;
+}
+
+// The forced password-reset screen — shown instead of the normal app shell
+// whenever session.mustChangePassword is true (a fresh account, an Admin/
+// forgot-password reset, or the password's 15-day age policy), reusing the
+// exact same .login-screen family every other pre-dashboard screen already
+// uses. Saves via the same real POST /api/auth/change-password every other
+// "change my password" form in this app calls — currentPassword is
+// correctly omitted, matching that endpoint's own must_change_password
+// exemption (see auth.js), not a second, parallel save path.
+async function submitForcedPasswordReset(ev){
+  ev.preventDefault();
+  if(pwResetState.submitting) return false;
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.newPassword || f.newPassword.length < 8){ pwResetState.error = "New password must be at least 8 characters."; renderApp(); return false; }
+  if(f.newPassword !== f.confirmPassword){ pwResetState.error = "Passwords do not match."; renderApp(); return false; }
+  pwResetState = { submitting:true, error:"" };
+  renderApp();
+  try{
+    await api.post('/api/auth/change-password', { newPassword: f.newPassword });
+    session.mustChangePassword = false;
+    pwResetState = { submitting:false, error:"" };
+    // renderApp() (inside openModal()) now shows the real dashboard, since
+    // the gate above only fires while mustChangePassword is still true —
+    // the modal below is layered on top of that real dashboard, not a
+    // separate fake "redirect".
+    openModal('password-updated');
+  }catch(e){
+    pwResetState = { submitting:false, error: e.message || "Something went wrong. Please try again." };
+    renderApp();
+  }
+  return false;
+}
+function renderForcedPasswordReset(){
+  const st = pwResetState;
+  return `
+    <div class="login-screen">
+      <div class="login-wrap">
+        <div class="login-logo-card">
+          <img src="${LOGO_DATA_URI}" alt="Rhinocash Limited" class="login-logo-img">
+          <div class="login-logo-tag">RHINOCASH LIMITED</div>
+        </div>
+        <div class="login-panel">
+          <div class="login-title">Password Reset</div>
+          <div class="login-recovery-text">Update your account password to proceed</div>
+          ${st.error ? `<div class="login-error">${escapeHtml(st.error)}</div>` : ""}
+          <form onsubmit="return submitForcedPasswordReset(event)">
+            <div class="login-field">
+              <div class="login-field-row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 5l3 3M18 3l3 3"/></svg>
+                <input name="newPassword" type="password" placeholder="New Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
+              </div>
+            </div>
+            <div class="login-field">
+              <div class="login-field-row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
+                <input name="confirmPassword" type="password" placeholder="Re-type Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
+              </div>
+            </div>
+            <button class="login-btn" type="submit" ${st.submitting?'disabled':''}>${st.submitting ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Updating…` : '⟳ Update'}</button>
+          </form>
         </div>
         <div class="login-footer">Copyright © Rhinocash Limited 2026</div>
       </div>
@@ -14990,9 +15066,10 @@ function renderModal(){
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
+  else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
-  const blockingTypes = ['session-expired','logged-out'];
+  const blockingTypes = ['session-expired','logged-out','password-updated'];
   return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
@@ -15031,6 +15108,16 @@ function renderLoggedOutModal(){
       <h3 style="color:var(--navy); margin:0 0 8px;">You've Been Logged Out</h3>
       <div class="hint" style="margin-bottom:20px;">Your session has been securely ended. Sign in again to continue.</div>
       <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
+    </div>
+  `;
+}
+function renderPasswordUpdatedModal(){
+  return `
+    <div style="text-align:center;">
+      <div style="width:56px; height:56px; border-radius:50%; background:#EAF7EF; color:#1BAF7A; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">✓</div>
+      <h3 style="color:var(--navy); margin:0 0 8px;">Password Updated Successful</h3>
+      <div class="hint" style="margin-bottom:20px;">Your password has been changed. Continue to your dashboard.</div>
+      <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Continue</button>
     </div>
   `;
 }

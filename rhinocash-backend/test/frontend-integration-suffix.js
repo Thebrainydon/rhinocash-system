@@ -39,6 +39,22 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     __assert(authToken && authToken.length > 20, "a real bearer token was received and stored in memory");
     __assert(session.role === "Admin", "session.role correctly derived from the backend's role_id ('admin' -> 'Admin')");
     __assert(session.mustChangePassword === true, "freshly-seeded admin is correctly flagged to change password");
+
+    // The rest of this suite logs in as Admin dozens of times using the
+    // real SEEDED_ADMIN_PASSWORD — before the forced-reset screen genuinely
+    // blocked the app shell (this pass), that never mattered. Now it does,
+    // so this clears the real flag the one real way available: an actual
+    // POST /api/auth/change-password call — setting the SAME plaintext
+    // password as "new" is a real, valid call (the endpoint has no reason
+    // to reject it), so every later section's SEEDED_ADMIN_PASSWORD login
+    // stays genuinely valid.
+    const html0 = document.getElementById('root').innerHTML;
+    __assert(html0.includes('Password Reset') && !html0.includes('class="sidebar'), "the real forced password-reset screen genuinely blocks the app shell for this freshly-seeded admin, exactly as session.mustChangePassword=true promises");
+    const clearForm = new Map([['newPassword', process.env.SEEDED_ADMIN_PASSWORD], ['confirmPassword', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return clearForm; } };
+    await submitForcedPasswordReset({ preventDefault(){}, target:{} });
+    __assert(session.mustChangePassword === false, "completing the real forced-reset flow (even re-using the same password) genuinely clears session.mustChangePassword via the real change-password endpoint");
+    closeModal();
   }
 
   // ---- 4. Real data actually loaded from the backend into DB.* ----
@@ -5780,6 +5796,72 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     global.FormData = class { constructor(){ return adminForm; } };
     await doLogin({ preventDefault(){}, target:{} });
     __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the recovery screen");
+  }
+
+  // ---- 54. FORCED PASSWORD RESET SCREEN: session.mustChangePassword genuinely blocks the app shell, real save via the real change-password endpoint, real success popup, real redirect to the dashboard ----
+  {
+    const adminForm2 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    // A fresh new user is real-created with must_change_password=1 (the
+    // existing, unmodified new-account behavior) — the simplest real way
+    // to reach a mustChangePassword:true login without reaching into the
+    // database directly from this HTTP-only test process.
+    const createForcedForm = new Map([['name','Forced Reset Test'],['phone','0722900555'],['email','forcedresettest@rhinocash.co.ke'],
+      ['jobTitle','Loan Officer'],['branchId','br_nairobi'],['regionId','rg_upper_coast'],['roleId','loan_officer']]);
+    global.FormData = class { constructor(){ return createForcedForm; } };
+    const { tempPassword } = await addStaffMember(Object.fromEntries(createForcedForm));
+    __assert(!!tempPassword, "sanity: a real fresh user is created with a real temp password, must_change_password=1 by the existing (unmodified) create-user behavior");
+
+    const forcedForm = new Map([['username','forcedresettest@rhinocash.co.ke'],['password', tempPassword]]);
+    global.FormData = class { constructor(){ return forcedForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true && session.mustChangePassword === true, "logging in with a real temp password genuinely sets session.mustChangePassword, from the real backend login response");
+
+    goTo('dashboard');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Password Reset') && html.includes('New Password') && html.includes('Re-type Password'), "the real forced password-reset screen genuinely renders instead of the dashboard when mustChangePassword is true");
+    __assert(!html.includes('class="sidebar'), "the real app shell (sidebar/topbar) is genuinely NOT rendered underneath — this is a real blocking screen, not a decorative banner on top of the normal dashboard");
+
+    // Trying to navigate elsewhere is still blocked — the gate is in
+    // renderApp() itself, not a one-time check only goTo('dashboard') hits.
+    goTo('clients');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Password Reset'), "attempting to navigate to another real section while mustChangePassword is true still shows the forced reset screen, not the requested section");
+
+    // Mismatched passwords: a real, inline client-side rejection — no API call, still forced.
+    const mismatchForm = new Map([['newPassword','MismatchedPass1!'],['confirmPassword','SomethingElse2!']]);
+    global.FormData = class { constructor(){ return mismatchForm; } };
+    await submitForcedPasswordReset({ preventDefault(){}, target:{} });
+    __assert(session.mustChangePassword === true && pwResetState.error && /match/i.test(pwResetState.error), "submitting mismatched New/Re-type passwords is genuinely rejected client-side with a real inline error, before any API call");
+
+    // The real save: matching, valid passwords via the real POST /api/auth/change-password.
+    const goodForm = new Map([['newPassword','ForcedResetPass2026!'],['confirmPassword','ForcedResetPass2026!']]);
+    global.FormData = class { constructor(){ return goodForm; } };
+    await submitForcedPasswordReset({ preventDefault(){}, target:{} });
+    __assert(session.mustChangePassword === false, "a real matching New/Re-type password genuinely clears session.mustChangePassword via the real change-password endpoint");
+    __assert(modal && modal.type === 'password-updated', "a real 'Password Updated Successful' popup genuinely opens after the real save succeeds");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Password Updated Successful'), "the real popup shows the requested confirmation text");
+    __assert(html.includes('class="sidebar'), "the real dashboard/app shell is already rendered underneath the popup — a genuine redirect to the dashboard, not a fake one only visible after closing the modal");
+
+    closeModal();
+    __assert(modal === null, "closing the real popup genuinely dismisses it");
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('Password Reset') && html.includes('class="sidebar'), "after closing the popup, the user is genuinely on their real normal dashboard, not still on the reset screen");
+
+    // The clock is genuinely reset: logging in again with the NEW password is no longer forced.
+    const relogForm = new Map([['username','forcedresettest@rhinocash.co.ke'],['password','ForcedResetPass2026!']]);
+    global.FormData = class { constructor(){ return relogForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true && session.mustChangePassword === false, "logging in again with the genuinely-changed password is no longer forced to reset");
+
+    // Log back in as Admin so the app is left in a normal, logged-in state.
+    const adminForm3 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm3; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the forced password-reset screen");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

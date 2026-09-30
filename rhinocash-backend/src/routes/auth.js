@@ -8,6 +8,16 @@ const email = require('./../integrations/email');
 const crypto = require('node:crypto');
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+// A real, enforced password-age policy — 15 days since password_changed_at
+// (stamped by every genuine password-set: self-service change, Admin
+// reset, forgot-password). Checked once, at login, alongside the existing
+// must_change_password flag rather than as a second parallel signal —
+// when it's the age policy (not an explicit reset) that trips it, the
+// same flag is persisted so every other already-real enforcement point
+// (change-password's skip-current-password exemption, the two existing
+// self-service forms' hidden-current-password-field logic) sees exactly
+// the same must_change_password=1 it already knows how to handle.
+const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 
 async function publicUser(u) {
   if (!u) return null;
@@ -66,8 +76,18 @@ function register(router) {
     req.user = user;
     await logAction(req, { action: 'User logged in', module: 'auth', recordType: 'User', recordId: user.id });
 
+    let mustChangePassword = !!user.must_change_password;
+    if (!mustChangePassword) {
+      const changedAt = user.password_changed_at ? new Date(user.password_changed_at).getTime() : NaN;
+      const passwordExpired = Number.isNaN(changedAt) || (Date.now() - changedAt) >= PASSWORD_MAX_AGE_MS;
+      if (passwordExpired) {
+        await run('UPDATE users SET must_change_password=1 WHERE id=?', [user.id]);
+        mustChangePassword = true;
+      }
+    }
+
     const sysRow = await get('SELECT session_warning_minutes FROM system_settings WHERE id = 1');
-    res.json({ token, user: await publicUser(user), mustChangePassword: !!user.must_change_password, expiresAt, sessionWarningMinutes: sysRow ? sysRow.session_warning_minutes : 5 });
+    res.json({ token, user: await publicUser(user), mustChangePassword, expiresAt, sessionWarningMinutes: sysRow ? sysRow.session_warning_minutes : 5 });
   });
 
   // Public, unauthenticated password recovery. Never reveals whether the
@@ -86,7 +106,7 @@ function register(router) {
     if (user && user.status === 'Active') {
       const tempPassword = generateTempPassword();
       const { hash, salt } = hashPassword(tempPassword);
-      await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1 WHERE id=?', [hash, salt, user.id]);
+      await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now() WHERE id=?', [hash, salt, user.id]);
       await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ?", [user.id]);
       await logAction({ user }, { action: 'Requested password reset', module: 'auth', recordType: 'User', recordId: user.id });
       await email.send('password_reset', user.email, { name: user.name, tempPassword });
@@ -131,7 +151,7 @@ function register(router) {
       }
     }
     const { hash, salt } = hashPassword(newPassword);
-    await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=0 WHERE id=?', [hash, salt, req.user.id]);
+    await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=0, password_changed_at=iso_now() WHERE id=?', [hash, salt, req.user.id]);
     // changing your password invalidates every other active session — real, not decorative
     await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ? AND token_hash != ?", [req.user.id, req.sessionTokenHash]);
     await logAction(req, { action: 'Password changed', module: 'auth', recordType: 'User', recordId: req.user.id });
@@ -149,7 +169,7 @@ function register(router) {
     if (!target) return next({ status: 404, message: 'User not found' });
     const tempPassword = generateTempPassword();
     const { hash, salt } = hashPassword(tempPassword);
-    await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1 WHERE id=?', [hash, salt, target.id]);
+    await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now() WHERE id=?', [hash, salt, target.id]);
     await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ?", [target.id]);
     await logAction(req, { action: 'Reset user password', module: 'users', recordType: 'User', recordId: target.id, reason: req.body.reason });
     // In production this would be emailed/SMSed to the user, never returned over
