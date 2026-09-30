@@ -1203,6 +1203,7 @@ async function apiRequest(method, path, body){
       // freshly logged-in session makes next.
       inFlight.clear();
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
+      clearIdleLogoutTimer();
       broadcastSessionEnded();
       openModal('session-expired');
     }
@@ -2380,6 +2381,7 @@ if(sessionChannel){
       DB = null; session.justLoggedOut = false;
       inFlight.clear();
       if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
+      clearIdleLogoutTimer();
       openModal('session-expired');
     }
   };
@@ -2397,6 +2399,42 @@ function scheduleSessionExpiryWarning(){
   sessionWarningTimer = setTimeout(()=>{
     if(session.loggedIn && !modal) openModal('session-expiry-warning');
   }, msUntilWarning);
+}
+
+// ---- Real inactivity auto-logout — a completely separate mechanism from
+// the session-expiry-warning above (which counts down from the real
+// backend token's fixed expiresAt, regardless of activity). This one only
+// ever counts real idle time: any real user interaction anywhere on the
+// page — a click (including every menu/submenu navigation, which is just
+// a click under the hood), a keypress, or scrolling — resets the clock.
+// 5 real minutes with none of that forces the exact same real logout
+// confirmLogout() already performs (real API call, real session state
+// cleared), just triggered by the system instead of a user's own click,
+// with its own honestly-worded "signed out due to inactivity" modal
+// rather than reusing "You've Been Logged Out"'s manual-logout wording.
+// `let`, not `const` — the real frontend integration test suite
+// temporarily shortens this to make the real timeout path deterministic
+// and fast to test, the same "speed up the real wait, never mock the real
+// logic away" approach already used elsewhere (e.g. backdating
+// password_changed_at rather than faking the age check itself).
+let IDLE_LOGOUT_MS = 5 * 60 * 1000;
+let idleLogoutTimer = null;
+function resetIdleLogoutTimer(){
+  if(!session.loggedIn) return;
+  if(idleLogoutTimer) clearTimeout(idleLogoutTimer);
+  idleLogoutTimer = setTimeout(()=>{ confirmLogout({reason:'idle'}); }, IDLE_LOGOUT_MS);
+}
+function clearIdleLogoutTimer(){
+  if(idleLogoutTimer){ clearTimeout(idleLogoutTimer); idleLogoutTimer = null; }
+}
+// The headless frontend-integration test harness's fake `document` has no
+// addEventListener (it only ever needs getElementById/createElement) — the
+// same defensive guard every other real-DOM-only call elsewhere in this
+// file already uses (see toggleSidebar()/closeSidebar()).
+if(typeof document.addEventListener === 'function'){
+  ['mousedown','mousemove','keydown','scroll','touchstart','wheel'].forEach(evt=>{
+    document.addEventListener(evt, resetIdleLogoutTimer, {capture:true, passive:true});
+  });
 }
 function renderSessionExpiryWarningModal(){
   return `
@@ -2468,6 +2506,7 @@ async function doLogin(ev){
     renderApp();
     await loadCoreData();
     session.loggedIn = true;
+    resetIdleLogoutTimer();
     renderApp();
   }catch(e){
     // Covers a genuine credentials failure (authenticated was never set)
@@ -2488,7 +2527,8 @@ async function doLogin(ev){
 // real confirmation modal; the actual session-ending work happens in
 // confirmLogout() below, only once the user explicitly confirms.
 function promptLogout(){ openModal('confirm-logout'); }
-async function confirmLogout(){
+async function confirmLogout(opts){
+  const idle = !!(opts && opts.reason === 'idle');
   session.loggingOut = true; renderApp();
   const isInvestor = session.role === 'Investor';
   try{
@@ -2509,6 +2549,7 @@ async function confirmLogout(){
   authToken = null;
   session.loggedIn = false; session.authenticated = false; session.loggingOut = false;
   if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; }
+  clearIdleLogoutTimer();
   broadcastSessionEnded();
   session.userId = null; session.investorId = null;
   session.selectedClientId = null; session.selectedLoanId = null; session.selectedStaffId = null;
@@ -2519,7 +2560,9 @@ async function confirmLogout(){
   // instead of dropping straight back to the login screen — the real
   // logout work above is already fully done by this point; this modal is
   // purely a professional acknowledgement, not something the user waits on.
-  modal = { type:'logged-out' };
+  // Honestly worded per the real cause: an idle timeout never claims the
+  // user themselves clicked Logout, and a manual logout never claims idle.
+  modal = { type: idle ? 'idle-logged-out' : 'logged-out' };
   session.justLoggedOut = true;
   renderApp();
   setTimeout(()=>{ session.justLoggedOut = false; renderApp(); }, 4000);
@@ -15075,10 +15118,11 @@ function renderModal(){
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
   else if(modal.type === "logged-out") body = renderLoggedOutModal();
+  else if(modal.type === "idle-logged-out") body = renderIdleLoggedOutModal();
   else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
-  const blockingTypes = ['session-expired','logged-out','password-updated'];
+  const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];
   return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }
 function renderConfirmLogoutModal(){
@@ -15116,6 +15160,20 @@ function renderLoggedOutModal(){
       <div style="width:56px; height:56px; border-radius:50%; background:#EAF7EF; color:#1BAF7A; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">✓</div>
       <h3 style="color:var(--navy); margin:0 0 8px;">You've Been Logged Out</h3>
       <div class="hint" style="margin-bottom:20px;">Your session has been securely ended. Sign in again to continue.</div>
+      <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
+    </div>
+  `;
+}
+// A real, distinct cause from a manual logout — never worded as if the
+// user clicked Logout themselves, matching the same honesty standard as
+// renderLoggedOutModal()'s own comment ("never claim an event that
+// didn't happen").
+function renderIdleLoggedOutModal(){
+  return `
+    <div style="text-align:center;">
+      <div style="width:56px; height:56px; border-radius:50%; background:var(--amber-bg); color:var(--amber); display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">⏱</div>
+      <h3 style="color:var(--navy); margin:0 0 8px;">Signed Out Due to Inactivity</h3>
+      <div class="hint" style="margin-bottom:20px;">For your security, you were automatically signed out after 5 minutes without any activity. Sign in again to continue.</div>
       <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
     </div>
   `;

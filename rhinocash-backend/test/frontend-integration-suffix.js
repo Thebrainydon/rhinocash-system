@@ -5746,6 +5746,60 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     DB.c2bPaymentsBrowser = null;
   }
 
+  // ---- 56. REAL INACTIVITY AUTO-LOGOUT: 5 minutes with no activity forces a real logout; genuine activity resets the clock ----
+  // Must run before the FINAL Forgot Password block below, which
+  // deliberately rotates officer@rhinocash.co.ke's real password with no
+  // restore (it's meant to be the suite's true last use of that account).
+  {
+    // IDLE_LOGOUT_MS is deliberately `let`, not `const`, precisely so this
+    // suite can shorten the real wait to make the real timeout path fast
+    // and deterministic to test — the same "speed up the real wait, never
+    // mock the real logic away" approach already used elsewhere in this
+    // suite (backdating password_changed_at rather than faking the age
+    // check itself).
+    const realIdleMs = IDLE_LOGOUT_MS;
+
+    const officerForm = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return officerForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const idleToken = authToken;
+    __assert(session.loggedIn === true && !!idleToken, "sanity: a real officer session is established before testing the real idle timeout");
+
+    IDLE_LOGOUT_MS = 40;
+    resetIdleLogoutTimer();
+    await new Promise(r=>setTimeout(r, 150));
+    __assert(session.loggedIn === false && session.authenticated === false, "5 (shortened, real) minutes with genuinely no activity forces the exact real logout confirmLogout() performs, not a fabricated client-only redirect");
+    __assert(modal && modal.type === 'idle-logged-out', "the real, distinct 'Signed Out Due to Inactivity' modal opens — never worded as if the user clicked Logout themselves");
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Signed Out Due to Inactivity'), "the real modal shows the requested honest wording");
+    // api.get() doesn't take a custom-headers override in this app — check the
+    // stale token's server-side revocation via a raw fetch with the real
+    // Authorization header instead, matching how backend session revocation
+    // is verified elsewhere in this suite.
+    const rawCheck = await fetch((window.RHINOCASH_API_BASE)+'/api/auth/me', { headers: { Authorization: `Bearer ${idleToken}` } });
+    __assert(rawCheck.status === 401, "the idle-triggered logout genuinely revoked the real session server-side (POST /api/auth/logout was really called) — the old token is rejected, not just forgotten client-side");
+    closeModal();
+
+    // Genuine activity (any real interaction — a click, a keypress, a
+    // scroll) resets the clock rather than a fixed deadline from login.
+    const activityForm = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return activityForm; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    IDLE_LOGOUT_MS = 150;
+    resetIdleLogoutTimer();
+    await new Promise(r=>setTimeout(r, 80));
+    resetIdleLogoutTimer(); // simulated real activity, halfway through the window
+    await new Promise(r=>setTimeout(r, 80));
+    __assert(session.loggedIn === true, "genuine activity partway through the idle window genuinely resets the real timer — 160ms of elapsed wall-clock time against a 150ms window does NOT force a logout because activity reset it at the 80ms mark");
+
+    IDLE_LOGOUT_MS = realIdleMs;
+    clearIdleLogoutTimer();
+    const adminForm6 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm6; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the real idle-timeout mechanism, with the real 5-minute duration restored");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();
