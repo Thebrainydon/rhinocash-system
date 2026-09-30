@@ -1242,6 +1242,16 @@ async function initSchema() {
   await ensureColumn('users', 'national_id TEXT');
   await ensureColumn('users', 'gender TEXT');
   await ensureColumn('users', "basic_salary NUMERIC(14,2) NOT NULL DEFAULT 0");
+  // Admin > User Management > Create User: date_of_birth is the one
+  // genuinely missing, universally-standard "Personal Information" field
+  // this form needs — everything else it asks for (national_id, gender,
+  // basic_salary, leave_days_balance, etc.) already existed as a column.
+  // A partial unique index (real IDs are unique per person; existing rows
+  // with a NULL national_id are correctly left unconstrained) backs the
+  // app-level duplicate check in POST /api/users, the same defense-in-depth
+  // the `email` column's own UNIQUE constraint already gives that check.
+  await ensureColumn('users', 'date_of_birth TEXT');
+  await rawRun(`CREATE UNIQUE INDEX IF NOT EXISTS users_national_id_unique ON users (national_id) WHERE national_id IS NOT NULL`);
   // A single real company-wide M-Pesa Paybill number — shown identically
   // on every branch in the "Company Branches" view (a company-wide
   // Paybill with per-branch sub-accounts is the real, common setup for a

@@ -423,6 +423,114 @@ async function get_role(id, token) {
     assert(fineChange.status === 200, 'KK: a real Admin permission save that still includes manage_users is genuinely allowed');
   }
 
+  // ==================== Admin > User Management > Create User ====================
+  // Real coverage for the extended POST /api/users: the same real
+  // roles/permissions/departments/branches/regions/users tables, now with
+  // full Personal/Employment/Organization/Role/Microfinance/HR fields, real
+  // validation, real duplicate prevention, a real transaction and a real
+  // (never-crashing) notification attempt.
+
+  // LL. Field validation runs on the real backend — never assumed to be frontend-only.
+  {
+    const badEmail = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Email', email: 'not-an-email', role_id: 'loan_officer' } });
+    assert(badEmail.status === 400, 'LL: an invalid email format is genuinely rejected');
+    const badPhone = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Phone', email: 'badphone@rhinocash.co.ke', role_id: 'loan_officer', phone: '12345' } });
+    assert(badPhone.status === 400, 'LL: a phone number that isn\'t a real Kenyan number is genuinely rejected');
+    const goodPhone = await api('POST', '/api/users', { token: adminToken, body: { name: 'Good Phone Test', email: 'goodphone@rhinocash.co.ke', role_id: 'loan_officer', phone: '0712345671' } });
+    assert(goodPhone.status === 201, 'LL: a real 07XXXXXXXX Kenyan phone number is genuinely accepted');
+    const badNationalId = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad ID', email: 'badid@rhinocash.co.ke', role_id: 'loan_officer', national_id: 'abc' } });
+    assert(badNationalId.status === 400, 'LL: a non-numeric/too-short ID number is genuinely rejected');
+    const badGender = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Gender', email: 'badgender@rhinocash.co.ke', role_id: 'loan_officer', gender: 'Not A Real Option' } });
+    assert(badGender.status === 400, 'LL: an unsupported gender value is genuinely rejected, not silently stored');
+    const badEmploymentStatus = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Emp Status', email: 'bademp@rhinocash.co.ke', role_id: 'loan_officer', employment_status: 'Made Up Status' } });
+    assert(badEmploymentStatus.status === 400, 'LL: an employment_status outside the real existing set is genuinely rejected');
+    const badDept = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Dept', email: 'baddept@rhinocash.co.ke', role_id: 'loan_officer', department_id: 'not_a_real_department' } });
+    assert(badDept.status === 400, 'LL: an unknown department_id is genuinely rejected');
+    const badBranch = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Branch', email: 'badbranch@rhinocash.co.ke', role_id: 'loan_officer', branch_id: 'not_a_real_branch' } });
+    assert(badBranch.status === 400, 'LL: an unknown branch_id is genuinely rejected');
+    const badRegion = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Region', email: 'badregion@rhinocash.co.ke', role_id: 'loan_officer', region_id: 'not_a_real_region' } });
+    assert(badRegion.status === 400, 'LL: an unknown region_id is genuinely rejected');
+    const badAccessLevel = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Access', email: 'badaccess@rhinocash.co.ke', role_id: 'loan_officer', access_level: 'Made Up Access Level' } });
+    assert(badAccessLevel.status === 400, 'LL: an access_level that doesn\'t match any real existing role\'s access level is genuinely rejected — never a second, free-form system');
+    const badManager = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Manager', email: 'badmanager@rhinocash.co.ke', role_id: 'loan_officer', reporting_manager_id: 'not_a_real_user' } });
+    assert(badManager.status === 400, 'LL: an unknown reporting_manager_id is genuinely rejected');
+    const suspendedManagerTarget = await api('POST', '/api/users', { token: adminToken, body: { name: 'Susp Mgr Target', email: 'suspmgrtarget@rhinocash.co.ke', role_id: 'loan_officer' } });
+    await api('POST', `/api/users/${suspendedManagerTarget.json.user.id}/status`, { token: adminToken, body: { status: 'Suspended' } });
+    const inactiveManager = await api('POST', '/api/users', { token: adminToken, body: { name: 'Bad Manager 2', email: 'badmanager2@rhinocash.co.ke', role_id: 'loan_officer', reporting_manager_id: suspendedManagerTarget.json.user.id } });
+    assert(inactiveManager.status === 400, 'LL: a reporting manager who is real but genuinely not Active is rejected, not silently assigned');
+
+    // None of the rejected attempts above left a partial user behind.
+    const noneCreated = await api('GET', '/api/users?q=Bad Email', { token: adminToken });
+    assert(noneCreated.json.users.length === 0, 'LL: a request rejected by validation genuinely leaves no partially-created user behind — the transaction never started');
+  }
+
+  // MM. Region is genuinely derived from Branch (the real Region -> Branch hierarchy), and a real full field set is saved correctly.
+  {
+    const create = await api('POST', '/api/users', {
+      token: adminToken,
+      body: {
+        firstNameIgnored: true, // sanity: the backend only reads `name`, never firstName/lastName — the frontend joins those before sending
+        name: 'Susan Achieng Mwikali', email: 'susan.mwikali@rhinocash.co.ke', phone: '0798765432',
+        role_id: 'loan_officer', national_id: '30123456', gender: 'Female', date_of_birth: '1995-04-12',
+        staff_code: 'RC-TEST-001', job_title: 'Senior Loan Officer', department_id: 'credit', employment_status: 'Probation',
+        entry_date: '2026-01-15', branch_id: 'br_kisumu', region_id: 'rg_upper_coast', // deliberately mismatched — branch must win
+        monthly_disbursement_target: 500000, monthly_new_loan_target: 15, leave_days_balance: 18, basic_salary: 45000,
+      },
+    });
+    assert(create.status === 201, 'MM: Admin genuinely can create a real user with the full real field set');
+    const u = create.json.user;
+    assert(u.region_id === 'rg_lower_coast', 'MM: region_id is genuinely derived from the real branch\'s own region (br_kisumu -> Lower Coast) — the deliberately mismatched submitted region_id is correctly overridden, not trusted');
+    assert(u.branch_id === 'br_kisumu' && u.national_id === '30123456' && u.gender === 'Female', 'MM: the real submitted branch/ID/gender are saved correctly');
+    assert(u.date_of_birth && u.date_of_birth.startsWith('1995-04-12'), 'MM: date_of_birth is genuinely saved');
+    assert(u.staff_code === 'RC-TEST-001', 'MM: an admin-supplied real staff/job number is genuinely honored, not overwritten by auto-generation');
+    assert(u.department_id === 'credit' && u.employment_status === 'Probation', 'MM: department and employment type are genuinely saved');
+    assert(u.created_at && u.created_at.startsWith('2026-01-15'), 'MM: a real supplied entry_date genuinely becomes this user\'s real created_at ("Entry date" — the same field the existing Company Employees page already reads)');
+    assert(Number(u.monthly_disbursement_target) === 500000 && Number(u.monthly_new_loan_target) === 15, 'MM: real microfinance targets are genuinely saved');
+    assert(Number(u.leave_days_balance) === 18 && Number(u.basic_salary) === 45000, 'MM: real HR fields (leave balance, basic salary) are genuinely saved, not silently dropped');
+    assert(!!u.must_change_password, 'MM: a freshly created account genuinely requires a password change on first login, per the existing first-login mechanism');
+    assert(!('password_hash' in u) && !('password_salt' in u), 'MM: the response never leaks the real password hash/salt');
+    assert(!('temp_password' in u), 'MM: the real user record itself never stores the temporary password in plaintext under any field name');
+  }
+
+  // NN. Duplicate prevention — staff/job number, ID number and phone, alongside the pre-existing email check.
+  {
+    const dupStaffCode = await api('POST', '/api/users', { token: adminToken, body: { name: 'Dup Staff Code', email: 'dupstaffcode@rhinocash.co.ke', role_id: 'loan_officer', staff_code: 'RC-TEST-001' } });
+    assert(dupStaffCode.status === 409, 'NN: a duplicate real staff/job number is genuinely rejected');
+    const dupNationalId = await api('POST', '/api/users', { token: adminToken, body: { name: 'Dup National Id', email: 'dupnatid@rhinocash.co.ke', role_id: 'loan_officer', national_id: '30123456' } });
+    assert(dupNationalId.status === 409, 'NN: a duplicate real ID number is genuinely rejected');
+    const dupPhone = await api('POST', '/api/users', { token: adminToken, body: { name: 'Dup Phone', email: 'dupphone@rhinocash.co.ke', role_id: 'loan_officer', phone: '0798765432' } });
+    assert(dupPhone.status === 409, 'NN: a duplicate real phone number is genuinely rejected');
+  }
+
+  // OO. The account is genuinely authenticatable afterward through the real, existing login + first-login flow — not just a database row.
+  {
+    const create = await api('POST', '/api/users', { token: adminToken, body: { name: 'Login Test User', email: 'logintest.newuser@rhinocash.co.ke', role_id: 'loan_officer', phone: '0711223345' } });
+    assert(create.status === 201 && create.json.tempPassword, 'OO: setup — a real new user is created with a real temp password returned once');
+    const login = await api('POST', '/api/auth/login', { body: { email: 'logintest.newuser@rhinocash.co.ke', password: create.json.tempPassword } });
+    assert(login.status === 200 && login.json.mustChangePassword === true, 'OO: the real new employee can genuinely log in with their real temporary password, and the real existing first-login flow correctly requires a password change');
+  }
+
+  // PP. Audit — real actor/action/role/access/branch/department, never a credential or the temp password.
+  {
+    const create = await api('POST', '/api/users', { token: adminToken, body: { name: 'Audit Test User', email: 'audittest.newuser@rhinocash.co.ke', role_id: 'accountant', branch_id: 'br_nairobi', department_id: 'finance' } });
+    assert(create.status === 201, 'PP: setup — a real user is created for audit verification');
+    const activity = await api('GET', `/api/audit-logs?entity=User&record_id=${create.json.user.id}`, { token: adminToken });
+    const entry = activity.json.auditLogs.find(a => a.action === 'Created user');
+    assert(entry && entry.user_name === 'Rhinocash System Administrator', 'PP: a real audit entry records the real actor who created this account');
+    const raw = JSON.stringify(entry).toLowerCase();
+    assert(raw.indexOf('password') === -1 && raw.indexOf('hash') === -1 && raw.indexOf('salt') === -1 && !raw.includes(create.json.tempPassword.toLowerCase()), 'PP: the real audit entry never contains a password, hash, salt or the real temporary password itself');
+  }
+
+  // QQ. Notification delivery is attempted and honestly reported — never fabricated, and never crashes the request when no provider is configured (the real, expected state in this environment).
+  {
+    const create = await api('POST', '/api/users', { token: adminToken, body: { name: 'Notify Test User', email: 'notifytest.newuser@rhinocash.co.ke', role_id: 'loan_officer', phone: '0722334456' } });
+    assert(create.status === 201, 'QQ: account creation genuinely succeeds even though no real email/SMS provider is configured in this environment');
+    assert(create.json.notifications && create.json.notifications.email === 'NOT_CONFIGURED', 'QQ: the real email integration honestly reports NOT_CONFIGURED rather than fabricating a "sent" status');
+    assert(create.json.notifications.sms === 'NOT_CONFIGURED', 'QQ: the real SMS integration honestly reports NOT_CONFIGURED too, since a real phone number was given');
+    const create2 = await api('POST', '/api/users', { token: adminToken, body: { name: 'Notify Test User 2', email: 'notifytest2.newuser@rhinocash.co.ke', role_id: 'loan_officer' } });
+    assert(create2.json.notifications.sms === 'NOT_ATTEMPTED_NO_PHONE', 'QQ: SMS delivery is honestly reported as not attempted at all when no real phone number was given, never a fabricated attempt' );
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

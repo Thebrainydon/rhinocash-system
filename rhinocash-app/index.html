@@ -881,6 +881,7 @@ const LABEL_ROUTES = {
   "Staff Portfolios": {section:"staff-portfolios"},
   "Daily Workplan": {section:"staff-workplans"},
   "View Employees": {section:"staff", subtab:"Company Employees"},
+  "Create User": {section:"staff", subtab:"Create User"},
   "Roles": {section:"staff", subtab:"Roles"},
   "Create Role": {section:"staff", subtab:"Create Role"},
   "Role Permissions": {section:"staff", subtab:"Role Permissions"},
@@ -1807,16 +1808,30 @@ function slugifyDeptName(name){ return String(name||"").toLowerCase().replace(/[
 async function addStaffMember(data){
   const payload = {
     name: data.name, phone: data.phone, email: data.email, job_title: data.jobTitle || data.role,
-    department_id: data.department ? slugifyDeptName(data.department) : null,
-    branch_id: data.branch || null, region_id: data.regionId || null,
+    // department_id/branch_id/roleId (real ids straight from a live
+    // GET /api/departments|branches|roles-backed <select>) win when
+    // present; department/branch/role (display names, as the older Admin
+    // Dashboard "Add New Staff" form still sends) are the fallback, kept
+    // unchanged for that existing caller.
+    department_id: data.departmentId || (data.department ? slugifyDeptName(data.department) : null),
+    branch_id: data.branchId || data.branch || null, region_id: data.regionId || null,
     reporting_manager_id: data.reportingManagerId || null, employment_status: data.employmentStatus || "Full-time",
-    role_id: ROLE_DISPLAY_TO_ID[data.role] || "loan_officer",
+    role_id: data.roleId || ROLE_DISPLAY_TO_ID[data.role] || "loan_officer",
     access_level: data.accessLevel || ACCESS_LEVEL_BY_ROLE[data.role] || undefined,
+    staff_code: data.staffCode || undefined,
+    national_id: data.nationalId || undefined,
+    gender: data.gender || undefined,
+    date_of_birth: data.dateOfBirth || undefined,
+    entry_date: data.entryDate || undefined,
+    basic_salary: data.basicSalary !== undefined && data.basicSalary !== '' ? Number(data.basicSalary) : undefined,
+    leave_days_balance: data.leaveDaysBalance !== undefined && data.leaveDaysBalance !== '' ? Number(data.leaveDaysBalance) : undefined,
+    monthly_disbursement_target: data.monthlyDisbursementTarget !== undefined && data.monthlyDisbursementTarget !== '' ? Number(data.monthlyDisbursementTarget) : undefined,
+    monthly_new_loan_target: data.monthlyNewLoanTarget !== undefined && data.monthlyNewLoanTarget !== '' ? Number(data.monthlyNewLoanTarget) : undefined,
   };
   const res = await api.post('/api/users', payload);
   const s = adaptStaff(res.user);
   DB.staff.unshift(s);
-  return { staff: s, tempPassword: res.tempPassword };
+  return { staff: s, tempPassword: res.tempPassword, notifications: res.notifications };
 }
 function computeFinalAccess(s){
   const branchLabel = branchName(s.branch);
@@ -12343,11 +12358,176 @@ function saveRolePermissions(){
     toast(parts.length ? `Permissions updated — ${parts.join(', ')}` : 'No changes to save');
   });
 }
+// ---- Admin > User Management > Create User — a full employee-onboarding
+// form built on the same real POST /api/users the Admin dashboard's own
+// "Add New Staff" form already uses (see addStaffMember() above, extended
+// not duplicated), the real roles list (loadRolesPage()/DB.acctPages.roles,
+// the same one Roles/Create Role/Role Permissions already share), and
+// DB.departments/DB.branches/DB.regions/DB.staff already loaded at login.
+// Permissions are role-based, not set per user here (see the read-only
+// preview below) — matching the real RBAC model this whole Roles & Access
+// Control area already established: User -> Role -> Access Level ->
+// Permissions, never Access Level standing in for Permissions. ----
+function renderCreateUserPage(){
+  const rolesState = DB.acctPages.roles;
+  if(!rolesState){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const roles = rolesState.roles.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const roleAccessMap = Object.fromEntries(roles.map(r=>[r.id, r.default_access_level]));
+  const jobTitles = [...new Set((DB.staff||[]).map(s=>s.jobTitle).filter(Boolean))].sort();
+  const activeManagers = (DB.staff||[]).filter(s=>s.status==='Active');
+  const emailReady = DB.integrationsStatus && DB.integrationsStatus.email === 'CONFIGURED';
+  return `
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+        <span class="btn btn-outline btn-sm" onclick="goTo('staff')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <div>
+          <h3 style="color:var(--navy); margin:0;">Create User</h3>
+          <div class="hint" style="margin-top:2px;">User Management → Create User. Onboard a new Rhinocash employee.</div>
+        </div>
+      </div>
+      <form onsubmit="return submitCreateUserForm(event)">
+        <input type="hidden" name="name">
+
+        <div class="card-title" style="margin-top:14px;">Personal Information</div>
+        <div class="form-grid">
+          <div class="field"><label>First Name</label><input name="firstName" required maxlength="60" oninput="syncCreateUserFullName(this.form)"></div>
+          <div class="field"><label>Middle Name <span class="hint">(optional)</span></label><input name="middleName" maxlength="60" oninput="syncCreateUserFullName(this.form)"></div>
+          <div class="field"><label>Last Name</label><input name="lastName" required maxlength="60" oninput="syncCreateUserFullName(this.form)"></div>
+          <div class="field"><label>Gender <span class="hint">(optional)</span></label><select name="gender"><option value="">— Not specified —</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></div>
+          <div class="field"><label>Date of Birth <span class="hint">(optional)</span></label><input name="dateOfBirth" type="date"></div>
+          <div class="field"><label>ID Number <span class="hint">(optional)</span></label><input name="nationalId" placeholder="e.g. 12345678" pattern="\\d{6,10}" title="6 to 10 digits"></div>
+          <div class="field"><label>Phone Number</label><input name="phone" required placeholder="07XXXXXXXX" pattern="(\\+?254|0)[17]\\d{8}" title="A real Kenyan phone number, e.g. 0712345678"></div>
+          <div class="field"><label>Email Address</label><input name="email" type="email" required></div>
+        </div>
+
+        <div class="card-title" style="margin-top:20px;">Employment Information</div>
+        <div class="form-grid">
+          <div class="field"><label>Job Number <span class="hint">(blank = auto-generated)</span></label><input name="staffCode" placeholder="e.g. RC-0042"></div>
+          <div class="field"><label>Position / Job Title</label><input name="jobTitle" list="createUserJobTitles" placeholder="e.g. Loan Officer">
+            <datalist id="createUserJobTitles">${jobTitles.map(t=>`<option value="${escapeHtml(t)}">`).join("")}</datalist>
+          </div>
+          <div class="field"><label>Department <span class="hint">(optional)</span></label><select name="departmentId"><option value="">— None —</option>${(DB.departments||[]).map(d=>`<option value="${d.id}">${escapeHtml(d.name)}</option>`).join("")}</select></div>
+          <div class="field"><label>Employment Type</label><select name="employmentStatus"><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Probation</option></select></div>
+          <div class="field"><label>Entry / Joining Date <span class="hint">(blank = today)</span></label><input name="entryDate" type="date"></div>
+        </div>
+
+        <div class="card-title" style="margin-top:20px;">Organization Assignment</div>
+        <div class="form-grid">
+          <div class="field"><label>Region <span class="hint">(optional)</span></label><select name="regionId" onchange="filterCreateUserBranches(this.form)"><option value="">— None —</option>${(DB.regions||[]).map(r=>`<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("")}</select></div>
+          <div class="field"><label>Branch <span class="hint">(optional — sets Region automatically)</span></label><select name="branchId" onchange="if(this.value) this.form.regionId.value = this.selectedOptions[0].dataset.region||'';"><option value="">— None —</option>${(DB.branches||[]).slice().sort((a,b)=>a.name.localeCompare(b.name)).map(b=>`<option value="${b.id}" data-region="${b.region||''}">${escapeHtml(b.name)}</option>`).join("")}</select></div>
+          <div class="field"><label>Reporting Manager <span class="hint">(optional)</span></label><select name="reportingManagerId"><option value="">— None —</option>${activeManagers.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} (${s.role})</option>`).join("")}</select></div>
+        </div>
+
+        <div class="card-title" style="margin-top:20px;">Role &amp; Access</div>
+        <div class="hint" style="margin-bottom:10px;">Access Level describes this user's organizational scope — it never grants a permission by itself. Permissions come entirely from the role selected below.</div>
+        <div class="form-grid">
+          <div class="field"><label>Role</label><select name="roleId" required onchange="this.form.accessLevel.value=(${JSON.stringify(roleAccessMap).replace(/"/g,'&quot;')})[this.value]||''; previewRoleForCreateUser(this.value);">
+            <option value="">— Select —</option>
+            ${roles.map(r=>`<option value="${r.id}">${escapeHtml(r.name)}${!r.is_system?' (Custom)':''}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Access Level</label><input name="accessLevel" placeholder="auto-filled from role, editable"></div>
+        </div>
+        <div id="createUserRolePreview"></div>
+
+        <div class="card-title" style="margin-top:20px;">Microfinance Assignment <small>primarily relevant for the Loan Officer role</small></div>
+        <div class="form-grid">
+          <div class="field"><label>Monthly Disbursement Target (KES) <span class="hint">(optional)</span></label><input name="monthlyDisbursementTarget" type="number" min="0" step="1000"></div>
+          <div class="field"><label>Monthly New Loan Target <span class="hint">(optional)</span></label><input name="monthlyNewLoanTarget" type="number" min="0" step="1"></div>
+        </div>
+
+        <div class="card-title" style="margin-top:20px;">HR Information</div>
+        <div class="form-grid">
+          <div class="field"><label>Leave Days Balance</label><input name="leaveDaysBalance" type="number" min="0" step="1" value="10"></div>
+          <div class="field"><label>Basic Salary (KES) <span class="hint">(optional)</span></label><input name="basicSalary" type="number" min="0" step="100"></div>
+        </div>
+
+        <div class="card-title" style="margin-top:20px;">Account &amp; Login</div>
+        <div class="hint" style="margin-bottom:12px;">
+          The employee signs in with the email address above. A secure temporary password is generated automatically — it is never typed here — and they must set their own password on first login.
+          ${emailReady ? ' A welcome email with their temporary password will be sent automatically.' : ' Email delivery is not currently configured, so the temporary password will be shown once after creation for you to share with them securely.'}
+        </div>
+
+        <div class="pill-row" style="margin-top:10px;">
+          <button class="btn btn-primary btn-sm" type="submit">Create User</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="goTo('staff')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+function syncCreateUserFullName(form){
+  const parts = [form.firstName.value.trim(), form.middleName.value.trim(), form.lastName.value.trim()].filter(Boolean);
+  form.name.value = parts.join(' ');
+}
+// Options are hidden (not removed) so the underlying <select> element and
+// its later FormData read are completely unaffected — same reasoning as
+// every other dependent-field auto-fill on this form: a direct, targeted
+// DOM update, never a full renderApp() (which would wipe every other
+// field the Admin has already typed into this uncontrolled form).
+function filterCreateUserBranches(form){
+  const regionId = form.regionId.value;
+  const branchSelect = form.branchId;
+  const current = branchSelect.value;
+  let stillVisible = false;
+  Array.prototype.forEach.call(branchSelect.options, opt=>{
+    if(!opt.value){ opt.hidden = false; return; }
+    const show = !regionId || opt.dataset.region === regionId;
+    opt.hidden = !show;
+    if(show && opt.value === current) stillVisible = true;
+  });
+  if(!stillVisible) branchSelect.value = '';
+}
+async function previewRoleForCreateUser(roleId){
+  const el = document.getElementById('createUserRolePreview');
+  if(!roleId){ session.createUserRolePreview = null; if(el) el.innerHTML = ''; return; }
+  session.createUserRolePreview = { roleId, loading:true };
+  if(el) el.innerHTML = renderCreateUserRolePreview();
+  const permsRes = await api.get(`/api/roles/${roleId}/permissions`);
+  if(session.createUserRolePreview && session.createUserRolePreview.roleId === roleId){
+    session.createUserRolePreview = { roleId, permissions: permsRes.permissions, loading:false };
+    const el2 = document.getElementById('createUserRolePreview');
+    if(el2) el2.innerHTML = renderCreateUserRolePreview();
+  }
+}
+function renderCreateUserRolePreview(){
+  const st = session.createUserRolePreview;
+  if(!st) return '';
+  if(st.loading) return `<div class="empty" style="margin-bottom:10px;">${loadingDotsHtml()}</div>`;
+  const rolesState = DB.acctPages.roles;
+  const allPerms = (rolesState && rolesState.allPermissions) || [];
+  const lookup = {}; st.permissions.forEach(p=>{ lookup[p.permission_id] = !!p.allowed; });
+  const granted = allPerms.filter(p=>lookup[p.id]);
+  return `
+    <div class="hint" style="margin:0 0 14px;">
+      This role automatically grants ${granted.length} of ${allPerms.length} real permission(s) — permissions are role-based, never set per user here; adjust the role itself under Roles &amp; Access Control → Role Permissions.
+      <div class="pill-row" style="flex-wrap:wrap; gap:6px; margin-top:8px;">
+        ${granted.length ? granted.map(p=>`<span class="badge green">✓ ${escapeHtml(p.label)}</span>`).join("") : '<span class="hint">No permissions are granted to this role yet.</span>'}
+      </div>
+    </div>
+  `;
+}
+function submitCreateUserForm(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.reportingManagerId) f.reportingManagerId = null;
+  return withRequest('create-user-form', async ()=>{
+    const { staff: s, tempPassword, notifications } = await addStaffMember(f);
+    session.selectedStaffId = s.id;
+    session.createUserRolePreview = null;
+    goTo('staff');
+    const deliveryNote = (notifications && notifications.email === 'SENT')
+      ? 'a welcome email has been sent to them'
+      : 'email delivery is not configured — share this password with them securely yourself';
+    if(tempPassword) alert(`${s.name} created as ${s.role}.\n\nTemporary password: ${tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
+    else toast(`${s.name} created as ${s.role}`);
+  });
+}
 function renderStaff(){
   if(session.subtab === "Company Employees") return renderCompanyEmployeesPage();
   if(session.subtab === "Roles") return renderRolesPage();
   if(session.subtab === "Create Role") return renderCreateRolePage();
   if(session.subtab === "Role Permissions") return renderRolePermissionsPage();
+  if(session.subtab === "Create User") return renderCreateUserPage();
   const state = DB.acctPages.staffdir;
   if(!state) loadStaffDirectory({},1); // fires the real fetch; the rest of this page still renders below regardless — only the directory table itself shows a loading placeholder
   const rows = state ? state.staff.map(s=>{

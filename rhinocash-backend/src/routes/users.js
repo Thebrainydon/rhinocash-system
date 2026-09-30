@@ -2,7 +2,9 @@
 const { all, get, run, transaction } = require('./../db');
 const { hashPassword, generateTempPassword } = require('./../crypto');
 const { requireAuth, requireModule, requirePermission } = require('./../middleware');
-const { logAction } = require('./../audit');
+const { logAction, notify } = require('./../audit');
+const email = require('./../integrations/email');
+const sms = require('./../integrations/sms');
 const { computeFinalAccess, effectiveModules, canActOnStaffRecord, ADMIN_ONLY_ROLES, branchIdsInScope } = require('./../rbac');
 const { publicUser } = require('./auth');
 const crypto = require('node:crypto');
@@ -67,35 +69,157 @@ function register(router) {
     res.json({ user: await publicUser(u) });
   });
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const KE_PHONE_RE = /^(?:\+?254|0)[17]\d{8}$/;
+  const NATIONAL_ID_RE = /^\d{6,10}$/;
+  const EMPLOYMENT_STATUSES = ['Full-time', 'Part-time', 'Contract', 'Probation'];
+  const GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
+
+  // Admin > User Management > Create User. Builds the same real employee
+  // record every other staff-facing screen already reads (DB.staff),
+  // through the exact same POST /api/users this app's "Add New Staff"
+  // form on the Admin dashboard already calls — extended, not duplicated.
   router.post('/api/users', requireAuth, requirePermission('manage_users'), async (req, res, next) => {
     const b = req.body;
     if (!b.name || !b.email || !b.role_id) return next({ status: 400, message: 'name, email and role_id are required' });
     if (!canActOnStaffRecord(req.user, b.role_id)) {
       return next({ status: 403, message: `Your role cannot create a ${b.role_id} account — that stays with the System Administrator` });
     }
-    const existing = await get('SELECT id FROM users WHERE email = ?', [String(b.email).toLowerCase()]);
-    if (existing) return next({ status: 409, message: 'A user with that email already exists' });
+    if (!EMAIL_RE.test(String(b.email))) return next({ status: 400, message: 'Invalid email address' });
+    if (b.phone && !KE_PHONE_RE.test(String(b.phone))) {
+      return next({ status: 400, message: 'Invalid phone number — use a real Kenyan number, e.g. 07XXXXXXXX or 2547XXXXXXXX' });
+    }
+    if (b.national_id && !NATIONAL_ID_RE.test(String(b.national_id))) {
+      return next({ status: 400, message: 'Invalid ID number — expected 6 to 10 digits' });
+    }
+    if (b.gender && !GENDERS.includes(b.gender)) return next({ status: 400, message: `gender must be one of: ${GENDERS.join(', ')}` });
+    if (b.employment_status && !EMPLOYMENT_STATUSES.includes(b.employment_status)) {
+      return next({ status: 400, message: `employment_status must be one of: ${EMPLOYMENT_STATUSES.join(', ')}` });
+    }
+
     const role = await get('SELECT * FROM roles WHERE id = ?', [b.role_id]);
     if (!role) return next({ status: 400, message: 'Unknown role_id' });
+
+    // Access Level stays a real, existing value — never a second,
+    // free-form access-level system (same rule POST /api/roles already
+    // enforces for a role's own default). Omitted entirely, it falls
+    // back to the selected role's real default, exactly as before.
+    let accessLevel = role.default_access_level;
+    if (b.access_level) {
+      const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+      if (!knownLevels.includes(b.access_level)) return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+      accessLevel = b.access_level;
+    }
+
+    let departmentId = null;
+    if (b.department_id) {
+      const dept = await get('SELECT id FROM departments WHERE id = ?', [b.department_id]);
+      if (!dept) return next({ status: 400, message: 'Unknown department_id' });
+      departmentId = dept.id;
+    }
+
+    // Region is derived from the branch whenever a branch is given (the
+    // real Region -> Branch hierarchy — see branches.region_id) rather
+    // than trusted as an independently-submitted value that could
+    // disagree with it; a region-only assignment (e.g. a Regional
+    // Manager with no single branch) is still honored on its own.
+    let branchId = null, regionId = null;
+    if (b.branch_id) {
+      const branch = await get('SELECT * FROM branches WHERE id = ?', [b.branch_id]);
+      if (!branch) return next({ status: 400, message: 'Unknown branch_id' });
+      branchId = branch.id;
+      regionId = branch.region_id;
+    } else if (b.region_id) {
+      const region = await get('SELECT id FROM regions WHERE id = ?', [b.region_id]);
+      if (!region) return next({ status: 400, message: 'Unknown region_id' });
+      regionId = region.id;
+    }
+
+    let reportingManagerId = null;
+    if (b.reporting_manager_id) {
+      const manager = await get('SELECT id, status FROM users WHERE id = ?', [b.reporting_manager_id]);
+      if (!manager) return next({ status: 400, message: 'Unknown reporting_manager_id' });
+      if (manager.status !== 'Active') return next({ status: 400, message: 'The selected reporting manager is not an active account' });
+      reportingManagerId = manager.id;
+    }
+
+    const normalizedEmail = String(b.email).toLowerCase();
+    const existingEmail = await get('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+    if (existingEmail) return next({ status: 409, message: 'A user with that email already exists' });
+    const staffCode = b.staff_code || (await nextStaffCode());
+    const existingStaffCode = await get('SELECT id FROM users WHERE staff_code = ?', [staffCode]);
+    if (existingStaffCode) return next({ status: 409, message: `Staff/job number "${staffCode}" is already in use` });
+    if (b.national_id) {
+      const existingNationalId = await get('SELECT id FROM users WHERE national_id = ?', [b.national_id]);
+      if (existingNationalId) return next({ status: 409, message: 'A user with that ID number already exists' });
+    }
+    if (b.phone) {
+      const existingPhone = await get('SELECT id FROM users WHERE phone = ?', [b.phone]);
+      if (existingPhone) return next({ status: 409, message: 'A user with that phone number already exists' });
+    }
 
     const id = 'usr_' + crypto.randomUUID();
     const tempPassword = generateTempPassword();
     const { hash, salt } = hashPassword(tempPassword);
-    await run(
-      `INSERT INTO users (id, staff_code, name, email, phone, password_hash, password_salt, must_change_password,
-        role_id, access_level, job_title, department_id, branch_id, region_id, reporting_manager_id,
-        employment_status, status, monthly_disbursement_target, monthly_new_loan_target, leave_days_balance)
-       VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        id, b.staff_code || (await nextStaffCode()), b.name, String(b.email).toLowerCase(), b.phone || null, hash, salt,
-        b.role_id, b.access_level || role.default_access_level, b.job_title || role.name, b.department_id || null,
-        b.branch_id || null, b.region_id || null, b.reporting_manager_id || null,
-        b.employment_status || 'Full-time', 'Active', b.monthly_disbursement_target || 0, b.monthly_new_loan_target || 0, b.leave_days_balance || 10,
-      ]
-    );
-    const created = await get('SELECT * FROM users WHERE id = ?', [id]);
-    await logAction(req, { action: 'Created user', module: 'users', recordType: 'User', recordId: id, newValue: { name: b.name, role: b.role_id } });
-    res.status(201).json({ user: await publicUser(created), tempPassword });
+    // A real concrete value, resolved once here — created_at is NOT NULL
+    // DEFAULT iso_now(), but that default only applies when the column is
+    // omitted from the INSERT entirely; passing an explicit NULL (which an
+    // absent entry_date would otherwise do) would violate it.
+    const entryDate = b.entry_date || (await get('SELECT iso_now() as now')).now;
+    let created;
+    await transaction(async () => {
+      await run(
+        `INSERT INTO users (id, staff_code, name, email, phone, password_hash, password_salt, must_change_password,
+          role_id, access_level, job_title, department_id, branch_id, region_id, reporting_manager_id,
+          employment_status, status, monthly_disbursement_target, monthly_new_loan_target, leave_days_balance,
+          national_id, gender, date_of_birth, basic_salary, created_at)
+         VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          id, staffCode, b.name, normalizedEmail, b.phone || null, hash, salt,
+          b.role_id, accessLevel, b.job_title || role.name, departmentId,
+          branchId, regionId, reportingManagerId,
+          b.employment_status || 'Full-time', 'Active', b.monthly_disbursement_target || 0, b.monthly_new_loan_target || 0,
+          b.leave_days_balance != null ? b.leave_days_balance : 10,
+          b.national_id || null, b.gender || null, b.date_of_birth || null, b.basic_salary || 0,
+          entryDate,
+        ]
+      );
+      created = await get('SELECT * FROM users WHERE id = ?', [id]);
+      await notify(id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
+      await logAction(req, {
+        action: 'Created user', module: 'users', recordType: 'User', recordId: id,
+        newValue: { name: b.name, email: normalizedEmail, role: b.role_id, accessLevel, branchId, regionId, departmentId, staffCode },
+      });
+    });
+
+    // Real delivery attempts, made only after the account itself is safely
+    // committed — never inside the DB transaction above (an external call
+    // has no business holding a DB connection/lock open, and can't be
+    // "rolled back" if it fails). Both integrations already exist and
+    // already report NOT_CONFIGURED honestly rather than pretending to
+    // have sent anything (see src/integrations/email.js, sms.js) — this is
+    // the first real caller for email's existing account_invitation
+    // template, and SMS reuses its existing password_reset template,
+    // whose wording ("your temporary password is X, you'll be asked to
+    // change it on login") is equally true of a brand-new account.
+    // The account itself is already safely committed above — a real
+    // delivery-side failure (or an adapter that's genuinely not
+    // implemented yet for a partially-configured provider) must never
+    // surface as an account-creation failure to the Admin who just
+    // successfully created it.
+    let emailResult = { status: 'FAILED' }, smsResult = null;
+    try { emailResult = await email.send('account_invitation', normalizedEmail, { name: b.name, email: normalizedEmail, tempPassword }); }
+    catch (e) { console.error('[account_invitation email failed]', e.message); }
+    if (b.phone) {
+      smsResult = { status: 'FAILED' };
+      try { smsResult = await sms.send('password_reset', b.phone, { tempPassword }); }
+      catch (e) { console.error('[account invitation SMS failed]', e.message); }
+    }
+
+    res.status(201).json({
+      user: await publicUser(created), tempPassword,
+      notifications: { email: emailResult.status, sms: smsResult ? smsResult.status : 'NOT_ATTEMPTED_NO_PHONE' },
+    });
   });
 
   router.patch('/api/users/:id', requireAuth, requirePermission('manage_users'), async (req, res, next) => {
@@ -389,4 +513,4 @@ function register(router) {
 
 function pick(obj, keys) { const o = {}; keys.forEach(k => { o[k] = obj[k]; }); return o; }
 
-module.exports = { register };
+module.exports = { register, nextStaffCode };

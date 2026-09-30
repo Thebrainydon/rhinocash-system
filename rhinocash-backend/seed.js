@@ -12,6 +12,7 @@
 'use strict';
 const { get, run } = require('./src/db');
 const { hashPassword, generateTempPassword } = require('./src/crypto');
+const { nextStaffCode } = require('./src/routes/users');
 const crypto = require('node:crypto');
 
 const DEMO = process.argv.includes('--demo');
@@ -389,7 +390,7 @@ async function seedDemoData() {
       `INSERT INTO users (id, staff_code, name, email, phone, password_hash, password_salt, must_change_password,
         role_id, access_level, job_title, branch_id, region_id, reporting_manager_id, employment_status, status, monthly_disbursement_target, monthly_new_loan_target, leave_days_balance)
        VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,NULL, 'Full-time','Active',?,?,?)`,
-      [id, 'RC-' + String(Math.floor(Math.random() * 9000) + 1000), name, email, phone, hash, salt,
+      [id, await nextStaffCode(), name, email, phone, hash, salt,
         role, role_row.default_access_level, role_row.name, branch, region,
         role === 'loan_officer' ? 800000 : 0, role === 'loan_officer' ? 10 : 0, 10]
     );
