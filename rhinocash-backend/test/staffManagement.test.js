@@ -340,6 +340,89 @@ async function get_role(id, token) {
     assert(JSON.stringify(entry).toLowerCase().indexOf('password') === -1 && JSON.stringify(entry).toLowerCase().indexOf('token') === -1, 'FF: the real audit entry never leaks a credential or token of any kind');
   }
 
+  // ==================== Admin > Roles & Access Control > Role Permissions ====================
+  // Real coverage for the new bulk PUT /api/roles/:id/permissions (the
+  // Role Permissions page's "Save Changes"), reusing the same real
+  // roles/permissions/role_permissions tables and Admin-only/audit/
+  // transaction conventions as Create Role above.
+
+  // GG. Unauthenticated/unauthorized requests are rejected server-side.
+  {
+    const anon = await api('PUT', '/api/roles/accountant/permissions', { body: { permissions: ['record_payments'] } });
+    assert(anon.status === 401, 'GG: the real bulk save requires real authentication');
+    const managerAttempt = await api('PUT', '/api/roles/accountant/permissions', { token: managerToken, body: { permissions: ['record_payments'] } });
+    assert(managerAttempt.status === 403, 'GG: a non-Admin (Manager) genuinely cannot bulk-save a role\'s permission matrix');
+    const ceoAttempt = await api('PUT', '/api/roles/accountant/permissions', { token: ceoToken, body: { permissions: ['record_payments'] } });
+    assert(ceoAttempt.status === 403, 'GG: even the CEO cannot bulk-save a role\'s permission matrix — stays Admin-exclusive');
+  }
+
+  // HH. Role/permission validation — an invalid role or permission id is genuinely rejected, on both the read and the write side.
+  {
+    const badRoleGet = await api('GET', '/api/roles/not_a_real_role/permissions', { token: adminToken });
+    assert(badRoleGet.status === 404, 'HH: reading the permission matrix of a role that doesn\'t exist is genuinely a 404, not a silently-empty 200');
+    const badRolePut = await api('PUT', '/api/roles/not_a_real_role/permissions', { token: adminToken, body: { permissions: [] } });
+    assert(badRolePut.status === 404, 'HH: bulk-saving a role that doesn\'t exist is genuinely rejected');
+    const noArray = await api('PUT', '/api/roles/accountant/permissions', { token: adminToken, body: { permissions: 'not-an-array' } });
+    assert(noArray.status === 400, 'HH: a non-array permissions payload is genuinely rejected');
+    const badPermPut = await api('PUT', '/api/roles/accountant/permissions', { token: adminToken, body: { permissions: ['not_a_real_permission'] } });
+    assert(badPermPut.status === 400, 'HH: an unknown permission id in the bulk save is genuinely rejected, never silently dropped');
+  }
+
+  // II. A real grant + revoke in one save — correct diff, correct final state, no duplicate relationships, one real audit record.
+  {
+    const before = await api('GET', '/api/roles/accountant/permissions', { token: adminToken });
+    const wasManageBranches = before.json.permissions.find(p => p.permission_id === 'manage_branches').allowed;
+    assert(!wasManageBranches, 'II: setup — the real seeded Accountant role genuinely does not hold manage_branches yet');
+    const wasApproveLoans = before.json.permissions.find(p => p.permission_id === 'approve_loans').allowed;
+    assert(!!wasApproveLoans, 'II: setup — the real seeded Accountant role genuinely already holds approve_loans');
+
+    // Grant manage_branches, revoke approve_loans, resend record_payments twice (dedup) and keep everything else as-is.
+    const currentlyAllowed = before.json.permissions.filter(p => p.allowed).map(p => p.permission_id);
+    const requested = [...currentlyAllowed.filter(p => p !== 'approve_loans'), 'manage_branches', 'record_payments', 'record_payments'];
+    const save = await api('PUT', '/api/roles/accountant/permissions', { token: adminToken, body: { permissions: requested } });
+    assert(save.status === 200, 'II: Admin genuinely can bulk-save a real role\'s permission matrix');
+    assert(JSON.stringify(save.json.added) === JSON.stringify(['manage_branches']), 'II: the real server-computed "added" diff is exactly right, not trusting a frontend-computed diff');
+    assert(JSON.stringify(save.json.removed) === JSON.stringify(['approve_loans']), 'II: the real server-computed "removed" diff is exactly right');
+
+    const after = await api('GET', '/api/roles/accountant/permissions', { token: adminToken });
+    assert(after.json.permissions.find(p => p.permission_id === 'manage_branches').allowed === 1, 'II: manage_branches is genuinely granted after save');
+    assert(after.json.permissions.find(p => p.permission_id === 'approve_loans').allowed === 0, 'II: approve_loans is genuinely revoked after save');
+    assert(after.json.permissions.length === 10, 'II: sending the same permission id twice in one request never creates a duplicate role_permissions relationship — still exactly one row per real permission');
+
+    const audit = await api('GET', '/api/audit-logs?entity=Role&record_id=accountant', { token: adminToken });
+    const latest = audit.json.auditLogs.find(a => a.action === 'Changed role permission matrix');
+    assert(latest && latest.user_name === 'Rhinocash System Administrator', 'II: a real single audit record captures this bulk change with the real actor');
+
+    // Restore the real seeded matrix so this test's side effect never leaks into a later, unrelated assertion.
+    await api('PUT', '/api/roles/accountant/permissions', { token: adminToken, body: { permissions: currentlyAllowed } });
+  }
+
+  // JJ. Saving the exact same set again is a genuine no-op — no phantom audit entry for a change that didn't happen.
+  {
+    const current = await api('GET', '/api/roles/regional_manager/permissions', { token: adminToken });
+    const allowedIds = current.json.permissions.filter(p => p.allowed).map(p => p.permission_id);
+    const beforeAuditCount = (await api('GET', '/api/audit-logs?entity=Role&record_id=regional_manager', { token: adminToken })).json.auditLogs.length;
+    const resave = await api('PUT', '/api/roles/regional_manager/permissions', { token: adminToken, body: { permissions: allowedIds } });
+    assert(resave.status === 200 && resave.json.added.length === 0 && resave.json.removed.length === 0, 'JJ: resaving the exact same real permission set genuinely reports no additions or removals');
+    const afterAuditCount = (await api('GET', '/api/audit-logs?entity=Role&record_id=regional_manager', { token: adminToken })).json.auditLogs.length;
+    assert(afterAuditCount === beforeAuditCount, 'JJ: a no-op save genuinely creates no phantom audit record');
+  }
+
+  // KK. The Admin role's own manage_users is structurally protected — revoking it would strand every real Admin account.
+  {
+    const single = await api('PUT', '/api/roles/admin/permissions/manage_users', { token: adminToken, body: { allowed: false } });
+    assert(single.status === 400, 'KK: even the single-permission PUT genuinely refuses to revoke manage_users from the real Admin role');
+    const adminPermsBefore = await api('GET', '/api/roles/admin/permissions', { token: adminToken });
+    const withoutManageUsers = adminPermsBefore.json.permissions.filter(p => p.allowed && p.permission_id !== 'manage_users').map(p => p.permission_id);
+    const bulk = await api('PUT', '/api/roles/admin/permissions', { token: adminToken, body: { permissions: withoutManageUsers } });
+    assert(bulk.status === 400, 'KK: the real bulk save also genuinely refuses a set that omits manage_users for the real Admin role');
+    const stillIntact = await api('GET', '/api/roles/admin/permissions', { token: adminToken });
+    assert(stillIntact.json.permissions.find(p => p.permission_id === 'manage_users').allowed === 1, 'KK: the real Admin role\'s manage_users genuinely remains granted after both rejected attempts — no partial write happened');
+    // A set that still includes manage_users, alongside other real changes, is genuinely fine.
+    const fineChange = await api('PUT', '/api/roles/admin/permissions', { token: adminToken, body: { permissions: adminPermsBefore.json.permissions.filter(p => p.allowed).map(p => p.permission_id) } });
+    assert(fineChange.status === 200, 'KK: a real Admin permission save that still includes manage_users is genuinely allowed');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

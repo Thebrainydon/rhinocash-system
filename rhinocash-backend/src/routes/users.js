@@ -310,10 +310,23 @@ function register(router) {
   router.get('/api/permissions', requireAuth, async (req, res) => {
     res.json({ permissions: await all('SELECT * FROM permissions') });
   });
-  router.get('/api/roles/:id/permissions', requireAuth, async (req, res) => {
+  router.get('/api/roles/:id/permissions', requireAuth, async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
     res.json({ permissions: await all('SELECT permission_id, allowed FROM role_permissions WHERE role_id = ?', [req.params.id]) });
   });
-  router.put('/api/roles/:id/permissions/:permissionId', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit the role permission matrix'), async (req, res) => {
+  router.put('/api/roles/:id/permissions/:permissionId', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit the role permission matrix'), async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    const permission = await get('SELECT id FROM permissions WHERE id = ?', [req.params.permissionId]);
+    if (!permission) return next({ status: 400, message: 'Unknown permission id' });
+    // The Admin role's own manage_users permission is what every one of
+    // these role-permission-editing endpoints (this one included) is
+    // gated by — revoking it would permanently strand every Admin
+    // account with no way to ever restore it through the real API.
+    if (role.id === 'admin' && permission.id === 'manage_users' && !req.body.allowed) {
+      return next({ status: 400, message: 'manage_users cannot be revoked from the Admin role — doing so would permanently lock every Admin account out of managing roles and permissions' });
+    }
     await run(
       `INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES (?,?,?)
        ON CONFLICT(role_id, permission_id) DO UPDATE SET allowed = excluded.allowed`,
@@ -321,6 +334,56 @@ function register(router) {
     );
     await logAction(req, { action: 'Changed role permission matrix', module: 'roles', recordType: 'Role', recordId: req.params.id, newValue: { [req.params.permissionId]: !!req.body.allowed } });
     res.json({ ok: true });
+  });
+  // Admin > Roles & Access Control > Role Permissions — bulk save. The
+  // page loads the role's current matrix via the GET above, lets the
+  // Admin change any number of checkboxes locally, then sends the whole
+  // desired set here in one request: this computes the real added/
+  // removed diff server-side (never trusting a frontend-computed diff),
+  // validates every id against the real permissions table, and applies
+  // the whole set atomically with one audit record — never one silent
+  // partial write per checkbox, and never a duplicate role_permissions
+  // row (the same ON CONFLICT upsert as the single-permission PUT above).
+  router.put('/api/roles/:id/permissions', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit a role\'s permission matrix'), async (req, res, next) => {
+    const role = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+
+    const requested = Array.isArray(req.body.permissions) ? [...new Set(req.body.permissions)] : null;
+    if (!requested) return next({ status: 400, message: 'permissions must be an array of permission ids' });
+
+    const allPermissions = await all('SELECT id FROM permissions');
+    const validIds = new Set(allPermissions.map(p => p.id));
+    const invalidIds = requested.filter(p => !validIds.has(p));
+    if (invalidIds.length) return next({ status: 400, message: `Unknown permission id(s): ${invalidIds.join(', ')}` });
+
+    if (role.id === 'admin' && !requested.includes('manage_users')) {
+      return next({ status: 400, message: 'manage_users cannot be revoked from the Admin role — doing so would permanently lock every Admin account out of managing roles and permissions' });
+    }
+
+    const before = await all('SELECT permission_id, allowed FROM role_permissions WHERE role_id = ?', [role.id]);
+    const beforeAllowed = new Set(before.filter(p => p.allowed).map(p => p.permission_id));
+    const added = requested.filter(p => !beforeAllowed.has(p)).sort();
+    const removed = [...beforeAllowed].filter(p => !requested.includes(p)).sort();
+
+    await transaction(async () => {
+      for (const p of allPermissions) {
+        await run(
+          `INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES (?,?,?)
+           ON CONFLICT(role_id, permission_id) DO UPDATE SET allowed = excluded.allowed`,
+          [role.id, p.id, requested.includes(p.id) ? 1 : 0]
+        );
+      }
+      if (added.length || removed.length) {
+        await logAction(req, {
+          action: 'Changed role permission matrix', module: 'roles', recordType: 'Role', recordId: role.id,
+          previousValue: [...beforeAllowed].sort(), newValue: requested.slice().sort(),
+          reason: req.body.reason,
+        });
+      }
+    });
+
+    const after = await all('SELECT permission_id, allowed FROM role_permissions WHERE role_id = ?', [role.id]);
+    res.json({ ok: true, permissions: after, added, removed });
   });
 }
 
