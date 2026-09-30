@@ -13830,10 +13830,16 @@ function renderUpdateDetails(){
 function submitUpdateOwnDetails(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
+  // A blank Password field means "leave it as-is" — only a real, typed
+  // new value is ever sent, never an empty string that would otherwise
+  // trip the backend's own minimum-length check.
+  if(!f.password){ delete f.password; } else { f.newPassword = f.password; delete f.password; }
   return withRequest('update-own-details', async ()=>{
     const res = await api.patch('/api/auth/me', f);
     DB.me = res.user;
-    toast("Details updated");
+    const pwField = document.getElementById('lo-account-password');
+    if(pwField) pwField.value = "";
+    toast(res.passwordChanged ? "Details updated — password changed" : "Details updated");
   }, {mutates:true});
 }
 // ==================== Real profile photo — POST /api/uploads + POST
@@ -13935,36 +13941,16 @@ function renderLoanOfficerUpdateDetails(){
       <form onsubmit="return submitUpdateOwnDetails(event)" style="text-align:left;">
         <div class="field"><label>E-mail</label><input name="email" type="email" value="${escapeHtml(me.email||'')}"></div>
         <div class="field"><label>Contact</label><input name="phone" value="${escapeHtml(me.phone||'')}"></div>
+        <div class="field"><label>Password</label>
+          <div style="position:relative;">
+            <input id="lo-account-password" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep your current password" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordVisibility('lo-account-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
+          </div>
+        </div>
         <div class="pill-row" style="justify-content:space-between; margin-top:18px;">
           <button type="button" class="btn btn-outline btn-sm" onclick="doLogout()">⏻ Logout</button>
           <button type="submit" class="btn btn-green btn-sm">⟳ Update</button>
         </div>
-      </form>
-    </div>
-    <div class="card" style="max-width:420px; text-align:left; margin-top:16px;">
-      <div class="card-title" style="font-size:15px;">Password</div>
-      ${session.mustChangePassword ? `<div class="section-note">Your account was just created (or reset) — set a new password before continuing.</div>` : ""}
-      <form onsubmit="return submitChangePassword(event)">
-        ${!session.mustChangePassword ? `
-        <div class="field"><label>Current Password</label>
-          <div style="position:relative;">
-            <input id="lo-current-password" name="currentPassword" type="password" required autocomplete="current-password" placeholder="Your current password — or the one you set via Forgot Password" style="width:100%; padding-right:34px;">
-            <span onclick="togglePasswordVisibility('lo-current-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
-          </div>
-        </div>` : ""}
-        <div class="field"><label>New Password</label>
-          <div style="position:relative;">
-            <input id="lo-new-password" name="newPassword" type="password" required minlength="8" autocomplete="new-password" style="width:100%; padding-right:34px;">
-            <span onclick="togglePasswordVisibility('lo-new-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
-          </div>
-        </div>
-        <div class="field"><label>Confirm New Password</label>
-          <div style="position:relative;">
-            <input id="lo-confirm-password" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" style="width:100%; padding-right:34px;">
-            <span onclick="togglePasswordVisibility('lo-confirm-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
-          </div>
-        </div>
-        <button class="btn btn-primary btn-sm" type="submit">Change Password</button>
       </form>
     </div>
   `;

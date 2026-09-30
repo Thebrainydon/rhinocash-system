@@ -131,15 +131,36 @@ function register(router) {
   // matter what the request body contains — those all go through the
   // real Staff Management PATCH /api/users/:id path, which requires
   // manage_users and is never reachable by editing your own record.
+  //
+  // An optional newPassword may ride along in the same request (the
+  // combined Email/Contact/Password "Update" form) — this is the one
+  // password-change path in the app that never asks for the current
+  // password, since the caller is already proven to hold this exact
+  // account's own live session token; every other change-password path
+  // (the Security page, the forced first-login reset) still goes through
+  // POST /api/auth/change-password below and still requires it.
   router.patch('/api/auth/me', requireAuth, async (req, res, next) => {
     const allowed = ['phone', 'email'];
     const sets = []; const params = [];
     allowed.forEach(f => { if (req.body[f] !== undefined) { sets.push(`${f} = ?`); params.push(req.body[f]); } });
-    if (!sets.length) return next({ status: 400, message: 'Nothing to update — only phone and email can be changed here' });
+    let passwordChanged = false;
+    if (req.body.newPassword) {
+      if (req.body.newPassword.length < 8) return next({ status: 400, message: 'New password must be at least 8 characters' });
+      const { hash, salt } = hashPassword(req.body.newPassword);
+      sets.push('password_hash = ?', 'password_salt = ?', 'must_change_password = 0', 'password_changed_at = iso_now()');
+      params.push(hash, salt);
+      passwordChanged = true;
+    }
+    if (!sets.length) return next({ status: 400, message: 'Nothing to update — only phone, email and password can be changed here' });
     params.push(req.user.id);
     await run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
-    await logAction(req, { action: 'Updated own profile', module: 'account', recordType: 'User', recordId: req.user.id, newValue: req.body });
-    res.json({ user: await publicUser(await get('SELECT * FROM users WHERE id = ?', [req.user.id])) });
+    if (passwordChanged) {
+      // Same real invalidation change-password already performs — a new
+      // password must retire every other active session, not just this one.
+      await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ? AND token_hash != ?", [req.user.id, req.sessionTokenHash]);
+    }
+    await logAction(req, { action: 'Updated own profile', module: 'account', recordType: 'User', recordId: req.user.id, newValue: { phone: req.body.phone, email: req.body.email, passwordChanged } });
+    res.json({ user: await publicUser(await get('SELECT * FROM users WHERE id = ?', [req.user.id])), passwordChanged });
   });
 
   router.post('/api/auth/change-password', requireAuth, async (req, res, next) => {

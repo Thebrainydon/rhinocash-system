@@ -2661,54 +2661,64 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     html = document.getElementById('root').innerHTML;
     __assert(html.includes(DB.myAvatarDataUri) && html.includes('>Profile<'), "the real, just-uploaded photo genuinely renders in the real Profile section on View Details too, matching the reference design, not just Update Details/Dashboard/topbar");
 
-    // Update Details now also carries the real password-change form that
-    // used to live only on the now-removed Security & Login page — a real
-    // eye-toggle on each of its three password fields, and a real submit
-    // through the pre-existing, unmodified submitChangePassword() handler.
+    // Update Details now carries the Password field inline, alongside
+    // E-mail and Contact, in the SAME single-card form/Update button —
+    // the separate two-step "Security" password-change card is gone from
+    // this page entirely. A real eye-toggle, a real blank-by-default
+    // field (never pre-filled with the actual real password — this app
+    // only ever stores an irreversible hash, so there is no real value to
+    // show), and a real submit through the same PATCH /api/auth/me the
+    // Email/Contact fields already use, extended to accept an optional
+    // newPassword — with no separate Current Password step, since the
+    // caller is already proven to hold this exact account's own live
+    // session token.
     goTo('account','Update Details');
     html = document.getElementById('root').innerHTML;
-    __assert(!session.mustChangePassword, "sanity: this officer isn't mid a forced password reset, so the Current Password field should be present");
-    __assert(html.includes('id="lo-current-password"') && html.includes('id="lo-new-password"') && html.includes('id="lo-confirm-password"'), "the real Update Details page genuinely renders all three real password fields (current, new, confirm)");
-    __assert((html.match(/togglePasswordVisibility\(/g)||[]).length === 3, "each of the three real password fields genuinely has its own real eye-toggle wired to the real, shared togglePasswordVisibility() function");
-
-    // The real rendered markup (not the fake headless DOM, which doesn't
-    // parse HTML at all) is what genuinely proves each field starts as a
-    // real masked password input.
-    __assert(html.includes('id="lo-current-password" name="currentPassword" type="password"'), "the real Current Password field genuinely starts masked");
-    __assert(html.includes('id="lo-new-password" name="newPassword" type="password"'), "the real New Password field genuinely starts masked");
-    __assert(html.includes('id="lo-confirm-password" name="confirmPassword" type="password"'), "the real Confirm New Password field genuinely starts masked");
+    __assert(!html.includes('Current Password') && !html.includes('Confirm New Password') && !html.includes('Change Password'), "the real old two-step password-change card is genuinely gone from Update Details");
+    __assert(html.includes('id="lo-account-password" name="password" type="password"'), "the real single Password field genuinely renders inline, starting masked");
+    __assert(html.includes('Leave blank to keep your current password'), "the real field genuinely tells the user a blank value leaves their password unchanged");
+    __assert((html.match(/togglePasswordVisibility\(/g)||[]).length === 1, "the real Password field genuinely has its own real eye-toggle wired to the real, shared togglePasswordVisibility() function");
 
     // The real, shared toggle itself: starts from the real initial masked
     // state, un-masks on click, and re-masks on a second click.
-    const loCurrentPwInput = document.getElementById('lo-current-password');
-    loCurrentPwInput.type = 'password';
+    const loAccountPwInput = document.getElementById('lo-account-password');
+    loAccountPwInput.type = 'password';
     const fakeEyeIcon = { textContent: '👁' };
-    togglePasswordVisibility('lo-current-password', fakeEyeIcon);
-    __assert(loCurrentPwInput.type === 'text' && fakeEyeIcon.textContent === '🙈', "clicking the real eye icon genuinely un-masks the real input and swaps the real glyph");
-    togglePasswordVisibility('lo-current-password', fakeEyeIcon);
-    __assert(loCurrentPwInput.type === 'password' && fakeEyeIcon.textContent === '👁', "clicking the real eye icon again genuinely re-masks the real input and swaps the real glyph back");
+    togglePasswordVisibility('lo-account-password', fakeEyeIcon);
+    __assert(loAccountPwInput.type === 'text' && fakeEyeIcon.textContent === '🙈', "clicking the real eye icon genuinely un-masks the real input and swaps the real glyph");
+    togglePasswordVisibility('lo-account-password', fakeEyeIcon);
+    __assert(loAccountPwInput.type === 'password' && fakeEyeIcon.textContent === '👁', "clicking the real eye icon again genuinely re-masks the real input and swaps the real glyph back");
 
-    // A real end-to-end submit, reusing the real, unmodified
-    // submitChangePassword()/POST /api/auth/change-password — exactly what
-    // lets an officer type in the very password they set via the login
-    // page's real Forgot Password flow. Changed back immediately after
-    // confirming it took effect, since every other officer login for the
-    // rest of this file relies on the original SEEDED_OFFICER_PASSWORD.
-    const pwForm = new Map([['currentPassword', process.env.SEEDED_OFFICER_PASSWORD],['newPassword','NewOfficerPass1'],['confirmPassword','NewOfficerPass1']]);
+    // Leaving Password blank while updating Email/Contact must never touch
+    // the real password — a real, negative check, not assumed.
+    const noPwForm = new Map([['email', DB.me.email],['phone', DB.me.phone],['password','']]);
+    global.FormData = class { constructor(){ return noPwForm; } };
+    await submitUpdateOwnDetails({ preventDefault(){}, target:{} });
+    let relogUnchanged = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return relogUnchanged; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === 'Loan Officer', "leaving the real Password field blank on a genuine Update genuinely leaves the real original password untouched");
+
+    // A real end-to-end password change through the actual combined form
+    // handler, reaching the real, extended PATCH /api/auth/me. Changed
+    // back immediately after confirming it took effect, since every other
+    // officer login for the rest of this file relies on the original
+    // SEEDED_OFFICER_PASSWORD.
+    const pwForm = new Map([['email', DB.me.email],['phone', DB.me.phone],['password','NewOfficerPass1']]);
     global.FormData = class { constructor(){ return pwForm; } };
-    await submitChangePassword({ preventDefault(){}, target:{} });
+    await submitUpdateOwnDetails({ preventDefault(){}, target:{} });
 
     // Confirm it's a real change: log back in with the real new password.
     let relog = new Map([['username','officer@rhinocash.co.ke'],['password','NewOfficerPass1']]);
     global.FormData = class { constructor(){ return relog; } };
     await doLogin({ preventDefault(){}, target:{} });
-    __assert(session.loggedIn && session.role === 'Loan Officer', "the real new password genuinely works for a real re-login, proving submitChangePassword() on Update Details reached the real backend");
+    __assert(session.loggedIn && session.role === 'Loan Officer', "the real new password genuinely works for a real re-login, proving the inline Password field on Update Details reached the real backend, with no Current Password ever asked for");
 
     // Restore the original password so every later officer login in this
     // file (which uses SEEDED_OFFICER_PASSWORD) keeps working.
-    const pwRestoreForm = new Map([['currentPassword','NewOfficerPass1'],['newPassword', process.env.SEEDED_OFFICER_PASSWORD],['confirmPassword', process.env.SEEDED_OFFICER_PASSWORD]]);
+    const pwRestoreForm = new Map([['email', DB.me.email],['phone', DB.me.phone],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return pwRestoreForm; } };
-    await submitChangePassword({ preventDefault(){}, target:{} });
+    await submitUpdateOwnDetails({ preventDefault(){}, target:{} });
     let relog2 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return relog2; } };
     await doLogin({ preventDefault(){}, target:{} });
