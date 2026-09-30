@@ -312,6 +312,15 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     const futureOnly = await api('GET', `/api/clients/interactions?from=${tomorrow}`, { token: officerToken });
     assert(futureOnly.status === 200 && !futureOnly.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AF: a real "from" date after today genuinely excludes today\'s interaction — the date filter is not a silent no-op');
+
+    // AK. The real Loan Officer filter (?officer_id=) — the Manager >
+    // Clients > Interactions page's own new requested filter.
+    const byRealOfficer = await api('GET', `/api/clients/interactions?officer_id=${officerMe.id}`, { token: managerToken });
+    assert(byRealOfficer.status === 200 && byRealOfficer.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AK: a Manager filtering by this exact real Loan Officer genuinely sees their real interaction');
+    const byOtherOfficer = await api('GET', `/api/clients/interactions?officer_id=usr_manager_kisumu`, { token: managerToken });
+    assert(byOtherOfficer.status === 200 && !byOtherOfficer.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AK: filtering by a real different user\'s id genuinely excludes this officer\'s own interaction');
+    const officerOwnFilterIgnored = await api('GET', `/api/clients/interactions?officer_id=usr_manager_kisumu`, { token: officerToken });
+    assert(officerOwnFilterIgnored.status === 200 && officerOwnFilterIgnored.json.interactions.some(i => i.note === 'Discussed repayment schedule'), 'AK: a Loan Officer\'s own real ?officer_id= query is genuinely ignored — they only ever see their own real interactions regardless');
   }
 
   // AH. Bulk Import Clients — /api/clients/bulk with real per-row validation, Loan Officer lookup by staff_code, and partial success.

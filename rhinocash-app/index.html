@@ -5788,7 +5788,7 @@ function defaultClientInteractionsState(){
   return {
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10),
     to: new Date().toISOString().slice(0,10),
-    q: '', page: 1,
+    q: '', officerId: '', page: 1,
   };
 }
 async function loadClientInteractions(){
@@ -5798,6 +5798,7 @@ async function loadClientInteractions(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.q) params.set('q', st.q);
+    if(st.officerId) params.set('officer_id', st.officerId);
     params.set('page', st.page || 1);
     params.set('limit', 25);
     const res = await api.get('/api/clients/interactions?'+params.toString());
@@ -5807,7 +5808,7 @@ async function loadClientInteractions(){
 function submitClientInteractionsFilter(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
-  session.clientInteractionsState = { ...(session.clientInteractionsState||defaultClientInteractionsState()), from: f.from||'', to: f.to||'', q: f.q||'', page: 1 };
+  session.clientInteractionsState = { ...(session.clientInteractionsState||defaultClientInteractionsState()), from: f.from||'', to: f.to||'', q: f.q||'', officerId: f.officer_id||'', page: 1 };
   DB.clientInteractions = null;
   return loadClientInteractions();
 }
@@ -5838,6 +5839,10 @@ function renderClientInteractionsPage(){
         <input type="date" name="from" value="${escapeHtml(st.from)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
         <span class="hint" style="flex-shrink:0;">~</span>
         <input type="date" name="to" value="${escapeHtml(st.to)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
+        ${hasOfficerVisibility() ? `<select name="officer_id" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
         <input class="search" name="q" placeholder="Search client" value="${escapeHtml(st.q||'')}" style="margin-left:auto; width:120px; flex-shrink:0;" onchange="this.form.requestSubmit()">
       </form>
       <div class="table-wrap"><table>
@@ -6226,23 +6231,25 @@ const LEAD_EXTRA_FIELD_DEFS = [
   { key:'next_of_kin', label:'Next of Kin' },
   { key:'business_type', label:'Business Type' },
 ];
-// A Loan Officer's own lead is implicitly theirs; anyone who can actually
-// see real Loan Officers (has real staff visibility) must instead say
-// which one — otherwise the field would just be a picker over nothing.
-function createLeadShowsOfficerField(){
+// A Loan Officer's own lead/interaction is implicitly theirs; anyone who
+// can actually see real Loan Officers (has real staff visibility) gets a
+// real picker to say which one instead — otherwise the field would just
+// be a picker over nothing. Shared by Create Client Lead's own Loan
+// Officer field and Client Interactions' Loan Officer filter.
+function hasOfficerVisibility(){
   return session.role !== "Loan Officer" && (NAV_PERMISSIONS[session.role]||[]).includes("staff");
 }
 // The same real branch/region scoping the rest of the app already applies
 // per role — a Manager's own branch, a Regional Manager's own region
 // (via the real branch->region links already in DB.branches), company-
 // wide for roles that operate across branches by design.
-function leadOfficerScopeBranchIds(){
+function officerScopeBranchIds(){
   if(session.role==="Manager") return DB.me ? [DB.me.branch_id] : [];
   if(session.role==="Regional Manager") return DB.branches.filter(b=>b.region===(DB.me&&DB.me.region_id)).map(b=>b.id);
   return null;
 }
 function openCreateLeadModal(){
-  const officers = createLeadShowsOfficerField() ? officerFilterOptions(leadOfficerScopeBranchIds()) : [];
+  const officers = hasOfficerVisibility() ? officerFilterOptions(officerScopeBranchIds()) : [];
   DB.leadForm = { name:"", phone:"", national_id:"", client_location:"", officer_id: officers.length?officers[0].id:"", extra:{}, addFieldKey: LEAD_EXTRA_FIELD_DEFS[0].key };
   openModal('create-lead');
 }
@@ -6258,8 +6265,8 @@ function addLeadExtraField(){
 function renderCreateLeadModal(){
   const f = DB.leadForm;
   const remaining = LEAD_EXTRA_FIELD_DEFS.filter(d=>f.extra[d.key]===undefined);
-  const showOfficer = createLeadShowsOfficerField();
-  const officers = showOfficer ? officerFilterOptions(leadOfficerScopeBranchIds()) : [];
+  const showOfficer = hasOfficerVisibility();
+  const officers = showOfficer ? officerFilterOptions(officerScopeBranchIds()) : [];
   return `
     <div style="position:relative;">
       <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
@@ -6296,7 +6303,7 @@ function renderCreateLeadModal(){
 function submitCreateLead(ev){
   ev.preventDefault();
   const f = DB.leadForm;
-  if(createLeadShowsOfficerField() && !f.officer_id){ toast("Select a Loan Officer"); return false; }
+  if(hasOfficerVisibility() && !f.officer_id){ toast("Select a Loan Officer"); return false; }
   return withRequest('create-lead', async ()=>{
     await addLead({ name:f.name, phone:f.phone, national_id:f.national_id||null, client_location:f.client_location||null, officer_id:f.officer_id||null, ...f.extra });
     toast(`${f.name} added as a lead`);

@@ -6493,6 +6493,57 @@ apiRequest = async function(method, path, body){
     backToClientGroupsList();
   }
 
+  // ---- 62. CLIENTS > INTERACTIONS: the exact same real, shared Client
+  // Interactions page the Loan Officer already uses, now with the
+  // requested real "-- Loan Officer --" filter for any role with real
+  // staff visibility (Manager/Regional Manager/Operational Manager/CEO/
+  // Admin) — the backend's own GET /api/clients/interactions already
+  // supported ?officer_id= (see clients.js), so this is a pure frontend
+  // addition, no new endpoint. ----
+  {
+    let mgrIx = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrIx; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    // A real interaction against one of this suite's own real, already-
+    // created test clients (Default Groups Healthy Client — officer usr_officer).
+    const ixClient = DB.clients.find(c=>c.name==='Default Groups Healthy Client');
+    await addInteraction(ixClient.id, 'Note', 'Manager filter test interaction');
+
+    session.clientInteractionsState = null;
+    goTo('clients','Interactions');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client Interactions'), "the real Client Interactions page genuinely renders under Clients > Interactions");
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter");
+    __assert(html.includes('Manager filter test interaction'), "the real just-posted interaction genuinely appears in the real, unfiltered list");
+
+    session.clientInteractionsState.officerId = 'usr_officer';
+    renderApp();
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Manager filter test interaction'), "filtering by this exact real Loan Officer genuinely still shows their own real interaction");
+
+    session.clientInteractionsState.officerId = 'usr_manager_kisumu';
+    renderApp();
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('Manager filter test interaction'), "filtering by a real different user's id genuinely excludes this officer's own real interaction — the filter is real, not decorative");
+
+    // The exact same shared page, for the Loan Officer who has no one to
+    // filter by — genuinely unchanged, no picker shown at all.
+    let ofIx = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofIx; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.clientInteractionsState = null;
+    goTo('clients','Interactions');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Interactions page genuinely has no Loan Officer filter — their own real interactions need no picker");
+    __assert(html.includes('Manager filter test interaction'), "sanity: the real Loan Officer still sees their own real client's real interaction, unfiltered");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();
