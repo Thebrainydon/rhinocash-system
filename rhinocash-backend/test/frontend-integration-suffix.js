@@ -6115,6 +6115,186 @@ apiRequest = async function(method, path, body){
     __assert(DB.teamPerformance && DB.teamPerformance.period === otherPeriod, "selecting a different real month in the dropdown genuinely triggers a fresh real fetch for that exact real period");
   }
 
+  // ---- 60. BUSINESS ANALYTICS > BUSINESS PERFORMANCE: the real 6-card
+  // drill-down menu (matching the requested reference design) and its 6
+  // real sub-reports — Portfolio Quality (Arrears/Client/Collection
+  // Analysis), Efficiency & Productivity, Personnel Productivity,
+  // Financial Management, Profitability, Dormancy Analysis. Every figure
+  // is either the same real, already-loaded st.loansScope/DB.clients/
+  // DB.payments/DB.staff every other Business Analytics page already
+  // reuses, or the real GL accounting endpoints (trial-balance/profit-
+  // and-loss/balance-sheet) the Accounting module itself already serves. ----
+  {
+    let mgrBp = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    // A fresh, real loan taken all the way through approval + disbursement
+    // — reused for both the Arrears Analysis bucket/View-modal test and
+    // the Dormancy Analysis test below, via real in-memory schedule
+    // back-dating (the same real, already-proven technique section 58
+    // above uses — only this in-memory DB.loans object is mutated, never
+    // the real backend row).
+    let ofBp = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const bpClientForm = new Map([['name','Biz Perf Test Client'],['phone','0722900222'],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return bpClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const bpClient = DB.clients.find(c=>c.name==='Biz Perf Test Client');
+    const bpProduct = DB.products.find(p=>p.id==='pr_boda');
+    const bpLoanForm = new Map([['clientId',bpClient.id],['productId',bpProduct.id],['principal','15000'],['term','3'],['purpose','Stock'],['guarantor','']]);
+    global.FormData = class { constructor(){ return bpLoanForm; } };
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    const bpLoanApp = DB.loans.find(l=>l.clientId===bpClient.id);
+
+    let mgrBp2 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrBp2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bpLoanApp.id);
+    let rgBp = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return rgBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bpLoanApp.id);
+    let omBp = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return omBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bpLoanApp.id);
+    let acBp = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bpLoanApp.id);
+    let adBp = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adBp; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(bpLoanApp.id, "Bank");
+    const disbursedBpLoan = DB.loans.find(l=>l.id===bpLoanApp.id);
+    __assert(disbursedBpLoan.status === "Active", "sanity: the real fresh loan is genuinely disbursed");
+
+    // Back as the real Kisumu Manager, open the real Business Performance menu.
+    let mgrBp3 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrBp3; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.bizPerfSection = null;
+    goTo('business-analytics','Business Performance');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Business Performance'), "the real Business Performance menu genuinely renders under Business Analytics > Business Performance");
+    __assert(!html.includes('class="subtabs"'), "the real Business Performance menu genuinely has no horizontal subtab bar above it anymore, matching the requested reference design");
+    __assert(html.includes('onclick="goTo(\'dashboard\')"'), "the real Business Performance menu genuinely has its own real back arrow");
+    BIZ_PERF_SECTIONS.forEach(s=>__assert(html.includes(s.key) && html.includes(s.sub), `the real "${s.key}" card genuinely renders with its own requested description`));
+
+    // ---- Portfolio Quality > Arrears Analysis ----
+    goToBizPerf('Portfolio Quality');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Portfolio Quality') && html.includes('backToBizPerfMenu()'), "the real Portfolio Quality page genuinely renders with its own real back-to-menu arrow");
+    ARREARS_DAY_BUCKETS.forEach(b=>__assert(html.includes(b.label), `the real "${b.label}" bucket row genuinely renders`));
+    __assert(html.includes('Days Range') && html.includes('Loans') && html.includes('Running') && html.includes('Overdue') && html.includes('Arrears') && html.includes('Portfolio') && html.includes('PAR'), "the real Portfolio at Risk table genuinely renders every requested column");
+
+    // Real-backdate this fresh loan's first installment 5 real days past
+    // due — lands in the real "1-7 Days" bucket — and re-fetch it fresh
+    // from DB.loans (the mgrBp3 re-login above ran a real loadCoreData()
+    // that replaced DB.loans wholesale).
+    const bpLoan = DB.loans.find(l=>l.id===bpLoanApp.id);
+    const bpFirstRow = bpLoan.schedule[0];
+    const savedDueDate = bpFirstRow.dueDate;
+    bpFirstRow.dueDate = new Date(Date.now() - 5*86400000).toISOString().slice(0,10);
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    const { rows: parRows } = portfolioAtRiskRows(computeStats(null, ['br_kisumu']).loansScope, '');
+    const bucket17 = parRows.find(r=>r.label==='1-7 Days');
+    __assert(bucket17.loanCount >= 1, "the real backdated overdue installment genuinely lands this loan in the real '1-7 Days' bucket, not a fabricated one");
+    __assert(html.includes(fmtNum(bucket17.arrears)), "the real rendered table genuinely shows this exact real, just-recomputed bucket's real Arrears figure");
+    __assert(html.match(/View<\/span>/), "a real, non-zero bucket genuinely renders its own clickable 'N View' link");
+
+    openArrearsBucketLoansModal('1-7 Days', bucket17.loans.map(l=>l.id));
+    renderApp();
+    __assert(modal && modal.type === 'arrears-bucket-loans', "the real 'View' link genuinely opens the real bucket-loans modal");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Biz Perf Test Client'), "the real modal genuinely lists this exact real overdue loan's real client name");
+    closeModal();
+
+    // Client Analysis / Collection Analysis — the other 2 real dropdown views.
+    session.portfolioQualityState.view = 'Client Analysis';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Total Clients') && html.includes('Active Clients') && html.includes('Dormant Clients') && html.includes('Repeat Rate'), "Client Analysis genuinely renders its own real client-segment breakdown");
+    const stNow = computeStats(null, ['br_kisumu']);
+    __assert(html.includes(String(stNow.totalClients)), "Client Analysis genuinely shows the exact real, live Total Clients figure — not fabricated");
+
+    session.portfolioQualityState.view = 'Collection Analysis';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Collected (MTD)') && html.includes('On-Time Collection') && html.includes('Collection Rate'), "Collection Analysis genuinely renders its own real collection breakdown");
+
+    // ---- Personnel Productivity ----
+    backToBizPerfMenu();
+    __assert(session.bizPerfSection === null, "the real back arrow genuinely returns to the Business Performance menu, not the dashboard");
+    goToBizPerf('Personnel Productivity');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Staff Performance') && html.includes('Branch Performance') && html.includes('Performance Indicators'), "Personnel Productivity's default Staff Performance view genuinely renders all 3 requested real tables");
+    __assert(html.includes('Peter Otieno'), "the real Kisumu Loan Officer genuinely appears as a real row in the real Staff Performance table");
+
+    session.personnelProductivityState.view = 'Disbursement analysis';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Loans Disbursed') && html.includes('Amount Disbursed') && html.includes('id="chart-personnel-disbursement"'), "Disbursement analysis genuinely renders its own real KPIs and per-officer bar chart canvas");
+
+    // ---- Efficiency & Productivity / Financial Management / Profitability
+    // (real GL figures via the real accounting endpoints) ----
+    backToBizPerfMenu();
+    goToBizPerf('Efficiency & Productivity');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Operating Expense') && html.includes('Cost per Borrower') && html.includes('Average Loan Size'), "Efficiency & Productivity genuinely renders its 3 requested real metric groups");
+    __assert(!!DB.bizPerfFinancials, "the real GL financials (trial balance / P&L / balance sheet) genuinely loaded from the real backend, not fabricated client-side");
+    const realTrialBalance = await api.get('/api/accounting/trial-balance');
+    const realOpEx = realTrialBalance.rows.filter(r=>r.type==='Expense').reduce((s,r)=>s+r.balance,0);
+    __assert(html.includes(fmt(realOpEx)), "the real rendered Operating Expense genuinely matches a fresh, independent real call to the same real trial-balance endpoint — not a stale or fabricated figure");
+
+    backToBizPerfMenu();
+    goToBizPerf('Financial Management');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Cost of Funding') && html.includes('Portfolio Yield') && html.includes('Current Ratio') && html.includes('Debt Ratio'), "Financial Management genuinely renders all 4 requested real ratios");
+
+    backToBizPerfMenu();
+    goToBizPerf('Profitability');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Return on Equity') && html.includes('Return on Assets') && html.includes('Officer Profitability') && html.includes('id="chart-officer-profitability"'), "Profitability genuinely renders ROE/ROA and the requested real per-officer profitability bar chart");
+
+    // ---- Dormancy Analysis ----
+    // loanMaturityDate() is a real max() over EVERY real schedule row, so
+    // back-dating only the last row would leave an untouched, still-
+    // future middle installment silently winning that max() and the loan
+    // would never actually qualify as dormant. Shift the WHOLE real
+    // schedule into the past by the same real offset, preserving each
+    // installment's relative order, so the loan's own real maturity (its
+    // genuinely last real installment) ends up exactly 10 real days ago.
+    const bpLoanForDormancy = DB.loans.find(l=>l.id===bpLoanApp.id);
+    const savedSchedule = bpLoanForDormancy.schedule.map(r=>r.dueDate);
+    const lastIdx = bpLoanForDormancy.schedule.length - 1;
+    bpLoanForDormancy.schedule.forEach((r,i)=>{
+      const daysBack = 10 + (lastIdx - i) * 30;
+      r.dueDate = new Date(Date.now() - daysBack*86400000).toISOString().slice(0,10);
+    });
+    renderApp();
+    __assert(loanMaturityDate(bpLoanForDormancy) < todayISO(), "sanity: this real loan's own real maturity (max of every real schedule row) has genuinely passed");
+    backToBizPerfMenu();
+    goToBizPerf('Dormancy Analysis');
+    session.dormancyBucket = '0-30 Days';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('0-30 Days') && html.includes('Client') && html.includes('Loan') && html.includes('Product') && html.includes('Loan Officer') && html.includes('Maturity') && html.includes('Balance'), "Dormancy Analysis genuinely renders the requested bucket dropdown and exact real column set");
+    __assert(html.includes('Biz Perf Test Client'), "the real loan whose real maturity date has genuinely passed, with a real unpaid balance, correctly appears in the real 0-30 Days dormant bucket");
+
+    // Restore this loan's real in-memory schedule (only this in-memory
+    // DB.loans object — the real backend row was never touched) so later
+    // sections in this suite are unaffected.
+    bpLoanForDormancy.schedule.forEach((r,i)=>{ r.dueDate = savedSchedule[i]; });
+    renderApp();
+    backToBizPerfMenu();
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();

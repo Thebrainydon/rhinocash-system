@@ -3192,31 +3192,474 @@ function renderTargetsAccrualsPage(branchIds, bName){
     </div>
   `;
 }
-function renderBusinessPerformancePage(st, bName){
+// ==================== Business Performance ====================
+// A real drill-down menu (matching the requested reference design) into 6
+// real sub-reports. Portfolio Quality / Personnel Productivity / Dormancy
+// Analysis reuse the exact same real, already-loaded st.loansScope/
+// DB.clients/DB.payments/DB.staff this whole Business Analytics section
+// already treats as authoritative (see the file header comment above).
+// Efficiency & Productivity / Financial Management / Profitability need
+// real General Ledger figures NOT already loaded client-side (operating
+// expense, interest expense, assets/liabilities/equity) — these call the
+// existing, already-real accounting endpoints (trial-balance/profit-and-
+// loss/balance-sheet), the same ones the Accounting module itself already
+// uses, scoped to the Manager's own branch exactly like everything else
+// here. Every GL-derived figure is life-to-date (those 3 backend
+// endpoints have never been period-bound — see accounting.js) and stated
+// honestly as such, rather than pretending a monthly figure that was
+// never actually computed.
+const BIZ_PERF_SECTIONS = [
+  {key:"Portfolio Quality", icon:"📊", sub:"Arrears analysis, Client analysis & Collection analysis"},
+  {key:"Efficiency & Productivity", icon:"📋", sub:"Operating Expense, Cost per Borrower & Loan analysis"},
+  {key:"Personnel Productivity", icon:"👥", sub:"Staff Performance & Loan disbursements"},
+  {key:"Financial Management", icon:"📈", sub:"Cost of funding, Portfolio yield, Current & Debt ratios"},
+  {key:"Profitability", icon:"📑", sub:"Return on Equity & Return on Assets"},
+  {key:"Dormancy Analysis", icon:"⏰", sub:"Clients falling to Dormancy & already in dormancy"},
+];
+function goToBizPerf(section){ session.bizPerfSection = section; renderApp(); }
+function backToBizPerfMenu(){ session.bizPerfSection = null; renderApp(); }
+function bizPerfBackHeader(title, bName, onBack){
+  return `<div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="${onBack}" style="cursor:pointer;">←</span><span>${title}</span> ${bName?`<small>${bName}</small>`:""}</div>`;
+}
+function renderBusinessPerformanceMenu(bName){
+  return `<div class="card">
+    ${bizPerfBackHeader("Business Performance", bName, "goTo('dashboard')")}
+    <div style="margin-top:6px;">
+      ${BIZ_PERF_SECTIONS.map(s=>`<div onclick="goToBizPerf('${s.key}')" style="display:flex; align-items:center; gap:12px; padding:14px 4px; border-bottom:1px solid var(--line); cursor:pointer;">
+        <div style="font-size:18px; width:24px; text-align:center;">${s.icon}</div>
+        <div><div style="font-weight:700; color:var(--navy);">${s.key}</div><div class="hint" style="margin-top:2px;">${s.sub}</div></div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+// ---- Portfolio Quality: Arrears Analysis / Client Analysis / Collection
+// Analysis, switched via one internal dropdown (matching the reference's
+// own dropdown-of-3 design) — a Manager-scoped staff filter applies
+// wherever per-officer figures are meaningful.
+const PORTFOLIO_QUALITY_VIEWS = ["Arrears Analysis","Client Analysis","Collection Analysis"];
+function defaultPortfolioQualityState(){ return { view:"Arrears Analysis", officerId:"" }; }
+const ARREARS_DAY_BUCKETS = [
+  {label:"1-7 Days", min:1, max:7},
+  {label:"8-30 Days", min:8, max:30},
+  {label:"31-60 Days", min:31, max:60},
+  {label:"61-90 Days", min:61, max:90},
+  {label:"91-180 Days", min:91, max:180},
+  {label:"181-365 Days", min:181, max:365},
+  {label:"365+ Days", min:366, max:Infinity},
+];
+function arrearsDayBucket(days){
+  if(days<=0) return null;
+  return ARREARS_DAY_BUCKETS.find(b=>days>=b.min && days<=b.max) || ARREARS_DAY_BUCKETS[ARREARS_DAY_BUCKETS.length-1];
+}
+function officerFilterOptions(branchIds){
+  let officers = DB.staff.filter(s=>s.role==="Loan Officer");
+  if(branchIds && branchIds.length) officers = officers.filter(o=>branchIds.includes(o.branch));
+  return officers;
+}
+// "Running" = a loan with exactly one overdue installment (a single
+// missed payment, still a routine follow-up case); "Overdue" = a loan
+// with two or more overdue installments (compounding delinquency) — Loans
+// is always Running+Overdue. Portfolio is this bucket's OWN loans' full
+// outstanding balance (not the whole branch), so each bucket's own PAR is
+// that bucket's own arrears-to-balance ratio, not a share of a branch-wide
+// total.
+function portfolioAtRiskRows(loansScope, officerId){
+  let scope = loansScope.filter(l=>["Active","Disbursed"].includes(l.status));
+  if(officerId) scope = scope.filter(l=>l.officerId===officerId);
+  const buckets = ARREARS_DAY_BUCKETS.map(b=>({label:b.label, loans:[], running:0, overdue:0, arrears:0, portfolio:0}));
+  scope.forEach(l=>{
+    const days = loanArrearsDays(l);
+    const bucket = arrearsDayBucket(days);
+    if(!bucket) return;
+    const row = buckets.find(b=>b.label===bucket.label);
+    const overdueRowsCount = (l.schedule||[]).filter(isOverdue).length;
+    row.loans.push(l);
+    if(overdueRowsCount>=2) row.overdue++; else row.running++;
+    row.arrears += loanArrearsAmount(l);
+    row.portfolio += loanBalance(l);
+  });
+  const rows = buckets.map(r=>({ label:r.label, loans:r.loans, loanCount:r.loans.length, running:r.running, overdue:r.overdue, arrears:r.arrears, portfolio:r.portfolio, par: r.portfolio>0?(r.arrears/r.portfolio*100):0 }));
+  const totals = rows.reduce((t,r)=>({ loanCount:t.loanCount+r.loanCount, running:t.running+r.running, overdue:t.overdue+r.overdue, arrears:t.arrears+r.arrears, portfolio:t.portfolio+r.portfolio }), {loanCount:0,running:0,overdue:0,arrears:0,portfolio:0});
+  totals.par = totals.portfolio>0 ? (totals.arrears/totals.portfolio*100) : 0;
+  return { rows, totals };
+}
+function defaultArrearsTrendState(){ const t = todayISO(); return { from:t, to:t }; }
+// A real day-by-day arrears trend — for each day in the selected real
+// range, the same real proportional-split overdue-balance computation
+// Portfolio Breakdown already uses, evaluated "as of" that day (only
+// schedule rows already due by then count), not a fabricated series.
+function arrearsTrendPoints(loansScope, officerId, from, to){
+  let scope = loansScope.filter(l=>["Active","Disbursed"].includes(l.status));
+  if(officerId) scope = scope.filter(l=>l.officerId===officerId);
+  const points = [];
+  let cursor = new Date(from); const end = new Date(to);
+  while(cursor<=end){
+    const asOf = cursor.toISOString().slice(0,10);
+    const arrears = scope.reduce((s,l)=>{
+      const overdueRows = (l.schedule||[]).filter(r=>r.status!=="Paid" && r.dueDate && r.dueDate<asOf);
+      return s + overdueRows.reduce((rs,r)=>{ const ratio = r.totalDue>0?Math.min(1,(r.paidAmount||0)/r.totalDue):0; return rs + r.totalDue*(1-ratio); },0);
+    },0);
+    points.push({label: cursor.toLocaleDateString('en-KE',{day:'2-digit',month:'short'}), value: arrears});
+    cursor.setDate(cursor.getDate()+1);
+  }
+  return points;
+}
+function openArrearsBucketLoansModal(bucketLabel, loanIds){
+  openModal('arrears-bucket-loans', { bucketLabel, loanIds });
+}
+function renderArrearsBucketLoansModal(){
+  const m = modal;
+  const loans = m.loanIds.map(id=>DB.loans.find(l=>l.id===id)).filter(Boolean);
   return `
-    ${kpiTiles(st)}
-    ${arrearsBanner(st)}
+    <div class="modal-head"><h3>${escapeHtml(m.bucketLabel)} — ${loans.length} Loan${loans.length===1?"":"s"}</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="table-wrap"><table><tr><th>Client</th><th>Loan Officer</th><th>Balance</th><th>Arrears</th></tr>
+    ${loans.map(l=>`<tr class="clickable" onclick="closeModal(); openLoan('${l.id}')"><td>${escapeHtml(clientName(l.clientId))}</td><td>${escapeHtml(staffName(l.officerId))}</td><td>${fmtNum(loanBalance(l))}</td><td>${fmtNum(loanArrearsAmount(l))}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No loans.</td></tr>`}
+    </table></div>
+  `;
+}
+function renderArrearsAnalysisView(st, pqst){
+  const {rows, totals} = portfolioAtRiskRows(st.loansScope, pqst.officerId);
+  const ats = session.arrearsTrendState || (session.arrearsTrendState = defaultArrearsTrendState());
+  const trendPoints = arrearsTrendPoints(st.loansScope, pqst.officerId, ats.from, ats.to);
+  return `
+    <div class="table-wrap"><table>
+      <tr><th>Days Range</th><th>Loans</th><th>Running</th><th>Overdue</th><th>Arrears</th><th>Portfolio</th><th>PAR</th></tr>
+      ${rows.map(r=>`<tr><td>${r.label}</td><td>${r.loanCount>0?`<span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick='openArrearsBucketLoansModal(${JSON.stringify(r.label)}, ${JSON.stringify(r.loans.map(l=>l.id))})'>${r.loanCount} View</span>`:"0"}</td><td>${r.running}</td><td>${r.overdue}</td><td>${fmtNum(r.arrears)}</td><td>${fmtNum(r.portfolio)}</td><td>${r.par.toFixed(2)}%</td></tr>`).join("")}
+      <tr style="font-weight:700; background:#F5F4F1;"><td>Totals</td><td>${totals.loanCount}</td><td>${totals.running}</td><td>${totals.overdue}</td><td>${fmtNum(totals.arrears)}</td><td>${fmtNum(totals.portfolio)}</td><td>${totals.par.toFixed(2)}%</td></tr>
+    </table></div>
+    <div class="detail-label" style="margin-top:16px;">Portfolio Arrears Trend</div>
+    <div class="pill-row" style="align-items:center; gap:8px; margin:6px 0 10px;">
+      <input type="date" value="${ats.from}" onchange="session.arrearsTrendState.from=this.value; renderApp();" class="btn btn-sm btn-outline">
+      <span>To:</span>
+      <input type="date" value="${ats.to}" onchange="session.arrearsTrendState.to=this.value; renderApp();" class="btn btn-sm btn-outline">
+    </div>
+    ${lineChart(trendPoints)}
+  `;
+}
+function renderClientAnalysisView(st){
+  const newVsRepeat = st.newLoans + st.repeatLoans;
+  return `
+    <div class="table-wrap"><table>
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>Total Clients</td><td>${st.totalClients}</td></tr>
+      <tr><td>Active Clients</td><td>${st.activeClients}</td></tr>
+      <tr><td>Dormant Clients</td><td>${st.dormantClients}</td></tr>
+      <tr><td>Unfunded Clients</td><td>${st.unfundedClients}</td></tr>
+      <tr><td>New Loans (this month)</td><td>${st.newLoans}</td></tr>
+      <tr><td>Repeat Loans (this month)</td><td>${st.repeatLoans}</td></tr>
+      <tr><td>Repeat Rate (this month)</td><td>${newVsRepeat>0?(st.repeatLoans/newVsRepeat*100).toFixed(1):'0.0'}%</td></tr>
+    </table></div>
+  `;
+}
+function collectionByOfficerRows(branchIds){
+  const officers = officerFilterOptions(branchIds);
+  return officers.map(o=>{
+    const loanIds = new Set(DB.loans.filter(l=>l.officerId===o.id).map(l=>l.id));
+    const collected = DB.payments.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && isThisMonth(p.date) && loanIds.has(p.loanId)).reduce((s,p)=>s+p.amount,0);
+    const due = DB.loans.filter(l=>l.officerId===o.id && ["Active","Disbursed"].includes(l.status)).flatMap(l=>l.schedule||[]).filter(r=>r.dueDate && isThisMonth(r.dueDate)).reduce((s,r)=>s+r.totalDue,0);
+    return { officer:o, due, collected, rate: due>0?(collected/due*100):0 };
+  });
+}
+function renderCollectionAnalysisView(st, branchIds){
+  const rows = collectionByOfficerRows(branchIds);
+  return `
+    <div class="kpi-grid" style="margin-bottom:12px;">
+      <div class="kpi"><div class="kpi-label">Collected (MTD)</div><div class="kpi-value">${fmt(st.collectionsMTD)}</div></div>
+      <div class="kpi"><div class="kpi-label">On-Time Collection</div><div class="kpi-value">${st.otcPct.toFixed(1)}%</div></div>
+    </div>
+    <div class="table-wrap"><table>
+      <tr><th>Loan Officer</th><th>Due (MTD)</th><th>Collected (MTD)</th><th>Collection Rate</th></tr>
+      ${rows.map(r=>`<tr><td>${escapeHtml(r.officer.name)}</td><td>${fmtNum(r.due)}</td><td>${fmtNum(r.collected)}</td><td>${r.rate.toFixed(1)}%</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No loan officers in scope.</td></tr>`}
+    </table></div>
+  `;
+}
+function renderPortfolioQualityPage(st, bName, branchIds){
+  const pqst = session.portfolioQualityState || (session.portfolioQualityState = defaultPortfolioQualityState());
+  const officers = officerFilterOptions(branchIds);
+  let body;
+  if(pqst.view==="Client Analysis") body = renderClientAnalysisView(st);
+  else if(pqst.view==="Collection Analysis") body = renderCollectionAnalysisView(st, branchIds);
+  else body = renderArrearsAnalysisView(st, pqst);
+  return `
     <div class="card">
-      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>${bName?bName+' — ':''}daily disbursed amount</small></div>
-      ${lineChart(disbursementTrendPoints(st.loansScope))}
+      ${bizPerfBackHeader("Portfolio Quality", bName, "backToBizPerfMenu()")}
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.portfolioQualityState.view=this.value; renderApp();" class="btn btn-sm btn-outline">
+          ${PORTFOLIO_QUALITY_VIEWS.map(v=>`<option value="${v}" ${v===pqst.view?"selected":""}>${v}</option>`).join("")}
+        </select>
+        ${pqst.view!=="Client Analysis" ? `<select onchange="session.portfolioQualityState.officerId=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">- Select Staff -</option>
+          ${officers.map(o=>`<option value="${o.id}" ${o.id===pqst.officerId?"selected":""}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
+      </div>
+      <div style="margin-top:12px;">${body}</div>
     </div>
   `;
+}
+
+// ---- Efficiency & Productivity — Operating Expense / Cost per Borrower
+// / Loan Analysis (no reference image was given for this page — a
+// concise, real, GL-and-portfolio-derived breakdown of exactly the 3
+// concepts named on the Business Performance menu, nothing invented
+// beyond that).
+async function fetchBizPerfFinancials(){
+  const [trialBalance, profitAndLoss, balanceSheet] = await Promise.all([
+    api.get('/api/accounting/trial-balance'),
+    api.get('/api/accounting/profit-and-loss'),
+    api.get('/api/accounting/balance-sheet'),
+  ]);
+  DB.bizPerfFinancials = { trialBalance, profitAndLoss, balanceSheet };
+}
+async function loadBizPerfFinancials(){
+  return withRequest('load-bizperf-financials', fetchBizPerfFinancials);
+}
+const COST_OF_FUNDS_ACCOUNTS = ['exp_interest_investor','exp_interest_longterm','exp_interest_shortterm'];
+function bizPerfFinancialFigures(){
+  const f = DB.bizPerfFinancials;
+  const tbRow = (id) => (f.trialBalance.rows.find(r=>r.account===id)||{balance:0}).balance;
+  const operatingExpense = f.trialBalance.rows.filter(r=>r.type==='Expense').reduce((s,r)=>s+r.balance,0);
+  const costOfFunds = COST_OF_FUNDS_ACCOUNTS.reduce((s,id)=>s+tbRow(id),0);
+  return {
+    operatingExpense, costOfFunds,
+    interestIncome: f.profitAndLoss.interestIncome, netProfit: f.profitAndLoss.netProfit,
+    totalAssets: f.balanceSheet.totalAssets, totalLiabilities: f.balanceSheet.totalLiabilities, equity: f.balanceSheet.equity,
+  };
+}
+function renderEfficiencyProductivityPage(st, bName){
+  if(!DB.bizPerfFinancials) loadBizPerfFinancials();
+  const body = !DB.bizPerfFinancials ? loadingDotsHtml() : (function(){
+    const fig = bizPerfFinancialFigures();
+    const activeBorrowers = Math.max(1, st.activeClients);
+    const costPerBorrower = fig.operatingExpense/activeBorrowers;
+    const totalLoansDisbursed = st.loansScope.filter(l=>l.disbursedAt).length;
+    const avgLoanSize = totalLoansDisbursed>0 ? st.loansScope.filter(l=>l.disbursedAt).reduce((s,l)=>s+l.principal,0)/totalLoansDisbursed : 0;
+    return `
+      <div class="table-wrap"><table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Operating Expense <span class="hint">(life-to-date)</span></td><td>${fmt(fig.operatingExpense)}</td></tr>
+        <tr><td>Active Borrowers</td><td>${st.activeClients}</td></tr>
+        <tr><td>Cost per Borrower</td><td>${fmt(costPerBorrower)}</td></tr>
+        <tr><td>Loans Disbursed <span class="hint">(life-to-date)</span></td><td>${totalLoansDisbursed}</td></tr>
+        <tr><td>Average Loan Size</td><td>${fmt(avgLoanSize)}</td></tr>
+        <tr><td>Current Portfolio</td><td>${fmt(st.portfolioOutstanding)}</td></tr>
+      </table></div>
+    `;
+  })();
+  return `<div class="card">${bizPerfBackHeader("Efficiency &amp; Productivity", bName, "backToBizPerfMenu()")}<div style="margin-top:12px;">${body}</div></div>`;
+}
+
+// ---- Personnel Productivity: Staff Performance / Disbursement analysis ----
+const PERSONNEL_PRODUCTIVITY_VIEWS = ["Staff Performance","Disbursement analysis"];
+function defaultPersonnelProductivityState(){
+  const now = new Date();
+  return { view:"Staff Performance", officerId:"", from: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`, to: todayISO() };
+}
+// The Manager's own single branch, rolled up from the same real per-
+// officer scores staffPerformanceTable/performanceIndicatorsTable already
+// compute — never a separately fabricated branch-level figure.
+function branchPerformanceRows(branchIds, bName){
+  const ranked = rankedOfficerScores(branchIds);
+  if(!ranked.length) return [];
+  const avg = ranked.reduce((s,r)=>s+r.score,0)/ranked.length;
+  return [{ label: bName || "Your Branch", score: avg }];
+}
+function renderStaffPerformanceView(branchIds, bName){
+  const ranked = rankedOfficerScores(branchIds);
+  const branchRows = branchPerformanceRows(branchIds, bName);
+  return `
+    <div class="two-col">
+      <div>
+        <div class="detail-label">Staff Performance</div>
+        <div class="table-wrap"><table><tr><th>Staff</th><th>Average</th><th>Position</th></tr>
+        ${ranked.map((r,i)=>`<tr><td>${escapeHtml(r.officer.name)}</td><td>${r.score.toFixed(1)}%</td><td>${i+1} of ${ranked.length}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No loan officers in scope.</td></tr>`}
+        </table></div>
+      </div>
+      <div>
+        <div class="detail-label">Branch Performance</div>
+        <div class="table-wrap"><table><tr><th>Branch</th><th>Average</th><th>Position</th></tr>
+        ${branchRows.map(r=>`<tr><td>${escapeHtml(r.label)}</td><td>${r.score.toFixed(1)}%</td><td>1 of 1</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No data.</td></tr>`}
+        </table></div>
+      </div>
+    </div>
+    ${performanceIndicatorsTable(null, branchIds, bName||'your branch')}
+  `;
+}
+function renderDisbursementAnalysisView(branchIds, ppst, loansScope){
+  const scoped = loansScope.filter(l=>["Active","Disbursed"].includes(l.status) && l.disbursedAt && l.disbursedAt.slice(0,10)>=ppst.from && l.disbursedAt.slice(0,10)<=ppst.to && (!ppst.officerId || l.officerId===ppst.officerId));
+  const officerBars = officerLoanSizeBarData(scoped, branchIds);
+  const totalAmt = scoped.reduce((s,l)=>s+l.principal,0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:12px;">
+      <div class="kpi"><div class="kpi-label">Loans Disbursed</div><div class="kpi-value">${scoped.length}</div></div>
+      <div class="kpi"><div class="kpi-label">Amount Disbursed</div><div class="kpi-value">${fmt(totalAmt)}</div></div>
+    </div>
+    ${officerBars.length ? registerChart('chart-personnel-disbursement', {
+      type:'bar',
+      data:{ labels: officerBars.map(o=>o.name), datasets:[{ label:'Disbursed', data: officerBars.map(o=>o.total), backgroundColor:'#264653' }] },
+      options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    }) : `<div class="empty">No loan officers in scope.</div>`}
+  `;
+}
+function renderPersonnelProductivityPage(st, bName, branchIds){
+  const ppst = session.personnelProductivityState || (session.personnelProductivityState = defaultPersonnelProductivityState());
+  const officers = officerFilterOptions(branchIds);
+  const body = ppst.view==="Disbursement analysis" ? renderDisbursementAnalysisView(branchIds, ppst, st.loansScope) : renderStaffPerformanceView(branchIds, bName);
+  return `
+    <div class="card">
+      ${bizPerfBackHeader("Personnel Productivity", bName, "backToBizPerfMenu()")}
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.personnelProductivityState.view=this.value; renderApp();" class="btn btn-sm btn-outline">
+          ${PERSONNEL_PRODUCTIVITY_VIEWS.map(v=>`<option value="${v}" ${v===ppst.view?"selected":""}>${v}</option>`).join("")}
+        </select>
+        <select onchange="session.personnelProductivityState.officerId=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">- Select Staff -</option>
+          ${officers.map(o=>`<option value="${o.id}" ${o.id===ppst.officerId?"selected":""}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="pill-row" style="align-items:center; gap:8px; margin:8px 0;">
+        <input type="date" value="${ppst.from}" onchange="session.personnelProductivityState.from=this.value; renderApp();" class="btn btn-sm btn-outline">
+        <span>To:</span>
+        <input type="date" value="${ppst.to}" onchange="session.personnelProductivityState.to=this.value; renderApp();" class="btn btn-sm btn-outline">
+      </div>
+      <div style="margin-top:8px;">${body}</div>
+    </div>
+  `;
+}
+
+// ---- Financial Management — Cost of funding, Portfolio yield, Current
+// & Debt ratios (no reference image given — a concise real ratio sheet
+// off the same real balance-sheet/profit-and-loss/trial-balance GL data
+// as Efficiency & Productivity above). ----
+function renderFinancialManagementPage(st, bName){
+  if(!DB.bizPerfFinancials) loadBizPerfFinancials();
+  const body = !DB.bizPerfFinancials ? loadingDotsHtml() : (function(){
+    const fig = bizPerfFinancialFigures();
+    const portfolioYield = st.portfolioOutstanding>0 ? fig.interestIncome/st.portfolioOutstanding*100 : 0;
+    const costOfFundsRate = st.portfolioOutstanding>0 ? fig.costOfFunds/st.portfolioOutstanding*100 : 0;
+    const currentRatio = fig.totalLiabilities>0 ? fig.totalAssets/fig.totalLiabilities : null;
+    const debtRatio = fig.totalAssets>0 ? fig.totalLiabilities/fig.totalAssets*100 : 0;
+    return `
+      <div class="table-wrap"><table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Cost of Funding <span class="hint">(interest on investor/loan funds, life-to-date)</span></td><td>${fmt(fig.costOfFunds)} <span class="hint">(${costOfFundsRate.toFixed(2)}% of portfolio)</span></td></tr>
+        <tr><td>Portfolio Yield <span class="hint">(interest income, life-to-date, vs current portfolio)</span></td><td>${portfolioYield.toFixed(2)}%</td></tr>
+        <tr><td>Current Ratio <span class="hint">(total assets ÷ total liabilities)</span></td><td>${currentRatio==null?"— (no liabilities recorded)":currentRatio.toFixed(2)}</td></tr>
+        <tr><td>Debt Ratio <span class="hint">(total liabilities ÷ total assets)</span></td><td>${debtRatio.toFixed(2)}%</td></tr>
+      </table></div>
+    `;
+  })();
+  return `<div class="card">${bizPerfBackHeader("Financial Management", bName, "backToBizPerfMenu()")}<div style="margin-top:12px;">${body}</div></div>`;
+}
+
+// ---- Profitability — Return on Equity & Return on Assets, plus the
+// requested bar graph of each officer's own monthly profitability
+// contribution. No per-officer expense allocation exists anywhere in
+// this system, so "officer profitability" here is honestly framed as
+// their own real monthly revenue contribution (interest & fees actually
+// collected against their own loan book) — never a fabricated net-profit
+// split. ----
+function officerProfitabilityBarData(loansScope, branchIds){
+  let officers = DB.staff.filter(s=>s.role==="Loan Officer");
+  if(branchIds && branchIds.length) officers = officers.filter(o=>branchIds.includes(o.branch));
+  return officers.map(o=>{
+    const loanIds = new Set(loansScope.filter(l=>l.officerId===o.id).map(l=>l.id));
+    const revenue = DB.payments.filter(p=>p.status!=="Unposted" && p.status!=="Reversed" && isThisMonth(p.date) && loanIds.has(p.loanId)).reduce((s,p)=>s+(p.allocated.interest||0)+(p.allocated.fees||0),0);
+    return { name:o.name, revenue };
+  });
+}
+function renderProfitabilityPage(st, bName, branchIds){
+  if(!DB.bizPerfFinancials) loadBizPerfFinancials();
+  const body = !DB.bizPerfFinancials ? loadingDotsHtml() : (function(){
+    const fig = bizPerfFinancialFigures();
+    const roe = fig.equity>0 ? fig.netProfit/fig.equity*100 : null;
+    const roa = fig.totalAssets>0 ? fig.netProfit/fig.totalAssets*100 : null;
+    const bars = officerProfitabilityBarData(st.loansScope, branchIds);
+    return `
+      <div class="kpi-grid" style="margin-bottom:12px;">
+        <div class="kpi"><div class="kpi-label">Net Profit <span class="hint">(life-to-date)</span></div><div class="kpi-value">${fmt(fig.netProfit)}</div></div>
+        <div class="kpi"><div class="kpi-label">Return on Equity</div><div class="kpi-value">${roe==null?"—":roe.toFixed(2)+"%"}</div></div>
+        <div class="kpi"><div class="kpi-label">Return on Assets</div><div class="kpi-value">${roa==null?"—":roa.toFixed(2)+"%"}</div></div>
+      </div>
+      <div class="card-title" style="font-size:14px;">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Officer Profitability <small>revenue (interest &amp; fees) collected this month, per Loan Officer</small></div>
+      ${bars.length ? registerChart('chart-officer-profitability', {
+        type:'bar',
+        data:{ labels: bars.map(b=>b.name), datasets:[{ label:'Revenue', data: bars.map(b=>b.revenue), backgroundColor:'#2E6F6F' }] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+      }) : `<div class="empty">No loan officers in scope.</div>`}
+    `;
+  })();
+  return `<div class="card">${bizPerfBackHeader("Profitability", bName, "backToBizPerfMenu()")}<div style="margin-top:12px;">${body}</div></div>`;
+}
+
+// ---- Dormancy Analysis ----
+const DORMANCY_BUCKETS = [
+  {label:"0-30 Days", min:0, max:30},
+  {label:"31-60 Days", min:31, max:60},
+  {label:"61-90 Days", min:61, max:90},
+  {label:"90+ Days", min:91, max:Infinity},
+];
+// A loan is "dormant" once its own real final schedule due date (its
+// maturity) has passed while it still carries a real outstanding balance
+// and hasn't been written off/closed/completed — the client stopped
+// engaging with an obligation that's already matured, not merely "has no
+// active loan" (the simpler dormantClients KPI tile elsewhere uses that
+// coarser, client-level definition; this page's own Loan/Product/
+// Maturity/Balance columns only make sense at the loan level).
+function dormantLoans(loansScope, bucketLabel){
+  const bucket = DORMANCY_BUCKETS.find(b=>b.label===bucketLabel) || DORMANCY_BUCKETS[0];
+  const today = todayISO();
+  return loansScope.filter(l=>{
+    if(["Written Off","Closed","Completed"].includes(l.status)) return false;
+    const maturity = loanMaturityDate(l);
+    if(!maturity || maturity>=today) return false;
+    if(loanBalance(l)<=0.01) return false;
+    const daysPast = Math.floor((new Date(today)-new Date(maturity))/86400000);
+    return daysPast>=bucket.min && daysPast<=bucket.max;
+  });
+}
+function renderDormancyAnalysisPage(st, bName){
+  const bucket = session.dormancyBucket || (session.dormancyBucket = DORMANCY_BUCKETS[0].label);
+  const loans = dormantLoans(st.loansScope, bucket);
+  return `
+    <div class="card">
+      ${bizPerfBackHeader("Dormancy Analysis", bName, "backToBizPerfMenu()")}
+      <div class="pill-row" style="margin-top:8px;">
+        <select onchange="session.dormancyBucket=this.value; renderApp();" class="btn btn-sm btn-outline">
+          ${DORMANCY_BUCKETS.map(b=>`<option value="${b.label}" ${b.label===bucket?"selected":""}>${b.label}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap" style="margin-top:12px;"><table>
+        <tr><th>Client</th><th>Loan</th><th>Product</th><th>Loan Officer</th><th>Maturity</th><th>Balance</th></tr>
+        ${loans.map(l=>`<tr class="clickable" onclick="openLoan('${l.id}')"><td>${escapeHtml(clientName(l.clientId))}</td><td>${l.id.slice(-8).toUpperCase()}</td><td>${escapeHtml(productName(l.productId))}</td><td>${escapeHtml(staffName(l.officerId))}</td><td>${loanMaturityDate(l)}</td><td>${fmtNum(loanBalance(l))}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No dormant clients in this range.</td></tr>`}
+      </table></div>
+    </div>
+  `;
+}
+
+function renderBusinessPerformancePage(st, bName, branchIds){
+  const section = session.bizPerfSection;
+  if(section==="Portfolio Quality") return renderPortfolioQualityPage(st, bName, branchIds);
+  if(section==="Efficiency & Productivity") return renderEfficiencyProductivityPage(st, bName);
+  if(section==="Personnel Productivity") return renderPersonnelProductivityPage(st, bName, branchIds);
+  if(section==="Financial Management") return renderFinancialManagementPage(st, bName);
+  if(section==="Profitability") return renderProfitabilityPage(st, bName, branchIds);
+  if(section==="Dormancy Analysis") return renderDormancyAnalysisPage(st, bName);
+  return renderBusinessPerformanceMenu(bName);
 }
 function renderBusinessAnalyticsModule(){
   const tabs = ["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"];
   const active = tabs.includes(session.subtab) ? session.subtab : "Loan Sizes";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('business-analytics','${t}')">${t}</div>`).join("")}</div>`;
   const branchIds = businessAnalyticsBranchIds();
   const st = computeStats(null, branchIds);
   const bName = branchIds && branchIds.length===1 ? branchName(branchIds[0]) : null;
-  // Loan Sizes, Portfolio Breakdown and Targets & Accruals all match
-  // reference designs that navigate via their own "←" back arrow (see
-  // each page's own card-title), not a horizontal tab strip — the
-  // sidebar's own Business Analytics submenu items already provide the
-  // same navigation the tabs bar duplicated. Business Performance keeps it.
+  // All 4 submenus now match reference designs that navigate via their
+  // own "←" back arrow (see each page's own card-title), not a horizontal
+  // tab strip — the sidebar's own Business Analytics submenu items
+  // already provide the same navigation the tabs bar duplicated.
   if(active==="Portfolio Breakdown") return renderPortfolioBreakdownPage(st, bName);
   if(active==="Targets & Accruals") return renderTargetsAccrualsPage(branchIds, bName);
-  if(active==="Business Performance") return tabsHtml + renderBusinessPerformancePage(st, bName);
+  if(active==="Business Performance") return renderBusinessPerformancePage(st, bName, branchIds);
   return renderLoanSizesPage(st, bName, branchIds);
 }
 
@@ -15409,6 +15852,7 @@ function renderModal(){
   else if(modal.type === "idle-logged-out") body = renderIdleLoggedOutModal();
   else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
   else if(modal.type === "set-target") body = renderSetTargetModal();
+  else if(modal.type === "arrears-bucket-loans") body = renderArrearsBucketLoansModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];
