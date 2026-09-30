@@ -8,7 +8,7 @@ const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 // Same real "genuinely used recently" window the staff single-active-
 // session block uses (see routes/auth.js's own comment) — investors get
 // the identical real protection, not a second, lesser copy of it.
-const SESSION_ACTIVE_WINDOW_SQL = "interval '-15 minutes'";
+const SESSION_ACTIVE_WINDOW_SQL = "interval '-5 seconds'";
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { hasPermission } = require('./../rbac');

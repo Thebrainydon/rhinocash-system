@@ -20,15 +20,8 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 // the same must_change_password=1 it already knows how to handle.
 const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 // How recently a session must genuinely have been used to still count as
-// "active" for the single-active-session login block below. Deliberately
-// well above the frontend's own 5-minute idle-logout window (which, under
-// normal conditions, already calls a real POST /api/auth/logout right
-// around then) — this is only a safety net for when that client-side
-// timer never got to run at all (the tab/app was closed or killed, or
-// the device lost connectivity), so a session sitting idle purely because
-// its owner is reading something on screen without a fresh request isn't
-// mistaken for abandoned and used to block their own next real login.
-const SESSION_ACTIVE_WINDOW_SQL = "interval '-15 minutes'";
+// "active" for the single-active-session login block below.
+const SESSION_ACTIVE_WINDOW_SQL = "interval '-5 seconds'";
 
 async function publicUser(u) {
   if (!u) return null;
