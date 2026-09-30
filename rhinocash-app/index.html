@@ -2968,6 +2968,27 @@ function renderStaffPortfoliosPage(){
       <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursement Trend <small>daily disbursed amount, within scope</small></div>
       ${lineChart(trendPoints)}
     </div>
+    ${renderStaffPortfolioSummaryCard(rows, totals)}
+  `;
+}
+// The "Loan Summary" table itself, shared verbatim between Employees >
+// Staff Portfolios (above, with its disbursement trend chart) and
+// Branches & Regions > Loan Summary below (the same real per-officer
+// rollup, on its own, matching that reference design exactly) — one real
+// computation and one real drill-down, reused rather than duplicated.
+function renderStaffPortfolioSummaryCard(rows, totals){
+  const trs = rows.map(r=>`<tr>
+    <td>${escapeHtml(r.officer.name)}</td>
+    <td>${r.totalClients}</td>
+    <td>${r.activeClients}</td>
+    <td>${fmtNum(r.activePrincipal)}</td>
+    <td>${fmtNum(r.activeInterest)}</td>
+    <td>${fmtNum(r.unpaidPenalties)}</td>
+    <td>${r.loansInArrears}</td>
+    <td>${r.performingLoans} <a onclick="openStaffPortfolioDrill('${r.officer.id}','performing')" style="color:var(--blue); cursor:pointer; text-decoration:underline;">View</a></td>
+    <td>${fmtNum(r.totalArrears)}${r.totalArrears>0?` <a onclick="openStaffPortfolioDrill('${r.officer.id}','arrears')" style="color:var(--blue); cursor:pointer; text-decoration:underline;">View</a>`:''}</td>
+  </tr>`).join("");
+  return `
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px;">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
@@ -2990,69 +3011,22 @@ function renderStaffPortfoliosPage(){
 }
 
 // ==================== Branches & Regions > Loan Summary ====================
-// Same real per-entity portfolio rollup as Staff Portfolios above, grouped
-// by branch instead of officer — reusing the identical, already-proven
-// computational primitives. A Manager's own DB.loans/DB.clients are
-// already server-scoped to just their branch, so this naturally reduces
-// to a single real row for them, exactly like every other Branches &
-// Regions tab already does for a single-branch role; other roles with
-// real company-wide visibility (Admin/CEO/Operational Manager/Regional
-// Manager) see every real branch.
-function branchLoanSummaryRows(branchIds){
-  let branches = DB.branches.filter(b=>b.status==='Active');
-  if(branchIds && branchIds.length) branches = branches.filter(b=>branchIds.includes(b.id));
-  const rows = branches.map(b=>{
-    const clientsOf = DB.clients.filter(c=>c.branch===b.id);
-    const loansOf = DB.loans.filter(l=>l.branchId===b.id);
-    const activeLoansOf = loansOf.filter(l=>["Active","Disbursed"].includes(l.status));
-    const activeClientIds = new Set(activeLoansOf.map(l=>l.clientId));
-    const performingLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)===0);
-    const arrearsLoansOf = activeLoansOf.filter(l=>loanArrearsDays(l)>0);
-    return {
-      branch:b,
-      totalClients: clientsOf.length,
-      activeClients: activeClientIds.size,
-      activePrincipal: activeLoansOf.reduce((s,l)=>s+loanOutstandingPrincipal(l),0),
-      activeInterest: activeLoansOf.reduce((s,l)=>s+loanOutstandingInterest(l),0),
-      loansInArrears: arrearsLoansOf.length,
-      performingLoans: performingLoansOf.length,
-      totalArrears: arrearsLoansOf.reduce((s,l)=>s+loanArrearsAmount(l),0),
-    };
-  });
-  const totals = rows.reduce((t,r)=>({
-    totalClients:t.totalClients+r.totalClients, activeClients:t.activeClients+r.activeClients,
-    activePrincipal:t.activePrincipal+r.activePrincipal, activeInterest:t.activeInterest+r.activeInterest,
-    loansInArrears:t.loansInArrears+r.loansInArrears, performingLoans:t.performingLoans+r.performingLoans,
-    totalArrears:t.totalArrears+r.totalArrears,
-  }), {totalClients:0, activeClients:0, activePrincipal:0, activeInterest:0, loansInArrears:0, performingLoans:0, totalArrears:0});
-  return {rows, totals};
-}
+// The exact same real per-officer portfolio rollup and drill-down as
+// Employees > Staff Portfolios (see renderStaffPortfolioSummaryCard above)
+// — reused, not rebuilt as a separate per-branch report, since the
+// reference design for this menu item is genuinely that same Loan Officer
+// breakdown, standing alone with no chart above it.
 function renderBranchLoanSummaryPage(){
   const branchIds = businessAnalyticsBranchIds();
-  const {rows, totals} = branchLoanSummaryRows(branchIds);
-  const trs = rows.map(r=>`<tr class="clickable" onclick="openBranchDetails('${r.branch.id}')">
-    <td>${escapeHtml(r.branch.name)}</td>
-    <td>${r.totalClients}</td>
-    <td>${r.activeClients}</td>
-    <td>${fmtNum(r.activePrincipal)}</td>
-    <td>${fmtNum(r.activeInterest)}</td>
-    <td>${r.loansInArrears}</td>
-    <td>${r.performingLoans}</td>
-    <td>${fmtNum(r.totalArrears)}</td>
-  </tr>`).join("");
-  return `
-    <div class="card">
-      <div class="card-title">Loan Summary <small>${branchIds?'your branch':'company-wide'}</small></div>
-      <div class="table-wrap"><table>
-        <tr><th>Branch</th><th>Total Clients</th><th>Active Clients</th><th>Active Principal</th><th>Active Interest</th><th>Loans in Arrears</th><th>Performing Loans</th><th>Total Arrears</th></tr>
-        ${trs || `<tr><td colspan="8" class="empty">No branches in scope.</td></tr>`}
-        ${rows.length>1 ? `<tr style="font-weight:700; background:#F5F4F1;">
-          <td>Totals</td><td>${totals.totalClients}</td><td>${totals.activeClients}</td><td>${fmtNum(totals.activePrincipal)}</td>
-          <td>${fmtNum(totals.activeInterest)}</td><td>${totals.loansInArrears}</td><td>${totals.performingLoans}</td><td>${fmtNum(totals.totalArrears)}</td>
-        </tr>` : ""}
-      </table></div>
-    </div>
-  `;
+  session.staffPortfolioBranchIds = branchIds;
+  const {rows, totals} = staffPortfolioRows(branchIds);
+  if(session.staffPortfolioView){
+    const {officerId, category} = session.staffPortfolioView;
+    const row = rows.find(r=>r.officer.id===officerId);
+    if(row) return renderStaffPortfolioDrillTable(row.officer, category, category==="arrears"?row.arrearsLoansList:row.performingLoansList);
+    session.staffPortfolioView = null;
+  }
+  return renderStaffPortfolioSummaryCard(rows, totals);
 }
 
 function renderDashboard(){
@@ -11233,7 +11207,7 @@ function renderBranchesModule(){
   const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('branches','${t}')">${t}</div>`).join("")}</div>`;
   if(session.selectedBranchId) return tabsHtml + renderBranchDetailsPage(session.selectedBranchId);
   if(active==="Regions") return tabsHtml + renderRegionsPage();
-  if(active==="Loan Summary") return tabsHtml + renderBranchLoanSummaryPage();
+  if(active==="Loan Summary") return renderBranchLoanSummaryPage();
   if(active==="Open New Branch") return tabsHtml + renderOpenNewBranchPage();
   if(active==="Organizational Overview") return tabsHtml + renderOrgOverviewPage();
   return tabsHtml + renderBranchDirectoryPage();
