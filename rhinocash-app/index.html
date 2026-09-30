@@ -9820,7 +9820,7 @@ function renderAccounting(){
   if(active==="Trial Balance") return tabsHtml + renderTrialBalancePage();
   if(active==="Profit & Loss") return tabsHtml + renderProfitLossPage();
   if(active==="Balance Sheet") return tabsHtml + renderBalanceSheetPage();
-  if(active==="Cashflow") return session.role==='Loan Officer' ? renderExpectedCashflowPage() : tabsHtml + renderCashflowPage();
+  if(active==="Cashflow") return ['Loan Officer','Manager'].includes(session.role) ? renderExpectedCashflowPage() : tabsHtml + renderCashflowPage();
   if(active==="Accounting Periods") return tabsHtml + renderAccountingPeriodsPage();
   if(active==="Adjustments") return tabsHtml + renderAdjustmentsPage();
   if(active==="Portfolio at Risk") return tabsHtml + renderPARPage();
@@ -10572,9 +10572,10 @@ function expectedCfMonthOptions(){
   }
   return opts;
 }
+const EXPECTED_CF_MONTH_ABBREV = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function expectedCfMonthLabel(ym){
   const [y,m] = ym.split('-').map(Number);
-  return new Date(y, m-1, 1).toLocaleString('en-KE', {month:'short', year:'numeric'});
+  return `${EXPECTED_CF_MONTH_ABBREV[m-1]} ${y}`;
 }
 function expectedCfWeeksInMonth(ym){
   const [y,m] = ym.split('-').map(Number);
@@ -10595,6 +10596,7 @@ function loadExpectedCashflow(){
       params.set('week_start', `${st.month}-${String(wk.start).padStart(2,'0')}`);
       params.set('week_end', `${st.month}-${String(wk.end).padStart(2,'0')}`);
     } else params.set('month', st.month);
+    if(st.officerId) params.set('officer_id', st.officerId);
     const res = await api.get('/api/collections/expected-cashflow?'+params.toString());
     if(seq !== expectedCfReqSeq) return; // a newer request has since superseded this one
     res.stateKey = JSON.stringify(st);
@@ -10608,7 +10610,7 @@ function loadExpectedCashflow(){
 // pass is about to trigger anyway (withRequest's duplicate-call guard
 // would silently drop whichever call loses that race).
 function changeExpectedCfMonth(value){
-  session.expectedCashflowState = { month:value, week:'', day:'' };
+  session.expectedCashflowState = { month:value, week:'', day:'', officerId: session.expectedCashflowState.officerId||'' };
   renderApp();
 }
 function changeExpectedCfWeek(value){
@@ -10619,9 +10621,13 @@ function changeExpectedCfDay(value){
   session.expectedCashflowState.day = value;
   renderApp();
 }
+function changeExpectedCfOfficer(value){
+  session.expectedCashflowState.officerId = value;
+  renderApp();
+}
 function renderExpectedCashflowPage(){
   if(!session.expectedCashflowState){
-    session.expectedCashflowState = { month: new Date().toISOString().slice(0,7), week:'', day:'' };
+    session.expectedCashflowState = { month: new Date().toISOString().slice(0,7), week:'', day:'', officerId:'' };
   }
   const st = session.expectedCashflowState;
   if(!DB.expectedCashflowData || DB.expectedCashflowData.stateKey !== JSON.stringify(st)){ loadExpectedCashflow(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
@@ -10643,13 +10649,20 @@ function renderExpectedCashflowPage(){
           ${weeks.map((w,idx)=>`<option value="${idx}" ${st.week===String(idx)?'selected':''}>Week ${idx+1} (${monthAbbrev} ${w.start}–${w.end})</option>`).join("")}
         </select>
       </div>
-      <select style="width:160px; margin-bottom:24px;" onchange="changeExpectedCfDay(this.value)">
-        <option value="">-- Day --</option>
-        ${Array.from({length:daysInMonth}, (_,i)=>i+1).map(d=>{
-          const dateStr = `${st.month}-${String(d).padStart(2,'0')}`;
-          return `<option value="${dateStr}" ${st.day===dateStr?'selected':''}>${d}</option>`;
-        }).join("")}
-      </select>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px;">
+        <select style="flex:1; min-width:130px;" onchange="changeExpectedCfDay(this.value)">
+          <option value="">-- Day --</option>
+          ${Array.from({length:daysInMonth}, (_,i)=>i+1).map(d=>{
+            const dateStr = `${st.month}-${String(d).padStart(2,'0')}`;
+            return `<option value="${dateStr}" ${st.day===dateStr?'selected':''}>${d}</option>`;
+          }).join("")}
+        </select>
+        ${session.role!=='Loan Officer' ? `
+        <select style="flex:1; min-width:150px;" onchange="changeExpectedCfOfficer(this.value)">
+          <option value="">-- Select Staff --</option>
+          ${(DB.staff||[]).filter(s=>s.role==='Loan Officer').map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
+      </div>
       <div class="card-title" style="color:var(--blue);">Loan Summary</div>
       <table>
         <tr style="background:#F5F4F1;"><td>Total Loans</td><td style="text-align:right;"><strong>${data.totalLoans}</strong></td></tr>
@@ -10658,6 +10671,21 @@ function renderExpectedCashflowPage(){
       </table>
       <div style="text-align:right; padding-top:10px; border-top:1px solid var(--line); margin-top:6px; color:var(--blue); font-weight:700; font-size:15px;">${fmtNum(data.total)} KES</div>
     </div>
+    ${session.role!=='Loan Officer' && data.byOfficer && data.byOfficer.length ? `
+    <div class="card">
+      <div class="card-title" style="color:var(--blue);">Cashflow Comparison <small>expected principal &amp; interest per officer, same period</small></div>
+      ${registerChart('chart-expected-cf-officers', {
+        type:'bar',
+        data:{
+          labels: data.byOfficer.map(o=>o.officerName),
+          datasets:[
+            { label:'Principal', data: data.byOfficer.map(o=>o.principal), backgroundColor:'#2E5C8A' },
+            { label:'Interest', data: data.byOfficer.map(o=>o.interest), backgroundColor:'#7A4FB5' },
+          ]
+        },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } } }
+      })}
+    </div>` : ""}
   `;
 }
 

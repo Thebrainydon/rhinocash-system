@@ -477,6 +477,26 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
 
     const managerCall = await api('GET', '/api/collections/expected-cashflow', { token: managerToken });
     assert(managerCall.status === 200 && typeof managerCall.json.principal === 'number', "a Manager's own real branch-scoped expected cashflow (the same loanScopeClause() every other collections endpoint already uses) loads correctly too");
+
+    // Real per-officer breakdown, for the Manager's team-comparison bar graph.
+    assert(Array.isArray(target.json.byOfficer) && target.json.byOfficer.length === 1 && target.json.byOfficer[0].officerId === 'usr_officer',
+      "a Loan Officer's own real byOfficer breakdown is genuinely just themselves — a real single bar, not a fabricated team");
+    assert(Math.abs(target.json.byOfficer[0].principal - target.json.principal) < 0.01 && Math.abs(target.json.byOfficer[0].total - target.json.total) < 0.01,
+      "the Loan Officer's own single byOfficer entry genuinely matches their own already-computed totals, not a second independent calculation");
+
+    const officerEntry = managerCall.json.byOfficer.find(o => o.officerId === 'usr_officer');
+    assert(officerEntry && Math.abs(officerEntry.principal - target.json.principal) < 0.01,
+      "the real Kisumu Manager's byOfficer breakdown genuinely includes the real Kisumu officer's own figures, matching that officer's own independently-fetched view");
+
+    const managerFiltered = await api('GET', '/api/collections/expected-cashflow?officer_id=usr_officer', { token: managerToken });
+    assert(Math.abs(managerFiltered.json.principal - target.json.principal) < 0.01,
+      "a Manager filtering the Loan Summary card to one real officer genuinely narrows it to exactly that officer's own real figures");
+    assert(Array.isArray(managerFiltered.json.byOfficer) && managerFiltered.json.byOfficer.length === managerCall.json.byOfficer.length,
+      "filtering the Loan Summary card to one officer genuinely does NOT collapse the real team-comparison breakdown — picking one officer for the card never hides their teammates from the comparison graph");
+
+    const nairobiManagerCall = await api('GET', '/api/collections/expected-cashflow', { token: nairobiManagerToken });
+    assert(nairobiManagerCall.status === 200 && !nairobiManagerCall.json.byOfficer.some(o => o.officerId === 'usr_officer'),
+      "a Nairobi Manager's real byOfficer breakdown genuinely does not include the Kisumu branch's officer — real branch scope, not a client-side filter");
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

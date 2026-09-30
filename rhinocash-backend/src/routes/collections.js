@@ -1132,14 +1132,47 @@ function register(router) {
       to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
     }
 
-    if (!loanIds.length) return res.json({ from, to, totalLoans: 0, principal: 0, interest: 0, total: 0 });
-    const row = await get(
-      `SELECT COUNT(DISTINCT loan_id) as loans, COALESCE(SUM(principal_due),0) as principal, COALESCE(SUM(interest_due),0) as interest
-       FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',')}) AND status != 'Paid' AND (due_date)::date BETWEEN ? AND ?`,
-      [...loanIds, from, to]
-    );
-    const principal = Number(row.principal), interest = Number(row.interest);
-    res.json({ from, to, totalLoans: Number(row.loans), principal, interest, total: principal + interest });
+    let totalLoans = 0, principal = 0, interest = 0;
+    if (loanIds.length) {
+      const row = await get(
+        `SELECT COUNT(DISTINCT loan_id) as loans, COALESCE(SUM(principal_due),0) as principal, COALESCE(SUM(interest_due),0) as interest
+         FROM loan_schedule WHERE loan_id IN (${loanIds.map(() => '?').join(',')}) AND status != 'Paid' AND (due_date)::date BETWEEN ? AND ?`,
+        [...loanIds, from, to]
+      );
+      totalLoans = Number(row.loans); principal = Number(row.principal); interest = Number(row.interest);
+    }
+
+    // Per-officer breakdown for the team comparison bar graph. Always the
+    // caller's real full team for this same period — a real ?officer_id=
+    // above only narrows the Loan Summary card, never this comparison, so
+    // picking one officer doesn't collapse their own teammates out of the
+    // chart. A Loan Officer's own "team" is just themselves: a real single
+    // bar reusing the totals already computed above, not a second query.
+    let byOfficer;
+    if (req.user.role_id === 'loan_officer') {
+      byOfficer = loanIds.length ? [{ officerId: req.user.id, officerName: req.user.name, principal, interest, total: principal + interest }] : [];
+    } else {
+      const teamScope = await branchScopeSQL(req.user);
+      let teamClause = teamScope.clause; const teamParams = [...teamScope.params];
+      if (req.query.branch_id) { teamClause += ' AND branch_id = ?'; teamParams.push(req.query.branch_id); }
+      if (req.query.region_id) {
+        const regionBranches = (await all('SELECT id FROM branches WHERE region_id = ?', [req.query.region_id])).map(b => b.id);
+        teamClause += regionBranches.length ? ` AND branch_id IN (${regionBranches.map(() => '?').join(',')})` : ' AND 1=0';
+        teamParams.push(...regionBranches);
+      }
+      const officers = await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer' AND status = 'Active' AND ${teamClause}`, teamParams);
+      byOfficer = await Promise.all(officers.map(async o => {
+        const oLoanIds = (await all(`SELECT id FROM loans WHERE officer_id = ? AND status IN ('Active','Disbursed')`, [o.id])).map(l => l.id);
+        if (!oLoanIds.length) return { officerId: o.id, officerName: o.name, principal: 0, interest: 0, total: 0 };
+        const r = await get(
+          `SELECT COALESCE(SUM(principal_due),0) as principal, COALESCE(SUM(interest_due),0) as interest
+           FROM loan_schedule WHERE loan_id IN (${oLoanIds.map(() => '?').join(',')}) AND status != 'Paid' AND (due_date)::date BETWEEN ? AND ?`,
+          [...oLoanIds, from, to]
+        );
+        return { officerId: o.id, officerName: o.name, principal: Number(r.principal), interest: Number(r.interest), total: Number(r.principal) + Number(r.interest) };
+      }));
+    }
+    res.json({ from, to, totalLoans, principal, interest, total: principal + interest, byOfficer });
   });
 
 }
