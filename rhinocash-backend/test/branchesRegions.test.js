@@ -155,6 +155,47 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(auditBranch.json.auditLogs.some(a => a.action.includes('branch') || a.action.includes('Branch')), 'Z: real audit records exist for branch changes');
   }
 
+  // AA. GET /api/regions returns real, company-wide Staff/Client counts per
+  // region — the "Company Regions" view's whole point — computed
+  // server-side, never scoped down to the caller's own branch the way
+  // GET /api/users/GET /api/clients themselves are.
+  {
+    const regionName = 'AA Test Region ' + Math.random().toString(36).slice(2, 6);
+    const region = await api('POST', '/api/regions', { token: opsToken, body: { name: regionName } });
+    assert(region.status === 201, 'AA: setup — a real new region is created');
+    const regionId = region.json.region.id;
+
+    const branch = await api('POST', '/api/branches', { token: adminToken, body: { name: 'AA Test Branch ' + Math.random().toString(36).slice(2, 6), region_id: regionId } });
+    assert(branch.status === 201, 'AA: setup — a real branch is created inside that region');
+    const branchId = branch.json.branch.id;
+
+    const before = await api('GET', '/api/regions', { token: managerToken });
+    const beforeRow = before.json.regions.find(r => r.id === regionId);
+    assert(beforeRow && beforeRow.staffCount === 0 && beforeRow.clientCount === 0, 'AA: a freshly-created region genuinely starts at 0 real staff and 0 real clients, not a fabricated placeholder');
+
+    const staffCreate = await api('POST', '/api/users', { token: adminToken, body: {
+      name: 'AA Test Officer', email: 'aa.test.officer.' + Math.random().toString(36).slice(2, 6) + '@rhinocash.co.ke',
+      role_id: 'loan_officer', branch_id: branchId, region_id: regionId,
+    }});
+    assert(staffCreate.status === 201, 'AA: setup — a real staff member is created in that region');
+    const newOfficerToken = await login(staffCreate.json.user.email, staffCreate.json.tempPassword);
+
+    const client1 = await api('POST', '/api/clients', { token: newOfficerToken, body: { name: 'AA Test Client 1', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000) } });
+    const client2 = await api('POST', '/api/clients', { token: newOfficerToken, body: { name: 'AA Test Client 2', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000) } });
+    assert(client1.status === 201 && client2.status === 201, 'AA: setup — two real clients are created under that region\'s new branch');
+
+    // A Manager whose own branch is Kisumu, nowhere near this new region,
+    // still sees its real counts — this view is genuinely company-wide.
+    const after = await api('GET', '/api/regions', { token: managerToken });
+    const afterRow = after.json.regions.find(r => r.id === regionId);
+    assert(afterRow && afterRow.staffCount === 1, 'AA: the real new staff member is genuinely counted for their own region, visible even to a Manager scoped to a different branch entirely');
+    assert(afterRow && afterRow.clientCount === 2, 'AA: both real new clients are genuinely counted for their branch\'s region');
+
+    const kisumuRegion = after.json.regions.find(r => r.name === 'Coast & Western Region');
+    assert(kisumuRegion && !(kisumuRegion.staffCount > before.json.regions.find(r => r.id === kisumuRegion.id).staffCount),
+      'AA: the new staff/client counts genuinely stayed isolated to their own real region, not leaked into an unrelated one');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

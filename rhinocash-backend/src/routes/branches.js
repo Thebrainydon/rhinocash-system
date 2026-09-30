@@ -30,11 +30,25 @@ function register(router) {
   // regions, not thousands of rows) — real search/filter is supported for
   // consistency, but pagination is deliberately not implemented here; it
   // would add complexity with no real benefit at this scale.
+  // Real company-wide Staff/Client counts per region — deliberately not
+  // scoped to the caller's own branch, matching this module's existing
+  // policy (GET /api/branches already lists every real branch to any
+  // authenticated staff member, not just the caller's own): Branches &
+  // Regions is a company-structure overview, not per-branch business data.
   router.get('/api/regions', requireAuth, async (req, res) => {
     let rows = await all('SELECT * FROM regions ORDER BY name');
     if (req.query.status) rows = rows.filter(r => r.status === req.query.status);
     if (req.query.q) { const q = req.query.q.toLowerCase(); rows = rows.filter(r => r.name.toLowerCase().includes(q)); }
-    res.json({ regions: rows });
+    const regionIds = rows.map(r => r.id);
+    const staffCounts = {}, clientCounts = {};
+    if (regionIds.length) {
+      const ph = regionIds.map(() => '?').join(',');
+      (await all(`SELECT region_id, COUNT(*) as c FROM users WHERE region_id IN (${ph}) AND status = 'Active' GROUP BY region_id`, regionIds))
+        .forEach(row => { staffCounts[row.region_id] = Number(row.c); });
+      (await all(`SELECT b.region_id as region_id, COUNT(c.id) as c FROM clients c JOIN branches b ON b.id = c.branch_id WHERE b.region_id IN (${ph}) GROUP BY b.region_id`, regionIds))
+        .forEach(row => { clientCounts[row.region_id] = Number(row.c); });
+    }
+    res.json({ regions: rows.map(r => ({ ...r, staffCount: staffCounts[r.id] || 0, clientCount: clientCounts[r.id] || 0 })) });
   });
 
   router.post('/api/regions', requireAuth, requirePermission('manage_branches'), async (req, res, next) => {

@@ -11385,13 +11385,20 @@ function renderRegionsPage(){
       </form>
     </div>` : ""}
     <div class="card">
-      <div class="card-title">Regions <small>${state.regions.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Name</th><th>Branches</th><th>Status</th><th></th></tr>
-      ${state.regions.map(r=>{
-        const count = DB.branches.filter(b=>b.region===r.id).length;
-        return `<tr><td>${escapeHtml(r.name)}</td><td>${count}</td><td><span class="badge ${r.status==='Active'?'green':'grey'}">${r.status}</span></td>
-        <td>${canManage ? `<button class="btn btn-sm btn-outline" onclick="withRequest('region-toggle-${r.id}', ()=>toggleRegionStatus('${r.id}','${r.status==='Active'?'Inactive':'Active'}'))">${r.status==='Active'?'Deactivate':'Activate'}</button>` : ""}</td></tr>`;
-      }).join("") || `<tr><td colspan="4" class="empty">No regions yet.</td></tr>`}</table></div>
+      <div class="card-title">Company Regions</div>
+      <div class="table-wrap"><table><tr><th></th><th>Name</th><th>Branches</th><th>Staff</th><th>Clients</th>${canManage?'<th>Status</th><th></th>':''}</tr>
+      ${state.regions.map((r,idx)=>{
+        const branchesOf = DB.branches.filter(b=>b.region===r.id);
+        return `<tr>
+          <td>${idx+1}</td>
+          <td>${escapeHtml(r.name)}</td>
+          <td><ul style="margin:0; padding-left:16px;">${branchesOf.map(b=>`<li>${escapeHtml(b.name)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
+          <td>${r.staffCount}</td>
+          <td>${r.clientCount}</td>
+          ${canManage ? `<td><span class="badge ${r.status==='Active'?'green':'grey'}">${r.status}</span></td>
+          <td><button class="btn btn-sm btn-outline" onclick="withRequest('region-toggle-${r.id}', ()=>toggleRegionStatus('${r.id}','${r.status==='Active'?'Inactive':'Active'}'))">${r.status==='Active'?'Deactivate':'Activate'}</button></td>` : ""}
+        </tr>`;
+      }).join("") || `<tr><td colspan="${canManage?7:5}" class="empty">No regions yet.</td></tr>`}</table></div>
     </div>
   `;
 }
