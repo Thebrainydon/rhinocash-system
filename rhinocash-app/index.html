@@ -1408,7 +1408,7 @@ async function loadCoreData(){
       calls.push(api.get('/api/targets/eligible-recipients').then(r=>{ DB.targetEligibleRecipients = r.users; }).catch(()=>{}));
     }
     if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/clients').then(r=>{ DB.clients = r.clients.map(adaptClient); }).catch(()=>{}));
-    if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/leads').then(r=>{ DB.leads = r.leads.map(l=>({id:l.id, name:l.name, phone:l.phone, source:l.source, status:l.status, notes:l.notes, createdAt:l.created_at})); }).catch(()=>{}));
+    if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/leads').then(r=>{ DB.leads = r.leads.map(l=>({id:l.id, name:l.name, phone:l.phone, source:l.source, status:l.status, notes:l.notes, createdAt:l.created_at, convertedClientId:l.converted_client_id})); }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('clients')) calls.push(api.get('/api/client-groups').then(r=>{ DB.groups = r.groups.map(g=>({id:g.id, branchId:g.branch_id, name:g.name, meetingDay:g.meeting_day, memberIds:g.members.map(m=>m.id), memberNames:g.members.map(m=>m.name)})); }).catch(()=>{}));
     if(NAV_PERMISSIONS[session.role]?.includes('loanbook')) calls.push(api.get('/api/loans').then(r=>{ DB.loans = r.loans.map(adaptLoan); }).catch(()=>{}));
     // Dashboards/computeStats() need the FULL set to compute correct
@@ -1683,7 +1683,11 @@ async function convertLead(leadId){
   const c = adaptClient(res.client);
   DB.clients.unshift(c);
   const lead = DB.leads.find(l=>l.id===leadId);
-  if(lead) lead.status="Converted";
+  // Real client_leads.converted_client_id is exactly this real new
+  // client's id (see POST /api/leads/:id/convert) — kept in sync here too,
+  // not just re-fetched on next login, since e.g. the Client Groups page's
+  // real "LEADS" category reads this in-memory field directly.
+  if(lead){ lead.status="Converted"; lead.convertedClientId=c.id; }
   toast(`${lead? lead.name : c.name} converted to client`);
   return c;
 }
@@ -5536,7 +5540,7 @@ function renderClients(){
   }
 
   if(active==="Add Client") return renderAddClientForm();
-  if(active==="Client Groups") return tabsHtml + renderClientGroups();
+  if(active==="Client Groups") return renderClientGroupsPage();
   if(active==="Client Leads") return renderClientLeads();
   if(active==="Interactions") return renderClientInteractionsPage();
 
@@ -5940,40 +5944,199 @@ async function submitAddClient(ev){
   overlay.innerHTML = ""; // no-op if the success path above already cleared it
   return false;
 }
-function renderClientGroups(){
-  const rows = DB.groups.map(g=>`<tr><td><strong>${escapeHtml(g.name)}</strong></td><td>${g.meetingDay}</td><td>${g.memberIds.length}</td>
-    <td>${g.memberIds.map(id=>clientName(id)).join(", ")}</td></tr>`).join("");
+// ==================== Client Groups (Default Groups) ====================
+// Matches the requested reference design: a category dropdown mixing
+// fixed, real-computed smart categories (Default Clients / a weekday's
+// clients / BLACK BOOK / Healthy client / LEADS) with real custom groups
+// created via "+ Group" (client_groups, already a real backend table —
+// see POST /api/client-groups), a Loan Officer filter, and a client
+// table — all built from the exact same real, already-loaded DB.clients/
+// DB.loans/DB.leads/DB.staff/DB.groups every other page here already
+// treats as authoritative. No new backend endpoint needed for any of
+// this — only real, already-available data, repackaged.
+const CLIENT_GROUP_WEEKDAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+function clientBalanceAndArrearsDays(clientId){
+  const loans = DB.loans.filter(l=>l.clientId===clientId && ["Active","Disbursed"].includes(l.status));
+  const balance = loans.reduce((s,l)=>s+loanBalance(l),0);
+  const days = loans.reduce((max,l)=>Math.max(max, loanArrearsDays(l)), 0);
+  return { balance, days };
+}
+// Which real weekday a client is next due to pay — the soonest real
+// not-yet-paid schedule row across their own real active loans. This is
+// what "Monday Clients"/"Tuesday Clients"/etc genuinely mean here: which
+// real day of the week collection staff should expect to see this client,
+// not a separately fabricated "meeting day" (the Create Client Group form
+// itself never collects one — see below).
+function clientNextDueWeekday(clientId){
+  let soonest = null;
+  DB.loans.filter(l=>l.clientId===clientId && ["Active","Disbursed"].includes(l.status)).forEach(l=>{
+    (l.schedule||[]).forEach(r=>{ if(r.status!=="Paid" && (!soonest || r.dueDate<soonest)) soonest = r.dueDate; });
+  });
+  if(!soonest) return null;
+  return new Date(soonest).toLocaleDateString('en-US',{weekday:'long', timeZone:'UTC'});
+}
+function clientGroupCategoryOptions(){
+  return ["Default Clients", ...CLIENT_GROUP_WEEKDAYS.map(d=>d+" Clients"), "BLACK BOOK", "Healthy client", "LEADS", ...DB.groups.map(g=>g.name)];
+}
+function clientsForGroupCategory(category, clientsScope){
+  if(category==="Default Clients") return clientsScope;
+  const weekday = CLIENT_GROUP_WEEKDAYS.find(d=>category===d+" Clients");
+  if(weekday) return clientsScope.filter(c=>clientNextDueWeekday(c.id)===weekday);
+  if(category==="BLACK BOOK") return clientsScope.filter(c=>DB.loans.some(l=>l.clientId===c.id && l.status==="Written Off"));
+  if(category==="Healthy client") return clientsScope.filter(c=>{
+    const active = DB.loans.filter(l=>l.clientId===c.id && ["Active","Disbursed"].includes(l.status));
+    return active.length>0 && active.every(l=>loanArrearsDays(l)===0);
+  });
+  if(category==="LEADS") return clientsScope.filter(c=>DB.leads.some(ld=>ld.convertedClientId===c.id));
+  const group = DB.groups.find(g=>g.name===category);
+  return group ? clientsScope.filter(c=>group.memberIds.includes(c.id)) : clientsScope;
+}
+function defaultClientGroupsState(){ return { category:"Default Clients", officerId:"", q:"" }; }
+function renderClientGroupsPage(){
+  if(session.clientGroupsView==="create") return renderCreateClientGroupPage();
+  const st = session.clientGroupsState || (session.clientGroupsState = defaultClientGroupsState());
+  let clientsScope = DB.clients;
+  if(st.officerId) clientsScope = clientsScope.filter(c=>c.officerId===st.officerId);
+  if(st.q && st.q.trim()){
+    const q = st.q.trim().toLowerCase();
+    clientsScope = clientsScope.filter(c=>c.name.toLowerCase().includes(q) || (c.phone||'').includes(q) || (c.idNumber||'').includes(q));
+  }
+  const rows = clientsForGroupCategory(st.category, clientsScope);
+  const officers = officerFilterOptions(businessAnalyticsBranchIds());
   return `
     <div class="card">
-      <div class="card-title">Client Groups <small>chama / group-lending circles</small></div>
-      <div class="table-wrap"><table><tr><th>Group</th><th>Meeting Day</th><th>Members</th><th>Client Names</th></tr>
-      ${rows || `<tr><td colspan="4" class="empty">No groups yet.</td></tr>`}</table></div>
-    </div>
-    <div class="card" style="max-width:600px;">
-      <div class="card-title">Create Group</div>
-      <form onsubmit="return submitAddGroup(event)">
-        <div class="field"><label>Group Name</label><input name="name" required></div>
-        <div class="field"><label>Meeting Day</label><select name="meetingDay"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option></select></div>
-        <div class="field"><label>Members</label>
-          <select name="members" multiple size="6">${DB.clients.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("")}</select>
-          <span class="hint">Ctrl/Cmd-click to select multiple</span>
-        </div>
-        <button class="btn btn-primary" type="submit">Create Group</button>
-      </form>
+      <div class="card-title" style="justify-content:space-between;">
+        <span style="display:flex; align-items:center; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Client Groups</span></span>
+        <span class="btn btn-outline btn-sm" onclick="openCreateClientGroupPage()">+ Group</span>
+      </div>
+      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+        <select onchange="session.clientGroupsState.category=this.value; renderApp();" class="btn btn-sm btn-outline">
+          ${clientGroupCategoryOptions().map(o=>`<option ${o===st.category?'selected':''}>${escapeHtml(o)}</option>`).join("")}
+        </select>
+        <input placeholder="Search" value="${escapeHtml(st.q)}" oninput="session.clientGroupsState.q=this.value; renderApp();" style="margin-left:auto; max-width:140px;">
+      </div>
+      <div class="pill-row" style="margin-top:8px;">
+        <select onchange="session.clientGroupsState.officerId=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">-- Loan Officer --</option>
+          ${officers.map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="table-wrap" style="margin-top:12px;"><table>
+        <tr><th>Name</th><th>Contact</th><th>Id Number</th><th>Loan Officer</th><th>Balance</th><th>Days</th></tr>
+        ${rows.map(c=>{ const {balance,days} = clientBalanceAndArrearsDays(c.id); return `<tr class="clickable" onclick="openClient('${c.id}')">
+          <td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.phone||'—')}</td><td>${escapeHtml(c.idNumber||'—')}</td>
+          <td>${escapeHtml(staffName(c.officerId))}</td><td>${fmtNum(balance)}</td><td>${days}</td>
+        </tr>`; }).join("") || `<tr><td colspan="6" class="empty">No clients in this category.</td></tr>`}
+      </table></div>
     </div>
   `;
 }
-function submitAddGroup(ev){
-  ev.preventDefault();
-  const f = new FormData(ev.target);
-  const name = f.get("name"), meetingDay = f.get("meetingDay");
-  const members = Array.from(ev.target.members.selectedOptions).map(o=>o.value);
-  return withRequest('add-group', async ()=>{
-    const res = await api.post('/api/client-groups', { name, meeting_day: meetingDay, member_ids: members });
+// ---- Create Client Group: Group Name + a real multi-select "Select
+// Contacts" flow (its own modal, paginated) — no meeting day collected
+// here; the weekday categories above are derived from real due dates,
+// never a separately fabricated field on the group itself. ----
+function openCreateClientGroupPage(){
+  session.clientGroupsView = "create";
+  session.createGroupForm = { name:"", selectedIds: new Set(), contactSearch:"" };
+  renderApp();
+}
+function backToClientGroupsList(){
+  session.clientGroupsView = null;
+  renderApp();
+}
+function openSelectContactsModal(){
+  DB.selectContactsState = { checked: new Set(session.createGroupForm.selectedIds), q:"", visibleCount:12 };
+  openModal('select-clients');
+}
+function selectContactsFiltered(){
+  const q = (DB.selectContactsState.q||"").trim().toLowerCase();
+  if(!q) return DB.clients;
+  return DB.clients.filter(c=>c.name.toLowerCase().includes(q) || (c.phone||'').includes(q));
+}
+function toggleSelectContact(id){
+  const s = DB.selectContactsState.checked;
+  if(s.has(id)) s.delete(id); else s.add(id);
+  renderApp();
+}
+function toggleSelectAllContacts(){
+  const all = selectContactsFiltered();
+  const s = DB.selectContactsState.checked;
+  const allChecked = all.length>0 && all.every(c=>s.has(c.id));
+  if(allChecked) all.forEach(c=>s.delete(c.id));
+  else all.forEach(c=>s.add(c.id));
+  renderApp();
+}
+function loadMoreSelectContacts(){
+  DB.selectContactsState.visibleCount += 12;
+  renderApp();
+}
+function confirmSelectContacts(){
+  session.createGroupForm.selectedIds = new Set(DB.selectContactsState.checked);
+  closeModal();
+}
+function renderSelectClientsModal(){
+  const st = DB.selectContactsState;
+  const filtered = selectContactsFiltered();
+  const visible = filtered.slice(0, st.visibleCount);
+  const allChecked = filtered.length>0 && filtered.every(c=>st.checked.has(c.id));
+  return `
+    <div style="position:relative;">
+      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 16px;">Select Clients</h3>
+      <div class="table-wrap" style="max-height:340px; overflow-y:auto;">
+        ${visible.map(c=>`<label style="display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px solid var(--line); cursor:pointer;">
+          <input type="checkbox" ${st.checked.has(c.id)?'checked':''} onchange="toggleSelectContact('${c.id}')"> ${escapeHtml(c.name)}
+        </label>`).join("") || `<div class="empty">No clients match this search.</div>`}
+      </div>
+      ${filtered.length>visible.length ? `<div style="text-align:center; margin-top:10px;"><span class="btn btn-outline btn-sm" onclick="loadMoreSelectContacts()">Load More Clients</span></div>` : ""}
+      <div class="pill-row" style="align-items:center; margin-top:16px;">
+        <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="toggleSelectAllContacts()">${allChecked?'✔ Unselect All':'✔ Select All'}</span>
+        <span style="flex:1 1 auto;"></span>
+        <span class="btn btn-outline btn-sm" onclick="confirmSelectContacts()">Add Clients</span>
+      </div>
+    </div>
+  `;
+}
+function renderCreateClientGroupPage(){
+  const f = session.createGroupForm;
+  const selected = DB.clients.filter(c=>f.selectedIds.has(c.id));
+  const isAllClients = DB.clients.length>0 && f.selectedIds.size===DB.clients.length;
+  const visibleSelected = f.contactSearch.trim()
+    ? selected.filter(c=>c.name.toLowerCase().includes(f.contactSearch.trim().toLowerCase()))
+    : selected;
+  return `
+    <div class="card">
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="backToClientGroupsList()" style="cursor:pointer;">←</span><span>Create Client Group</span></div>
+      <div class="field" style="margin-top:8px;"><label>Group Name</label><input value="${escapeHtml(f.name)}" oninput="session.createGroupForm.name=this.value" required></div>
+      <div class="pill-row" style="align-items:center; gap:8px; margin:10px 0;">
+        <span class="btn btn-outline btn-sm" onclick="openSelectContactsModal()">Select Contacts</span>
+        <input placeholder="Search Contact" value="${escapeHtml(f.contactSearch)}" oninput="session.createGroupForm.contactSearch=this.value; renderApp();" style="margin-left:auto; max-width:160px;">
+      </div>
+      <div style="text-align:right; margin-bottom:10px;">
+        <span class="btn btn-green btn-sm" onclick="submitCreateClientGroup()">✔ Save</span>
+      </div>
+      <div class="detail-label">Selected Contacts</div>
+      <div style="margin-top:6px;">
+        ${f.selectedIds.size===0 ? `<div class="empty">No contacts selected yet.</div>`
+          : isAllClients ? `<label style="display:flex; align-items:center; gap:10px; padding:6px 0;"><input type="checkbox" checked onchange="session.createGroupForm.selectedIds=new Set(); renderApp();"> All Clients (${DB.clients.length})</label>`
+          : visibleSelected.map(c=>`<label style="display:flex; align-items:center; gap:10px; padding:6px 0;"><input type="checkbox" checked onchange="session.createGroupForm.selectedIds.delete('${c.id}'); renderApp();"> ${escapeHtml(c.name)}</label>`).join("")}
+      </div>
+    </div>
+  `;
+}
+function submitCreateClientGroup(){
+  const f = session.createGroupForm;
+  if(!f.name || !f.name.trim()){ toast("Enter a group name"); return; }
+  if(!f.selectedIds.size){ toast("Select at least one client"); return; }
+  return withRequest('create-client-group', async ()=>{
+    const memberIds = Array.from(f.selectedIds);
+    const res = await api.post('/api/client-groups', { name: f.name.trim(), member_ids: memberIds });
     const g = res.group;
     DB.groups.unshift({id:g.id, branchId:g.branch_id, name:g.name, meetingDay:g.meeting_day, memberIds:g.members.map(m=>m.id), memberNames:g.members.map(m=>m.name)});
-    members.forEach(id=>{ const c=DB.clients.find(x=>x.id===id); if(c) c.groupId=g.id; });
     toast("Group created");
+    session.clientGroupsState = defaultClientGroupsState();
+    session.clientGroupsState.category = g.name;
+    backToClientGroupsList();
   }, {mutates:true});
 }
 function defaultLeadsBrowserState(){
@@ -15876,6 +16039,7 @@ function renderModal(){
   else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
   else if(modal.type === "set-target") body = renderSetTargetModal();
   else if(modal.type === "arrears-bucket-loans") body = renderArrearsBucketLoansModal();
+  else if(modal.type === "select-clients") body = renderSelectClientsModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
   const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];

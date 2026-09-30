@@ -6298,6 +6298,201 @@ apiRequest = async function(method, path, body){
     backToBizPerfMenu();
   }
 
+  // ---- 61. CLIENTS > DEFAULT GROUPS (Client Groups): the real category
+  // dropdown (Default Clients / a real weekday's due clients / BLACK BOOK
+  // / Healthy client / LEADS / real custom groups), the real Loan Officer
+  // filter, and the real "+ Group" -> Select Contacts -> Save flow —
+  // every category computed from the exact same real, already-loaded
+  // DB.clients/DB.loans/DB.leads this whole app already treats as
+  // authoritative, no new backend endpoint. ----
+  {
+    let mgrDg = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.clientGroupsState = null; session.clientGroupsView = null;
+    goTo('clients','Client Groups');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client Groups') && html.includes('+ Group'), "the real Client Groups page genuinely renders with its own requested '+ Group' action");
+    __assert(!html.includes('class="subtabs"'), "the real Client Groups page genuinely has no horizontal subtab bar above it, matching the requested reference design");
+    __assert(html.includes('onclick="goTo(\'dashboard\')"'), "the real Client Groups page genuinely has its own real back arrow");
+    ['Default Clients', ...CLIENT_GROUP_WEEKDAYS.map(d=>d+' Clients'), 'BLACK BOOK', 'Healthy client', 'LEADS'].forEach(opt=>
+      __assert(html.includes(opt), `the real "${opt}" category genuinely renders as a real dropdown option`));
+    __assert(html.includes('-- Loan Officer --') && html.includes('Name') && html.includes('Contact') && html.includes('Id Number') && html.includes('Loan Officer') && html.includes('Balance') && html.includes('Days'), "the real page genuinely renders the requested Loan Officer filter and exact real table column set");
+
+    // A fresh, real client + disbursed loan — currently fully current
+    // (no real arrears) — reused across the "Monday Clients"/"Healthy
+    // client" checks below, since both are genuinely true of it at once.
+    let ofDg = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const dgClientForm = new Map([['name','Default Groups Healthy Client'],['phone','0722900333'],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return dgClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const dgClient = DB.clients.find(c=>c.name==='Default Groups Healthy Client');
+    const dgProduct = DB.products.find(p=>p.id==='pr_boda');
+    const dgLoanForm = new Map([['clientId',dgClient.id],['productId',dgProduct.id],['principal','20000'],['term','3'],['purpose','Stock'],['guarantor','']]);
+    global.FormData = class { constructor(){ return dgLoanForm; } };
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    const dgLoanApp = DB.loans.find(l=>l.clientId===dgClient.id);
+
+    let mgrDg2 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrDg2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dgLoanApp.id);
+    let rgDg = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return rgDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dgLoanApp.id);
+    let omDg = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return omDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dgLoanApp.id);
+    let acDg = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dgLoanApp.id);
+    let adDg = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(dgLoanApp.id, "Bank");
+    __assert(DB.loans.find(l=>l.id===dgLoanApp.id).status === "Active", "sanity: the real fresh loan is genuinely disbursed");
+
+    // A second, real client whose loan gets genuinely written off — for
+    // the real BLACK BOOK category. Admin is the one real role that
+    // actually holds Write Off Loans authority.
+    let ofDg2 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofDg2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    const bbClientForm = new Map([['name','Default Groups BlackBook Client'],['phone','0722900444'],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return bbClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const bbClient = DB.clients.find(c=>c.name==='Default Groups BlackBook Client');
+    const bbLoanForm = new Map([['clientId',bbClient.id],['productId',dgProduct.id],['principal','15000'],['term','3'],['purpose','Stock'],['guarantor','']]);
+    global.FormData = class { constructor(){ return bbLoanForm; } };
+    await submitLoanApp({ preventDefault(){}, target:{} });
+    const bbLoanApp = DB.loans.find(l=>l.clientId===bbClient.id);
+    global.FormData = class { constructor(){ return mgrDg2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bbLoanApp.id);
+    global.FormData = class { constructor(){ return rgDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bbLoanApp.id);
+    global.FormData = class { constructor(){ return omDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bbLoanApp.id);
+    global.FormData = class { constructor(){ return acDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(bbLoanApp.id);
+    global.FormData = class { constructor(){ return adDg; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(bbLoanApp.id, "Bank");
+    await writeOffLoan(bbLoanApp.id, "Frontend test write-off");
+    __assert(DB.loans.find(l=>l.id===bbLoanApp.id).status === "Written Off", "sanity: the real second loan is genuinely written off");
+
+    // A real Lead, converted into a real client — for the real LEADS category.
+    global.FormData = class { constructor(){ return ofDg2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    openCreateLeadModal();
+    DB.leadForm.name = 'Default Groups Lead Client';
+    DB.leadForm.phone = '0722900555';
+    await submitCreateLead({ preventDefault(){}, target:{} });
+    const dgLead = DB.leads.find(l=>l.name==='Default Groups Lead Client');
+    await convertLead(dgLead.id);
+
+    // Back as the real Manager, open the real Client Groups page fresh.
+    global.FormData = class { constructor(){ return mgrDg2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.clientGroupsState = null; session.clientGroupsView = null;
+    goTo('clients','Client Groups');
+
+    session.clientGroupsState.category = 'Healthy client';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Healthy Client'), "the real freshly-disbursed, fully-current loan's real client genuinely appears under the real 'Healthy client' category");
+    __assert(!html.includes('Default Groups BlackBook Client'), "the real written-off loan's real client is correctly excluded from 'Healthy client'");
+
+    session.clientGroupsState.category = 'BLACK BOOK';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups BlackBook Client'), "the real written-off loan's real client genuinely appears under the real 'BLACK BOOK' category");
+    __assert(!html.includes('Default Groups Healthy Client'), "the real fully-current client is correctly excluded from 'BLACK BOOK'");
+
+    session.clientGroupsState.category = 'LEADS';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Lead Client'), "the real client converted from a real lead genuinely appears under the real 'LEADS' category");
+
+    // The real weekday category — back-date the healthy client's own
+    // real soonest unpaid installment to a real, known upcoming Monday.
+    const dgLoan = DB.loans.find(l=>l.id===dgLoanApp.id);
+    const savedDgSchedule = dgLoan.schedule.map(r=>r.dueDate);
+    const nextMonday = new Date(); nextMonday.setUTCDate(nextMonday.getUTCDate() + ((8 - nextMonday.getUTCDay()) % 7 || 7));
+    dgLoan.schedule[0].dueDate = nextMonday.toISOString().slice(0,10);
+    renderApp();
+    __assert(clientNextDueWeekday(dgClient.id) === 'Monday', "sanity: clientNextDueWeekday() genuinely reads the real backdated soonest-unpaid installment's real weekday");
+    session.clientGroupsState.category = 'Monday Clients';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Healthy Client'), "the real client whose real soonest unpaid installment genuinely falls on a real Monday correctly appears under 'Monday Clients'");
+    dgLoan.schedule.forEach((r,i)=>{ r.dueDate = savedDgSchedule[i]; });
+    renderApp();
+
+    // Loan Officer filter — narrows the real table to just this one real officer's clients.
+    session.clientGroupsState.category = 'Default Clients';
+    session.clientGroupsState.officerId = 'usr_officer';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Healthy Client') && html.includes('Default Groups BlackBook Client'), "the real Loan Officer filter genuinely narrows to this exact real officer's own real clients");
+    session.clientGroupsState.officerId = '';
+    renderApp();
+
+    // ---- "+ Group": real Group Name + Select Contacts + Save flow ----
+    openCreateClientGroupPage();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Create Client Group') && html.includes('Group Name') && html.includes('Select Contacts') && html.includes('Search Contact') && html.includes('Selected Contacts'), "the real Create Client Group page genuinely renders every requested real field/action");
+    session.createGroupForm.name = 'Micheal';
+
+    openSelectContactsModal();
+    renderApp();
+    __assert(modal && modal.type === 'select-clients', "the real 'Select Contacts' button genuinely opens the real Select Clients modal");
+    toggleSelectContact(dgClient.id);
+    toggleSelectContact(bbClient.id);
+    confirmSelectContacts();
+    __assert(!modal, "the real 'Add Clients' action genuinely closes the real modal");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Healthy Client') && html.includes('Default Groups BlackBook Client'), "the real 'Selected Contacts' section genuinely lists each real individually-picked client by name");
+
+    submitCreateClientGroup();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    __assert(session.clientGroupsView === null, "saving the real new group genuinely returns to the real Client Groups list");
+    __assert(DB.groups.some(g=>g.name==='Micheal'), "the real new custom group genuinely persisted and appears in the real in-memory group list");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Micheal'), "the real new custom group's own real name genuinely appears as its own real category option");
+
+    // A still-showing real toast from the real lead conversion a moment
+    // ago (real toasts only auto-dismiss after a real 3.2s timeout) would
+    // otherwise make the real client's name appear to be "in the page"
+    // even once it's genuinely gone from the real table — cleared here so
+    // the check below is genuinely about real table membership only.
+    toasts.length = 0;
+    session.clientGroupsState.category = 'Micheal';
+    renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Default Groups Healthy Client') && html.includes('Default Groups BlackBook Client') && !html.includes('Default Groups Lead Client'), "selecting the real new custom group genuinely filters the real table down to exactly its own real 2 members, no more");
+
+    // "Select All" collapses to a real single "All Clients (N)" summary row.
+    openCreateClientGroupPage();
+    session.createGroupForm.name = 'Everyone Group';
+    openSelectContactsModal();
+    toggleSelectAllContacts();
+    confirmSelectContacts();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes(`All Clients (${DB.clients.length})`), "selecting every real client via 'Select All' genuinely collapses the real Selected Contacts section into one real 'All Clients (N)' summary row, not N individual rows");
+    backToClientGroupsList();
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();
