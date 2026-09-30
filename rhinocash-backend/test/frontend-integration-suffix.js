@@ -732,14 +732,19 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     global.FormData = class { constructor(){ return form; } };
     await doLogin({ preventDefault(){}, target:{} });
 
-    // Real user creation through the actual form handler.
-    const createForm = new Map([['name','Frontend Staff Test'],['phone','0722900444'],['email','frontendstafftest@rhinocash.co.ke'],
-      ['jobTitle','Loan Officer'],['department','Credit'],['branch','br_nairobi'],['regionId','rg_upper_coast'],
-      ['reportingManagerId',''],['employmentStatus','Full-time'],['role','Loan Officer'],['accessLevel','']]);
+    // Real user creation through the actual Create User page form handler
+    // (the embedded dashboard "Add New Staff" form was removed — that page
+    // is now the one and only real onboarding path — so this drives the
+    // real field names: roleId/branchId/departmentId, not display names).
+    const creditDept = (DB.departments||[]).find(d=>d.name==='Credit');
+    const createForm = new Map([['name','Frontend Staff Test'],['firstName','Frontend'],['lastName','Staff Test'],
+      ['phone','0722900444'],['email','frontendstafftest@rhinocash.co.ke'],
+      ['jobTitle','Loan Officer'],['departmentId', creditDept ? creditDept.id : ''],['branchId','br_nairobi'],['regionId','rg_upper_coast'],
+      ['reportingManagerId',''],['employmentStatus','Full-time'],['roleId','loan_officer'],['accessLevel','']]);
     global.FormData = class { constructor(){ return createForm; } };
     const staffBefore = DB.staff.length;
-    await submitCreateUser({ preventDefault(){}, target:{} });
-    __assert(DB.staff.length === staffBefore + 1, "submitCreateUser (real form handler) created a real staff account via the API");
+    await submitCreateUserForm({ preventDefault(){}, target:{} });
+    __assert(DB.staff.length === staffBefore + 1, "submitCreateUserForm (real Create User page handler) created a real staff account via the API");
     const newStaff = DB.staff.find(s=>s.email==='frontendstafftest@rhinocash.co.ke');
     __assert(newStaff && newStaff.role === 'Loan Officer', "new staff member has the real role, correctly translated from display name to role_id and back");
 
