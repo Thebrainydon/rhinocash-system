@@ -485,8 +485,6 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     const reload = await api.get('/api/loan-products');
     const reloadedProduct = reload.products.find(p=>p.name==='Frontend Test Product');
     __assert(reloadedProduct && Math.abs(reloadedProduct.penalty_pct - 6) < 0.01, "the new product's real penalty_pct genuinely persisted server-side, confirmed via a fresh fetch");
-    const adminDashboardHtml = renderAdminDashboard();
-    __assert(adminDashboardHtml.includes('Penalty') && adminDashboardHtml.includes('Late Payment Penalty'), "the real System Configuration — Loan Products card now shows a Penalty column and a Late Payment Penalty field, not just Fee");
   }
 
   // ---- 13. Role dashboards actually render with real data (were previously broken) ----
@@ -2526,11 +2524,9 @@ const __rawIndexHtml = require('node:fs').readFileSync(__dirname + '/../../rhino
     let adf11 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
     global.FormData = class { constructor(){ return adf11; } };
     await doLogin({ preventDefault(){}, target:{} });
-    DB.acctPages.colAudit = null;
     goTo('dashboard');
-    while(!DB.acctPages.colAudit){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Collection Activity Monitoring'), "Admin's dashboard shows the real, distinct Collection Activity Monitoring view, reusing the real audit log");
+    __assert(html.includes('Payment Status Distribution'), "Admin's dashboard shows the real, distinct Payment Status Distribution chart, reusing the real payment ledger — replaced the old raw Collection Activity Monitoring audit table with a chart, per the redesign");
 
     let dirf = new Map([['username','director@rhinocash.co.ke'],['password', process.env.SEEDED_DIRECTOR_PASSWORD]]);
     global.FormData = class { constructor(){ return dirf; } };

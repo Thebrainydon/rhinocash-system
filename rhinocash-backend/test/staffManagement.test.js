@@ -336,7 +336,7 @@ async function get_role(id, token) {
     const audit = await api('GET', `/api/audit-logs?entity=Role&record_id=${createdRoleCode}`, { token: adminToken });
     assert(audit.status === 200 && audit.json.auditLogs.some(a => a.action === 'Created role'), 'FF: a real audit entry genuinely records this role\'s creation');
     const entry = audit.json.auditLogs.find(a => a.action === 'Created role');
-    assert(entry.user_id && entry.user_name === 'Rhinocash System Administrator', 'FF: the real audit entry records the real actor who created it');
+    assert(entry.user_id && entry.user_name === 'System Administrator', 'FF: the real audit entry records the real actor who created it');
     assert(JSON.stringify(entry).toLowerCase().indexOf('password') === -1 && JSON.stringify(entry).toLowerCase().indexOf('token') === -1, 'FF: the real audit entry never leaks a credential or token of any kind');
   }
 
@@ -391,7 +391,7 @@ async function get_role(id, token) {
 
     const audit = await api('GET', '/api/audit-logs?entity=Role&record_id=accountant', { token: adminToken });
     const latest = audit.json.auditLogs.find(a => a.action === 'Changed role permission matrix');
-    assert(latest && latest.user_name === 'Rhinocash System Administrator', 'II: a real single audit record captures this bulk change with the real actor');
+    assert(latest && latest.user_name === 'System Administrator', 'II: a real single audit record captures this bulk change with the real actor');
 
     // Restore the real seeded matrix so this test's side effect never leaks into a later, unrelated assertion.
     await api('PUT', '/api/roles/accountant/permissions', { token: adminToken, body: { permissions: currentlyAllowed } });
@@ -516,7 +516,7 @@ async function get_role(id, token) {
     assert(create.status === 201, 'PP: setup — a real user is created for audit verification');
     const activity = await api('GET', `/api/audit-logs?entity=User&record_id=${create.json.user.id}`, { token: adminToken });
     const entry = activity.json.auditLogs.find(a => a.action === 'Created user');
-    assert(entry && entry.user_name === 'Rhinocash System Administrator', 'PP: a real audit entry records the real actor who created this account');
+    assert(entry && entry.user_name === 'System Administrator', 'PP: a real audit entry records the real actor who created this account');
     const raw = JSON.stringify(entry).toLowerCase();
     assert(raw.indexOf('password') === -1 && raw.indexOf('hash') === -1 && raw.indexOf('salt') === -1 && !raw.includes(create.json.tempPassword.toLowerCase()), 'PP: the real audit entry never contains a password, hash, salt or the real temporary password itself');
   }

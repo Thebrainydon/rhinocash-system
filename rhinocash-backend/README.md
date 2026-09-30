@@ -102,7 +102,7 @@ server you're testing against is using.
 account and prints its credentials **once**, to the console, at seed time:
 
 ```
-Name:      Rhinocash System Administrator
+Name:      System Administrator
 Email:     admin@rhinocash.co.ke   (override with INITIAL_ADMIN_EMAIL)
 Password:  <randomly generated, shown only in that seed run's output>
 ```

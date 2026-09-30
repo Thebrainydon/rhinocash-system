@@ -130,6 +130,20 @@ body{
 .kpi-value{font-size:24px; font-weight:800; color:var(--navy); margin-top:6px;}
 .kpi-delta{font-size:11.5px; margin-top:5px; font-weight:600;}
 .kpi-delta.up{color:var(--green);} .kpi-delta.down{color:var(--red);}
+/* Optional colored variants — an opt-in accent border + tint, layered on
+   the plain .kpi above without changing it, so every existing plain .kpi
+   tile elsewhere in the app is completely unaffected. */
+.kpi.c-blue{background:var(--blue-bg); border-top:3px solid var(--blue);}
+.kpi.c-green{background:var(--green-bg); border-top:3px solid var(--green);}
+.kpi.c-amber{background:var(--amber-bg); border-top:3px solid var(--amber);}
+.kpi.c-purple{background:var(--purple-bg); border-top:3px solid var(--purple);}
+.kpi.c-red{background:var(--red-bg); border-top:3px solid var(--red);}
+/* A label:value row with a divider line beneath it — the non-table
+   equivalent of a two-column <table> used for compact overview cards. */
+.stat-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
+.stat-row:last-child{border-bottom:none;}
+.stat-row-label{font-size:13px; color:var(--ink-soft);}
+.stat-row-value{font-size:14px; font-weight:700; color:var(--navy);}
 
 .grid2{display:grid; grid-template-columns:1.3fr 1fr; gap:16px;}
 .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
@@ -1911,13 +1925,6 @@ async function decideSalaryAdvance(id, decision){
   if(idx>=0) DB.salaryAdvances[idx] = res.salaryAdvance;
   toast(`Salary advance request ${decision.toLowerCase()}`);
 }
-function addBranch(data){
-  const b = {id:uid("br"), name:data.name, location:data.location};
-  DB.branches.push(b);
-  log("Opened new branch", "Branch", b.id, `${b.name} (${b.location})`);
-  toast("New branch opened");
-  save();
-}
 async function addLoanProduct(data){
   const res = await api.post('/api/loan-products', { name:data.name, rate_type:'Flat', rate_pct:Number(data.rate),
     min_amount:Number(data.minAmt), max_amount:Number(data.maxAmt), min_term_months:Number(data.minTerm)||undefined, max_term_months:Number(data.maxTerm)||undefined,
@@ -3087,7 +3094,7 @@ function renderBranchLoanSummaryPage(){
 function renderDashboard(){
   switch(session.role){
     case "Loan Officer": return renderOfficerDashboard();
-    case "Admin": return renderCollectionActivityMonitoringCard() + renderAdminDashboard();
+    case "Admin": return renderAdminDashboard();
     case "Accountant": return renderPostedUnpostedCollectionsCard() + renderAccountantDashboard();
     case "CEO": return renderCEODashboard();
     case "Director": return renderPortfolioRiskCard() + renderDirectorDashboard();
@@ -3240,24 +3247,6 @@ function renderPostedUnpostedCollectionsCard(){
       <div class="kpi"><div class="kpi-label">Unposted</div><div class="kpi-value">${fmt(unpostedTotal)}</div><div class="hint">${unposted.length} payment(s) — awaiting reconciliation</div></div>
     </div>
     ${unposted.length ? `<a href="#" onclick="goTo('payments','Unposted Payments'); return false;" class="btn btn-sm btn-outline" style="margin-top:8px;">Go to Unposted Payments →</a>` : ""}
-  </div>`;
-}
-
-// Admin — Collection Activity Monitoring (reuses the real audit log, filtered to the collections module).
-async function loadCollectionAuditMonitoring(){
-  return withRequest('load-colaudit', async ()=>{
-    const res = await api.get('/api/audit-logs?module=collections&limit=25');
-    DB.acctPages.colAudit = res.auditLogs || [];
-  });
-}
-function renderCollectionActivityMonitoringCard(){
-  const state = DB.acctPages.colAudit;
-  if(!state) loadCollectionAuditMonitoring();
-  if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
-  return `<div class="card">
-    <div class="card-title">Collection Activity Monitoring <small>real audit trail for the Collections module</small></div>
-    <div class="table-wrap"><table><tr><th>Action</th><th>Record</th><th>By</th><th>When</th></tr>
-    ${state.map(a=>`<tr><td>${escapeHtml(a.action)}</td><td class="hint">${escapeHtml(a.record_type||'')} ${escapeHtml(a.record_id||'')}</td><td>${staffName(a.user_id)}</td><td>${new Date(a.created_at).toLocaleString()}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No collection activity recorded yet.</td></tr>`}</table></div>
   </div>`;
 }
 
@@ -3489,19 +3478,31 @@ function renderRegionalManagerDashboard(){
 
 /* ==================== ADMIN DASHBOARD — system, users, security, audit ==================== */
 // ---- Admin Dashboard — a real system-administration command center, not
-// a sidebar duplicate. Every figure here is either already-bulk-loaded
-// data (DB.staff/clients/loans/payments/branches/departments/auditLog —
-// zero extra requests) or reuses an already-built, already-tested
-// aggregate: computeStats(null) (the same company-wide engine the CEO
-// dashboard uses — never a second loan-math implementation),
-// branchPerformanceBars()/staffPerformanceTable()/performanceIndicatorsTable()
-// (already used elsewhere), and renderSystemHealthCard()/
-// renderSecurityEventsCard() (the real GET /api/system/health and
-// /api/system/security-events endpoints — built earlier, never wired to
-// any page until now). Quick Actions only ever link to pages that
-// genuinely exist; a sidebar item with no page yet (Employee Account
-// Requests, Access Requests, Permission Matrix, ...) has no card or
-// button pretending otherwise anywhere on this dashboard. ----
+// a sidebar duplicate and not a page of raw data tables. Every figure
+// here is either already-bulk-loaded data (DB.staff/clients/loans/
+// payments/branches/departments/auditLog — zero extra requests) or
+// reuses an already-built, already-tested aggregate: computeStats(null)
+// (the same company-wide engine the CEO dashboard uses — never a second
+// loan-math implementation), branchPerformanceBars() (already used
+// elsewhere), and DB.systemHealth/loadSystemHealth() (the real GET
+// /api/system/health endpoint — same data source renderSystemHealthCard()
+// itself reads, just presented as KPI tiles + charts here instead of that
+// shared card's own embedded table, which this page no longer uses).
+// Every list that used to be a raw <table> (Approvals & Pending Work,
+// Recent Activity, System Configuration Status, Users by Role, Active
+// Loans by Product, Payment Status Distribution, Login Activity) is now
+// either a Chart.js chart or a non-table stat-row list; the standalone
+// Users & Staff / Branch Management / Loan Products tables and their
+// embedded create-forms were removed outright — Quick Actions and the
+// Organization Overview card link to the real, already-built pages for
+// that instead of duplicating them here. Quick Actions only ever link to
+// pages that genuinely exist; a sidebar item with no page yet (Employee
+// Account Requests, Access Requests, Permission Matrix, ...) has no card
+// or button pretending otherwise anywhere on this dashboard. ----
+// Chart.js color palette reused as-is from every other page's charts in
+// this file (Business Analytics, Branches Loan Summary, etc.) — kept
+// consistent app-wide rather than inventing a separate palette here.
+const ADMIN_CHART_COLORS = ['#4c956c','#264653','#e9c46a','#8c97b8','#e07a5f','#3d405b','#2c6e49','#c1121f','#f4a261'];
 function renderAdminDashboard(){
   const meRaw = DB.me;
   if(!meRaw) return `<div class="empty">No admin profile found.</div>`;
@@ -3521,12 +3522,23 @@ function renderAdminDashboard(){
   const today = todayISO();
   const disbursedToday = DB.loans.filter(l=>l.disbursedAt && l.disbursedAt.slice(0,10)===today).reduce((s,l)=>s+l.principal,0);
   const pendingLoans = DB.loans.filter(l=>(l.status||"").startsWith("Waiting for")).length;
+  const loansInArrears = DB.loans.filter(l=>["Active","Disbursed"].includes(l.status) && loanArrearsDays(l)>0).length;
 
   // ---- Payments ----
   const unpostedPayments = DB.payments.filter(p=>p.status==="Unposted");
   const overpayments = DB.payments.filter(p=>p.status==="Overpayment");
-  const prepayments = DB.payments.filter(p=>p.status==="Prepayment");
-  const processedPayments = DB.payments.filter(p=>p.status!=="Unposted" && p.status!=="Reversed");
+
+  // Real payment-status distribution (chart replacement for the removed
+  // "Collection Activity Monitoring" raw audit table) — every status that
+  // actually exists in DB.payments, not a fixed guessed subset.
+  const paymentsByStatus = {};
+  DB.payments.forEach(p=>{ paymentsByStatus[p.status] = (paymentsByStatus[p.status]||0) + 1; });
+
+  // Real active-loan distribution by product (chart replacement for the
+  // removed Loan Products table) — reuses computeStats(null)'s own
+  // activeScope, never a second loan-scope calculation.
+  const loansByProduct = {};
+  st.activeScope.forEach(l=>{ const n = productName(l.productId); loansByProduct[n] = (loansByProduct[n]||0) + 1; });
 
   // ---- Config status — real checks, never a hardcoded "Configured" ----
   // DB.departments (unlike DB.staff/DB.branches/DB.clients) is not part of
@@ -3548,12 +3560,20 @@ function renderAdminDashboard(){
     { label:"Email", ok: ints.email==='CONFIGURED', note: ints.email==='CONFIGURED' ? 'Configured' : 'Not configured' },
   ];
 
-  const recentActivity = DB.auditLog.slice(0,10);
-  const recentAccessChanges = DB.auditLog.filter(l=>/role|permission|access|module/i.test(l.action)).slice(0,6);
+  const recentActivity = DB.auditLog.slice(0,8);
+  const recentAccessChanges = DB.auditLog.filter(l=>/role|permission|access|module/i.test(l.action)).slice(0,5);
 
   const usersByRole = {};
   DB.staff.forEach(s=>{ usersByRole[s.role] = (usersByRole[s.role]||0) + 1; });
-  const maxByRole = Math.max(1, ...Object.values(usersByRole));
+  const usersByRoleSorted = Object.entries(usersByRole).sort((a,b)=>b[1]-a[1]);
+
+  // Real system health snapshot — same DB.systemHealth data source
+  // renderSystemHealthCard() itself reads (loadSystemHealth() fetches it
+  // once and every reader shares the cached result), just presented here
+  // as colored KPI tiles + a chart instead of that shared card's own
+  // embedded <table>, which this page no longer uses anywhere.
+  if(!DB.systemHealth) loadSystemHealth();
+  const health = DB.systemHealth;
 
   const now = new Date();
 
@@ -3562,16 +3582,16 @@ function renderAdminDashboard(){
       <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; justify-content:space-between;">
         <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
           <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-          <div style="flex:1; min-width:220px;">
-            <div style="font-size:19px; font-weight:800; color:var(--navy);">${escapeHtml(me.name)}</div>
-            <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px; font-size:13px; color:var(--ink-soft);">
-              <div>💼 System Administrator</div>
-              <div>🌍 System-wide Administration Scope</div>
-              <div>🏖️ ${me.leaveDays} Leave Days</div>
-              <div>👁️ Master System Administration Access</div>
+          <div style="flex:1; min-width:240px;">
+            <div style="font-size:20px; font-weight:800; color:var(--navy);">${escapeHtml(me.name)}</div>
+            <div style="margin-top:12px;">
+              <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">💼 System Administrator</div>
+              <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">🌍 System-wide Administration Scope</div>
+              <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">🏖️ ${me.leaveDays} Leave Days</div>
+              <div style="padding:7px 0; font-size:14px; color:var(--ink-soft);">👁️ Master System Administration Access</div>
             </div>
-            <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-            <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
+            <div style="margin-top:12px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:13px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
+            <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:13px; cursor:pointer;">Request Advance</a></div>
           </div>
         </div>
         <div class="hint" style="text-align:right; white-space:nowrap;">${now.toLocaleDateString(undefined,{weekday:'long', year:'numeric', month:'long', day:'numeric'})}<br>${now.toLocaleTimeString()}</div>
@@ -3590,174 +3610,135 @@ function renderAdminDashboard(){
     <div class="section-note">System &amp; organization control center. This view intentionally does not lead with profitability — that's the CEO/Director/Accountant dashboards' job.</div>
 
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Total Users</div><div class="kpi-value">${totalUsers}</div></div>
-      <div class="kpi"><div class="kpi-label">Active Users</div><div class="kpi-value">${activeUsers}</div></div>
-      <div class="kpi"><div class="kpi-label">Total Branches</div><div class="kpi-value">${DB.branches.length}</div></div>
-      <div class="kpi"><div class="kpi-label">Total Departments</div><div class="kpi-value">${departments.length}</div></div>
-      <div class="kpi"><div class="kpi-label">Total Clients</div><div class="kpi-value">${st.totalClients}</div></div>
-      <div class="kpi"><div class="kpi-label">Active Loans</div><div class="kpi-value">${st.activeScope.length}</div></div>
-      <div class="kpi"><div class="kpi-label">Portfolio Outstanding</div><div class="kpi-value" style="font-size:19px;">${fmt(st.portfolioOutstanding)}</div></div>
-      <div class="kpi"><div class="kpi-label">Loans in Arrears</div><div class="kpi-value" style="color:${st.arrearsAmt>0?'var(--red)':'inherit'};">${DB.loans.filter(l=>["Active","Disbursed"].includes(l.status) && loanArrearsDays(l)>0).length}</div></div>
-      <div class="kpi"><div class="kpi-label">Today's Collections</div><div class="kpi-value" style="font-size:19px;">${fmt(st.collectedToday||0)}</div></div>
-      <div class="kpi"><div class="kpi-label">Today's Disbursements</div><div class="kpi-value" style="font-size:19px;">${fmt(disbursedToday)}</div></div>
-      <div class="kpi"><div class="kpi-label">Monthly Collections</div><div class="kpi-value" style="font-size:19px;">${fmt(st.collectionsMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Monthly Disbursements</div><div class="kpi-value" style="font-size:19px;">${fmt(st.disbursedMTD)}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Total Users</div><div class="kpi-value">${totalUsers}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Active Users</div><div class="kpi-value">${activeUsers}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Total Branches</div><div class="kpi-value">${DB.branches.length}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Total Departments</div><div class="kpi-value">${departments.length}</div></div>
+      <div class="kpi c-green"><div class="kpi-label">Total Clients</div><div class="kpi-value">${st.totalClients}</div></div>
+      <div class="kpi c-green"><div class="kpi-label">Active Loans</div><div class="kpi-value">${st.activeScope.length}</div></div>
+      <div class="kpi c-green"><div class="kpi-label">Portfolio Outstanding</div><div class="kpi-value" style="font-size:19px;">${fmt(st.portfolioOutstanding)}</div></div>
+      <div class="kpi ${loansInArrears>0?'c-red':'c-green'}"><div class="kpi-label">Loans in Arrears</div><div class="kpi-value">${loansInArrears}</div></div>
+      <div class="kpi c-amber"><div class="kpi-label">Today's Collections</div><div class="kpi-value" style="font-size:19px;">${fmt(st.collectedToday||0)}</div></div>
+      <div class="kpi c-amber"><div class="kpi-label">Today's Disbursements</div><div class="kpi-value" style="font-size:19px;">${fmt(disbursedToday)}</div></div>
+      <div class="kpi c-amber"><div class="kpi-label">Monthly Collections</div><div class="kpi-value" style="font-size:19px;">${fmt(st.collectionsMTD)}</div></div>
+      <div class="kpi c-amber"><div class="kpi-label">Monthly Disbursements</div><div class="kpi-value" style="font-size:19px;">${fmt(st.disbursedMTD)}</div></div>
     </div>
 
     <div class="card-title" style="color:var(--navy); font-weight:800;">Administration Command Center</div>
     <div class="grid2">
       <div class="card">
         <div class="card-title">Organization Overview</div>
-        <table>
-          <tr><td>Regions</td><td>${DB.regions.length}</td></tr>
-          <tr><td>Branches</td><td>${DB.branches.length}</td></tr>
-          <tr><td>Departments</td><td>${departments.length}</td></tr>
-          <tr><td>Total Staff</td><td>${totalUsers}</td></tr>
-          <tr><td>Total Clients</td><td>${st.totalClients}</td></tr>
-        </table>
-        <a href="#" onclick="goTo('staff'); return false;" class="btn btn-sm btn-outline" style="margin-top:10px;">View Employees →</a>
+        <div class="stat-row"><span class="stat-row-label">Regions</span><span class="stat-row-value">${DB.regions.length}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Branches</span><span class="stat-row-value">${DB.branches.length}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Departments</span><span class="stat-row-value">${departments.length}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Total Staff</span><span class="stat-row-value">${totalUsers}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Total Clients</span><span class="stat-row-value">${st.totalClients}</span></div>
+        <div class="pill-row" style="margin-top:12px; margin-bottom:0;">
+          <a href="#" onclick="goTo('staff'); return false;" class="btn btn-sm btn-outline">View Employees →</a>
+          <a href="#" onclick="goTo('branches'); return false;" class="btn btn-sm btn-outline">Manage Branches →</a>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">User &amp; Access Overview</div>
-        <table>
-          <tr><td>Active Users</td><td><span class="badge green">${activeUsers}</span></td></tr>
-          <tr><td>Suspended Users</td><td><span class="badge amber">${suspendedUsers}</span></td></tr>
-          <tr><td>Deactivated Users</td><td><span class="badge red">${deactivatedUsers}</span></td></tr>
-          <tr><td>Must Change Password</td><td>${mustChangePwUsers}</td></tr>
-        </table>
+        <div class="stat-row"><span class="stat-row-label">Active Users</span><span class="badge green">${activeUsers}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Suspended Users</span><span class="badge amber">${suspendedUsers}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Deactivated Users</span><span class="badge red">${deactivatedUsers}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Must Change Password</span><span class="stat-row-value">${mustChangePwUsers}</span></div>
         ${recentAccessChanges.length ? `<div class="hint" style="margin-top:10px; font-weight:700;">Recent role/access changes</div>
-        <div class="table-wrap"><table>${recentAccessChanges.map(a=>`<tr><td class="hint">${timeAgo(a.date)}</td><td>${escapeHtml(a.action)}</td><td class="hint">${escapeHtml(a.entityId||'')}</td></tr>`).join("")}</table></div>` : `<div class="hint" style="margin-top:10px;">No recent role/access changes.</div>`}
+        ${recentAccessChanges.map(a=>`<div class="stat-row"><span class="stat-row-label hint">${timeAgo(a.date)} · ${escapeHtml(a.action)}</span></div>`).join("")}` : `<div class="hint" style="margin-top:10px;">No recent role/access changes.</div>`}
         <a href="#" onclick="goTo('staff','Roles'); return false;" class="btn btn-sm btn-outline" style="margin-top:10px;">Manage Roles →</a>
       </div>
       <div class="card">
         <div class="card-title">Loan Portfolio Overview</div>
-        <table>
-          <tr><td>Active Loans</td><td>${st.activeScope.length}</td></tr>
-          <tr><td>Portfolio Outstanding</td><td>${fmt(st.portfolioOutstanding)}</td></tr>
-          <tr><td>Portfolio at Risk (PAR)</td><td style="color:${st.par>10?'var(--red)':'inherit'};">${st.par.toFixed(1)}%</td></tr>
-          <tr><td>Disbursed MTD</td><td>${fmt(st.disbursedMTD)} (${st.loansMTDCount})</td></tr>
-          <tr><td>Awaiting Approval</td><td>${pendingLoans}</td></tr>
-          <tr><td>Undisbursed (Approved)</td><td>${st.undisbursedCount} · ${fmt(st.undisbursedAmt)}</td></tr>
-        </table>
+        <div class="stat-row"><span class="stat-row-label">Active Loans</span><span class="stat-row-value">${st.activeScope.length}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Portfolio Outstanding</span><span class="stat-row-value">${fmt(st.portfolioOutstanding)}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Portfolio at Risk (PAR)</span><span class="stat-row-value" style="color:${st.par>10?'var(--red)':'inherit'};">${st.par.toFixed(1)}%</span></div>
+        <div class="stat-row"><span class="stat-row-label">Disbursed MTD</span><span class="stat-row-value">${fmt(st.disbursedMTD)} (${st.loansMTDCount})</span></div>
+        <div class="stat-row"><span class="stat-row-label">Awaiting Approval</span><span class="stat-row-value">${pendingLoans}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Undisbursed (Approved)</span><span class="stat-row-value">${st.undisbursedCount} · ${fmt(st.undisbursedAmt)}</span></div>
       </div>
       <div class="card">
         <div class="card-title">Payment &amp; Collection Overview</div>
-        <table>
-          <tr><td>Collected MTD</td><td>${fmt(st.collectionsMTD)}</td></tr>
-          <tr><td>Collected Today</td><td>${fmt(st.collectedToday||0)}</td></tr>
-          <tr><td>Unposted Payments</td><td style="color:${unpostedPayments.length>0?'var(--amber)':'inherit'};">${unpostedPayments.length}</td></tr>
-          <tr><td>Overpayments</td><td style="color:${overpayments.length>0?'var(--amber)':'inherit'};">${overpayments.length}</td></tr>
-          <tr><td>Prepayments</td><td>${prepayments.length}</td></tr>
-          <tr><td>Processed Payments</td><td>${processedPayments.length}</td></tr>
-        </table>
+        <div class="stat-row"><span class="stat-row-label">Collected MTD</span><span class="stat-row-value">${fmt(st.collectionsMTD)}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Collected Today</span><span class="stat-row-value">${fmt(st.collectedToday||0)}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Unposted Payments</span><span class="stat-row-value" style="color:${unpostedPayments.length>0?'var(--amber)':'inherit'};">${unpostedPayments.length}</span></div>
+        <div class="stat-row"><span class="stat-row-label">Overpayments</span><span class="stat-row-value" style="color:${overpayments.length>0?'var(--amber)':'inherit'};">${overpayments.length}</span></div>
         <a href="#" onclick="goTo('payments'); return false;" class="btn btn-sm btn-outline" style="margin-top:10px;">Go to Payments →</a>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">Approvals &amp; Pending Work <small>real, live counts — not fabricated</small></div>
-      <div class="table-wrap"><table><tr><th>Item</th><th>Count</th><th></th></tr>
-        ${pendingLoans>0 ? `<tr><td>Loan applications awaiting approval</td><td>${pendingLoans}</td><td><button class="btn btn-sm btn-outline" onclick="goTo('loanbook')">Review</button></td></tr>` : ""}
-        ${unpostedPayments.length>0 ? `<tr><td>Unposted payments</td><td>${unpostedPayments.length}</td><td><button class="btn btn-sm btn-outline" onclick="goTo('payments')">Review</button></td></tr>` : ""}
-        ${overpayments.length>0 ? `<tr><td>Overpayments needing review</td><td>${overpayments.length}</td><td><button class="btn btn-sm btn-outline" onclick="goTo('payments')">Review</button></td></tr>` : ""}
-        ${(pendingLoans+unpostedPayments.length+overpayments.length)===0 ? `<tr><td colspan="3" class="empty">Nothing pending right now.</td></tr>` : ""}
-      </table></div>
-      <div class="hint" style="margin-top:8px;">Employee Account Requests and Access Requests workflows aren't implemented yet, so nothing is shown for them here.</div>
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">Approvals &amp; Pending Work <small>real, live counts — not fabricated</small></div>
+        ${(pendingLoans+unpostedPayments.length+overpayments.length)>0 ? registerChart('chart-admin-approvals', {
+          type:'bar',
+          data:{ labels:['Loan Approvals','Unposted Payments','Overpayments'], datasets:[{ label:'Pending', data:[pendingLoans, unpostedPayments.length, overpayments.length], backgroundColor:['#264653','#e9c46a','#c1121f'] }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
+        }) : `<div class="empty">Nothing pending right now.</div>`}
+        <div class="hint" style="margin-top:8px;">Employee Account Requests and Access Requests workflows aren't implemented yet, so nothing is shown for them here.</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Payment Status Distribution <small>real payment ledger, all statuses</small></div>
+        ${Object.keys(paymentsByStatus).length ? registerChart('chart-admin-paystatus', {
+          type:'doughnut',
+          data:{ labels:Object.keys(paymentsByStatus), datasets:[{ data:Object.values(paymentsByStatus), backgroundColor:ADMIN_CHART_COLORS }] },
+          options:{ responsive:true, maintainAspectRatio:false }
+        }) : `<div class="empty">No payments recorded yet.</div>`}
+      </div>
     </div>
 
     <div class="card">
       <div class="card-title">Recent Activity <small>from the real, existing audit log — not a separate system</small></div>
-      <div class="table-wrap"><table><tr><th>When</th><th>Actor</th><th>Action</th><th>Module</th></tr>
-        ${recentActivity.map(a=>`<tr><td class="hint">${timeAgo(a.date)}</td><td>${escapeHtml(a.user||'—')}</td><td>${escapeHtml(a.action)}</td><td class="hint">${escapeHtml(a.entity||'—')}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No activity recorded yet.</td></tr>`}
-      </table></div>
+      ${recentActivity.length ? recentActivity.map(a=>`
+        <div class="stat-row">
+          <span class="stat-row-label">${escapeHtml(a.user||'—')} — ${escapeHtml(a.action)} <span class="hint">${a.entity?('· '+escapeHtml(a.entity)):''}</span></span>
+          <span class="stat-row-value hint" style="font-weight:600;">${timeAgo(a.date)}</span>
+        </div>`).join("") : `<div class="empty">No activity recorded yet.</div>`}
     </div>
 
     <div class="card-title" style="color:var(--navy); font-weight:800;">Security &amp; System Health</div>
-    ${renderSystemHealthCard()}
-    ${renderSecurityEventsCard()}
+    ${health ? `
+    <div class="kpi-grid">
+      <div class="kpi ${health.database.ok?'c-green':'c-red'}"><div class="kpi-label">Database</div><div class="kpi-value">${health.database.ok?'Healthy':'Issue'}</div><div class="hint">${health.database.latencyMs}ms</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Active Users</div><div class="kpi-value">${health.users.active}</div></div>
+      <div class="kpi c-green"><div class="kpi-label">Successful Logins (24h)</div><div class="kpi-value">${health.security.successfulLogins24h}</div></div>
+      <div class="kpi ${health.security.failedLogins24h>0?'c-amber':'c-green'}"><div class="kpi-label">Failed Logins (24h)</div><div class="kpi-value">${health.security.failedLogins24h}</div></div>
+      <div class="kpi ${health.security.lockedOutAccounts>0?'c-red':'c-green'}"><div class="kpi-label">Locked Accounts</div><div class="kpi-value">${health.security.lockedOutAccounts}</div></div>
+    </div>
+    ${(health.security.successfulLogins24h+health.security.failedLogins24h)>0 ? `<div class="card"><div class="card-title" style="font-size:14px;">Login Activity (24h)</div>${registerChart('chart-admin-loginactivity', {
+      type:'bar',
+      data:{ labels:['Successful','Failed'], datasets:[{ label:'Logins', data:[health.security.successfulLogins24h, health.security.failedLogins24h], backgroundColor:['#4c956c','#c1121f'] }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
+    })}</div>` : ""}
+    ` : `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`}
 
-    <div class="card">
-      <div class="card-title">Users by Role <small>real distribution across the ${totalUsers} accounts above</small></div>
-      ${Object.entries(usersByRole).sort((a,b)=>b[1]-a[1]).map(([role,count])=>`
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-          <div style="width:140px; font-size:12.5px; flex-shrink:0;">${escapeHtml(role)}</div>
-          <div style="flex:1; background:var(--line); border-radius:6px; overflow:hidden; height:16px;"><div style="width:${count/maxByRole*100}%; background:var(--navy); height:100%;"></div></div>
-          <div style="width:28px; text-align:right; font-size:12.5px; font-weight:700;">${count}</div>
-        </div>`).join("") || `<div class="empty">No users yet.</div>`}
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">Users by Role <small>real distribution across the ${totalUsers} accounts above</small></div>
+        ${usersByRoleSorted.length ? registerChart('chart-admin-usersbyrole', {
+          type:'bar',
+          data:{ labels:usersByRoleSorted.map(r=>r[0]), datasets:[{ label:'Users', data:usersByRoleSorted.map(r=>r[1]), backgroundColor:ADMIN_CHART_COLORS }] },
+          options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
+        }) : `<div class="empty">No users yet.</div>`}
+      </div>
+      <div class="card">
+        <div class="card-title">Active Loans by Product <small>real portfolio composition, company-wide</small></div>
+        ${Object.keys(loansByProduct).length ? registerChart('chart-admin-loansbyproduct', {
+          type:'bar',
+          data:{ labels:Object.keys(loansByProduct), datasets:[{ label:'Active Loans', data:Object.values(loansByProduct), backgroundColor:ADMIN_CHART_COLORS }] },
+          options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
+        }) : `<div class="empty">No active loans yet.</div>`}
+      </div>
     </div>
 
     ${branchPerformanceBars()}
 
     <div class="card">
       <div class="card-title">System Configuration Status <small>real checks against the current setup, not a fabricated checklist</small></div>
-      <div class="table-wrap"><table><tr><th>Area</th><th>Status</th><th>Detail</th></tr>
-        ${configItems.map(c=>`<tr><td>${c.label}</td><td><span class="badge ${c.ok?'green':'grey'}">${c.ok?'Configured':'Not configured'}</span></td><td class="hint">${c.note}</td></tr>`).join("")}
-      </table></div>
+      <div class="pill-row" style="flex-wrap:wrap;">
+        ${configItems.map(c=>`<span class="badge ${c.ok?'green':'grey'}" title="${escapeHtml(c.note)}">${c.label}: ${c.ok?'Configured':'Not configured'}</span>`).join("")}
+      </div>
     </div>
-
-    <div class="card">
-      <div class="card-title">Users &amp; Staff <small>${DB.staff.length} accounts</small></div>
-      <div class="table-wrap"><table>
-        <tr><th>User</th><th>Role</th><th>Access Level</th><th>Branch / Region</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
-        ${DB.staff.map(s=>`<tr class="clickable" onclick="openStaffDetail('${s.id}')">
-          <td><strong>${escapeHtml(s.name)}</strong><br><span class="hint">${escapeHtml(s.staffCode)} · ${escapeHtml(s.email)}</span></td>
-          <td><span class="badge blue">${s.role}</span></td>
-          <td class="hint">${escapeHtml(s.accessLevel)}</td>
-          <td>${branchName(s.branch)}<br><span class="hint">${escapeHtml((DB.regions.find(r=>r.id===s.regionId)||{}).name || s.regionName || "—")}</span></td>
-          <td><span class="badge ${s.status==='Active'?'green':s.status==='Suspended'?'amber':'red'}">${s.status}</span></td>
-          <td class="hint">${s.lastLoginAt? timeAgo(s.lastLoginAt) : "Never"}</td>
-          <td onclick="event.stopPropagation();">
-            <button class="btn btn-sm btn-outline" onclick="openStaffDetail('${s.id}')">Manage</button>
-          </td>
-        </tr>`).join("")}
-      </table></div>
-    </div>
-
-    ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
-
-    <div class="card">
-      <div class="card-title">Branch Management</div>
-      <div class="table-wrap"><table><tr><th>Branch</th><th>Staff</th><th>Clients</th><th>Active Loans</th><th>Status</th></tr>
-      ${DB.branches.map(b=>{
-        const staffCount = DB.staff.filter(s=>s.branch===b.id).length;
-        const clientCount = DB.clients.filter(c=>c.branch===b.id).length;
-        const loanCount = activeLoans().filter(l=>l.branchId===b.id).length;
-        return `<tr><td><strong>${b.name}</strong><br><span class="hint">${b.location}</span></td><td>${staffCount}</td><td>${clientCount}</td><td>${loanCount}</td><td><span class="badge green">Active</span></td></tr>`;
-      }).join("")}</table></div>
-      ${CAN_OPEN_BRANCH(session.role) ? `
-      <form onsubmit="return submitAddBranch(event)" style="margin-top:12px;">
-        <div class="form-grid">
-          <div class="field"><label>Branch Name</label><input name="name" required></div>
-          <div class="field"><label>Location</label><input name="location" required></div>
-        </div>
-        <button class="btn btn-outline btn-sm" type="submit">Open New Branch</button>
-      </form>` : ""}
-    </div>
-
-    <div class="card">
-      <div class="card-title">Loan Products</div>
-      <div class="table-wrap"><table><tr><th>Product</th><th>Rate</th><th>Range</th><th>Term</th><th>Fee</th><th>Processing Fee (upfront)</th><th>Penalty</th></tr>
-      ${DB.products.map(p=>`<tr><td>${p.name}</td><td>${p.rate}% ${p.termWeeks?'flat':'flat/month'}</td><td>${fmt(p.minAmt)} – ${fmt(p.maxAmt)}</td><td>${p.termWeeks?`${p.termWeeks} week${p.termWeeks>1?'s':''} (weekly installments)`:`${p.minTerm}–${p.maxTerm} mo`}</td><td>${p.fee}%</td><td>${p.processingFeeAmount!=null?fmt(p.processingFeeAmount):'—'}</td><td>${p.penalty}% per overdue installment</td></tr>`).join("")}</table></div>
-      ${CAN_MANAGE_SETTINGS(session.role) ? `
-      <form onsubmit="return submitAddProduct(event)" style="margin-top:14px;">
-        <div class="form-grid">
-          <div class="field"><label>Product Name</label><input name="name" required></div>
-          <div class="field"><label>Flat Rate (%)</label><input name="rate" type="number" step="0.1" required></div>
-          <div class="field"><label>Min Amount</label><input name="minAmt" type="number" required></div>
-          <div class="field"><label>Max Amount</label><input name="maxAmt" type="number" required></div>
-          <div class="field"><label>Min Term (months)</label><input name="minTerm" type="number"></div>
-          <div class="field"><label>Max Term (months)</label><input name="maxTerm" type="number"></div>
-          <div class="field"><label>Duration (weeks — for a real weekly-installment product like Starter/Jijenge; overrides the month range above)</label><input name="termWeeks" type="number"></div>
-          <div class="field"><label>Processing Fee (%)</label><input name="fee" type="number" step="0.1" required></div>
-          <div class="field"><label>Processing Fee (KES, upfront — for a real weekly-installment product; required and collected via M-Pesa before the application can be submitted)</label><input name="processingFeeAmount" type="number"></div>
-          <div class="field"><label>Late Payment Penalty (% per overdue installment)</label><input name="penalty" type="number" step="0.1" value="0"></div>
-        </div>
-        <button class="btn btn-primary btn-sm" type="submit">Add Loan Product</button>
-      </form>` : `<div class="hint" style="margin-top:10px;">You don't have Manage System Settings permission.</div>`}
-    </div>
-
-    ${staffPerformanceTable(null)}
-    ${performanceIndicatorsTable(null)}
 
     <div class="card">
       <div class="card-title">Admin Alerts</div>
@@ -3769,8 +3750,6 @@ function renderAdminDashboard(){
     </div>
   `;
 }
-function submitAddProduct(ev){ ev.preventDefault(); const f=Object.fromEntries(new FormData(ev.target)); addLoanProduct(f); renderApp(); return false; }
-function submitAddBranch(ev){ ev.preventDefault(); const f=Object.fromEntries(new FormData(ev.target)); addBranch(f); renderApp(); return false; }
 function openStaffDetail(id){ session.selectedStaffId = id; renderApp(); }
 function closeStaffDetail(){ session.selectedStaffId = null; renderApp(); }
 function renderStaffDetailPanel(id){

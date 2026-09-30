@@ -226,13 +226,13 @@ async function seedInitialAdmin() {
     `INSERT INTO users (id, staff_code, name, email, password_hash, password_salt, must_change_password,
       role_id, access_level, job_title, department_id, employment_status, status)
      VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?)`,
-    [id, 'RC-0001', 'Rhinocash System Administrator', email, hash, salt,
+    [id, 'RC-0001', 'System Administrator', email, hash, salt,
       'admin', 'Master System Administration Access', 'System Administrator', 'it_systems', 'Full-time', 'Active']
   );
   console.log('\n================================================================');
   console.log('  INITIAL ADMINISTRATOR ACCOUNT CREATED');
   console.log('================================================================');
-  console.log(`  Name:      Rhinocash System Administrator`);
+  console.log(`  Name:      System Administrator`);
   console.log(`  Email:     ${email}`);
   console.log(`  Password:  ${password}`);
   console.log('  This password is shown ONCE, here, and is not stored anywhere');
