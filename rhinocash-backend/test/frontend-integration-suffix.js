@@ -1717,21 +1717,24 @@ apiRequest = async function(method, path, body){
     // Create Client Lead modal: real dynamic "Add More Field" + real creation, through the actual UI functions.
     openCreateLeadModal();
     __assert(modal && modal.type === 'create-lead', "openCreateLeadModal() genuinely opens the real Create Client Lead modal");
-    __assert(DB.leadForm.addFieldKey === 'next_of_kin_phone', "the 'Add More Field' selector genuinely defaults to the first real not-yet-added field (Kin Contact)");
+    __assert(DB.leadForm.addFieldKey === 'address', "the 'Add More Field' selector genuinely defaults to the first real not-yet-added field (Residence)");
+    __assert(!renderCreateLeadModal().includes('>Loan Officer<'), "a Loan Officer's own real Create Client Lead modal genuinely has no Loan Officer picker — their own lead is implicitly theirs");
     DB.leadForm.name = 'Frontend Lead Test';
     DB.leadForm.phone = '0733900'+Math.floor(Math.random()*900+100);
     DB.leadForm.national_id = '99988877';
-    DB.leadForm.address = 'Kisumu Town';
     DB.leadForm.client_location = 'Behind the bank';
     addLeadExtraField();
-    __assert('next_of_kin_phone' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'next_of_kin', "addLeadExtraField() through the real UI function genuinely added the real Kin Contact field and advanced to the next available one (Next of Kin)");
+    __assert('address' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'next_of_kin_phone', "addLeadExtraField() through the real UI function genuinely added the real Residence field and advanced to the next available one (Kin Contact)");
+    DB.leadForm.extra.address = 'Kisumu Town';
+    addLeadExtraField();
+    __assert('next_of_kin_phone' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'next_of_kin', "a second real call genuinely added Kin Contact and advanced to the next available real field (Next of Kin)");
     DB.leadForm.extra.next_of_kin_phone = '0700111222';
     addLeadExtraField();
     DB.leadForm.extra.next_of_kin = 'Peter Kin';
-    __assert('next_of_kin' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'business_type', "a second real call genuinely added Next of Kin and advanced to the last remaining real field (Business Type)");
+    __assert('next_of_kin' in DB.leadForm.extra && DB.leadForm.addFieldKey === 'business_type', "a third real call genuinely added Next of Kin and advanced to the last remaining real field (Business Type)");
 
     const leadModalHtml = renderCreateLeadModal();
-    __assert(leadModalHtml.includes('Kin Contact') && leadModalHtml.includes('Next of Kin'), "the real rendered modal genuinely shows both real fields that were dynamically added");
+    __assert(leadModalHtml.includes('Residence') && leadModalHtml.includes('Kin Contact') && leadModalHtml.includes('Next of Kin'), "the real rendered modal genuinely shows every real field that was dynamically added");
 
     await submitCreateLead({ preventDefault(){}, target:{} });
     __assert(DB.leads.some(l=>l.name==='Frontend Lead Test'), "a real lead was created via the actual Create Client Lead modal flow and appears in the real in-memory list");

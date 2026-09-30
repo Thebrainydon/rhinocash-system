@@ -1672,6 +1672,7 @@ async function addLead(data){
     name:data.name, phone:data.phone, source:data.source||null, notes:data.notes||null,
     national_id:data.national_id||null, address:data.address||null, client_location:data.client_location||null,
     next_of_kin:data.next_of_kin||null, next_of_kin_phone:data.next_of_kin_phone||null, business_type:data.business_type||null,
+    officer_id:data.officer_id||null,
   });
   const l = { id:res.lead.id, name:res.lead.name, phone:res.lead.phone, source:res.lead.source, status:res.lead.status, notes:res.lead.notes, createdAt:res.lead.created_at };
   DB.leads.unshift(l);
@@ -6053,16 +6054,33 @@ function renderClientLeads(){
 }
 // ---- Create Client Lead: a real modal, reachable from the sidebar's
 // "Create a Lead" quick action.
-// "Add More Field" lets the user optionally attach Kin Contact/Next of
-// Kin/Business Type — real client_leads columns, not thrown away, and
-// carried over onto the real client record when the lead converts. ----
+// "Add More Field" lets the user optionally attach Residence/Kin Contact/
+// Next of Kin/Business Type — real client_leads columns, not thrown away,
+// and carried over onto the real client record when the lead converts. ----
 const LEAD_EXTRA_FIELD_DEFS = [
+  { key:'address', label:'Residence' },
   { key:'next_of_kin_phone', label:'Kin Contact' },
   { key:'next_of_kin', label:'Next of Kin' },
   { key:'business_type', label:'Business Type' },
 ];
+// A Loan Officer's own lead is implicitly theirs; anyone who can actually
+// see real Loan Officers (has real staff visibility) must instead say
+// which one — otherwise the field would just be a picker over nothing.
+function createLeadShowsOfficerField(){
+  return session.role !== "Loan Officer" && (NAV_PERMISSIONS[session.role]||[]).includes("staff");
+}
+// The same real branch/region scoping the rest of the app already applies
+// per role — a Manager's own branch, a Regional Manager's own region
+// (via the real branch->region links already in DB.branches), company-
+// wide for roles that operate across branches by design.
+function leadOfficerScopeBranchIds(){
+  if(session.role==="Manager") return DB.me ? [DB.me.branch_id] : [];
+  if(session.role==="Regional Manager") return DB.branches.filter(b=>b.region===(DB.me&&DB.me.region_id)).map(b=>b.id);
+  return null;
+}
 function openCreateLeadModal(){
-  DB.leadForm = { name:"", phone:"", national_id:"", address:"", client_location:"", extra:{}, addFieldKey: LEAD_EXTRA_FIELD_DEFS[0].key };
+  const officers = createLeadShowsOfficerField() ? officerFilterOptions(leadOfficerScopeBranchIds()) : [];
+  DB.leadForm = { name:"", phone:"", national_id:"", client_location:"", officer_id: officers.length?officers[0].id:"", extra:{}, addFieldKey: LEAD_EXTRA_FIELD_DEFS[0].key };
   openModal('create-lead');
 }
 function addLeadExtraField(){
@@ -6077,6 +6095,8 @@ function addLeadExtraField(){
 function renderCreateLeadModal(){
   const f = DB.leadForm;
   const remaining = LEAD_EXTRA_FIELD_DEFS.filter(d=>f.extra[d.key]===undefined);
+  const showOfficer = createLeadShowsOfficerField();
+  const officers = showOfficer ? officerFilterOptions(leadOfficerScopeBranchIds()) : [];
   return `
     <div style="position:relative;">
       <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
@@ -6095,7 +6115,9 @@ function renderCreateLeadModal(){
         <div class="field"><label>Name</label><input value="${escapeHtml(f.name)}" oninput="DB.leadForm.name=this.value" required></div>
         <div class="field"><label>Contact</label><input value="${escapeHtml(f.phone)}" oninput="DB.leadForm.phone=this.value" required></div>
         <div class="field"><label>Client Idno (Optional)</label><input value="${escapeHtml(f.national_id)}" oninput="DB.leadForm.national_id=this.value"></div>
-        <div class="field"><label>Location</label><input value="${escapeHtml(f.address)}" oninput="DB.leadForm.address=this.value"></div>
+        ${showOfficer ? `<div class="field"><label>Loan Officer</label><select required onchange="DB.leadForm.officer_id=this.value">
+          ${officers.map(o=>`<option value="${o.id}" ${f.officer_id===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("") || `<option value="">No Loan Officers in your scope</option>`}
+        </select></div>` : ""}
         <div class="field"><label>Client Location</label><input value="${escapeHtml(f.client_location)}" oninput="DB.leadForm.client_location=this.value"></div>
         ${Object.keys(f.extra).map(key=>{
           const def = LEAD_EXTRA_FIELD_DEFS.find(d=>d.key===key);
@@ -6111,8 +6133,9 @@ function renderCreateLeadModal(){
 function submitCreateLead(ev){
   ev.preventDefault();
   const f = DB.leadForm;
+  if(createLeadShowsOfficerField() && !f.officer_id){ toast("Select a Loan Officer"); return false; }
   return withRequest('create-lead', async ()=>{
-    await addLead({ name:f.name, phone:f.phone, national_id:f.national_id||null, address:f.address||null, client_location:f.client_location||null, ...f.extra });
+    await addLead({ name:f.name, phone:f.phone, national_id:f.national_id||null, client_location:f.client_location||null, officer_id:f.officer_id||null, ...f.extra });
     toast(`${f.name} added as a lead`);
     closeModal();
   });

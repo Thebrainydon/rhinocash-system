@@ -2,7 +2,7 @@
 const { all, get, run, transaction } = require('./../db');
 const { requireAuth, requireModule, requireAnyModule, requirePermission } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
-const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId } = require('./../rbac');
+const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId, isBranchAllowed } = require('./../rbac');
 const crypto = require('node:crypto');
 
 function generateClientCode() {
@@ -369,25 +369,44 @@ function register(router) {
       const like = `%${req.query.q}%`; params.push(like, like, like);
     }
     const rows = await all(
-      `SELECT cl.*, b.name as branch_name, u.name as creator_name,
+      `SELECT cl.*, b.name as branch_name, u.name as creator_name, o.name as officer_name,
               (SELECT COUNT(*) FROM client_interactions ci WHERE ci.client_id = cl.converted_client_id) as interactions_count
        FROM client_leads cl
        LEFT JOIN branches b ON b.id = cl.branch_id
        LEFT JOIN users u ON u.id = cl.created_by
+       LEFT JOIN users o ON o.id = cl.officer_id
        WHERE ${clauses.join(' AND ')} ORDER BY cl.created_at DESC`,
       params
     );
     res.json({ leads: rows });
   });
   router.post('/api/leads', requireAuth, requireModule('clients'), async (req, res, next) => {
+    const actor = req.user;
     const b = req.body;
     if (!b.name) return next({ status: 400, message: 'name is required' });
     let branchId;
-    try { branchId = await resolveWriteBranchId(req.user, b.branch_id); } catch (e) { return next(e); }
+    try { branchId = await resolveWriteBranchId(actor, b.branch_id); } catch (e) { return next(e); }
+
+    // Which real Loan Officer this lead is FOR — a Loan Officer can only
+    // ever create a lead for themselves (never pick someone else); anyone
+    // else who can see real Loan Officers (a Manager/Regional Manager/
+    // Operational Manager/CEO/Admin) must say which one, or the client
+    // this eventually converts into is silently left unassigned — the
+    // exact real gap POST /api/leads/:id/convert below used to have.
+    let officerId = null;
+    if (actor.role_id === 'loan_officer') {
+      officerId = actor.id;
+    } else if (b.officer_id) {
+      const officer = await get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
+      if (!officer || officer.role_id !== 'loan_officer') return next({ status: 400, message: 'officer_id must be a real Loan Officer' });
+      if (!(await isBranchAllowed(actor, officer.branch_id))) return next({ status: 403, message: 'That Loan Officer is outside your own scope' });
+      officerId = officer.id;
+    }
+
     const id = 'lead_' + crypto.randomUUID();
-    await run(`INSERT INTO client_leads (id, name, phone, source, notes, branch_id, created_by, national_id, address, client_location, next_of_kin, next_of_kin_phone, business_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, b.name, b.phone || null, b.source || null, b.notes || null, branchId, req.user.id,
+    await run(`INSERT INTO client_leads (id, name, phone, source, notes, branch_id, created_by, officer_id, national_id, address, client_location, next_of_kin, next_of_kin_phone, business_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, b.name, b.phone || null, b.source || null, b.notes || null, branchId, actor.id, officerId,
         b.national_id || null, b.address || null, b.client_location || null, b.next_of_kin || null, b.next_of_kin_phone || null, b.business_type || null]);
     await logAction(req, { action: 'Created lead', module: 'clients', recordType: 'Lead', recordId: id, newValue: { name: b.name } });
     res.status(201).json({ lead: await get('SELECT * FROM client_leads WHERE id = ?', [id]) });
@@ -407,7 +426,11 @@ function register(router) {
     try { branchId = await resolveWriteBranchId(req.user, req.body.branch_id); } catch (e) { return next(e); }
     const clientId = 'cl_' + crypto.randomUUID();
     const code = generateClientCode();
-    const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
+    // Prefer the real Loan Officer this lead was actually created FOR
+    // (see POST /api/leads above) — only a lead from before that column
+    // existed falls back to "assign it to whoever is converting it, if
+    // they're themselves a Loan Officer".
+    const officerId = lead.officer_id || (req.user.role_id === 'loan_officer' ? req.user.id : null);
     // Carry over every real field the lead form captured that the client
     // record has a real matching column for — client_location has none
     // yet, so it stays on the lead only, never silently fabricated onto

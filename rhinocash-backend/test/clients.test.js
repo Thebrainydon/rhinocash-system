@@ -178,6 +178,64 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
       const nairobiList = await api('GET', '/api/leads?status=Unboarded', { token: nairobiManagerToken });
       assert(nairobiList.status === 200 && !nairobiList.json.leads.some(l => l.id === freshLead.json.lead.id), 'AG: a Nairobi Manager genuinely cannot see a Kisumu-branch lead — branch scope holds');
     }
+
+    // AH. Real Loan Officer assignment on a lead (officer_id) — the exact
+    // real gap the Create Client Lead page's "Loan Officer" field (Manager
+    // and above) closes: previously a Manager-created lead converted into
+    // a permanently unassigned client, since only the CONVERTER's own
+    // role was ever checked, never who the lead was actually FOR.
+    {
+      // A Loan Officer's own lead is always assigned to themselves,
+      // regardless of whatever officer_id the request body claims.
+      const officerOwnLead = await api('POST', '/api/leads', { token: officerToken, body: { name: 'Officer Self Lead', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), officer_id: 'usr_manager_kisumu' } });
+      assert(officerOwnLead.status === 201 && officerOwnLead.json.lead.officer_id === officerMe.id, "AH: a Loan Officer's own real lead is always assigned to themselves — a different real officer_id in the request body is never honored");
+
+      // A Manager assigning a real Loan Officer within their own real branch.
+      const mgrLeadPhone = '07' + Math.floor(Math.random() * 90000000 + 10000000);
+      const mgrLead = await api('POST', '/api/leads', { token: managerToken, body: { name: 'Manager Assigned Lead', phone: mgrLeadPhone, officer_id: officerMe.id } });
+      assert(mgrLead.status === 201 && mgrLead.json.lead.officer_id === officerMe.id, 'AH: a Manager can genuinely assign a real lead to a real Loan Officer within their own branch');
+
+      // A Manager omitting officer_id entirely still succeeds (no real
+      // picker is force-enforced server-side — only the frontend enforces
+      // "required" for the roles that actually get a real picker to fill).
+      const mgrLeadNoOfficer = await api('POST', '/api/leads', { token: managerToken, body: { name: 'Manager Unassigned Lead', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000) } });
+      assert(mgrLeadNoOfficer.status === 201 && mgrLeadNoOfficer.json.lead.officer_id === null, 'AH: a Manager may still omit officer_id — it is left honestly null, never fabricated');
+
+      // A bogus officer_id is rejected outright.
+      const badOfficer = await api('POST', '/api/leads', { token: managerToken, body: { name: 'Bad Officer Lead', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), officer_id: 'not-a-real-user' } });
+      assert(badOfficer.status === 400, 'AH: a nonexistent officer_id is rejected with a validation error');
+
+      // A real user who is NOT a Loan Officer (e.g. the Accountant) is rejected.
+      const acctMe = (await api('GET', '/api/auth/me', { token: await login('accountant@rhinocash.co.ke', process.env.SEEDED_ACCOUNTANT_PASSWORD) })).json.user;
+      const wrongRoleOfficer = await api('POST', '/api/leads', { token: managerToken, body: { name: 'Wrong Role Lead', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), officer_id: acctMe.id } });
+      assert(wrongRoleOfficer.status === 400, 'AH: officer_id must genuinely be a real Loan Officer — an Accountant\'s real id is rejected');
+
+      // A real Loan Officer OUTSIDE the Manager's own branch is rejected —
+      // real scope enforcement, not just a role check.
+      const nairobiMe = (await api('GET', '/api/auth/me', { token: nairobiManagerToken })).json.user;
+      const tempOfficer = await api('POST', '/api/users', { token: adminToken, body: { name: 'Temp Nairobi Officer', email: 'tempnairobiofficer@rhinocash.co.ke', role_id: 'loan_officer', branch_id: nairobiMe.branch_id } });
+      assert(tempOfficer.status === 201, 'sanity: a real temporary Loan Officer is genuinely created in the real Nairobi branch');
+      const outOfScope = await api('POST', '/api/leads', { token: managerToken, body: { name: 'Out Of Scope Lead', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), officer_id: tempOfficer.json.user.id } });
+      assert(outOfScope.status === 403, 'AH: the Kisumu Manager genuinely cannot assign a lead to a real Loan Officer from a different, out-of-scope branch');
+
+      // GET /api/leads genuinely joins in the real officer name, not a bare id.
+      const leadsWithOfficer = await api('GET', '/api/leads?status=Unboarded', { token: managerToken });
+      const mgrLeadRow = leadsWithOfficer.json.leads.find(l => l.id === mgrLead.json.lead.id);
+      assert(!!mgrLeadRow && mgrLeadRow.officer_name === officerMe.name, 'AH: the real assigned Loan Officer\'s own real name is genuinely joined into the leads browser, not left as a bare id');
+
+      // The real, central point of this whole fix: converting a Manager-
+      // assigned lead genuinely carries the REAL intended officer onto the
+      // new client — not the converting Manager (who is never a real Loan
+      // Officer), and not left unassigned the way it silently was before.
+      const mgrLeadConvert = await api('POST', `/api/leads/${mgrLead.json.lead.id}/convert`, { token: managerToken, body: {} });
+      assert(mgrLeadConvert.status === 200 && mgrLeadConvert.json.client.officer_id === officerMe.id, "AH: converting a Manager-created, officer-assigned lead genuinely assigns the REAL intended Loan Officer to the new client — the exact real gap this feature closes");
+
+      // A pre-existing lead with no officer_id, converted by a Loan
+      // Officer, still falls back to the real converter — the original,
+      // still-honored behavior for leads that predate this real column.
+      const oldStyleConvert = await api('POST', `/api/leads/${mgrLeadNoOfficer.json.lead.id}/convert`, { token: officerToken, body: {} });
+      assert(oldStyleConvert.status === 200 && oldStyleConvert.json.client.officer_id === officerMe.id, 'AH: a real lead with no assigned officer_id still falls back to the real converting Loan Officer at conversion time');
+    }
   }
 
   // AB/AC. Interactions.

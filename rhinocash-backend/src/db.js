@@ -1361,6 +1361,14 @@ async function initSchema() {
   // artificially stale the instant this column appears.
   await ensureColumn('sessions', 'last_seen_at TEXT');
   await rawRun('UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL');
+  // Which real Loan Officer a lead is FOR — distinct from created_by (who
+  // actually entered it). A Loan Officer's own lead is implicitly theirs;
+  // a Manager/Regional Manager/Operational Manager/CEO/Admin creating one
+  // for a member of their team needs to say which real officer it belongs
+  // to, or the client it eventually converts into is silently unassigned
+  // (see POST /api/leads/:id/convert, which previously only ever assigned
+  // the CONVERTER, never the lead's own real intended officer).
+  await ensureColumn('client_leads', 'officer_id TEXT REFERENCES users(id)');
 }
 
 // Explicit startup self-test: prove the database can actually be written
