@@ -6604,6 +6604,63 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('Client Leads Filter Test'), "sanity: the real Loan Officer still sees their own real assigned lead, unfiltered");
   }
 
+  // ---- 64. CLIENTS > VIEW CLIENTS: the exact same real, shared client
+  // directory page the Loan Officer already uses (clicking a row already
+  // opens the real client account via the shared openClient()), now with
+  // the requested real "-- Loan Officer --" filter for any role with real
+  // staff visibility — the backend's GET /api/clients already supported
+  // ?officer_id= unconditionally, so this is a pure frontend addition. ----
+  {
+    let mgrVc = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrVc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    // A real client, explicitly assigned to the real Kisumu Loan Officer.
+    // (A freshly registered client starts real-Dormant — see POST
+    // /api/clients — so the directory is loaded with category:'All' below,
+    // not left on its own 'Active' default, or this client would be
+    // invisible regardless of the officer filter being tested.)
+    const vcForm = new Map([['name','View Clients Filter Test'],['phone','0722900777'],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return vcForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const vcClient = DB.clients.find(c=>c.name==='View Clients Filter Test');
+    __assert(!!vcClient, "sanity: the real new client was genuinely created");
+    await api.patch(`/api/clients/${vcClient.id}`, { officer_id: 'usr_officer' });
+
+    await loadClientDirectory({ category:'All' }, 1);
+    goTo('clients','View Client');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter on View Clients too");
+    __assert(html.includes('View Clients Filter Test'), "the real just-created, officer-assigned client genuinely appears in the real, unfiltered directory");
+
+    setClientDirOfficer('usr_officer');
+    for(let i=0; i<100 && DB.acctPages.clientdir.filters.officer_id!=='usr_officer'; i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('View Clients Filter Test'), "filtering by this exact real Loan Officer genuinely still shows their own real assigned client");
+
+    setClientDirOfficer('usr_manager_kisumu');
+    for(let i=0; i<100 && DB.acctPages.clientdir.filters.officer_id!=='usr_manager_kisumu'; i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('View Clients Filter Test'), "filtering by a real different user's id genuinely excludes this officer's own real assigned client — the filter is real, not decorative");
+
+    // Switching category must not silently drop the real officer filter.
+    setClientDirCategory('Active');
+    for(let i=0; i<100 && DB.acctPages.clientdir.filters.category!=='Active'; i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    __assert(DB.acctPages.clientdir.filters.officer_id==='usr_manager_kisumu', "switching the real category dropdown genuinely preserves the active real Loan Officer filter instead of silently resetting it");
+
+    // The exact same shared page, for the Loan Officer who has no one to
+    // filter by — genuinely unchanged, no picker shown at all.
+    let ofVc = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofVc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await loadClientDirectory({ category:'All' }, 1);
+    goTo('clients','View Client');
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real View Clients page genuinely has no Loan Officer filter — their own real clients need no picker");
+    __assert(html.includes('View Clients Filter Test'), "sanity: the real Loan Officer still sees their own real assigned client, unfiltered");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();

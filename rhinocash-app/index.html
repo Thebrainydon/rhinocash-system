@@ -5565,10 +5565,14 @@ async function loadClientDirectory(filters, page){
 const CLIENT_DIR_CATEGORIES = ['All','Dormant','Active','Blacklisted','Unfunded'];
 function setClientDirCategory(category){
   const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
-  const merged = { q: prev.q, branch_id: prev.branch_id, category };
+  const merged = { q: prev.q, branch_id: prev.branch_id, officer_id: prev.officer_id, category };
   if(category==='Unfunded'){ merged.unfunded = 'true'; }
   else if(category!=='All'){ merged.status = category; }
   loadClientDirectory(merged, 1);
+}
+function setClientDirOfficer(officerId){
+  const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
+  loadClientDirectory({ ...prev, officer_id: officerId||undefined }, 1);
 }
 function submitClientDirFilter(ev){
   ev.preventDefault();
@@ -5618,6 +5622,10 @@ function renderClientDirectoryPage(){
         <select onchange="setClientDirCategory(this.value)" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${CLIENT_DIR_CATEGORIES.map(c=>`<option value="${c}" ${c===category?'selected':''}>${c} clients</option>`).join("")}
         </select>
+        ${hasOfficerVisibility() ? `<select onchange="setClientDirOfficer(this.value)" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${state && state.filters.officer_id===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
         <div style="margin-left:auto; display:flex; gap:6px; align-items:center; flex-shrink:0;">
           <select onchange="if(this.value) generateClientReport(this.value); this.value='';" class="btn btn-sm btn-outline" style="min-width:110px;">
             <option value="" selected>-- Generate --</option>

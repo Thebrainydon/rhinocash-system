@@ -91,6 +91,17 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(statusFiltered.json.clients.every(c => c.status === 'Active'), 'G: real status filter narrows results server-side');
   }
 
+  // AL. The real ?officer_id= filter — the View Clients page's own Loan
+  // Officer filter (Manager-only) narrows the client directory server-side.
+  {
+    const byRealOfficer = await api('GET', `/api/clients?officer_id=${officerMe.id}`, { token: managerToken });
+    assert(byRealOfficer.status === 200 && byRealOfficer.json.clients.some(c => c.id === clientId), 'AL: a Manager filtering clients by this exact real Loan Officer genuinely sees the real client assigned to them');
+
+    const nairobiManagerMe = (await api('GET', '/api/auth/me', { token: nairobiManagerToken })).json.user;
+    const byOtherUser = await api('GET', `/api/clients?officer_id=${nairobiManagerMe.id}`, { token: managerToken });
+    assert(byOtherUser.status === 200 && !byOtherUser.json.clients.some(c => c.id === clientId), 'AL: filtering by a real different user\'s id genuinely excludes this officer\'s own real assigned client');
+  }
+
   // U/AF. Client editing + audit + duplicate-on-edit protection.
   {
     const secondClient = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Test Client Beta', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000) } });
