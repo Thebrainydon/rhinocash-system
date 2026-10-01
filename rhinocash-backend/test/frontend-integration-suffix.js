@@ -7120,6 +7120,121 @@ apiRequest = async function(method, path, body){
     session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
   }
 
+  // ---- 71. LOANBOOK > LOAN ARREARS (Manager): the exact same real
+  // per-loan sheet the Loan Officer already uses (renderLoanArrearsSheet()),
+  // now routed to the Manager role too, chrome-free and already
+  // genuinely branch-wide by the real backend's own branch scoping
+  // (branchScopeSQL) — with two real additions: a "-- Loan Officer --"
+  // filter wired to the existing ?officer_id= support on
+  // /api/loans/arrears-sheet (same pattern as Collection Sheet/Collection
+  // Report), and clicking the real Client name now opens their real
+  // account (openClient()) instead of the row's own real openLoan() —
+  // the row itself still opens the loan everywhere else, exactly like
+  // View Clients already does for its own rows. A freshly disbursed loan
+  // has no real overdue installment yet (its first real due date is
+  // always about a month out), so this uses the real "Running Loans"
+  // view instead of "Overdue Loans" to get real, live data without
+  // needing to backdate anything — a running loan is filtered by its own
+  // real Disbursement date, which this test genuinely controls. ----
+  {
+    let ofLa = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    const laClientForm = new Map([['name','Loan Arrears Filter Test Client'],['phone','0722902'+Math.floor(Math.random()*900+100)],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return laClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const laClient = DB.clients.find(c=>c.name==='Loan Arrears Filter Test Client');
+    const laLoan = await createLoanApplication({ clientId: laClient.id, productId: 'pr_boda', principal: 15000, term: 6 });
+
+    await confirmLogout();
+    let mgrLa = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(laLoan.id);
+
+    await confirmLogout();
+    let regLa = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(laLoan.id);
+
+    await confirmLogout();
+    let opsLa = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(laLoan.id);
+
+    await confirmLogout();
+    let acctLa = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acctLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(laLoan.id);
+
+    await confirmLogout();
+    let admLa = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(laLoan.id, 'Cash');
+
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.loanArrearsSheetState = { from: new Date(Date.now()-6*86400000).toISOString().slice(0,10), to: todayISO(), status: 'running', officerId: '' };
+    DB.loanArrearsSheet = null;
+    goTo('loanbook','Loan Arrears');
+    for(let i=0; i<100 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Running Loans disbursed') && html.includes('Cycles') && html.includes('P.Arrears') && html.includes('Accumulated') && html.includes('Fall Date') && html.includes('T.Bal'), "the real Manager Loan Arrears page genuinely shares the exact same real per-loan sheet and full column set the Loan Officer uses");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Loan Arrears page genuinely has no subtab bar above it");
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter on Loan Arrears too");
+    __assert(html.includes('Loan Arrears Filter Test Client'), "the real just-disbursed loan's own real running-loan row genuinely appears in the real, unfiltered branch-wide sheet");
+    __assert(html.includes(`openClient('${laClient.id}')`), "the real Client name cell is genuinely wired to the real openClient(), not the row's own openLoan() — a real, specific onclick for this real client, not decorative");
+
+    session.selectedClientId = null;
+    openClient(laClient.id);
+    __assert(session.selectedClientId === laClient.id && session.section === 'clients', "the real Client name's own real onclick genuinely opens that exact real client's account — including the real navigation into the Clients section itself, the same real openClient() View Clients already uses, not just a dangling state flag with nothing visibly different on screen");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Loan Arrears Filter Test Client') && !html.includes('Running Loans disbursed'), "the real client detail screen genuinely renders in place of the Loan Arrears sheet once opened — a real navigation, not a no-op");
+    session.selectedClientId = null;
+    session.section = 'loanbook';
+    session.subtab = 'Loan Arrears';
+
+    session.loanArrearsSheetState.officerId = 'usr_officer';
+    DB.loanArrearsSheet = null;
+    renderApp();
+    for(let i=0; i<100 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Loan Arrears Filter Test Client'), "filtering by this exact real Loan Officer genuinely still shows their own real running loan");
+
+    session.loanArrearsSheetState.officerId = 'usr_manager_kisumu';
+    DB.loanArrearsSheet = null;
+    renderApp();
+    for(let i=0; i<100 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('Loan Arrears Filter Test Client'), "filtering by a real different user's id genuinely excludes this officer's own real running loan — the filter is real, not decorative");
+
+    // The exact same shared page, for the Loan Officer — genuinely
+    // unchanged, no picker shown at all, but the real Client name click
+    // still opens the real account, same as for the Manager.
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofLa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.loanArrearsSheetState = { from: new Date(Date.now()-6*86400000).toISOString().slice(0,10), to: todayISO(), status: 'running', officerId: '' };
+    DB.loanArrearsSheet = null;
+    goTo('loanbook','Loan Arrears');
+    for(let i=0; i<100 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Loan Arrears page genuinely has no Loan Officer filter — their own real loans need no picker");
+    __assert(html.includes('Loan Arrears Filter Test Client'), "sanity: the real Loan Officer still sees their own real running loan, unfiltered");
+    __assert(html.includes(`openClient('${laClient.id}')`), "the real Client name cell genuinely stays wired to openClient() for the Loan Officer too, unchanged");
+
+    session.loanArrearsSheetState = null; DB.loanArrearsSheet = null;
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();

@@ -6326,6 +6326,11 @@ function submitCreateLead(ev){
 function openClient(id){
   if(session.selectedClientId !== id){ session.clientHistoryTab = null; session.clientNotesOpen = false; session.clientAccountOpen = false; DB.clientAccounts = null; DB.clientAccountTransactions = null; }
   session.selectedClientId = id;
+  // Callable from any section (Collection Report/Loan Arrears included) —
+  // the real client detail view only ever renders from within renderClients(),
+  // so without this a click from outside the Clients section would set
+  // state but genuinely show nothing different on screen.
+  session.section = 'clients';
   renderApp();
   return withRequest('open-client-'+id, async ()=>{
     const res = await api.get(`/api/clients/${id}`);
@@ -7128,6 +7133,7 @@ function renderLoanBook(){
   if(active==="Collection Rates" && session.role==='Manager') return renderCollectionRatesOfficer();
   if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
   if(active==="Collection Rates") return renderCollectionRatesOfficer();
+  if(active==="Loan Arrears" && session.role==='Manager') return renderLoanArrearsSheet();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
   if(active==="Loan Arrears") return renderLoanArrearsSheet();
   if(active==="View Loans" && session.role !== 'Loan Officer') return tabsHtml + renderViewLoansPage();
@@ -7877,19 +7883,26 @@ function renderCollectionRatesOfficer(){
   `;
 }
 
-// ---- Loan Arrears (Loan Officer): a real, per-loan sheet — chrome-free,
-// matching the reference design exactly. The "Filter Loans" dropdown
-// switches between two genuinely different real loan sets, not two
-// views of the same data: "Overdue Loans" (default) filters by real
-// Fall Date; "Running Loans" shows the officer's other real
-// Active/Disbursed loans that are genuinely NOT currently overdue,
+// ---- Loan Arrears (Loan Officer, now also Manager): a real, per-loan
+// sheet — chrome-free, matching the reference design exactly. The
+// "Filter Loans" dropdown switches between two genuinely different real
+// loan sets, not two views of the same data: "Overdue Loans" (default)
+// filters by real Fall Date; "Running Loans" shows the officer's other
+// real Active/Disbursed loans that are genuinely NOT currently overdue,
 // filtered by real Disbursement date instead (since a running loan has
 // no Fall Date). See the backend route's own comment for the full real
 // definitions of Fall Date/P.Arrears/Accumulated/Days/T.Bal/Cycles in
 // both views. Replaces the old KPI-bucket "Ageing Summary" page for
 // this role specifically (renderArrears()/loadArrears()/
 // /api/loans/arrears are untouched and still real/tested — just no
-// longer wired to this submenu). ----
+// longer wired to this submenu). For a Manager this is already
+// branch-wide — the backend's branchScopeSQL scopes them to their own
+// branch by default — plus a real "-- Loan Officer --" filter, wired to
+// the existing ?officer_id= support on /api/loans/arrears-sheet (same
+// pattern as Collection Sheet/Collection Report). Clicking a row still
+// opens that loan (openLoan()); clicking the Client name specifically
+// opens their real account instead (openClient()), the same real client
+// detail view View Clients already opens. ----
 function fmtDDMMYYYY(dateStr){
   const [y,m,d] = dateStr.split('-');
   return `${d}-${m}-${y}`;
@@ -7897,13 +7910,14 @@ function fmtDDMMYYYY(dateStr){
 function defaultLoanArrearsSheetState(){
   const to = todayISO();
   const from = new Date(Date.now() - 6*86400000).toISOString().slice(0,10);
-  return { from, to, status: '' };
+  return { from, to, status: '', officerId: '' };
 }
 async function loadLoanArrearsSheet(){
   const st = session.loanArrearsSheetState;
   return withRequest('load-loan-arrears-sheet:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ from: st.from, to: st.to });
     if(st.status) params.set('status', st.status);
+    if(st.officerId) params.set('officer_id', st.officerId);
     const res = await api.get('/api/loans/arrears-sheet?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.loanArrearsSheet = res;
@@ -7934,13 +7948,17 @@ function renderLoanArrearsSheet(){
           <option value="overdue" ${st.status==='overdue'?'selected':''}>Overdue Loans</option>
           <option value="running" ${st.status==='running'?'selected':''}>Running Loans</option>
         </select>
+        ${hasOfficerVisibility() ? `<select onchange="session.loanArrearsSheetState.officerId=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportLoanArrearsSheetCSV()')}
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Client</th><th>Contact</th><th>Loan</th><th>Disbursement</th><th>Cycles</th><th>P.Arrears</th><th>Accumulated</th><th>Installment</th><th>Fall Date</th><th>Days</th><th>T.Bal</th></tr>
         ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openLoan('${r.loanId}')">
-          <td>${i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${fmtNum(r.loan)}</td>
+          <td>${i+1}</td><td onclick="event.stopPropagation(); openClient('${r.clientId}')" style="cursor:pointer; text-decoration:underline; color:var(--blue);">${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.contact||'—')}</td><td>${fmtNum(r.loan)}</td>
           <td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td><td>${r.cycles}</td>
           <td>${fmtNum(r.pArrears)}</td><td>${fmtNum(r.accumulated)}</td><td>${r.period}/${r.totalPeriods}</td>
           <td>${r.fallDate?fmtDDMMYYYY(r.fallDate):'—'}</td><td>${r.days||'—'}</td><td>${fmtNum(r.tbal)}</td>
