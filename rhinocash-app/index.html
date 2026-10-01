@@ -7125,6 +7125,7 @@ function renderLoanBook(){
   if(active==="Collection Report") return renderCollectionReport();
   if(active==="Collection Reports" && session.role==='Manager') return renderCollectionReport();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
+  if(active==="Collection Rates" && session.role==='Manager') return renderCollectionRatesOfficer();
   if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
   if(active==="Collection Rates") return renderCollectionRatesOfficer();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
@@ -7818,14 +7819,21 @@ function renderCollectionReport(){
   `;
 }
 
-// ---- Collection Rates (Loan Officer): a real, single-month, per-officer
-// summary — chrome-free, matching the reference design exactly. Reuses
-// the same "loans disbursed in the selected month" cohort and the same
-// real Disbursed Loan/Loan+Charges/Arrears/GC% definitions Progressive
-// Disbursements already established (see the backend route's own
-// comment for the full real definitions, including the inferred
-// OTC/OC/DD7/CG7 figures this reference design needed that had no prior
-// definition anywhere in this codebase). ----
+// ---- Collection Rates (Loan Officer, now also Manager): a real,
+// single-month, per-officer summary — chrome-free, matching the reference
+// design exactly. Reuses the same "loans disbursed in the selected month"
+// cohort and the same real Disbursed Loan/Loan+Charges/Arrears/GC%
+// definitions Progressive Disbursements already established (see the
+// backend route's own comment for the full real definitions, including
+// the inferred OTC/OC/DD7/CG7 figures this reference design needed that
+// had no prior definition anywhere in this codebase). For a Manager this
+// is already branch-wide — the backend's branchScopeSQL scopes them to
+// their own branch by default, and fillOfficerRoster() already ensures
+// every real Loan Officer in that branch gets a row even with zero
+// disbursements this month, exactly matching the reference design's own
+// "every officer always listed" layout — so no further filter is needed
+// here, unlike Collection Sheet/Collection Report (per-client pages where
+// narrowing to one officer is actually useful). ----
 function defaultCollectionRatesOfficerState(){
   return { month: new Date().toISOString().slice(0,7) };
 }
