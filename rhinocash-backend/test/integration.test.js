@@ -756,8 +756,8 @@ async function api(method, path, { token, body } = {}) {
     const todayStr = today.toISOString().slice(0, 10);
     const todayEntry = dd.json.days.find(day => day.date === todayStr);
     assert(todayEntry, 'the real day this loan was genuinely disbursed on genuinely appears in the real calendar data');
-    const kisumuEntry = todayEntry.entries.find(e => e.branchName === 'Ukunda');
-    assert(kisumuEntry && kisumuEntry.amount >= 4000, 'the real day\'s entry is genuinely grouped by the real branch name, with the real disbursed amount for that day');
+    const kisumuEntry = todayEntry.entries.find(e => e.officerId === officerId);
+    assert(kisumuEntry && kisumuEntry.officerName === 'Test Officer' && kisumuEntry.amount >= 4000, 'the real day\'s entry is genuinely grouped by the real Loan Officer who disbursed it, with the real disbursed amount for that day');
 
     // A real month with no real disbursements in it genuinely comes back empty.
     const emptyMonth = await api('GET', `/api/loans/daily-disbursements?year=2019&month=1`, { token: officerToken });
@@ -771,6 +771,31 @@ async function api(method, path, { token, body } = {}) {
     // A Manager can genuinely view this scoped to their own real branch too.
     const mgrDD = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}`, { token: ddMgr.json.token });
     assert(mgrDD.status === 200, 'a Manager can genuinely view Daily Disbursements scoped to their real branch too');
+
+    // A second real Loan Officer, in the real same Kisumu branch, who
+    // ALSO disburses a loan today — the Manager's real branch-wide view
+    // genuinely shows both real officers' own entries on the real same
+    // day, matching the requested per-officer daily breakdown design.
+    const dd2Email = 'dailydisb2@rhinocash.co.ke';
+    const dd2Create = await api('POST', '/api/users', { token: adminToken, body: { name: 'Daily Disb Officer Two', email: dd2Email, role_id: 'loan_officer', branch_id: 'br_kisumu', phone: '0700000098' } });
+    const dd2Login = await api('POST', '/api/auth/login', { body: { email: dd2Email, password: dd2Create.json.tempPassword } });
+    const dd2Client = await api('POST', '/api/clients', { token: dd2Login.json.token, body: { name: 'Daily Disb Test Client Two', phone: '0722666201', national_id: '40109989' } });
+    const dd2Loan = await api('POST', '/api/loans', { token: dd2Login.json.token, body: { client_id: dd2Client.json.client.id, product_id: 'pr_boda', principal: 12000, term_months: 6 } });
+    await api('POST', `/api/loans/${dd2Loan.json.loan.id}/approve`, { token: ddMgr.json.token, body: {} });
+    await api('POST', `/api/loans/${dd2Loan.json.loan.id}/approve`, { token: ddRm.json.token, body: {} });
+    await api('POST', `/api/loans/${dd2Loan.json.loan.id}/approve`, { token: ddOm.json.token, body: {} });
+    await api('POST', `/api/loans/${dd2Loan.json.loan.id}/approve`, { token: ddAcct.json.token, body: {} });
+    await api('POST', `/api/loans/${dd2Loan.json.loan.id}/disburse`, { token: adminToken, body: { channel: 'Cash' } });
+
+    const mgrDDAfter = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}`, { token: ddMgr.json.token });
+    const mgrTodayEntry = mgrDDAfter.json.days.find(day => day.date === todayStr);
+    assert(mgrTodayEntry && mgrTodayEntry.entries.some(e => e.officerId === officerId), "the real Manager's own real branch-wide view genuinely includes the first real officer's own entry for today");
+    assert(mgrTodayEntry && mgrTodayEntry.entries.some(e => e.officerId === dd2Create.json.user.id && e.officerName === 'Daily Disb Officer Two' && e.amount >= 12000), "the real Manager's own real branch-wide view genuinely includes the real second officer's own entry for the exact same real day too — a genuine per-officer breakdown, not a single collapsed branch total");
+
+    // The first officer's own real single-officer view is genuinely unaffected — they still only see themselves.
+    const ddAfter = await api('GET', `/api/loans/daily-disbursements?year=${today.getFullYear()}&month=${today.getMonth() + 1}`, { token: officerToken });
+    const ddAfterTodayEntry = ddAfter.json.days.find(day => day.date === todayStr);
+    assert(ddAfterTodayEntry.entries.length === 1 && ddAfterTodayEntry.entries[0].officerId === officerId, "a Loan Officer's own real Daily Disbursements view genuinely stays a real single entry — their own — even though a real second officer in the same branch disbursed on the exact same day");
   }
 
   // ---- 12. Branch data scoping: a Manager only sees their own branch's clients ----

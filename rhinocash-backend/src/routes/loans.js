@@ -1486,9 +1486,11 @@ function register(router) {
   // Real Daily Disbursements — the Loan Officer's real "Disbursements"
   // submenu page: real loans genuinely disbursed on each real calendar day
   // of a real, selected year/month (optionally filtered by a real loan
-  // product), grouped by real branch per day (a single Loan Officer only
-  // ever has one real branch, so this is effectively "this officer's real
-  // total for that day", but grouped honestly rather than assuming that).
+  // product), grouped by the real Loan Officer who disbursed each one —
+  // a single Loan Officer only ever sees their own real single row, but a
+  // branch-wide viewer (Manager and above) genuinely sees every real
+  // officer who disbursed that day, matching the requested reference
+  // design's own per-officer daily breakdown.
   router.get('/api/loans/daily-disbursements', requireAuth, requireModule('loanbook'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
@@ -1502,19 +1504,19 @@ function register(router) {
     const to = new Date(year, month, 0).toISOString().slice(0, 10);
 
     const loans = await all(`SELECT * FROM loans WHERE ${clause} AND disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date`, [...params, from, to]);
-    const branchIds = [...new Set(loans.map(l => l.branch_id))];
-    const branchNames = {};
-    if (branchIds.length) { const ph = branchIds.map(() => '?').join(','); (await all(`SELECT id, name FROM branches WHERE id IN (${ph})`, branchIds)).forEach(b => { branchNames[b.id] = b.name; }); }
+    const officerIds = [...new Set(loans.map(l => l.officer_id))];
+    const officerNames = {};
+    if (officerIds.length) { const ph = officerIds.map(() => '?').join(','); (await all(`SELECT id, name FROM users WHERE id IN (${ph})`, officerIds)).forEach(u => { officerNames[u.id] = u.name; }); }
 
     const dayGroups = {};
     loans.forEach(l => {
       const day = l.disbursed_at.slice(0, 10);
       if (!dayGroups[day]) dayGroups[day] = {};
-      dayGroups[day][l.branch_id] = (dayGroups[day][l.branch_id] || 0) + l.principal;
+      dayGroups[day][l.officer_id] = (dayGroups[day][l.officer_id] || 0) + l.principal;
     });
-    const days = Object.entries(dayGroups).map(([date, byBranch]) => ({
+    const days = Object.entries(dayGroups).map(([date, byOfficer]) => ({
       date,
-      entries: Object.entries(byBranch).map(([branchId, amount]) => ({ branchId, branchName: branchNames[branchId] || 'Unknown', amount })),
+      entries: Object.entries(byOfficer).map(([officerId, amount]) => ({ officerId, officerName: officerNames[officerId] || 'Unknown', amount })),
     }));
 
     res.json({ year, month, from, to, days });

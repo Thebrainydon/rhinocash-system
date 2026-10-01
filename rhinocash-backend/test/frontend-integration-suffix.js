@@ -1990,7 +1990,9 @@ apiRequest = async function(method, path, body){
     // Disbursements (Loan Officer): the real Daily Disbursements calendar,
     // chrome-free, backed by a real dedicated endpoint — replacing the
     // old shared KPI-tile Disbursements Overview page (still used by
-    // Manager/Regional Manager/Operational Manager, untouched).
+    // Regional Manager/Operational Manager, untouched; Manager now
+    // shares this exact same real calendar too — see the new section
+    // further down this file).
     session.dailyDisbState = null; DB.dailyDisb = null;
     goTo('loanbook','Disbursements');
     await new Promise(r=>setTimeout(r,50)); renderApp();
@@ -6834,6 +6836,80 @@ apiRequest = async function(method, path, body){
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('<th>Approvals</th>') && !html.includes('<th>Approval</th>'), "a Loan Officer's own real Loan Applications page genuinely keeps the plain 'Approvals' header even under Undisbursed loans — unchanged");
     __assert(!html.includes('>Approve<'), "a Loan Officer never sees a real clickable Approve button on their own page — they can never approve their own real submitted loan");
+  }
+
+  // ---- 67. LOANBOOK > DISBURSEMENTS (Manager): the exact same real Daily
+  // Disbursements calendar the Loan Officer already uses
+  // (renderDailyDisbursementsPage()), now routed to the Manager role too
+  // instead of the separate Disbursements Overview page — with the real
+  // backend grouping changed from branch to Loan Officer, so a Manager
+  // genuinely sees each real officer's own disbursed amount per real day,
+  // plus a real bold daily total, matching the requested reference design. ----
+  {
+    let ofDc = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    const dcClientForm = new Map([['name','Daily Disb Manager Test Client'],['phone','0722900'+Math.floor(Math.random()*900+100)],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return dcClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const dcClient = DB.clients.find(c=>c.name==='Daily Disb Manager Test Client');
+    const dcLoan = await createLoanApplication({ clientId: dcClient.id, productId: 'pr_boda', principal: 15000, term: 6 });
+
+    await confirmLogout();
+    let mgrDc = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dcLoan.id);
+
+    await confirmLogout();
+    let regDc = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dcLoan.id);
+
+    await confirmLogout();
+    let opsDc = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dcLoan.id);
+
+    await confirmLogout();
+    let acctDc = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acctDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(dcLoan.id);
+
+    await confirmLogout();
+    let admDc = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(dcLoan.id, 'Cash');
+
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.dailyDisbState = null; DB.dailyDisb = null;
+    goTo('loanbook','Disbursements');
+    for(let i=0; i<100 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Daily Disbursements'), "Manager's real Disbursements page genuinely shares the exact same real Daily Disbursements calendar the Loan Officer uses");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Disbursements page genuinely has no subtab bar above it, per the requested chrome-free design");
+    __assert(html.includes('Peter Otieno'), "the real Manager's own branch-wide calendar genuinely shows the real Loan Officer's own name on today's cell, not a bare branch name");
+    const todayStr = new Date().toISOString().slice(0,10);
+    const todayEntry = DB.dailyDisb.days.find(d=>d.date===todayStr);
+    __assert(todayEntry && todayEntry.entries.some(e=>e.officerName==='Peter Otieno' && e.amount>=15000), "the real today's cell genuinely carries the real Loan Officer's own disbursed amount");
+
+    // The exact same shared page, for the Loan Officer — still chrome-free, still just themselves.
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofDc; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.dailyDisbState = null; DB.dailyDisb = null;
+    goTo('loanbook','Disbursements');
+    for(let i=0; i<100 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "the real Loan Officer's own Disbursements page genuinely stays chrome-free, unchanged");
   }
 
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----

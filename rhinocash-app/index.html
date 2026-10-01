@@ -7114,6 +7114,7 @@ function renderLoanBook(){
   if(active==="Collection MTD" && session.role==='Manager') return renderCollectionMTD();
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
   if(active==="Collection MTD") return renderCollectionMTD();
+  if(active==="Disbursements" && session.role==='Manager') return renderDailyDisbursementsPage();
   if(active==="Disbursements" && session.role !== 'Loan Officer') return tabsHtml + renderDisbursementsOverviewPage();
   if(active==="Disbursements") return renderDailyDisbursementsPage();
   if(active==="Loan Applications" && session.role==='Manager') return renderLoanApplications();
@@ -8174,9 +8175,11 @@ function renderDailyDisbursementsCalendar(st, d){
     const dd = String(day).padStart(2,'0');
     const dateStr = `${st.year}-${mm}-${dd}`;
     const entries = dayMap[dateStr] || [];
+    const dayTotal = entries.reduce((s,e)=>s+e.amount, 0);
     return `<td style="vertical-align:top; padding:6px 8px;">
       ${entries.length ? `<div style="font-weight:700; color:var(--navy); font-size:12px;">${dd}-${mm}-${st.year}</div>` : ''}
-      ${entries.map(e=>`<div style="font-size:12px; display:flex; justify-content:space-between; gap:6px;"><span>${escapeHtml(e.branchName)}</span><span>${fmtNum(e.amount)}</span></div>`).join("")}
+      ${entries.map(e=>`<div style="font-size:12px; display:flex; justify-content:space-between; gap:6px;"><span>${escapeHtml(e.officerName)}</span><span>${fmtNum(e.amount)}</span></div>`).join("")}
+      ${entries.length ? `<div style="font-weight:700; text-align:right; border-top:1px solid var(--line); margin-top:4px; padding-top:4px; font-size:12px;">${fmtNum(dayTotal)}</div>` : ''}
     </td>`;
   }).join("")}</tr>`).join("");
   return `<table style="width:100%; border-collapse:collapse;">
