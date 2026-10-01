@@ -1317,7 +1317,7 @@ function adaptLoan(l){
     createdAt:l.created_at, disbursedAt:l.disbursed_at, writtenOffDate:l.written_off_at,
     rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
     lastApproval: l.last_approval ? { name:l.last_approval.name, decision:l.last_approval.decision, createdAt:l.last_approval.created_at } : null,
-    approvals: (l.approvals||[]).map(a=>({ name:a.name, decision:a.decision, createdAt:a.created_at })),
+    approvals: (l.approvals||[]).map(a=>({ name:a.name, decision:a.decision, createdAt:a.created_at, roleId:a.role_id })),
     schedule: (l.schedule||[]).map(adaptScheduleRow) };
 }
 function adaptPayment(p){
@@ -7114,6 +7114,7 @@ function renderLoanBook(){
   if(active==="Collection MTD") return renderCollectionMTD();
   if(active==="Disbursements" && session.role !== 'Loan Officer') return tabsHtml + renderDisbursementsOverviewPage();
   if(active==="Disbursements") return renderDailyDisbursementsPage();
+  if(active==="Loan Applications" && session.role==='Manager') return tabsHtml + renderLoanApplications();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
@@ -7482,10 +7483,40 @@ function exportLoanApplicationsCSV(){
     }))
   );
 }
+// The real Approvals/Approval column cell. For an approving role (not the
+// Loan Officer) viewing "Undisbursed loans", this becomes a real, directly
+// actionable "Approve" button — the exact backend action the Loan Detail
+// page's own Approve button already calls — rather than a read-only
+// history, so the real decision this loan is genuinely waiting on THIS
+// viewer for can be made right from the table row, no detour required.
+// "Declined"/"Pended" reflect that same viewer's own real, already-made
+// decision (or that it is genuinely waiting on someone else). Every other
+// category, and the Loan Officer's own page, keeps the real plain history
+// — a loan that's left this exact step behind is nothing this viewer
+// can act on again anyway. Tolerant of both the bulk list's real
+// {name, roleId} shape and refreshLoan()'s real raw {role_id, approver_id}
+// shape, so a row updated in place by an inline Approve click (which goes
+// through refreshLoan()) keeps rendering correctly, not just on first load.
+function approvalCellHtml(l, showActions){
+  if(showActions){
+    const requiredRoleId = STATUS_TO_REQUIRED_ROLE_ID[l.status];
+    const myRoleId = ROLE_DISPLAY_TO_ID[session.role];
+    const isSelfSubmitted = DB.me && l.officerId === DB.me.id;
+    if(requiredRoleId && requiredRoleId === myRoleId && !isSelfSubmitted){
+      return `<button class="btn btn-green btn-sm" onclick="withRequest('approve-${l.id}', ()=>approveLoan('${l.id}'))">Approve</button>`;
+    }
+    const myDecision = (l.approvals||[]).find(a=>(a.roleId||a.role_id)===myRoleId);
+    if(myDecision && myDecision.decision==='Rejected') return `<span class="badge red">Declined</span>`;
+    if(myDecision && myDecision.decision==='Returned') return `<span class="badge amber">Pended</span>`;
+    return `<span class="badge amber">Pended</span>`;
+  }
+  return l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name || staffName(a.approverId||a.approver_id))}</strong>: <em>${escapeHtml(approvalDecisionLabel(a.decision))}</em>`).join('<br>') : '—';
+}
 function renderLoanApplications(){
   const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
   const rows = loanApplicationsFiltered(st);
   const monthOptions = loanStatusMonthOptions();
+  const showActions = st.category === 'Undisbursed loans' && session.role !== 'Loan Officer';
   const rowsHtml = rows.map((l,i)=>`
     <tr>
       <td>${i+1}</td>
@@ -7498,7 +7529,7 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.guarantorContact||'—')}</td>
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
       <td>${l.processingFeeReceipt ? `${escapeHtml(l.processingFeeReceipt)}<br>` : ''}${fmt(l.processingFee||0)}</td>
-      <td>${l.approvals && l.approvals.length ? l.approvals.map(a=>`<strong>${escapeHtml(a.name)}</strong>: <em>${escapeHtml(approvalDecisionLabel(a.decision))}</em>`).join('<br>') : '—'}</td>
+      <td>${approvalCellHtml(l, showActions)}</td>
       <td>${loanDisbursementCellLabel(l)}${l.status==='Waiting for Manager' ? `<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanEditModal('${l.id}')">Edit</span>` : ''}</td>
     </tr>`).join("");
   return `
@@ -7521,7 +7552,7 @@ function renderLoanApplications(){
         ${generateDropdownHtml('exportLoanApplicationsCSV()')}
       </div>
       <div class="table-wrap"><table>
-        <tr><th>#</th><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>Approvals</th><th>Disbursement</th></tr>
+        <tr><th>#</th><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>${showActions?'Approval':'Approvals'}</th><th>Disbursement</th></tr>
         ${rowsHtml || `<tr><td colspan="12" class="empty">No loans in this category.</td></tr>`}
       </table></div>
     </div>

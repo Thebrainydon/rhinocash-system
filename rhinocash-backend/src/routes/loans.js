@@ -1742,14 +1742,14 @@ function register(router) {
     if (loanIds.length) {
       const idPh2 = loanIds.map(() => '?').join(',');
       (await all(
-        `SELECT la.loan_id, la.decision, la.created_at, u.name as approver_name
+        `SELECT la.loan_id, la.decision, la.created_at, la.role_id, u.name as approver_name
          FROM loan_approvals la
          JOIN users u ON u.id = la.approver_id
          WHERE la.loan_id IN (${idPh2})
          ORDER BY la.created_at ASC`,
         loanIds
       )).forEach(r => {
-        const entry = { name: r.approver_name, decision: r.decision, created_at: r.created_at };
+        const entry = { name: r.approver_name, decision: r.decision, created_at: r.created_at, role_id: r.role_id };
         (approvalsByLoan[r.loan_id] || (approvalsByLoan[r.loan_id] = [])).push(entry);
         lastApprovalByLoan[r.loan_id] = entry; // chronological order, so the last push is genuinely the latest
       });
