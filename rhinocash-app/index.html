@@ -7119,7 +7119,7 @@ function renderLoanBook(){
   if(active==="Disbursements") return renderDailyDisbursementsPage();
   if(active==="Loan Applications" && session.role==='Manager') return renderLoanApplications();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
-  if(active==="Collection Sheet" && session.role==='Manager') return renderCollectionRatesOfficer();
+  if(active==="Collection Sheet" && session.role==='Manager') return renderCollectionSheet();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
   if(active==="Collection Report") return renderCollectionReport();
@@ -7661,7 +7661,7 @@ function renderLoanDetail(id){
 // own notes for the exact real definitions. ----
 function defaultCollSheetDayState(){
   const now = new Date();
-  return { month: now.toISOString().slice(0,7), day: now.getDate(), portfolio:'', period:'' };
+  return { month: now.toISOString().slice(0,7), day: now.getDate(), portfolio:'', period:'', officerId:'' };
 }
 function collSheetDayMonthOptions(){
   const opts = []; const now = new Date();
@@ -7685,6 +7685,7 @@ async function loadCollectionSheetDay(){
     const params = new URLSearchParams({ date });
     if(st.portfolio) params.set('portfolio', st.portfolio);
     if(st.period) params.set('period', st.period);
+    if(st.officerId) params.set('officer_id', st.officerId);
     const res = await api.get('/api/collections/sheet-day?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.collSheetDay = res;
@@ -7719,6 +7720,10 @@ function renderCollectionSheet(){
           <option value="">-- Installment --</option>
           ${d.periods.map(p=>`<option value="${p}" ${String(st.period)===String(p)?'selected':''}>Installment ${p}</option>`).join("")}
         </select>
+        ${hasOfficerVisibility() ? `<select onchange="session.collSheetDayState.officerId=this.value; DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportCollectionSheetDayCSV()')}
       </div>

@@ -1937,8 +1937,8 @@ apiRequest = async function(method, path, body){
     // the old paginated multi-day sheet page for this role specifically
     // (Regional Manager/Operational Manager still see their own
     // renderSheetBranchPage(), untouched; Manager's own "Collection
-    // Sheet" now shares the real Collection Rates page instead — see the
-    // new section further down this file).
+    // Sheet" now shares this exact same page too, plus a Loan Officer
+    // filter — see the new section further down this file).
     session.collSheetDayState = null; DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
     await new Promise(r=>setTimeout(r,50)); renderApp();
@@ -6906,47 +6906,104 @@ apiRequest = async function(method, path, body){
     __assert(!html.includes('class="subtabs"'), "the real Loan Officer's own Disbursements page genuinely stays chrome-free, unchanged");
   }
 
-  // ---- 68. LOANBOOK > COLLECTION SHEET (Manager): per explicit request,
-  // this reuses the exact same real "Collection Rates" page design the
-  // Loan Officer already uses (renderCollectionRatesOfficer()) — not a
-  // separate page of its own. The real officer-rates endpoint now also
-  // lists every real branch officer (even an idle one), matching the
-  // requested "all branch officers should be seen there" design. ----
+  // ---- 68. LOANBOOK > COLLECTION SHEET (Manager): the exact same real
+  // single-day due-installment sheet the Loan Officer already uses
+  // (renderCollectionSheet()), now routed to the Manager role too,
+  // chrome-free — with one real addition: a "-- Loan Officer --" filter,
+  // since a Manager oversees multiple officers. The real backend
+  // (/api/collections/sheet-day) already supported ?officer_id= via the
+  // shared loanScopeClause(), so this is a pure frontend addition. (An
+  // earlier version of this section wrongly assumed Collection Sheet
+  // should reuse the Collection Rates design — corrected per explicit
+  // follow-up; that page's own real roster fix stays, reachable via the
+  // real separate Collection Rates submenu, untouched here.) ----
   {
-    let mgrCs = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    let ofCs2 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     await confirmLogout();
-    global.FormData = class { constructor(){ return mgrCs; } };
+    global.FormData = class { constructor(){ return ofCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+
+    const csClientForm = new Map([['name','Collection Sheet Filter Test Client'],['phone','0722900'+Math.floor(Math.random()*900+100)],['idNumber',''],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    global.FormData = class { constructor(){ return csClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const csClient = DB.clients.find(c=>c.name==='Collection Sheet Filter Test Client');
+    const csLoan = await createLoanApplication({ clientId: csClient.id, productId: 'pr_boda', principal: 15000, term: 6 });
+
+    await confirmLogout();
+    let mgrCs2 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(csLoan.id);
+
+    await confirmLogout();
+    let regCs2 = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return regCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(csLoan.id);
+
+    await confirmLogout();
+    let opsCs2 = new Map([['username','opsmanager@rhinocash.co.ke'],['password', process.env.SEEDED_OPSMGR_PASSWORD]]);
+    global.FormData = class { constructor(){ return opsCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(csLoan.id);
+
+    await confirmLogout();
+    let acctCs2 = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acctCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await approveLoan(csLoan.id);
+
+    await confirmLogout();
+    let admCs2 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    await disburseLoan(csLoan.id, 'Cash');
+    const csLoanDetail = await refreshLoan(csLoan.id);
+    const csDueDate = csLoanDetail.schedule[0].dueDate.slice(0,10);
+
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrCs2; } };
     await doLogin({ preventDefault(){}, target:{} });
     __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
 
-    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
+    session.collSheetDayState = { month: csDueDate.slice(0,7), day: Number(csDueDate.slice(8,10)), portfolio:'', period:'', officerId:'' };
+    DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
-    for(let i=0; i<100 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    for(let i=0; i<100 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Collection Rates') && html.includes('Loan Officer') && html.includes('Disbursed Loan') && html.includes('Loan+Charges') && html.includes('OTC') && html.includes('OC') && html.includes('DD7') && html.includes('CG7') && html.includes('Arrears') && html.includes('GC%'), "the real Manager Collection Sheet page genuinely renders the exact same real Collection Rates design and full column set, per the explicit request");
-    __assert(!html.includes('class="subtabs"'), "the real Manager Collection Sheet page genuinely has no subtab bar above it, per the requested chrome-free design");
-    __assert(html.includes('Peter Otieno'), "the real Manager's own branch-wide view genuinely shows the real Kisumu Loan Officer's own row");
-    const myRatesRow2 = DB.collectionRatesOfficer.rows.find(r=>r.officerName==='Peter Otieno');
-    __assert(myRatesRow2 && myRatesRow2.disbursedAmount >= 15000, "the real Loan Officer's own row genuinely reflects their real disbursed amount this month");
+    __assert(html.includes('Collection sheet for'), "the real Manager Collection Sheet page genuinely shares the exact same real single-day due-installment sheet the Loan Officer uses");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Collection Sheet page genuinely has no subtab bar above it");
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter on Collection Sheet too");
+    __assert(html.includes('Collection Sheet Filter Test Client'), "the real just-disbursed loan's own real due installment genuinely appears in the real, unfiltered sheet");
 
-    // The Loan Officer's own real "Collection Sheet" submenu is genuinely
-    // untouched — it still renders their own real single-day due-
-    // installment sheet (already covered elsewhere in this file), not
-    // this page at all; this dispatch change only intercepts Manager.
-    // What IS shared is the real underlying officer-rates endpoint and
-    // page (renderCollectionRatesOfficer()), reached via the Loan
-    // Officer's own separate "Collection Rates" submenu — confirmed
-    // genuinely unaffected by the new roster logic (still just themselves).
-    await confirmLogout();
-    let ofCs = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
-    global.FormData = class { constructor(){ return ofCs; } };
-    await doLogin({ preventDefault(){}, target:{} });
-    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
-    goTo('loanbook','Collection Rates');
-    for(let i=0; i<100 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    session.collSheetDayState.officerId = 'usr_officer';
+    DB.collSheetDay = null;
+    renderApp();
+    for(let i=0; i<100 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
-    __assert(!html.includes('class="subtabs"'), "a Loan Officer's own real Collection Rates page genuinely stays chrome-free, unchanged");
-    __assert(DB.collectionRatesOfficer.rows.length === 1 && DB.collectionRatesOfficer.rows[0].officerName==='Peter Otieno', "a Loan Officer's own real Collection Rates page genuinely stays scoped to just themselves, not a branch-wide roster");
+    __assert(html.includes('Collection Sheet Filter Test Client'), "filtering by this exact real Loan Officer genuinely still shows their own real due installment");
+
+    session.collSheetDayState.officerId = 'usr_manager_kisumu';
+    DB.collSheetDay = null;
+    renderApp();
+    for(let i=0; i<100 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('Collection Sheet Filter Test Client'), "filtering by a real different user's id genuinely excludes this officer's own real due installment — the filter is real, not decorative");
+
+    // The exact same shared page, for the Loan Officer — genuinely
+    // unchanged, no picker shown at all.
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofCs2; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.collSheetDayState = { month: csDueDate.slice(0,7), day: Number(csDueDate.slice(8,10)), portfolio:'', period:'', officerId:'' };
+    DB.collSheetDay = null;
+    goTo('loanbook','Collection Sheet');
+    for(let i=0; i<100 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Collection Sheet page genuinely has no Loan Officer filter — their own real installments need no picker");
+    __assert(html.includes('Collection Sheet Filter Test Client'), "sanity: the real Loan Officer still sees their own real due installment, unfiltered");
+
+    session.collSheetDayState = null; DB.collSheetDay = null;
 
     session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
   }
