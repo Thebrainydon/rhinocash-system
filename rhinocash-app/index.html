@@ -7136,6 +7136,7 @@ function renderLoanBook(){
   if(active==="Loan Arrears" && session.role==='Manager') return renderLoanArrearsSheet();
   if(active==="Loan Arrears" && session.role !== 'Loan Officer') return tabsHtml + renderArrearsBranchPage();
   if(active==="Loan Arrears") return renderLoanArrearsSheet();
+  if(active==="View Loans" && session.role==='Manager') return renderLoanOfficerViewLoans();
   if(active==="View Loans" && session.role !== 'Loan Officer') return tabsHtml + renderViewLoansPage();
   if(active==="View Loans") return renderLoanOfficerViewLoans();
   if(active==="Operational Loan Portfolio") return tabsHtml + renderOperationalPortfolioPage();
@@ -7969,10 +7970,10 @@ function renderLoanArrearsSheet(){
   `;
 }
 
-// ---- View Loans (Loan Officer): a real, filterable per-loan sheet —
-// chrome-free, matching the reference design exactly. Reuses the
-// existing, already-comprehensive GET /api/loans/view endpoint (the
-// same one the Manager/Regional/Operational Manager KPI-tile version
+// ---- View Loans (Loan Officer, now also Manager): a real, filterable
+// per-loan sheet — chrome-free, matching the reference design exactly.
+// Reuses the existing, already-comprehensive GET /api/loans/view endpoint
+// (the same one the Manager/Regional/Operational Manager KPI-tile version
 // already uses) rather than a new backend route — extended with a few
 // real, additive fields/categories this reference design needed:
 // "displayStatus"/maturityDate (see the backend route's own comment),
@@ -7980,12 +7981,21 @@ function renderLoanArrearsSheet(){
 // Performing" categories, the real existing loan Rating (Tag/Rate
 // Client Loan) as a filter, and Balance/Amount/Disbursement/Maturity
 // sort keys. "Loan Officer" column shows the officer's own real name on
-// every row, since this view is already scoped to the Loan Officer's
-// own real loans. "Percent" (the real collection rate, paid/toPay*100)
-// is red when genuinely near-zero (<1%), purple otherwise — this
-// reference design's own accent color, distinct from this app's usual
-// green/red convention elsewhere. The Maturity dot is red when the loan
-// is genuinely not current (Overdue or In Arrears), green otherwise. ----
+// every row — for a Loan Officer this naturally always shows their own
+// name; for a Manager it varies per row, since this is already
+// genuinely branch-wide (the backend's branchScopeSQL scopes them to
+// their own branch by default). "Percent" (the real collection rate,
+// paid/toPay*100) is red when genuinely near-zero (<1%), purple
+// otherwise — this reference design's own accent color, distinct from
+// this app's usual green/red convention elsewhere. The Maturity dot is
+// red when the loan is genuinely not current (Overdue or In Arrears),
+// green otherwise. For a Manager this adds a real "-- Loan Officer --"
+// filter, wired to the existing ?officer_id= support on
+// /api/loans/view (same pattern as Collection Sheet/Collection
+// Report/Loan Arrears); clicking the Client name now opens their real
+// account (openClient()), while the rest of the row still opens the
+// loan (openLoan()), matching View Clients and the same real fix
+// applied to Loan Arrears. ----
 const VIEW_LOANS_CATEGORIES = ['Current Loans','Completed Loans','Overdue Loans','Rescheduled Loans','WrittenOff Loans','Non Performing','All Loans'];
 const VIEW_LOANS_RATING_OPTIONS = [
   { value:'', label:'-- Rating --' },
@@ -8003,7 +8013,7 @@ const VIEW_LOANS_SORT_OPTIONS = [
   { value:'maturityasc', label:'Maturity Asc' }, { value:'maturitydesc', label:'Maturity Desc' },
 ];
 function defaultLoanOfficerViewLoansState(){
-  return { category:'Current Loans', productId:'', rating:'', cycles:'', filterDatesOpen:false, disbursedFrom:'', disbursedTo:'', sort:'', q:'', page:1 };
+  return { category:'Current Loans', productId:'', rating:'', cycles:'', filterDatesOpen:false, disbursedFrom:'', disbursedTo:'', sort:'', q:'', officerId:'', page:1 };
 }
 function loanOfficerViewLoansParams(st){
   const params = new URLSearchParams({ category: st.category });
@@ -8014,6 +8024,7 @@ function loanOfficerViewLoansParams(st){
   if(st.disbursedTo) params.set('disbursed_to', st.disbursedTo);
   if(st.sort) params.set('sort', st.sort);
   if(st.q) params.set('q', st.q);
+  if(st.officerId) params.set('officer_id', st.officerId);
   params.set('page', st.page||1);
   params.set('page_size', 20);
   return params;
@@ -8061,6 +8072,10 @@ function renderLoanOfficerViewLoans(){
           <option value="">Cycles</option>
           ${['1','2','3','4+'].map(c=>`<option value="${c}" ${st.cycles===c?'selected':''}>${c}</option>`).join("")}
         </select>
+        ${hasOfficerVisibility() ? `<select onchange="session.loViewLoansState.officerId=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
       </div>
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
         <button class="btn btn-sm btn-outline" onclick="session.loViewLoansState.filterDatesOpen=!session.loViewLoansState.filterDatesOpen; renderApp();">☰ Filter Dates</button>
@@ -8081,7 +8096,7 @@ function renderLoanOfficerViewLoans(){
       <div class="table-wrap" style="margin-top:10px;"><table>
         <tr><th>#</th><th>Client</th><th>Contact</th><th>Loan Officer</th><th>Disbursement</th><th>Loan</th><th>To-Pay</th><th>Paid</th><th>Percent</th><th>Balance</th><th>Status</th><th>Maturity</th></tr>
         ${d.rows.map((r,i)=>`<tr class="clickable" onclick="openLoan('${r.loanId}')">
-          <td>${(d.pagination.page-1)*d.pagination.pageSize+i+1}</td><td>${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.clientPhone||'—')}</td>
+          <td>${(d.pagination.page-1)*d.pagination.pageSize+i+1}</td><td onclick="event.stopPropagation(); openClient('${r.clientId}')" style="cursor:pointer; text-decoration:underline; color:var(--blue);">${escapeHtml(r.clientName)}</td><td>${escapeHtml(r.clientPhone||'—')}</td>
           <td>${staffName(r.officerId)}</td><td>${r.disbursedAt?fmtDDMMYYYY(r.disbursedAt.slice(0,10)):'—'}</td>
           <td>${fmtNum(r.principal)}</td><td>${fmtNum(r.toPay)}</td><td>${fmtNum(r.paid)}</td>
           <td style="color:${r.collectionRate<1?'var(--red)':'var(--purple)'}; font-weight:700;">${r.collectionRate.toFixed(2)}%</td>
