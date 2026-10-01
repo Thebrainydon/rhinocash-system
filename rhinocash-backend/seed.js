@@ -80,7 +80,13 @@ async function seedModules() {
     // or any other financial action permission, so they still can't record
     // or modify a single transaction — same "system access vs. authority
     // to act" separation already applied elsewhere (e.g. Admin vs. finance).
-    ceo: ['dashboard', 'clients', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
+    // 'loanbook'/'payments' added alongside the above accounting/branches
+    // grant — the CEO sidebar now includes real LoanBook and Payments
+    // submenus (Loan Applications, Collection Sheet, Receipts, etc.),
+    // which are read-only visibility for the CEO: no approve_loans/
+    // disburse_loans/record_payments action permission is granted here,
+    // same "visibility vs. authority to act" separation as accounting.
+    ceo: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
     director: ['dashboard', 'clients', 'reports', 'accounting', 'branches', 'investors', 'audit', 'support', 'account'],
   };
   for (const [role, mods] of Object.entries(roleModules)) {
