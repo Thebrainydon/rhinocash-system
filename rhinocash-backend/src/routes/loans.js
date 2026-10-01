@@ -2218,13 +2218,16 @@ function register(router) {
     }
     const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
-    // for an officer who genuinely belongs to the resolved branch (never
-    // trust an arbitrary officer_id from the frontend).
+    // for a real Loan Officer who genuinely belongs to the resolved branch
+    // (never trust an arbitrary officer_id from the frontend).
     let officerId = req.user.id;
     if (b.officer_id && req.user.role_id !== 'loan_officer') {
       const targetOfficer = await get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
       if (!targetOfficer || targetOfficer.branch_id !== branchId) {
         return next({ status: 400, message: 'officer_id must belong to the selected branch' });
+      }
+      if (targetOfficer.role_id !== 'loan_officer') {
+        return next({ status: 400, message: 'Only a user with the Loan Officer role can be assigned to a loan application' });
       }
       officerId = b.officer_id;
     }

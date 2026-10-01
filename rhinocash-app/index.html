@@ -7148,9 +7148,9 @@ function renderLoanBook(){
 // POST /api/loans; this just saves the officer retyping what the
 // backend would fill in anyway, using the client's own already-loaded
 // real loan history (DB.loans) rather than a fresh round trip.
-function handleLoanCategoryChange(value, formEl){
+function handleLoanCategoryChange(value, formEl, stateKey){
   if(value !== 'Repeat Loan') return;
-  const st = session.loanAppState;
+  const st = session[stateKey||'loanAppState'];
   if(!st || !st.matchedClient) return;
   const priorLoans = DB.loans.filter(l=>l.clientId===st.matchedClient.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
   const prior = priorLoans[0];
@@ -7203,18 +7203,19 @@ function renderLoanApplicationForm(){
 // Processing Fee" field, populated from the client's own real
 // registered contact numbers — nothing fabricated, no placeholder name.
 let loanAppLookupTimer = null;
-function lookupClientForLoanApp(idNumber){
-  const st = session.loanAppState;
+function lookupClientForLoanApp(idNumber, stateKey){
+  stateKey = stateKey || 'loanAppState';
+  const st = session[stateKey];
   st.idNumber = idNumber; st.matchedClient = null; st.notFound = false; st.feePayment = null; st.feePhone = '';
   clearTimeout(loanAppLookupTimer);
   if(!idNumber || idNumber.length < 4){ return; }
   loanAppLookupTimer = setTimeout(()=>withRequest('loanapp-client-lookup', async ()=>{
     const res = await api.get('/api/clients?q='+encodeURIComponent(idNumber)+'&limit=5');
     const match = res.clients.find(c=>c.idNumber===idNumber) || res.clients[0];
-    if(session.loanAppState.idNumber !== idNumber) return; // a newer keystroke has already superseded this lookup
-    session.loanAppState.matchedClient = match || null;
-    session.loanAppState.notFound = !match;
-    if(match) await checkExistingProcessingFee();
+    if(session[stateKey].idNumber !== idNumber) return; // a newer keystroke has already superseded this lookup
+    session[stateKey].matchedClient = match || null;
+    session[stateKey].notFound = !match;
+    if(match) await checkExistingProcessingFee(stateKey);
   }), 400);
 }
 // Real auto-detect: once a real client AND a real fee-requiring product
@@ -7224,8 +7225,9 @@ function lookupClientForLoanApp(idNumber){
 // was even opened — and if so, show it as already paid automatically
 // rather than making the officer re-request a payment that's already
 // real and settled.
-async function checkExistingProcessingFee(){
-  const st = session.loanAppState;
+async function checkExistingProcessingFee(stateKey){
+  stateKey = stateKey || 'loanAppState';
+  const st = session[stateKey];
   if(!st || !st.matchedClient || !st.productId || st.feePayment) return;
   const product = DB.products.find(p=>p.id===st.productId);
   if(!product || product.processingFeeAmount==null) return;
@@ -7233,7 +7235,7 @@ async function checkExistingProcessingFee(){
   return withRequest('check-existing-fee', async ()=>{
     const params = new URLSearchParams({ client_id: clientId, product_id: productId, unconsumed: '1' });
     const res = await api.get('/api/loans/processing-fee/confirmed?'+params.toString());
-    const cur = session.loanAppState;
+    const cur = session[stateKey];
     if(!cur || !cur.matchedClient || cur.matchedClient.id !== clientId || cur.productId !== productId) return; // stale — client/product changed since this check started
     const fee = res.feePayments && res.feePayments[0];
     if(fee) cur.feePayment = { id: fee.id, status: 'Confirmed', amount: fee.amount, receiptNumber: fee.mpesa_receipt_number };
@@ -7252,7 +7254,8 @@ async function checkExistingProcessingFee(){
 // fee/manual) — skipping the phone/STK/receipt-code round trip this form
 // deliberately never offered. Meant to be removed again once a real
 // client-facing processing-fee picker is enforced.
-function renderProcessingFeeSection(st, product){
+function renderProcessingFeeSection(st, product, stateKey){
+  stateKey = stateKey || 'loanAppState';
   const fee = st.feePayment;
   if(fee && fee.status==='Confirmed'){
     return `
@@ -7269,13 +7272,14 @@ function renderProcessingFeeSection(st, product){
       <div class="hint" style="margin:2px 0 8px;">No confirmed payment on file yet — enter the amount and mark it paid manually for now.</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <input id="loanapp-manual-fee-amount" type="number" min="1" step="1" value="${product.processingFeeAmount}" style="flex:1;">
-        <button type="button" class="btn btn-sm btn-outline" onclick="manuallyConfirmProcessingFee()">Mark as Paid</button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="manuallyConfirmProcessingFee('${stateKey}')">Mark as Paid</button>
       </div>
     </div>
   `;
 }
-function manuallyConfirmProcessingFee(){
-  const st = session.loanAppState;
+function manuallyConfirmProcessingFee(stateKey){
+  stateKey = stateKey || 'loanAppState';
+  const st = session[stateKey];
   const product = DB.products.find(p=>p.id===st.productId);
   if(!st.matchedClient || !product || product.processingFeeAmount==null) return;
   const input = document.getElementById('loanapp-manual-fee-amount');
@@ -7283,7 +7287,7 @@ function manuallyConfirmProcessingFee(){
   if(!amount || amount <= 0){ toast('Enter a valid processing fee amount'); return; }
   return withRequest('manual-processing-fee', async ()=>{
     const res = await api.post('/api/loans/processing-fee/manual', { client_id: st.matchedClient.id, product_id: product.id, amount });
-    session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
+    session[stateKey].feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
     toast('Processing fee marked as paid');
     renderApp();
   }, {mutates:true});
@@ -7295,25 +7299,27 @@ function manuallyConfirmProcessingFee(){
 // Confirmed fee payment for a test client without a live M-Pesa
 // connection, exactly as the equally real POST
 // /api/loans/processing-fee/initiate and .../confirm endpoints intend.
-function initiateProcessingFee(){
-  const st = session.loanAppState;
+function initiateProcessingFee(stateKey){
+  stateKey = stateKey || 'loanAppState';
+  const st = session[stateKey];
   const product = DB.products.find(p=>p.id===st.productId);
   if(!st.matchedClient || !product || product.processingFeeAmount==null) return;
   if(!st.feePhone){ toast('Select a phone number to send the processing fee request to'); return; }
   return withRequest('initiate-processing-fee', async ()=>{
     const res = await api.post('/api/loans/processing-fee/initiate', { client_id: st.matchedClient.id, product_id: product.id, phone: st.feePhone });
-    session.loanAppState.feePayment = { id: res.feeId, status: res.status, amount: res.amount, message: res.message };
+    session[stateKey].feePayment = { id: res.feeId, status: res.status, amount: res.amount, message: res.message };
     renderApp();
   }, {mutates:true});
 }
-function confirmProcessingFee(code){
-  const st = session.loanAppState;
+function confirmProcessingFee(code, stateKey){
+  stateKey = stateKey || 'loanAppState';
+  const st = session[stateKey];
   if(!st.feePayment){ toast('Request the processing fee payment first'); return; }
   const trimmed = (code||'').trim();
   if(!trimmed){ toast('Enter the M-Pesa receipt code'); return; }
   return withRequest('confirm-processing-fee', async ()=>{
     const res = await api.post(`/api/loans/processing-fee/${st.feePayment.id}/confirm`, { mpesa_receipt_number: trimmed });
-    session.loanAppState.feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
+    session[stateKey].feePayment = { id: res.fee.id, status: 'Confirmed', amount: res.fee.amount, receiptNumber: res.fee.mpesa_receipt_number };
     toast('Processing fee confirmed');
     renderApp();
   }, {mutates:true});
@@ -9839,83 +9845,65 @@ function renderMtdBranchPage(){
   </div>`;
 }
 
+// The exact same real page the Loan Officer uses (card, ID-number lookup,
+// processing fee section, Repeat Loan prefill, etc. — see
+// renderLoanApplicationForm()), with one real addition: a required Loan
+// Officer select, since a Manager submits on behalf of a branch officer
+// rather than themselves. Shares every helper with the Loan Officer form
+// via the optional stateKey param (session.mgrCreateAppState here,
+// session.loanAppState there) — no logic duplicated.
 function renderManagerCreateApplicationForm(){
-  const st = session.mgrCreateAppState || (session.mgrCreateAppState = { q:'', matchedClients:[], selectedClient:null, officerId:'', productId:'', principal:'', term:'', purpose:'', guarantor:'', guarantorContact:'', loanSecurities:'', loanCategory:'' });
+  const st = session.mgrCreateAppState || (session.mgrCreateAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false, feePhone:'', feePayment:null, officerId:'' });
   const myStaff = DB.staff.find(s=>s.id===session.userId);
-  const myBranch = myStaff ? DB.branches.find(b=>b.id===myStaff.branch) : null;
   const product = DB.products.find(p=>p.id===st.productId);
-  const preview = (product && st.principal && st.term) ? (()=>{ const principal = Number(st.principal); const term = Number(st.term); const interest = principal * (product.rate||0) / 100 * term; const total = principal + interest; return { interest, total, installment: total / term }; })() : null;
-
   return `
-    <div class="card" style="max-width:820px;">
-      <div class="card-title">Create Loan Application <small>${myBranch?escapeHtml(myBranch.name):''} — submit on behalf of a branch officer</small></div>
-
-      <div class="section-note" style="font-weight:700;">CLIENT SEARCH</div>
-      <div class="pill-row">
-        <input placeholder="Search by name, phone, or ID number" value="${escapeHtml(st.q)}" oninput="session.mgrCreateAppState.q=this.value;" onkeyup="if(event.key==='Enter') mgrLookupClient(this.value);">
-        <button class="btn btn-sm btn-outline" onclick="mgrLookupClient(document.querySelector('input[placeholder^=\\'Search by name\\']').value)">Search</button>
-      </div>
-      ${st.matchedClients.length ? `<div class="table-wrap"><table><tr><th></th><th>Name</th><th>Phone</th></tr>
-        ${st.matchedClients.map(c=>`<tr class="clickable" onclick="mgrSelectClient('${c.id}')"><td><input type="radio" ${st.selectedClient&&st.selectedClient.id===c.id?'checked':''}></td><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.phone||'')}</td></tr>`).join("")}</table></div>` : ""}
-      ${st.selectedClient ? `<div class="section-note">Selected: <strong>${escapeHtml(st.selectedClient.name)}</strong> — ${escapeHtml(st.selectedClient.phone||'')} <button class="btn btn-sm btn-outline" onclick="mgrClearClient()">Change</button></div>` : ""}
-
-      ${st.selectedClient ? `
-      <div class="section-note" style="font-weight:700; margin-top:12px;">OFFICER ASSIGNMENT</div>
-      <div class="field"><label>Loan Officer</label><select onchange="session.mgrCreateAppState.officerId=this.value; renderApp();">
-        <option value="">-- Select Officer --</option>
-        ${DB.staff.filter(s=>s.role==='Loan Officer' && s.branch===(myStaff?myStaff.branch:null)).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-      </select></div>
-
-      <div class="section-note" style="font-weight:700; margin-top:12px;">LOAN DETAILS</div>
-      <div class="form-grid">
-        <div class="field"><label>Loan Product</label><select onchange="session.mgrCreateAppState.productId=this.value; renderApp();">
+    <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
+      <span onclick="goTo('dashboard')" style="position:absolute; top:14px; right:16px; color:var(--rust); font-size:22px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
+      <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Create Loan Application</h3>
+      <form onsubmit="return submitMgrLoanApp(event)">
+        <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value, 'mgrCreateAppState')"></div>
+        <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
+        <div class="field"><label>Loan Officer</label><select name="officerId" required onchange="session.mgrCreateAppState.officerId=this.value;">
+          <option value="">-- Select Officer --</option>
+          ${DB.staff.filter(s=>s.role==='Loan Officer' && s.branch===(myStaff?myStaff.branch:null)).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select></div>
+        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.mgrCreateAppState.productId=this.value; session.mgrCreateAppState.feePayment=null; session.mgrCreateAppState.feePhone=''; renderApp(); checkExistingProcessingFee('mgrCreateAppState');">
           <option value="">-- Loan Product --</option>
           ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
         </select></div>
-        <div class="field"><label>Loan Amount</label><input type="number" value="${st.principal}" oninput="session.mgrCreateAppState.principal=this.value; renderApp();" placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
-        <div class="field"><label>Loan Duration</label><select onchange="session.mgrCreateAppState.term=this.value; renderApp();">
+        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required ${product?`min="${product.minAmt}" max="${product.maxAmt}"`:''} placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
+        <div class="field"><label>Loan Duration</label><select name="term" required>
           <option value="">-- Select --</option>
-          ${product ? Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}" ${String(m)===st.term?'selected':''}>${m} month${m>1?'s':''}</option>`).join("") : ""}
+          ${product ? (product.termWeeks
+            ? `<option value="1" selected>${product.termWeeks*7} days</option>`
+            : Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join(""))
+            : ""}
         </select></div>
-        <div class="field"><label>Purpose</label><input value="${escapeHtml(st.purpose)}" oninput="session.mgrCreateAppState.purpose=this.value;"></div>
-        <div class="field"><label>Guarantor</label><input value="${escapeHtml(st.guarantor)}" oninput="session.mgrCreateAppState.guarantor=this.value;"></div>
-        <div class="field"><label>Guarantor Contact</label><input value="${escapeHtml(st.guarantorContact)}" oninput="session.mgrCreateAppState.guarantorContact=this.value;"></div>
-      </div>
-      ${preview ? `<div class="section-note">Total repayable: <strong>${fmt(preview.total)}</strong> (interest ${fmt(preview.interest)}) — approx. ${fmt(preview.installment)} per installment over ${st.term} month(s).</div>` : ""}
-
-      <button class="btn btn-primary" style="margin-top:12px;" onclick="submitMgrLoanApp()">Submit Application</button>
-      ` : ""}
+        <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
+        <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
+        <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
+        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product, 'mgrCreateAppState') : ""}
+        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this, 'mgrCreateAppState')">
+          <option value="">-- Select --</option>
+          <option>New Loan</option><option>Repeat Loan</option>
+        </select></div>
+        <div style="text-align:right; margin-top:16px;">
+          <button class="btn btn-green" type="submit">Save</button>
+        </div>
+      </form>
     </div>
   `;
 }
-async function mgrLookupClient(q){
-  if(!q || q.length < 2) return;
-  return withRequest('mgr-client-lookup', async ()=>{
-    const res = await api.get('/api/clients?q='+encodeURIComponent(q)+'&limit=10');
-    session.mgrCreateAppState.matchedClients = res.clients;
-  });
-}
-function mgrSelectClient(clientId){
-  const c = session.mgrCreateAppState.matchedClients.find(x=>x.id===clientId);
-  session.mgrCreateAppState.selectedClient = c || null;
-  renderApp();
-}
-function mgrClearClient(){
-  session.mgrCreateAppState.selectedClient = null;
-  session.mgrCreateAppState.officerId = '';
-  renderApp();
-}
-async function submitMgrLoanApp(){
-  const st = session.mgrCreateAppState;
-  if(!st.selectedClient){ toast('Select a client first'); return; }
-  if(!st.officerId){ toast('Select a loan officer'); return; }
-  if(!st.productId || !st.principal || !st.term){ toast('Complete the loan product, amount and duration'); return; }
+function submitMgrLoanApp(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
+  if(!f.officerId){ toast('Select a loan officer'); return false; }
   return withRequest('submit-mgr-loan', async ()=>{
-    await createLoanApplication({ clientId: st.selectedClient.id, officerId: st.officerId, productId: st.productId, principal: st.principal, term: st.term, purpose: st.purpose, guarantor: st.guarantor, guarantor_contact: st.guarantorContact, loan_securities: st.loanSecurities, loan_category: st.loanCategory });
-    toast('Loan application submitted');
+    await createLoanApplication(f);
     session.mgrCreateAppState = null;
-    goTo('loanbook','Loan Applications');
-  });
+    goToUndisbursedLoans();
+  }, {mutates:true});
 }
 
 // ==================== Regional Manager / Operational Manager Create Application — branch selection, then client search, officer selection ====================

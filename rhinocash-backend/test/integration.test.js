@@ -297,6 +297,30 @@ async function api(method, path, { token, body } = {}) {
     assert(!!scheduleAfterPayments[0].last_payment_date, 'schedule now carries a real last_payment_date for the period the two payments touched');
   }
 
+  // ---- 11a. A Manager submitting a loan application on behalf of a real
+  // Loan Officer (officer_id override) — the Manager's own Create
+  // Application page now requires picking an officer (see
+  // renderManagerCreateApplicationForm()), and the real backend must
+  // genuinely attribute the resulting loan to THAT officer, never the
+  // submitting Manager, while still refusing an officer_id that isn't a
+  // real Loan Officer at all (an Accountant, say) — not just one outside
+  // the resolved branch, which was already enforced. ----
+  {
+    const mgrLoginA = await api('POST', '/api/auth/login', { body: { email: 'manager.kisumu@rhinocash.co.ke', password: process.env.SEEDED_MANAGER_KISUMU_PASSWORD } });
+    const acctLoginA = await api('POST', '/api/auth/login', { body: { email: 'accountant@rhinocash.co.ke', password: process.env.SEEDED_ACCOUNTANT_PASSWORD } });
+    const acctMeA = await api('GET', '/api/auth/me', { token: acctLoginA.json.token });
+    const productsA = await api('GET', '/api/loan-products', { token: mgrLoginA.json.token });
+    const productIdA = productsA.json.products[0].id;
+    const officerClientA = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Officer Override Client', phone: '0722900' + Math.floor(Math.random() * 900 + 100), national_id: '40112233' } });
+    assert(officerClientA.status === 201, 'sanity: a real client for this officer-override test is genuinely created');
+
+    const wrongRoleLoan = await api('POST', '/api/loans', { token: mgrLoginA.json.token, body: { client_id: officerClientA.json.client.id, product_id: productIdA, principal: 20000, term_months: 3, officer_id: acctMeA.json.user.id } });
+    assert(wrongRoleLoan.status === 400, 'a Manager assigning a non-Loan-Officer (a real Accountant) as a loan application\'s officer_id is genuinely rejected');
+
+    const mgrLoan = await api('POST', '/api/loans', { token: mgrLoginA.json.token, body: { client_id: officerClientA.json.client.id, product_id: productIdA, principal: 20000, term_months: 3, officer_id: officerId } });
+    assert(mgrLoan.status === 201 && mgrLoan.json.loan.officer_id === officerId, 'a Manager genuinely attributes the real loan application to the real Loan Officer they picked, not to themselves');
+  }
+
   // ---- 11b. Processing fee (real, deducted at disbursement) & late-payment
   // penalty (real, accrued on overdue installments, payable and reversible
   // through the same allocate()/reverse machinery as principal/interest) ----

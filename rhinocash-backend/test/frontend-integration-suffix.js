@@ -6661,6 +6661,85 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('View Clients Filter Test'), "sanity: the real Loan Officer still sees their own real assigned client, unfiltered");
   }
 
+  // ---- 65. LOANBOOK > CREATE APPLICATION (Manager): the exact same real
+  // page the Loan Officer already uses (same card, same ID-number lookup,
+  // same Loan Duration/Type of Loan fields — see renderLoanApplicationForm()
+  // / renderManagerCreateApplicationForm()), with one real addition: a
+  // required "Loan Officer" select, since a Manager submits on behalf of a
+  // branch officer rather than themselves. Every helper (client lookup,
+  // processing fee, Repeat Loan prefill) is the exact same real shared
+  // code the Loan Officer's own page exercises above, just keyed off
+  // session.mgrCreateAppState instead of session.loanAppState. ----
+  {
+    let mgrCa = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mgrCa; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.mgrCreateAppState = null;
+    goTo('loanbook','Create Application');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Client Id Number') && html.includes('Loan Duration') && html.includes('Type of Loan'), "the real Manager Create Application page genuinely shares the exact same field set as the Loan Officer's own page");
+    __assert(html.includes('<label>Loan Officer</label>') && html.includes('-- Select Officer --'), "the real Manager page genuinely adds the requested Loan Officer select, absent from the Loan Officer's own page");
+    __assert(!html.includes('CLIENT SEARCH') && !html.includes('OFFICER ASSIGNMENT') && !html.includes('submit on behalf of a branch officer'), "the real old search-and-table Manager design is genuinely gone, replaced by the exact same card the Loan Officer uses");
+
+    // A real client registered under this exact real Kisumu Loan Officer,
+    // found via the real same ID-number lookup the Loan Officer's page uses.
+    const caClientForm = new Map([['name','Manager Create App Client'],['phone','0722900'+Math.floor(Math.random()*900+100)],['idNumber','77'+Math.floor(Math.random()*9000000+1000000)],['email',''],['gender',''],['type','Individual'],['branch',''],['address','']]);
+    let ofCa = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofCa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    global.FormData = class { constructor(){ return caClientForm; } };
+    await submitAddClient({ preventDefault(){}, target:{ elements:{} } });
+    const caClient = DB.clients.find(c=>c.name==='Manager Create App Client');
+    __assert(!!caClient, "sanity: the real client for this Manager Create Application test is genuinely created");
+
+    // A real, explicit logout before switching back — this exact real
+    // Loan Officer account is logged into again, below, to confirm their
+    // own page is unchanged; without this, that later real login would
+    // genuinely collide with this still-active real session (the single-
+    // active-session policy), never actually completing.
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrCa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.mgrCreateAppState = null;
+    goTo('loanbook','Create Application');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+
+    lookupClientForLoanApp(caClient.idNumber, 'mgrCreateAppState');
+    for(let i=0; i<30 && !session.mgrCreateAppState.matchedClient; i++){ await new Promise(r=>setTimeout(r,50)); }
+    __assert(!!session.mgrCreateAppState.matchedClient && session.mgrCreateAppState.matchedClient.id === caClient.id, "the real Manager's own ID-number lookup genuinely finds this exact real client, using the exact same real shared lookup the Loan Officer's page uses");
+
+    // Submitting without picking a real Loan Officer is genuinely refused
+    // client-side, before ever reaching the real backend.
+    const bodaProduct = DB.products.find(p=>p.id==='pr_boda');
+    let noOfficerForm = new Map([['clientId', caClient.id], ['productId', bodaProduct.id], ['principal','20000'], ['term','4']]);
+    global.FormData = class { constructor(){ return noOfficerForm; } };
+    const loansBeforeNoOfficer = DB.loans.length;
+    await submitMgrLoanApp({ preventDefault(){}, target:{} });
+    __assert(DB.loans.length === loansBeforeNoOfficer, "submitting the real Manager form with no real Loan Officer picked genuinely creates no loan at all");
+
+    let caLoanForm = new Map([['clientId', caClient.id], ['officerId','usr_officer'], ['productId', bodaProduct.id], ['principal','20000'], ['term','4']]);
+    global.FormData = class { constructor(){ return caLoanForm; } };
+    await submitMgrLoanApp({ preventDefault(){}, target:{} });
+    const caLoan = DB.loans.find(l=>l.clientId===caClient.id);
+    __assert(!!caLoan, "the real Manager's submission genuinely creates the real loan application");
+    __assert(caLoan.officerId === 'usr_officer', "the real new loan is genuinely attributed to the real Loan Officer the Manager picked, not to the submitting Manager themselves");
+
+    // The exact same shared page, for the Loan Officer — genuinely
+    // unchanged, no Loan Officer picker shown at all.
+    await confirmLogout();
+    global.FormData = class { constructor(){ return ofCa; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.loanAppState = null;
+    goTo('loanbook','Create Application');
+    await new Promise(r=>setTimeout(r,150)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('<label>Loan Officer</label>') && !html.includes('-- Select Officer --'), "the real Loan Officer's own Create Application page genuinely has no Loan Officer picker — they submit as themselves");
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();
