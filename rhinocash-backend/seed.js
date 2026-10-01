@@ -87,7 +87,12 @@ async function seedModules() {
     // disburse_loans/record_payments action permission is granted here,
     // same "visibility vs. authority to act" separation as accounting.
     ceo: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
-    director: ['dashboard', 'clients', 'reports', 'accounting', 'branches', 'investors', 'audit', 'support', 'account'],
+    // 'loanbook'/'payments'/'staff' added alongside the existing grant —
+    // the Director sidebar now includes real LoanBook/Payments/Employees
+    // submenus too, same real/visibility-only reasoning as the CEO grant
+    // above: no approve_loans/disburse_loans/record_payments/manage_users
+    // action permission accompanies it.
+    director: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'audit', 'support', 'account'],
   };
   for (const [role, mods] of Object.entries(roleModules)) {
     for (const m of mods) {
