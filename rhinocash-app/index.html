@@ -9,14 +9,14 @@
 :root{
   --navy:#1F3864; --navy-deep:#152647; --navy-soft:#2E4A7D;
   --rust:#B5651D; --rust-soft:#D98B4A; --claude:#D97757;
-  --bg:#F5F4F1; --card:#FFFFFF; --line:#E4E1DA;
+  --bg:#FFFFFF; --card:#FFFFFF; --line:#E4E1DA;
   --ink:#1C1C1E; --ink-soft:#5B5952; --ink-faint:#8B897F;
   --green:#2F7D5C; --green-bg:#E7F3EC;
   --amber:#B4791F; --amber-bg:#FBF0DD;
   --red:#B3261E; --red-bg:#FAEAE9;
   --blue:#2E5C8A; --blue-bg:#E9F0F8;
   --purple:#7A4FB5; --purple-bg:#F0E9FA;
-  font-size:15px;
+  font-size:16px;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 body{
@@ -169,9 +169,9 @@ body{
 .bar-val{width:74px; text-align:right; font-weight:700; color:var(--navy); flex-shrink:0;}
 
 /* ---- Tables ---- */
-table{width:100%; border-collapse:collapse; font-size:13px;}
+table{width:100%; border-collapse:collapse; font-size:14.5px;}
 th{
-  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.3px; color:var(--navy);
+  text-align:left; font-size:12.5px; text-transform:uppercase; letter-spacing:0.3px; color:var(--navy);
   padding:9px 10px; border-bottom:2px solid var(--line); font-weight:700;
 }
 td{padding:10px 10px; border-bottom:1px solid var(--line); color:var(--ink);}
@@ -371,7 +371,7 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
   .kpi-grid{ grid-template-columns:repeat(2,1fr); gap:10px; }
   .grid2, .grid3{ grid-template-columns:1fr; }
   .form-grid{ grid-template-columns:1fr; }
-  table{ font-size:12px; }
+  table{ font-size:13.5px; }
   th, td{ padding:8px 6px; }
 }
 @media (max-width: 420px){
@@ -7109,12 +7109,14 @@ function renderLoanBook(){
   // page — no subtab bar above it, matching the requested design exactly.
   // The other two roles' Create Application forms are untouched.
   if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
+  if(active==="Create Application" && session.role==='Manager') return renderManagerCreateApplicationForm();
   if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
+  if(active==="Collection MTD" && session.role==='Manager') return renderCollectionMTD();
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
   if(active==="Collection MTD") return renderCollectionMTD();
   if(active==="Disbursements" && session.role !== 'Loan Officer') return tabsHtml + renderDisbursementsOverviewPage();
   if(active==="Disbursements") return renderDailyDisbursementsPage();
-  if(active==="Loan Applications" && session.role==='Manager') return tabsHtml + renderLoanApplications();
+  if(active==="Loan Applications" && session.role==='Manager') return renderLoanApplications();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();

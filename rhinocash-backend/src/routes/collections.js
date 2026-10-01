@@ -520,6 +520,31 @@ function register(router) {
       g.disbursedAmount += l.principal; g.totalLoans += 1; g.loanPlusCharges += loanPlusCharges; g.paid += paid; g.arrears += arrears;
     });
 
+    // Every real Loan Officer actually in scope gets a real row — even one
+    // who disbursed nothing in this exact window — not just whoever
+    // happens to already have a loan in the result above. A Loan Officer
+    // viewing their own page is untouched (they're always in their own
+    // single-row scope already); this only adds rows for a branch-wide
+    // viewer (Manager and above).
+    if (req.user.role_id !== 'loan_officer') {
+      let rosterBranchIds = await branchIdsInScope(req.user);
+      if (req.query.branch_id) rosterBranchIds = [req.query.branch_id];
+      let rosterOfficers = [];
+      if (rosterBranchIds === null) {
+        rosterOfficers = req.query.officer_id
+          ? await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer' AND id = ?`, [req.query.officer_id])
+          : await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer'`);
+      } else if (rosterBranchIds.length) {
+        const ph = rosterBranchIds.map(() => '?').join(',');
+        const sql = `SELECT id, name FROM users WHERE role_id = 'loan_officer' AND branch_id IN (${ph})` + (req.query.officer_id ? ' AND id = ?' : '');
+        const p = req.query.officer_id ? [...rosterBranchIds, req.query.officer_id] : [...rosterBranchIds];
+        rosterOfficers = await all(sql, p);
+      }
+      rosterOfficers.forEach(u => {
+        if (!officerGroups[u.id]) officerGroups[u.id] = { officerId: u.id, disbursedAmount: 0, totalLoans: 0, loanPlusCharges: 0, paid: 0, arrears: 0 };
+      });
+    }
+
     const officerIds = Object.keys(officerGroups);
     const officerNames = {};
     if (officerIds.length) { const ph = officerIds.map(() => '?').join(','); (await all(`SELECT id, name FROM users WHERE id IN (${ph})`, officerIds)).forEach(u => { officerNames[u.id] = u.name; }); }

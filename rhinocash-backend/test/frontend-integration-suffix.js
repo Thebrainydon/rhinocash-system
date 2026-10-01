@@ -4363,17 +4363,25 @@ apiRequest = async function(method, path, body){
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
     await api.post('/api/payments', { loan_id: mtdLoan.id, amount: 5250, channel: 'M-Pesa' });
 
+    // Manager's "Collection MTD" is now the exact same real Progressive
+    // Disbursements page the Loan Officer already uses (see renderCollectionMTD()),
+    // reusing the exact same real /api/collections/progressive-disbursements
+    // endpoint — already branch-scoped, so a Manager genuinely sees every
+    // real officer in their own branch grouped into rows, not just their
+    // own. Chrome-free, per the requested design: no subtab bar above it.
     let mgrf102 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mgrf102; } };
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
-    session.mgrMtdState = { branchId:'', officerId:'', productId:'' };
-    DB.mtdBranch = null;
+    session.progressiveDisbState = null;
+    DB.progressiveDisb = null;
     goTo('loanbook','Collection MTD');
-    for(let i=0; i<100 && !DB.mtdBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    for(let i=0; i<100 && !DB.progressiveDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Branch-level') && html.includes('Collection Rate'), "Manager's real restored Collection MTD genuinely shows branch-level framing and the real collection rate KPI");
-    // Note: a freshly-disbursed loan's real first installment is scheduled roughly a month out by this system's real repayment-schedule logic, so it genuinely falls outside the CURRENT real MTD window — the payment made above will correctly appear in a later month's MTD, not this one. This assertion checks the real endpoint returns valid, well-formed data rather than assuming this specific test's loan.
-    __assert(typeof DB.mtdBranch.expectedMTD === 'number' && typeof DB.mtdBranch.collectedMTD === 'number', "the real Collection MTD genuinely returns real numeric due/collected totals for the current real month");
+    __assert(html.includes('Progressive Disbursements'), "Manager's real Collection MTD genuinely shares the exact same real Progressive Disbursements page the Loan Officer uses");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Collection MTD page genuinely has no subtab bar above it, per the requested chrome-free design");
+    __assert(Array.isArray(DB.progressiveDisb.rows) && DB.progressiveDisb.rows.some(r => r.officerId === 'usr_officer'), "the real Manager's own branch-wide view genuinely includes the real Kisumu Loan Officer's own row");
+    session.progressiveDisbState = null;
+    DB.progressiveDisb = null;
 
     let regf102 = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
     global.FormData = class { constructor(){ return regf102; } };
@@ -5470,7 +5478,7 @@ apiRequest = async function(method, path, body){
   // of the old plain grey — the one real heading-style class already
   // correct beforehand (.card-title) is left untouched ----
   {
-    __assert(__rawIndexHtml.includes('text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.3px; color:var(--navy);'), "the real shared table <th> column-header style genuinely uses the real navy heading color, not the old faint grey");
+    __assert(__rawIndexHtml.includes('text-align:left; font-size:12.5px; text-transform:uppercase; letter-spacing:0.3px; color:var(--navy);'), "the real shared table <th> column-header style genuinely uses the real navy heading color, not the old faint grey");
     __assert(__rawIndexHtml.includes('.detail-label{font-size:11px; color:var(--navy);'), "the real shared .detail-label field-label style genuinely uses the real navy heading color, not the old faint grey");
     __assert(__rawIndexHtml.includes('.kpi-label{font-size:11.5px; color:var(--navy);'), "the real shared .kpi-label stat-tile caption style genuinely uses the real navy heading color, not the old faint grey");
     __assert(__rawIndexHtml.includes('.card-title{font-size:14.5px; font-weight:800; color:var(--navy);'), "the real .card-title heading style — already genuinely correct beforehand — is genuinely left untouched");
@@ -6681,6 +6689,7 @@ apiRequest = async function(method, path, body){
     await new Promise(r=>setTimeout(r,150)); renderApp();
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Client Id Number') && html.includes('Loan Duration') && html.includes('Type of Loan'), "the real Manager Create Application page genuinely shares the exact same field set as the Loan Officer's own page");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Create Application page genuinely has no subtab bar above it, per the requested chrome-free design");
     __assert(html.includes('<label>Loan Officer</label>') && html.includes('-- Select Officer --'), "the real Manager page genuinely adds the requested Loan Officer select, absent from the Loan Officer's own page");
     __assert(!html.includes('CLIENT SEARCH') && !html.includes('OFFICER ASSIGNMENT') && !html.includes('submit on behalf of a branch officer'), "the real old search-and-table Manager design is genuinely gone, replaced by the exact same card the Loan Officer uses");
 
@@ -6774,6 +6783,7 @@ apiRequest = async function(method, path, body){
     goTo('loanbook','Loan Applications');
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Loan product') && html.includes('Guarantor contact') && html.includes('Loan securities'), "the real Manager Loan Applications page genuinely shares the exact same column set as the Loan Officer's own page");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Loan Applications page genuinely has no subtab bar above it, per the requested chrome-free design");
 
     session.loanAppFilterState.category = 'Undisbursed loans';
     renderApp();

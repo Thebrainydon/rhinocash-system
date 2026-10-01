@@ -193,6 +193,23 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     const mgrView = await api('GET', `/api/collections/progressive-disbursements?from=${monthStart}&to=${today}`, { token: managerToken });
     assert(mgrView.status === 200, 'a Manager can genuinely view Progressive Disbursements scoped to their real branch too');
 
+    // A Manager's real view genuinely lists every real Loan Officer in
+    // their own branch, even one with zero real disbursements in this
+    // exact window — not just whoever already has a real loan in range —
+    // matching the requested "show all officers in that branch" design.
+    const pdMeManager = (await api('GET', '/api/auth/me', { token: managerToken })).json.user;
+    const idleOfficer = await api('POST', '/api/users', { token: adminToken, body: { name: 'Idle Kisumu Officer', email: 'idlekisumuofficer@rhinocash.co.ke', role_id: 'loan_officer', branch_id: pdMeManager.branch_id } });
+    assert(idleOfficer.status === 201, 'sanity: a real second, genuinely idle Loan Officer is created in the real same Kisumu branch');
+    const mgrRoster = await api('GET', `/api/collections/progressive-disbursements?from=${monthStart}&to=${today}`, { token: managerToken });
+    const idleRow = mgrRoster.json.rows.find(r => r.officerId === idleOfficer.json.user.id);
+    assert(idleRow && idleRow.totalLoans === 0 && idleRow.disbursedAmount === 0 && idleRow.gcPct === 0, "the real idle officer's own real row genuinely appears, zeroed out, not simply absent");
+    assert(mgrRoster.json.rows.some(r => r.officerId !== idleOfficer.json.user.id && r.totalLoans >= 1), "the real officer who genuinely did disburse a loan still has their own real, non-zero row alongside the real idle one");
+
+    // A Loan Officer's own real view is genuinely unaffected by this — they
+    // were never shown a roster of other officers, and still aren't.
+    const pastRangeStillEmpty = await api('GET', `/api/collections/progressive-disbursements?from=2020-01-01&to=2020-01-31`, { token: officerToken });
+    assert(pastRangeStillEmpty.status === 200 && pastRangeStillEmpty.json.rows.length === 0, "a Loan Officer's own real empty-range result genuinely stays empty — the real roster addition is scoped to a branch-wide viewer only");
+
     // =========================================================
     // 2c. OFFICER COLLECTION RATES — real single-month per-officer summary
     // backing the Loan Officer's real "Collection Rates" submenu page
