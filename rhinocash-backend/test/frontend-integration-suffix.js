@@ -1935,8 +1935,10 @@ apiRequest = async function(method, path, body){
     // Collection Sheet (Loan Officer): the real single-day due-installment
     // sheet, chrome-free, backed by a real dedicated endpoint — replacing
     // the old paginated multi-day sheet page for this role specifically
-    // (Manager/Regional Manager/Operational Manager still see their own
-    // renderSheetBranchPage(), untouched).
+    // (Regional Manager/Operational Manager still see their own
+    // renderSheetBranchPage(), untouched; Manager's own "Collection
+    // Sheet" now shares the real Collection Rates page instead — see the
+    // new section further down this file).
     session.collSheetDayState = null; DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
     await new Promise(r=>setTimeout(r,50)); renderApp();
@@ -4205,23 +4207,18 @@ apiRequest = async function(method, path, body){
     global.FormData = class { constructor(){ return mgrf29; } };
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
 
-    session.mgrSheetState = { date: sheetLoanPaidDueDate, officerId:'', productId:'', status:'', q:'', expandedOfficers:{} };
-    DB.sheetBranch = null;
-    goTo('loanbook','Collection Sheet');
-    for(let i=0; i<100 && !DB.sheetBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
-    let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Collection Performance') && html.includes('Officer Collection Performance') && html.includes('Collection Status Distribution') && html.includes('Collection Exceptions') && html.includes('Collection Sheet by Loan Officer'), "Manager's real Collection Sheet genuinely has every required real section");
-    __assert(DB.sheetBranch.rows.some(r=>r.loanId===sheetLoanPaid.id && r.status==='Paid'), "the real fully-paid-and-now-Completed loan genuinely still appears in today's real collection sheet with status Paid — the pre-existing exclusion bug is fixed");
-
-    // Real officer expand/collapse.
-    __assert(!session.mgrSheetState.expandedOfficers['usr_officer'], "the real officer group genuinely starts collapsed");
-    session.mgrSheetState.expandedOfficers['usr_officer'] = true;
-    renderApp();
-    html = document.getElementById('root').innerHTML;
-    __assert(html.includes('[TEST] Sheet Branch Paid'), "expanding the real officer group genuinely reveals the real underlying client rows");
+    // Manager's own real "Collection Sheet" submenu now shares the real
+    // Collection Rates page instead (see the new section further down
+    // this file) — the real /api/collections/sheet-branch endpoint and
+    // its own real exclusion-bug fix are still real and still directly
+    // callable (used by Regional/Operational Manager's own real
+    // Collection Sheet, untouched), so this checks them directly against
+    // the real endpoint rather than through a UI this role no longer renders.
+    const mgrSheetDirect = await api.get('/api/collections/sheet-branch?date='+sheetLoanPaidDueDate);
+    __assert(mgrSheetDirect.rows.some(r=>r.loanId===sheetLoanPaid.id && r.status==='Paid'), "the real fully-paid-and-now-Completed loan genuinely still appears in today's real collection sheet with status Paid — the pre-existing exclusion bug is fixed");
 
     // Real KPI-to-detail consistency: the officer-level totals must equal the sum of their own real rows.
-    const officerGroup = DB.sheetBranch.byOfficer.find(o=>o.officerId==='usr_officer');
+    const officerGroup = mgrSheetDirect.byOfficer.find(o=>o.officerId==='usr_officer');
     const sumExpected = officerGroup.rows.reduce((s,r)=>s+r.expected,0);
     __assert(Math.abs(officerGroup.expected - sumExpected) < 0.01, "the real officer-level KPI totals are genuinely derived from the same real detail rows, not a separate calculation");
 
@@ -4231,9 +4228,6 @@ apiRequest = async function(method, path, body){
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
     const nairobiSheet = await api.get('/api/collections/sheet-branch?date='+new Date().toISOString().slice(0,10));
     __assert(!nairobiSheet.rows.some(r=>r.loanId===sheetLoanPaid.id), "a different-branch Manager's real Collection Sheet genuinely excludes the Kisumu loan — branch isolation confirmed");
-
-    session.mgrSheetState = null;
-    DB.sheetBranch = null;
   }
 
   // ---- 111. REGIONAL MANAGER LOAN APPLICATIONS: real region-wide oversight, branch breakdown, real cross-region isolation ----
@@ -6910,6 +6904,51 @@ apiRequest = async function(method, path, body){
     for(let i=0; i<100 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Loan Officer's own Disbursements page genuinely stays chrome-free, unchanged");
+  }
+
+  // ---- 68. LOANBOOK > COLLECTION SHEET (Manager): per explicit request,
+  // this reuses the exact same real "Collection Rates" page design the
+  // Loan Officer already uses (renderCollectionRatesOfficer()) — not a
+  // separate page of its own. The real officer-rates endpoint now also
+  // lists every real branch officer (even an idle one), matching the
+  // requested "all branch officers should be seen there" design. ----
+  {
+    let mgrCs = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrCs; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
+    goTo('loanbook','Collection Sheet');
+    for(let i=0; i<100 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Collection Rates') && html.includes('Loan Officer') && html.includes('Disbursed Loan') && html.includes('Loan+Charges') && html.includes('OTC') && html.includes('OC') && html.includes('DD7') && html.includes('CG7') && html.includes('Arrears') && html.includes('GC%'), "the real Manager Collection Sheet page genuinely renders the exact same real Collection Rates design and full column set, per the explicit request");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Collection Sheet page genuinely has no subtab bar above it, per the requested chrome-free design");
+    __assert(html.includes('Peter Otieno'), "the real Manager's own branch-wide view genuinely shows the real Kisumu Loan Officer's own row");
+    const myRatesRow2 = DB.collectionRatesOfficer.rows.find(r=>r.officerName==='Peter Otieno');
+    __assert(myRatesRow2 && myRatesRow2.disbursedAmount >= 15000, "the real Loan Officer's own row genuinely reflects their real disbursed amount this month");
+
+    // The Loan Officer's own real "Collection Sheet" submenu is genuinely
+    // untouched — it still renders their own real single-day due-
+    // installment sheet (already covered elsewhere in this file), not
+    // this page at all; this dispatch change only intercepts Manager.
+    // What IS shared is the real underlying officer-rates endpoint and
+    // page (renderCollectionRatesOfficer()), reached via the Loan
+    // Officer's own separate "Collection Rates" submenu — confirmed
+    // genuinely unaffected by the new roster logic (still just themselves).
+    await confirmLogout();
+    let ofCs = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofCs; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
+    goTo('loanbook','Collection Rates');
+    for(let i=0; i<100 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('class="subtabs"'), "a Loan Officer's own real Collection Rates page genuinely stays chrome-free, unchanged");
+    __assert(DB.collectionRatesOfficer.rows.length === 1 && DB.collectionRatesOfficer.rows[0].officerName==='Peter Otieno', "a Loan Officer's own real Collection Rates page genuinely stays scoped to just themselves, not a branch-wide roster");
+
+    session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
   }
 
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----

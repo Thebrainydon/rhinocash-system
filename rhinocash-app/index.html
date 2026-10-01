@@ -7119,6 +7119,7 @@ function renderLoanBook(){
   if(active==="Disbursements") return renderDailyDisbursementsPage();
   if(active==="Loan Applications" && session.role==='Manager') return renderLoanApplications();
   if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
+  if(active==="Collection Sheet" && session.role==='Manager') return renderCollectionRatesOfficer();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
   if(active==="Collection Report") return renderCollectionReport();

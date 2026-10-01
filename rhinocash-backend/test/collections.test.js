@@ -233,6 +233,15 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(myRatesRow.dd7 <= myRatesRow.arrears + 0.01, 'DD7 (7+ days overdue) is genuinely a subset of the total real Arrears figure, never larger than it');
     assert(rates.json.totals.disbursedAmount === rates.json.rows.reduce((s, r) => s + r.disbursedAmount, 0), 'the real Totals row genuinely sums the real per-officer rows');
 
+    // A Manager's real view genuinely lists the same real idle Loan
+    // Officer here too — the shared fillOfficerRoster() helper backs
+    // both this page and Progressive Disbursements, matching the
+    // requested "show all branch officers" design for Collection Sheet.
+    const mgrRatesRoster = await api('GET', `/api/collections/officer-rates?month=${thisMonth}`, { token: managerToken });
+    const idleRatesRow = mgrRatesRoster.json.rows.find(r => r.officerId === idleOfficer.json.user.id);
+    assert(idleRatesRow && idleRatesRow.disbursedAmount === 0 && idleRatesRow.gcPct === 0, "the real idle officer's own real row genuinely appears here too, zeroed out, not simply absent");
+    assert(mgrRatesRoster.json.rows.some(r => r.officerId !== idleOfficer.json.user.id && r.disbursedAmount >= 4000), "the real officer who genuinely did disburse a loan still has their own real, non-zero row alongside the real idle one");
+
     const emptyMonth = await api('GET', `/api/collections/officer-rates?month=2019-01`, { token: officerToken });
     assert(emptyMonth.status === 200 && emptyMonth.json.rows.length === 0, 'a real month with no real disbursements genuinely returns an empty real result, not fabricated rows');
 

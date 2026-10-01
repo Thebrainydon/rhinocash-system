@@ -24,6 +24,33 @@ async function loanScopeClause(req, extraOfficerCol) {
   return { clause, params };
 }
 
+// Ensures every real Loan Officer actually in scope has an entry in a
+// per-officer groups map — even one who contributed nothing at all to
+// the real cohort being summarized — rather than only whoever already
+// has a real row. A Loan Officer's own single-officer view is always
+// already complete (themselves), so this is a genuine no-op for them;
+// it only adds rows for a branch-wide viewer (Manager and above),
+// matching the requested "show all officers in that branch" design.
+// `emptyEntry(officerId)` builds this specific endpoint's own real
+// zeroed shape for a newly-added officer.
+async function fillOfficerRoster(req, officerGroups, emptyEntry) {
+  if (req.user.role_id === 'loan_officer') return;
+  let rosterBranchIds = await branchIdsInScope(req.user);
+  if (req.query.branch_id) rosterBranchIds = [req.query.branch_id];
+  let rosterOfficers = [];
+  if (rosterBranchIds === null) {
+    rosterOfficers = req.query.officer_id
+      ? await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer' AND id = ?`, [req.query.officer_id])
+      : await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer'`);
+  } else if (rosterBranchIds.length) {
+    const ph = rosterBranchIds.map(() => '?').join(',');
+    const sql = `SELECT id, name FROM users WHERE role_id = 'loan_officer' AND branch_id IN (${ph})` + (req.query.officer_id ? ' AND id = ?' : '');
+    const p = req.query.officer_id ? [...rosterBranchIds, req.query.officer_id] : [...rosterBranchIds];
+    rosterOfficers = await all(sql, p);
+  }
+  rosterOfficers.forEach(u => { if (!officerGroups[u.id]) officerGroups[u.id] = emptyEntry(u.id); });
+}
+
 // expected/collected for a set of loans over [from, to] — the same
 // definition used by MTD, Rate, and the Collection Sheet.
 async function collectionTotals(loanIds, from, to) {
@@ -522,28 +549,8 @@ function register(router) {
 
     // Every real Loan Officer actually in scope gets a real row — even one
     // who disbursed nothing in this exact window — not just whoever
-    // happens to already have a loan in the result above. A Loan Officer
-    // viewing their own page is untouched (they're always in their own
-    // single-row scope already); this only adds rows for a branch-wide
-    // viewer (Manager and above).
-    if (req.user.role_id !== 'loan_officer') {
-      let rosterBranchIds = await branchIdsInScope(req.user);
-      if (req.query.branch_id) rosterBranchIds = [req.query.branch_id];
-      let rosterOfficers = [];
-      if (rosterBranchIds === null) {
-        rosterOfficers = req.query.officer_id
-          ? await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer' AND id = ?`, [req.query.officer_id])
-          : await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer'`);
-      } else if (rosterBranchIds.length) {
-        const ph = rosterBranchIds.map(() => '?').join(',');
-        const sql = `SELECT id, name FROM users WHERE role_id = 'loan_officer' AND branch_id IN (${ph})` + (req.query.officer_id ? ' AND id = ?' : '');
-        const p = req.query.officer_id ? [...rosterBranchIds, req.query.officer_id] : [...rosterBranchIds];
-        rosterOfficers = await all(sql, p);
-      }
-      rosterOfficers.forEach(u => {
-        if (!officerGroups[u.id]) officerGroups[u.id] = { officerId: u.id, disbursedAmount: 0, totalLoans: 0, loanPlusCharges: 0, paid: 0, arrears: 0 };
-      });
-    }
+    // happens to already have a loan in the result above.
+    await fillOfficerRoster(req, officerGroups, officerId => ({ officerId, disbursedAmount: 0, totalLoans: 0, loanPlusCharges: 0, paid: 0, arrears: 0 }));
 
     const officerIds = Object.keys(officerGroups);
     const officerNames = {};
@@ -627,6 +634,10 @@ function register(router) {
       g.disbursedAmount += l.principal; g.loanPlusCharges += loanPlusCharges; g.otc += otc; g.oc += oc;
       g.dd7 += dd7; g.cg7 += cg7; g.arrears += arrears; g.paid += paid;
     });
+
+    // Every real Loan Officer actually in scope gets a real row — even one
+    // who disbursed nothing at all this real month.
+    await fillOfficerRoster(req, officerGroups, officerId => ({ officerId, disbursedAmount: 0, loanPlusCharges: 0, otc: 0, oc: 0, dd7: 0, cg7: 0, arrears: 0, paid: 0 }));
 
     const officerIds = Object.keys(officerGroups);
     const officerNames = {};
