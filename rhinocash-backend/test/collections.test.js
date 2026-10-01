@@ -141,6 +141,31 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
   }
 
   // =========================================================
+  // 1d. COLLECTION REPORT (Manager) — real branch-wide default (via the
+  // same shared loanScopeClause/branchScopeSQL every other LoanBook page
+  // already uses) plus the real ?officer_id= filter the Manager-facing
+  // frontend's new "-- Loan Officer --" dropdown relies on
+  // =========================================================
+  {
+    const today = new Date().toISOString().slice(0, 10);
+    const officerMe2 = await api('GET', '/api/auth/me', { token: officerToken });
+    const managerMe = await api('GET', '/api/auth/me', { token: managerToken });
+
+    const mgrReport = await api('GET', `/api/collections/client-report?from=${today}&to=${today}`, { token: managerToken });
+    assert(mgrReport.status === 200, 'real Collection Report loads for the Manager, branch-wide, with no officer_id given');
+    assert(mgrReport.json.rows.some(r => r.clientId === clientId), 'the real client with a real installment due today genuinely appears in the Manager\'s own real branch-wide report, the same loan the Loan Officer themselves sees — no officer_id needed by default');
+
+    const mgrReportOwnOfficer = await api('GET', `/api/collections/client-report?from=${today}&to=${today}&officer_id=${officerMe2.json.user.id}`, { token: managerToken });
+    assert(mgrReportOwnOfficer.json.rows.some(r => r.clientId === clientId), 'filtering the Manager\'s real report by this exact real Loan Officer genuinely still includes their own real due client');
+
+    const mgrReportOtherOfficer = await api('GET', `/api/collections/client-report?from=${today}&to=${today}&officer_id=${managerMe.json.user.id}`, { token: managerToken });
+    assert(!mgrReportOtherOfficer.json.rows.some(r => r.clientId === clientId), 'filtering the Manager\'s real report by a real different user\'s id genuinely excludes this officer\'s own real due client — the officer_id filter is real, not decorative');
+
+    const nairobiMgrReport = await api('GET', `/api/collections/client-report?from=${today}&to=${today}`, { token: nairobiManagerToken });
+    assert(!nairobiMgrReport.json.rows.some(r => r.clientId === clientId), 'a real different-branch Manager\'s own real branch-wide report genuinely excludes this Kisumu client — branch isolation holds for this endpoint too');
+  }
+
+  // =========================================================
   // 2. COLLECTION MTD — real expected/collected/rate/target
   // =========================================================
   {

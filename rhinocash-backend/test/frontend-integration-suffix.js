@@ -7008,6 +7008,70 @@ apiRequest = async function(method, path, body){
     session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
   }
 
+  // ---- 69. LOANBOOK > COLLECTION REPORT (Manager): the exact same real
+  // per-client, date-range collection summary the Loan Officer already
+  // uses (renderCollectionReport()), now routed to the Manager role too,
+  // chrome-free and already branch-wide by the real backend's own branch
+  // scoping (branchScopeSQL) — with one real addition: a "-- Loan
+  // Officer --" filter, since a Manager oversees multiple officers. The
+  // real backend (/api/collections/client-report) already supported
+  // ?officer_id= via the shared loanScopeClause(), so this is a pure
+  // frontend addition, same pattern as Collection Sheet. This endpoint's
+  // real 3-day-ahead future-date cap (a deliberate business rule — see its
+  // own backend comment) makes a freshly-disbursed loan's own real ~1
+  // month-out first installment useless as "due today" test data here, so
+  // the real narrowing/exclusion behavior of ?officer_id= against real
+  // backdated due-today data is covered where direct DB setup is already
+  // idiomatic: collections.test.js's own "1d. COLLECTION REPORT (Manager)"
+  // section. This section instead verifies the real UI wiring itself: the
+  // page renders for Manager with no subtab bar, the real branch-wide
+  // percentage badge, and a real functioning "-- Loan Officer --" picker
+  // backed by the real officer roster — absent entirely for the Loan
+  // Officer's own unchanged page. ----
+  {
+    let mgrCr = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    await confirmLogout();
+    global.FormData = class { constructor(){ return mgrCr; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.loggedIn && session.role === "Manager", "sanity: a real Kisumu Manager session is established");
+
+    session.collectionReportState = { from: todayISO(), to: todayISO(), officerId:'' };
+    DB.officerCollectionReport = null;
+    goTo('loanbook','Collection Reports');
+    for(let i=0; i<100 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Collection Report') && html.includes('Portfolio') && html.includes('Arrears') && html.includes('Balance'), "the real Manager Collection Report page genuinely shares the exact same real per-client date-range sheet the Loan Officer uses");
+    __assert(!html.includes('class="subtabs"'), "the real Manager Collection Report page genuinely has no subtab bar above it");
+    __assert(html.includes('-- Loan Officer --'), "a Manager genuinely sees the requested real Loan Officer filter on Collection Report too");
+    __assert(html.includes('value="usr_officer"'), "the real Loan Officer filter genuinely lists the real Kisumu officer from the real staff roster, not a decorative placeholder");
+
+    const mgrPct = computeStats(null, officerScopeBranchIds()).todayPct;
+    __assert(html.includes(`${mgrPct.toFixed(1)}%`), "the Manager's real percentage badge genuinely reflects their own real branch-wide figure (computeStats(null, branchIds)), not a personal one — Managers have no loans of their own");
+
+    session.collectionReportState.officerId = 'usr_officer';
+    DB.officerCollectionReport = null;
+    renderApp();
+    for(let i=0; i<100 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('value="usr_officer" selected'), "selecting a real Loan Officer in the filter genuinely re-queries the real backend with that officer_id and keeps it reflected as the selected option");
+
+    // The exact same shared page, for the Loan Officer — genuinely
+    // unchanged, no picker shown at all.
+    await confirmLogout();
+    let ofCr = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
+    global.FormData = class { constructor(){ return ofCr; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.collectionReportState = { from: todayISO(), to: todayISO(), officerId:'' };
+    DB.officerCollectionReport = null;
+    goTo('loanbook','Collection Report');
+    for(let i=0; i<100 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
+    html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Collection Report page genuinely has no Loan Officer filter — their own real report needs no picker");
+    __assert(html.includes('Collection Report'), "sanity: the real Loan Officer still sees their own real Collection Report page, unaffected");
+
+    session.collectionReportState = null; DB.officerCollectionReport = null;
+  }
+
   // ---- FINAL. Forgot Password — real, public, backend-driven recovery screen ----
   {
     await confirmLogout();

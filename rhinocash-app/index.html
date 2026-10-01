@@ -7123,6 +7123,7 @@ function renderLoanBook(){
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
   if(active==="Collection Report") return renderCollectionReport();
+  if(active==="Collection Reports" && session.role==='Manager') return renderCollectionReport();
   if(active==="Collection Reports" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionReportPage();
   if(active==="Collection Rates" && session.role !== 'Loan Officer') return tabsHtml + renderCollectionRatesBranchPage();
   if(active==="Collection Rates") return renderCollectionRatesOfficer();
@@ -7739,20 +7740,28 @@ function renderCollectionSheet(){
   `;
 }
 
-// ---- Collection Report (Loan Officer): a real, per-client collection
-// summary across a real date range — chrome-free, matching the reference
-// design exactly. "Portfolio" here is the loan's real assigned officer
-// (not guarantor — see the backend route's own comment for why), which
-// for a Loan Officer's own report naturally shows their own name on every
-// row, exactly as the reference does. The top badge is always TODAY's
-// real collection percentage — the identical value/formula shown on the
-// Dashboard (computeStats().todayPct), never a value derived from the
-// selected date range, so the two can never disagree. ----
+// ---- Collection Report (Loan Officer, now also Manager): a real,
+// per-client collection summary across a real date range — chrome-free,
+// matching the reference design exactly. "Portfolio" here is the loan's
+// real assigned officer (not guarantor — see the backend route's own
+// comment for why), which for a Loan Officer's own report naturally shows
+// their own name on every row, exactly as the reference does. The top
+// badge is always TODAY's real collection percentage — the identical
+// value/formula shown on the Dashboard (computeStats().todayPct), never a
+// value derived from the selected date range, so the two can never
+// disagree; for a Manager it's their own real branch-wide figure
+// (computeStats(null, branchIds)), the same convention renderManagerDashboard()
+// already uses, not just their own personal one. The backend's real
+// branch scoping (branchScopeSQL) already makes this branch-wide by
+// default for a Manager, and /api/collections/client-report already
+// supports ?officer_id= via the shared loanScopeClause() — so a Manager's
+// added "-- Loan Officer --" filter is a pure frontend addition, same
+// pattern as Collection Sheet. ----
 function collectionReportMaxDate(){
   return new Date(Date.now() + 3*86400000).toISOString().slice(0,10);
 }
 function defaultCollectionReportState(){
-  return { from: todayISO(), to: todayISO() };
+  return { from: todayISO(), to: todayISO(), officerId:'' };
 }
 function collectionPctBadgeClass(pct){
   if(pct < 24) return 'red';
@@ -7763,6 +7772,7 @@ async function loadOfficerCollectionReport(){
   const st = session.collectionReportState;
   return withRequest('load-officer-collection-report:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ from: st.from, to: st.to });
+    if(st.officerId) params.set('officer_id', st.officerId);
     const res = await api.get('/api/collections/client-report?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.officerCollectionReport = res;
@@ -7775,7 +7785,7 @@ function exportCollectionReportCSV(){
 function renderCollectionReport(){
   const st = session.collectionReportState || (session.collectionReportState = defaultCollectionReportState());
   const maxDate = collectionReportMaxDate();
-  const pctSt = computeStats(DB.me.id);
+  const pctSt = session.role==='Loan Officer' ? computeStats(DB.me.id) : computeStats(null, officerScopeBranchIds());
   const pctClass = collectionPctBadgeClass(pctSt.todayPct);
   if(!DB.officerCollectionReport || DB.officerCollectionReport.stateKey !== JSON.stringify(st)){ loadOfficerCollectionReport(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.officerCollectionReport;
@@ -7789,6 +7799,10 @@ function renderCollectionReport(){
         <input type="date" value="${st.from}" max="${maxDate}" onchange="session.collectionReportState.from=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span>~</span>
         <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        ${hasOfficerVisibility() ? `<select onchange="session.collectionReportState.officerId=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+          <option value="">-- Loan Officer --</option>
+          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        </select>` : ""}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportCollectionReportCSV()')}
       </div>
