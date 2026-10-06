@@ -3449,7 +3449,12 @@ apiRequest = async function(method, path, body){
     __assert(!investorReportsThrew, "navigating to Reports as an Investor does not crash");
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('never staff, client, or other investors'), "Investor's Reports page is genuinely the separate, isolated view — not the staff analytics dashboard");
-    __assert(!html.includes('Active Loans'), "Investor's Reports page never shows staff-level portfolio KPIs");
+    // Scoped to the content area, not the whole root: the Investor's own
+    // real sidebar now legitimately has a "Active Loans" item label (under
+    // Portfolio, per the real menu spec) — that's a navigation label, not a
+    // staff-level KPI leaking into the actual Reports page body.
+    const investorReportsContent = html.split('<div class="content">')[1] || html;
+    __assert(!investorReportsContent.includes('Active Loans'), "Investor's Reports page never shows staff-level portfolio KPIs");
 
     // Real API-level scope enforcement, not just UI hiding.
     let investorApiBlocked = false;

@@ -692,14 +692,17 @@ const SIDEBAR_MENUS = {
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Investor": [
-    {section:"My Investment", icon:"💼", items:["Investment Overview","Investment Details","Investment Agreement","Investment Timeline","Investment Status"]},
-    {section:"Profit Performance", icon:"📈", items:["Monthly Profit","Profit Earned","Profit Paid","Pending Profit","Cumulative Returns"]},
-    {section:"Payments", icon:"💳", items:["Payment History","Profit Payments","Capital Return","Receipts"]},
-    {section:"Investment Statements", icon:"📑", items:["Monthly Statement","Profit Statement","Investment Statement","Six-Month Summary"]},
-    {section:"Company Performance", icon:"🏢", items:["Company Overview","Loan Portfolio","Disbursement Trend","Collection Performance","Revenue Trend","Profit Trend"]},
-    {section:"Documents", icon:"📁", items:["Investment Agreement","Statements","Payment Receipts","Investment Reports"]},
-    {section:"My Account", icon:"🪪", items:["Investor Profile","Investment Details","Profit Distribution History","Security & Login"]},
-    {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket","Investor Help Center","FAQs","Support Contacts"]},
+    {section:"Investment Overview", icon:"💼", items:["Investment Summary","Capital Invested","Investment Value","Expected Returns","Realized Returns","Pending Returns","Investment Performance"]},
+    {section:"Company Performance", icon:"🏢", items:["Company KPIs","Portfolio Performance","Collection Performance","Disbursement Performance","Profitability","Business Growth","Company Performance"]},
+    {section:"Portfolio", icon:"📖", items:["Loan Portfolio","Portfolio Breakdown","Active Loans","Loan Disbursements","Loan Collections","Loan Arrears","Portfolio at Risk","Portfolio Performance"]},
+    {section:"Financial Performance", icon:"📈", items:["Revenue Overview","Expense Overview","Profit & Loss","Cash Position","Profit Distribution","Financial Performance"]},
+    {section:"Investment & Capital", icon:"💰", items:["Capital Contributions","Capital Allocation","Investment Returns","Return History","Funding Requirements","Capital Utilization","Investment Reports"]},
+    {section:"Investor Reports", icon:"📑", items:["Investment Reports","Financial Reports","Portfolio Reports","Collection Reports","Profitability Reports","Scheduled Reports"]},
+    {section:"Risk & Compliance", icon:"⚠️", items:["Investment Risk","Portfolio Risk","Company Risk","Compliance Overview","Risk Reports"]},
+    {section:"Transactions", icon:"💳", items:["Capital Transactions","Return Payments","Transaction History","Payment Statements","Transaction Reports"]},
+    {section:"Company Information", icon:"🏛️", items:["Company Profile","Company Structure","Business Overview","Branch Overview","Strategic Updates"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Investment Profile","Payment Details","Update Details","Security Settings"]},
+    {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
 };
 
@@ -1041,7 +1044,17 @@ const ROLE_ROUTE_OVERRIDES = {
     "Collections":{section:"dashboard"}, "Disbursements":{section:"dashboard"}, "Arrears":{section:"dashboard"}, "Write-offs":{section:"dashboard"},
   },
   "Investor": {
+    // Each of these real labels already has a real, generic global route
+    // (see LABEL_ROUTES below) into a real module Investor genuinely
+    // never holds (loanbook/business-analytics/accounting/branches) —
+    // without this override, clicking the Investor's own real sidebar
+    // item of the same name would hit the real module permission gate
+    // and show a real "Access denied" toast instead of a real page.
     "Receipts":{section:"dashboard"}, "Collection Performance":{section:"dashboard"},
+    "Portfolio Breakdown":{section:"dashboard"}, "Active Loans":{section:"dashboard"},
+    "Loan Arrears":{section:"dashboard"}, "Profit & Loss":{section:"dashboard"},
+    "Collection Reports":{section:"dashboard"}, "Transaction History":{section:"dashboard"},
+    "Branch Overview":{section:"dashboard"},
   },
   // Scoped to Loan Officer only — "Collection Report" is also a generic,
   // not-yet-built placeholder label in Manager/Ops/Regional's own Reports
