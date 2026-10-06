@@ -457,6 +457,150 @@ async function computeExplainable(featureId, req) {
   }
 }
 
+// ---- Fraud & Risk Detection --------------------------------------------
+// Real, rule-based signals against existing data — no trained fraud
+// model, no invented scoring. Every signal is a plain, explainable SQL
+// condition over real rows (duplicate national_id, a Reversed payment
+// status, written_off_at close to disbursed_at, a per-officer approval
+// aggregate, a real salary_advance_requests count). One feature id per
+// concept, shared across every role that holds it — the compute function
+// itself scopes by the caller's real branchIdsInScope/role_id, same
+// pattern as every other Intelligence category.
+async function getFraudSettings() {
+  const rows = await all(
+    "SELECT key, value FROM intelligence_settings WHERE key IN ('fraud_rapid_writeoff_days','fraud_advance_request_count_threshold','fraud_advance_request_window_days')"
+  );
+  const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  const n = (key, def) => { const v = parseInt(byKey[key], 10); return Number.isFinite(v) && v > 0 ? v : def; };
+  return {
+    rapidWriteoffDays: n('fraud_rapid_writeoff_days', 14),
+    advanceRequestCountThreshold: n('fraud_advance_request_count_threshold', 3),
+    advanceRequestWindowDays: n('fraud_advance_request_window_days', 30),
+  };
+}
+async function computeFraud(featureId, req) {
+  const scope = await branchIdsInScope(req.user);
+  const settings = await getFraudSettings();
+  switch (featureId) {
+    // Company-wide duplicate-identity check (a duplicate can legitimately
+    // span two different branches, which is exactly the pattern worth
+    // flagging) — then filtered down to only the groups that include at
+    // least one client within the caller's own real scope, so a Loan
+    // Officer sees only groups touching their own clients, a Manager only
+    // ones touching their branch, etc., while still showing the full
+    // cross-branch group for context.
+    case 'fraud-duplicate-clients': {
+      const dupes = await all(
+        `SELECT national_id, array_agg(id) as ids, array_agg(name) as names, array_agg(branch_id) as branch_ids, array_agg(officer_id) as officer_ids
+         FROM clients WHERE national_id IS NOT NULL AND national_id != ''
+         GROUP BY national_id HAVING COUNT(*) > 1`
+      );
+      const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
+      const groups = dupes
+        .map(d => ({
+          nationalId: d.national_id,
+          clients: d.ids.map((id, i) => ({ id, name: d.names[i], branchId: d.branch_ids[i], officerId: d.officer_ids[i] })),
+        }))
+        .filter(g => g.clients.some(c =>
+          (officerId ? c.officerId === officerId : true) &&
+          (scope === null ? true : scope.includes(c.branchId))
+        ));
+      return { featureId, kind: 'duplicate-list', groups };
+    }
+    case 'fraud-payment-reversals': {
+      const loanScope = scopeClause(scope, 'l.branch_id');
+      const rows = await all(
+        `SELECT p.id, p.amount, p.created_at, c.name as clientname, u.name as officername
+         FROM payments p JOIN loans l ON l.id = p.loan_id JOIN clients c ON c.id = p.client_id
+         LEFT JOIN users u ON u.id = l.officer_id
+         WHERE p.status = 'Reversed' AND ${loanScope.clause} ORDER BY p.created_at DESC LIMIT 30`,
+        loanScope.params
+      );
+      return { featureId, kind: 'reversal-list', items: rows };
+    }
+    case 'fraud-rapid-writeoff': {
+      const loanScope = scopeClause(scope, 'l.branch_id');
+      const rows = await all(
+        `SELECT l.id, l.principal, l.disbursed_at, l.written_off_at, c.name as clientname, u.name as officername,
+                (written_off_at::date - disbursed_at::date) as daystowriteoff
+         FROM loans l JOIN clients c ON c.id = l.client_id LEFT JOIN users u ON u.id = l.officer_id
+         WHERE l.status = 'Written Off' AND l.disbursed_at IS NOT NULL AND l.written_off_at IS NOT NULL
+           AND (written_off_at::date - disbursed_at::date) <= ? AND ${loanScope.clause}
+         ORDER BY daystowriteoff ASC LIMIT 30`,
+        [settings.rapidWriteoffDays, ...loanScope.params]
+      );
+      return { featureId, kind: 'writeoff-list', items: rows, dayWindow: settings.rapidWriteoffDays };
+    }
+    case 'fraud-overpayment-pattern': {
+      const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
+      const loanScope = scopeClause(scope, 'l.branch_id');
+      const rows = await all(
+        `SELECT c.id as clientid, c.name as clientname, COUNT(*) as overpaymentcount, COALESCE(SUM(p.amount),0) as totalamount
+         FROM payments p JOIN loans l ON l.id = p.loan_id JOIN clients c ON c.id = p.client_id
+         WHERE p.status = 'Overpayment' AND ${loanScope.clause} ${officerId ? 'AND l.officer_id = ?' : ''}
+         GROUP BY c.id, c.name ORDER BY overpaymentcount DESC LIMIT 25`,
+        officerId ? [...loanScope.params, officerId] : loanScope.params
+      );
+      return { featureId, kind: 'overpayment-list', items: rows };
+    }
+    case 'fraud-officer-approval-pattern': {
+      const userScope = scopeClause(scope, 'u.branch_id');
+      const rows = await all(
+        `SELECT u.id, u.name,
+                COUNT(la.id) as totaldecisions,
+                SUM(CASE WHEN la.decision = 'Approved' THEN 1 ELSE 0 END) as approvedcount,
+                SUM(CASE WHEN la.created_at::date = l.created_at::date THEN 1 ELSE 0 END) as samedayapprovals
+         FROM users u JOIN loan_approvals la ON la.approver_id = u.id JOIN loans l ON l.id = la.loan_id
+         WHERE ${userScope.clause} GROUP BY u.id, u.name HAVING COUNT(la.id) >= 3 ORDER BY approvedcount DESC LIMIT 25`,
+        userScope.params
+      );
+      return { featureId, kind: 'officer-anomaly-list', items: rows };
+    }
+    case 'fraud-overview': {
+      const loanScope = scopeClause(scope, 'l.branch_id');
+      const reversals = await get(`SELECT COUNT(*) as n FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.status = 'Reversed' AND ${loanScope.clause}`, loanScope.params);
+      const writeoffs = await get(
+        `SELECT COUNT(*) as n FROM loans l WHERE l.status = 'Written Off' AND l.disbursed_at IS NOT NULL AND l.written_off_at IS NOT NULL
+           AND (written_off_at::date - disbursed_at::date) <= ? AND ${loanScope.clause}`,
+        [settings.rapidWriteoffDays, ...loanScope.params]
+      );
+      const dupeRows = await all(`SELECT national_id FROM clients WHERE national_id IS NOT NULL AND national_id != '' GROUP BY national_id HAVING COUNT(*) > 1`);
+      return {
+        featureId, kind: 'overview',
+        signals: [
+          { label: 'Reversed Payments', count: reversals.n },
+          { label: 'Rapid Write-Offs', count: writeoffs.n },
+          { label: 'Duplicate Client Identities (company-wide)', count: dupeRows.length },
+        ],
+      };
+    }
+    case 'fraud-branch-risk-ranking': {
+      const rows = await all(
+        `SELECT * FROM (
+           SELECT b.id, b.name,
+                  (SELECT COUNT(*) FROM payments p JOIN loans l2 ON l2.id = p.loan_id WHERE p.status='Reversed' AND l2.branch_id = b.id) as reversalcount,
+                  (SELECT COUNT(*) FROM loans l3 WHERE l3.branch_id = b.id AND l3.status='Written Off' AND l3.disbursed_at IS NOT NULL AND l3.written_off_at IS NOT NULL AND (l3.written_off_at::date - l3.disbursed_at::date) <= ?) as writeoffcount
+           FROM branches b
+         ) t ORDER BY (reversalcount + writeoffcount) DESC`,
+        [settings.rapidWriteoffDays]
+      );
+      return { featureId, kind: 'branch-risk-list', branches: rows };
+    }
+    case 'fraud-staff-advance-pattern': {
+      const rows = await all(
+        `SELECT u.id, u.name, COUNT(s.id) as requestcount, COALESCE(SUM(s.amount),0) as totalamount
+         FROM users u JOIN salary_advance_requests s ON s.user_id = u.id
+         WHERE s.created_at >= (CURRENT_DATE - (? || ' days')::interval)::text
+         GROUP BY u.id, u.name HAVING COUNT(s.id) >= ? ORDER BY requestcount DESC LIMIT 25`,
+        [settings.advanceRequestWindowDays, settings.advanceRequestCountThreshold]
+      );
+      return { featureId, kind: 'advance-pattern-list', items: rows, windowDays: settings.advanceRequestWindowDays, countThreshold: settings.advanceRequestCountThreshold };
+    }
+    default:
+      return null;
+  }
+}
+
 function requireAdminOnly(action) {
   return (req, res, next) => {
     if (req.user.role_id !== 'admin') {
@@ -503,6 +647,58 @@ function register(router) {
     const result = await computeExplainable(req.params.kind, req);
     if (!result) return next({ status: 404, message: `No explanation available for "${req.params.kind}"` });
     res.json(result);
+  });
+
+  // Fraud & Risk Detection — same inline-check pattern.
+  router.get('/api/intelligence/fraud/:kind', requireAuth, async (req, res, next) => {
+    if (!(await hasIntelligenceAccess(req.user, req.params.kind))) {
+      return next({ status: 403, message: `You do not have access to the "${req.params.kind}" Intelligence feature` });
+    }
+    const result = await computeFraud(req.params.kind, req);
+    if (!result) return next({ status: 404, message: `No fraud/risk data available for "${req.params.kind}"` });
+    res.json(result);
+  });
+
+  // Admin > Intelligence > Fraud & Risk Detection > "Fraud Detection
+  // Rules" — a real, honest account of what each signal actually checks
+  // (no invented fraud-scoring model).
+  router.get('/api/intelligence/fraud-detection-rules', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Fraud Detection Rules'), async (req, res) => {
+    res.json({
+      rules: [
+        { kind: 'duplicate-list', source: 'Real clients.national_id values shared by more than one client record, company-wide — a plain SQL GROUP BY, not an identity-matching model.' },
+        { kind: 'reversal-list', source: 'Real payments with status = Reversed, the same status the Accountant\'s own Reconciliation Center already reads.' },
+        { kind: 'writeoff-list', source: 'Real loans.written_off_at minus loans.disbursed_at, flagged when under the configurable Rapid Write-Off window (see Fraud Thresholds).' },
+        { kind: 'overpayment-list', source: 'Real payments with status = Overpayment, grouped by client.' },
+        { kind: 'officer-anomaly-list', source: 'A real per-officer aggregate of loan_approvals (total decisions, approved count, same-day approvals) — a plain tally, not a predictive risk score.' },
+        { kind: 'overview / branch-risk-list', source: 'Real counts of the signals above, aggregated company-wide or per branch.' },
+        { kind: 'advance-pattern-list', source: 'A real count of salary_advance_requests per staff member within the configurable rolling window, flagged once it meets the configurable count threshold (see Fraud Thresholds).' },
+      ],
+    });
+  });
+  // Admin > Intelligence > Fraud & Risk Detection > "Fraud Thresholds" —
+  // the real, persisted, editable parameters computeFraud() above reads.
+  router.get('/api/intelligence/fraud-thresholds', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Fraud Thresholds'), async (req, res) => {
+    res.json(await getFraudSettings());
+  });
+  router.put('/api/intelligence/fraud-thresholds', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit Fraud Thresholds'), async (req, res, next) => {
+    const fields = {
+      fraud_rapid_writeoff_days: req.body.rapidWriteoffDays,
+      fraud_advance_request_count_threshold: req.body.advanceRequestCountThreshold,
+      fraud_advance_request_window_days: req.body.advanceRequestWindowDays,
+    };
+    for (const [key, value] of Object.entries(fields)) {
+      const n = parseInt(value, 10);
+      if (!Number.isFinite(n) || n < 1 || n > 365) return next({ status: 400, message: `${key} must be an integer between 1 and 365` });
+    }
+    for (const [key, value] of Object.entries(fields)) {
+      await run(
+        `INSERT INTO intelligence_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, iso_now())
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+        [key, String(parseInt(value, 10)), req.user.id]
+      );
+    }
+    await logAction(req, { action: 'Changed Fraud thresholds', module: 'intelligence', recordType: 'IntelligenceSetting', recordId: 'fraud-thresholds', newValue: fields });
+    res.json(await getFraudSettings());
   });
 
   // Admin > Intelligence > Explainable Decisions > "Explanation Rules" /

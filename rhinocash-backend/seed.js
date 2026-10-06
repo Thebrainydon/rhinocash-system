@@ -164,20 +164,22 @@ async function seedPermissions() {
 
 // Intelligence module — real, data-driven, per-submenu-item permission
 // catalog (role_intelligence_access/user_intelligence_access mirror
-// role_modules/user_module_access exactly — see db.js/rbac.js). Phase 1
-// only: Predictive Analytics, Drill-Down Analytics, Explainable Decisions,
-// Personalizable Workspaces. Offline Field Operations, Route Optimization,
-// AI Assistant, What-If Simulation and Fraud & Risk Detection are
-// deliberately absent — each needs real third-party infrastructure
-// (mapping/geocoding provider, an LLM API, a client-side offline-sync
-// architecture) or was out of this phase's agreed scope, and seeding fake
-// catalog rows for them would just be a disguised placeholder.
+// role_modules/user_module_access exactly — see db.js/rbac.js). Phase 1:
+// Predictive Analytics, Drill-Down Analytics, Explainable Decisions,
+// Personalizable Workspaces, plus Fraud & Risk Detection (Phase 2 — real
+// rule-based signals against existing data, no new infrastructure
+// needed). Offline Field Operations, Route Optimization, AI Assistant and
+// What-If Simulation remain deliberately absent — each needs real
+// third-party infrastructure (mapping/geocoding provider, an LLM API, a
+// client-side offline-sync architecture) still undecided, and seeding
+// fake catalog rows for them would just be a disguised placeholder.
 async function seedIntelligence() {
   const categories = [
     ['predictive-analytics', 'Predictive Analytics', '📈', 1],
     ['drilldown-analytics', 'Drill-Down Analytics', '🔍', 2],
     ['explainable-decisions', 'Explainable Decisions', '💡', 3],
     ['personalizable-workspaces', 'Personalizable Workspaces', '🧩', 4],
+    ['fraud-risk-detection', 'Fraud & Risk Detection', '🚨', 5],
   ];
   for (const [id, label, icon, sort] of categories) {
     await run('INSERT INTO intelligence_categories (id, label, icon, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, label, icon, sort]);
@@ -185,6 +187,11 @@ async function seedIntelligence() {
   // Default Predictive Analytics trend window — real, editable later via
   // Admin > Intelligence > Prediction Rules (PUT /api/intelligence/settings/trend-window).
   await run(`INSERT INTO intelligence_settings (key, value) VALUES ('trend_window_months', '1') ON CONFLICT DO NOTHING`);
+  // Default Fraud & Risk Detection thresholds — real, editable later via
+  // Admin > Intelligence > Fraud Thresholds (PUT /api/intelligence/fraud/thresholds).
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_rapid_writeoff_days', '14') ON CONFLICT DO NOTHING`);
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_advance_request_count_threshold', '3') ON CONFLICT DO NOTHING`);
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_advance_request_window_days', '30') ON CONFLICT DO NOTHING`);
 
   // [id, category_id, label, sort_order] — one row per unique real label
   // across every role's spec; a label repeated verbatim across roles
@@ -285,6 +292,24 @@ async function seedIntelligence() {
     ['workspace-templates', 'personalizable-workspaces', 'Workspace Templates', 4],
     ['workspace-widget-management', 'personalizable-workspaces', 'Widget Management', 5],
     ['workspace-role-defaults', 'personalizable-workspaces', 'Role Defaults', 6],
+    // Fraud & Risk Detection — real rule-based signals against existing
+    // data (duplicate client identities, reversed/overpaid payments,
+    // loans written off shortly after disbursement, per-officer approval-
+    // pattern anomalies, staff salary-advance frequency), never a trained
+    // fraud model. One feature id per concept, shared across every role
+    // that holds it (same real compute, scoped by that role's own real
+    // branchIdsInScope/officer-id — identical pattern to every other
+    // Intelligence category already built).
+    ['fraud-duplicate-clients', 'fraud-risk-detection', 'Duplicate Client Alerts', 1],
+    ['fraud-payment-reversals', 'fraud-risk-detection', 'Payment Reversal Alerts', 2],
+    ['fraud-rapid-writeoff', 'fraud-risk-detection', 'Rapid Write-Off Alerts', 3],
+    ['fraud-overpayment-pattern', 'fraud-risk-detection', 'Overpayment Pattern', 4],
+    ['fraud-officer-approval-pattern', 'fraud-risk-detection', 'Officer Approval Patterns', 5],
+    ['fraud-overview', 'fraud-risk-detection', 'Fraud Overview', 6],
+    ['fraud-branch-risk-ranking', 'fraud-risk-detection', 'Branch Risk Ranking', 7],
+    ['fraud-staff-advance-pattern', 'fraud-risk-detection', 'Staff Advance Pattern Alerts', 8],
+    ['fraud-detection-rules', 'fraud-risk-detection', 'Fraud Detection Rules', 9],
+    ['fraud-thresholds', 'fraud-risk-detection', 'Fraud Thresholds', 10],
   ];
   for (const [id, cat, label, sort] of features) {
     await run('INSERT INTO intelligence_features (id, category_id, label, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, cat, label, sort]);
@@ -302,48 +327,56 @@ async function seedIntelligence() {
     loan_officer: [
       'pred-my-collection-prediction', 'pred-client-risk-indicators', 'pred-early-warning-signals',
       'explain-loan-decision-explanation', 'explain-client-risk-explanation', 'explain-collection-priority-explanation',
+      'fraud-duplicate-clients', 'fraud-overpayment-pattern',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     manager: [
       'pred-branch-collection-forecast', 'pred-loan-default-prediction', 'pred-portfolio-forecast', 'pred-officer-performance-prediction', 'pred-early-warning-signals',
       'explain-loan-decision-explanation', 'explain-risk-explanation', 'explain-approval-explanation', 'explain-collection-priority-explanation',
       'drill-portfolio', 'drill-collections', 'drill-arrears', 'drill-officer-performance',
+      'fraud-duplicate-clients', 'fraud-payment-reversals', 'fraud-rapid-writeoff',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     regional_manager: [
       'pred-regional-portfolio-forecast', 'pred-regional-collection-forecast', 'pred-default-prediction', 'pred-branch-performance-prediction', 'pred-early-warning-signals',
       'explain-loan-decisions', 'explain-risk-decisions', 'explain-branch-performance',
       'drill-region', 'drill-branch', 'drill-officer', 'drill-client', 'drill-loan', 'drill-payment',
+      'fraud-duplicate-clients', 'fraud-rapid-writeoff', 'fraud-overview',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     operational_manager: [
       'pred-operations-forecast', 'pred-collection-forecast', 'pred-portfolio-forecast', 'pred-branch-performance', 'pred-operational-early-warnings',
       'explain-approval-decisions', 'explain-risk-decisions', 'explain-operational-alerts',
       'drill-operations', 'drill-branches', 'drill-officers', 'drill-collections', 'drill-portfolio',
+      'fraud-payment-reversals', 'fraud-rapid-writeoff', 'fraud-officer-approval-pattern',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     accountant: [
       'pred-cashflow-forecast', 'pred-collection-forecast', 'pred-revenue-forecast', 'pred-portfolio-forecast', 'pred-liquidity-forecast',
       'explain-payment-allocation', 'explain-financial-exceptions', 'explain-accounting-adjustments',
       'drill-revenue', 'drill-collections', 'drill-disbursements', 'drill-expenses', 'drill-profitability', 'drill-cashflow',
+      'fraud-payment-reversals', 'fraud-overpayment-pattern',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     ceo: [
       'pred-company-forecast', 'pred-portfolio-forecast', 'pred-revenue-forecast', 'pred-profit-forecast', 'pred-cashflow-forecast', 'pred-default-prediction', 'pred-branch-performance-prediction',
       'explain-credit-decisions', 'explain-risk-decisions', 'explain-business-alerts', 'explain-performance-changes',
       'drill-company', 'drill-region', 'drill-branch', 'drill-officer', 'drill-client', 'drill-loan', 'drill-payment',
+      'fraud-overview', 'fraud-branch-risk-ranking',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     director: [
       'pred-company-forecast', 'pred-portfolio-forecast', 'pred-profit-forecast', 'pred-cashflow-forecast', 'pred-capital-forecast', 'pred-risk-forecast',
       'explain-strategic-decisions', 'explain-credit-decisions', 'explain-risk-decisions', 'explain-financial-changes',
       'drill-company', 'drill-region', 'drill-branch', 'drill-product', 'drill-portfolio', 'drill-loan',
+      'fraud-officer-approval-pattern', 'fraud-overview',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     hr: [
       'pred-staff-performance', 'pred-workforce-trends', 'pred-attendance-trends', 'pred-turnover-prediction',
       'explain-performance-decisions', 'explain-hr-alerts',
       'drill-organization', 'drill-department', 'drill-branch', 'drill-employee',
+      'fraud-staff-advance-pattern',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     admin: [
@@ -352,6 +385,7 @@ async function seedIntelligence() {
       'pred-prediction-models', 'pred-prediction-rules', 'pred-thresholds',
       'explain-explanation-rules', 'explain-decision-factors',
       'drill-analytics-configuration', 'drill-kpi-configuration',
+      'fraud-detection-rules', 'fraud-thresholds',
       'workspace-templates', 'workspace-widget-management', 'workspace-role-defaults',
     ],
   };

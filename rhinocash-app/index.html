@@ -1149,7 +1149,7 @@ const ROLE_ROUTE_OVERRIDES = {
 // sidebar or a route until its real page actually exists. Widened as
 // each remaining category is built; never widen this for a category
 // whose render path isn't genuinely done yet.
-const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions", "personalizable-workspaces"]);
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions", "personalizable-workspaces", "fraud-risk-detection"]);
 // The real catalog of optional, hideable Dashboard widgets per role — must
 // match DASHBOARD_WIDGET_CATALOG/INVESTOR_WIDGET_CATALOG in the backend's
 // intelligence.js exactly (same keys), since isDashboardWidgetHidden()
@@ -1547,7 +1547,7 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{},
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{}, intelligenceFraud:{},
     workspaceState:null };
 
   const isInvestor = session.role === "Investor";
@@ -3504,6 +3504,94 @@ function renderIntelligenceWorkspace(feature){
   return `<div class="empty">Unknown Workspace feature.</div>`;
 }
 
+async function loadAdminFraudDetectionRules(){
+  return withRequest('intel-admin-fraud-rules', async ()=>{ DB.adminFraudRules = (await api.get('/api/intelligence/fraud-detection-rules')).rules; });
+}
+function renderAdminFraudDetectionRules(){
+  if(!DB.adminFraudRules) loadAdminFraudDetectionRules();
+  if(!DB.adminFraudRules) return `<div class="card"><div class="card-title">Fraud Detection Rules</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Fraud Detection Rules</div>
+    <div class="section-note">What each Fraud &amp; Risk Detection signal actually checks — no invented fraud-scoring model.</div>
+    <div class="table-wrap"><table><tr><th>Kind</th><th>Source</th></tr>${
+      DB.adminFraudRules.map(r=>`<tr><td><strong>${escapeHtml(r.kind)}</strong></td><td>${escapeHtml(r.source)}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadAdminFraudThresholds(){
+  return withRequest('intel-admin-fraud-thresholds', async ()=>{ DB.adminFraudThresholds = await api.get('/api/intelligence/fraud-thresholds'); });
+}
+async function submitAdminFraudThresholds(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  return withRequest('intel-admin-fraud-thresholds-save', async ()=>{
+    DB.adminFraudThresholds = await api.put('/api/intelligence/fraud-thresholds', {
+      rapidWriteoffDays: Number(f.rapidWriteoffDays), advanceRequestCountThreshold: Number(f.advanceRequestCountThreshold), advanceRequestWindowDays: Number(f.advanceRequestWindowDays),
+    });
+  }, { mutates: true });
+}
+function renderAdminFraudThresholds(){
+  if(!DB.adminFraudThresholds) loadAdminFraudThresholds();
+  if(!DB.adminFraudThresholds) return `<div class="card"><div class="card-title">Fraud Thresholds</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const t = DB.adminFraudThresholds;
+  return `<div class="card"><div class="card-title">Fraud Thresholds</div>
+    <div class="section-note">The real, live parameters every Fraud &amp; Risk Detection signal reads — a change here takes effect immediately.</div>
+    <form onsubmit="return submitAdminFraudThresholds(event)" class="form-grid">
+      <div class="field"><label>Rapid Write-Off window (days)</label><input type="number" name="rapidWriteoffDays" min="1" max="365" value="${t.rapidWriteoffDays}"></div>
+      <div class="field"><label>Advance Request count threshold</label><input type="number" name="advanceRequestCountThreshold" min="1" max="365" value="${t.advanceRequestCountThreshold}"></div>
+      <div class="field"><label>Advance Request window (days)</label><input type="number" name="advanceRequestWindowDays" min="1" max="365" value="${t.advanceRequestWindowDays}"></div>
+      <div></div>
+      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+    </form></div>`;
+}
+async function loadIntelligenceFraud(featureId){
+  return withRequest('intel-fraud-'+featureId, async ()=>{
+    DB.intelligenceFraud[featureId] = await api.get('/api/intelligence/fraud/'+featureId);
+  });
+}
+function renderIntelligenceFraud(feature){
+  if(feature.id==='fraud-detection-rules') return renderAdminFraudDetectionRules();
+  if(feature.id==='fraud-thresholds') return renderAdminFraudThresholds();
+  if(!DB.intelligenceFraud) DB.intelligenceFraud = {};
+  const data = DB.intelligenceFraud[feature.id];
+  if(!data) loadIntelligenceFraud(feature.id);
+  if(!data) return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
+  let body;
+  switch(data.kind){
+    case 'duplicate-list':
+      body = (data.groups||[]).length
+        ? data.groups.map(g=>`<div class="card" style="margin-bottom:10px;"><div class="card-title" style="font-size:13px;">National ID: ${escapeHtml(g.nationalId)}</div>
+          <div class="table-wrap"><table><tr><th>Client</th><th>Branch</th></tr>${g.clients.map(c=>`<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(branchName(c.branchId)||'—')}</td></tr>`).join("")}</table></div></div>`).join("")
+        : `<div class="empty">No duplicate client identities found in your scope.</div>`;
+      break;
+    case 'reversal-list':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Officer</th><th>Amount</th><th>Date</th></tr>${rowsFor(data.items,['clientname','officername','amount','created_at'])}</table></div>`;
+      break;
+    case 'writeoff-list':
+      body = `<div class="section-note">Loans written off within ${data.dayWindow} day(s) of disbursement.</div>
+        <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th><th>Principal</th><th>Days to Write-Off</th></tr>${rowsFor(data.items,['clientname','officername','principal','daystowriteoff'])}</table></div>`;
+      break;
+    case 'overpayment-list':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Overpayment Count</th><th>Total Amount</th></tr>${rowsFor(data.items,['clientname','overpaymentcount','totalamount'])}</table></div>`;
+      break;
+    case 'officer-anomaly-list':
+      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Total Decisions</th><th>Approved</th><th>Same-Day Approvals</th></tr>${rowsFor(data.items,['name','totaldecisions','approvedcount','samedayapprovals'])}</table></div>`;
+      break;
+    case 'overview':
+      body = `<div class="kpi-tile-grid">${(data.signals||[]).map(s=>`<div class="kpi"><div class="kpi-value" style="font-size:20px;">${s.count}</div><div class="kpi-label" style="margin-top:2px;">${escapeHtml(s.label)}</div></div>`).join("")}</div>`;
+      break;
+    case 'branch-risk-list':
+      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Reversals</th><th>Rapid Write-Offs</th></tr>${rowsFor(data.branches,['name','reversalcount','writeoffcount'])}</table></div>`;
+      break;
+    case 'advance-pattern-list':
+      body = `<div class="section-note">${data.countThreshold}+ salary advance requests within the last ${data.windowDays} days.</div>
+        <div class="table-wrap"><table><tr><th>Staff</th><th>Request Count</th><th>Total Amount</th></tr>${rowsFor(data.items,['name','requestcount','totalamount'])}</table></div>`;
+      break;
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
+
 function renderIntelligence(){
   const catalog = DB && DB.intelligenceCatalog;
   // Same label can legitimately belong to more than one feature across
@@ -3520,6 +3608,7 @@ function renderIntelligence(){
     case "predictive-analytics": return renderIntelligencePredictive(feature);
     case "explainable-decisions": return renderIntelligenceExplainable(feature);
     case "personalizable-workspaces": return renderIntelligenceWorkspace(feature);
+    case "fraud-risk-detection": return renderIntelligenceFraud(feature);
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }
