@@ -437,7 +437,7 @@ const NAV_PERMISSIONS = {
   "Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
-  "Accountant": ["dashboard","clients","loanbook","payments","accounting","investors","reports","notifications","support","account"],
+  "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
@@ -635,19 +635,18 @@ const SIDEBAR_MENUS = {
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Accountant": [
-    {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client","Client Financial Status"]},
-    {section:"Accounting", icon:"📊", items:["Cashbook","General Ledger","Chart of Accounts","Journal Entries","Requisitions","Utility Payments","Cashflow","Expenses","Revenue","Accounts Receivable","Accounts Payable"]},
-    {section:"Cash & Bank", icon:"🏦", items:["Cash at Hand","Bank Accounts","Bank Transactions","Bank Reconciliation","M-Pesa Reconciliation","Cash Reconciliation"]},
-    {section:"Loan Accounting", icon:"📖", items:["Loan Applications","Pending Loan Approvals","Loan Receivables","Principal","Interest Income","Loan Fees","Penalties","Write-offs","Recoveries","Provisions","Loan Financial Verification","Loan Approval History"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Payment Validation","Reversals","Receipts"]},
-    {section:"Disbursements", icon:"💸", items:["Pending Disbursements","Approved Disbursements","Disbursed Loans","Disbursement Reconciliation"]},
-    {section:"Approvals", icon:"✅", items:["Loan Approvals","Waiting for Accountant","Financial Approval","Disbursement Approval","Returned Applications","Exception Approvals","Approval History"]},
-    {section:"Payroll & Expenses", icon:"🧮", items:["Staff Expenses","Operational Expenses","Salary Records","Salary Advances","Expense Approvals"]},
-    {section:"Taxes & Compliance", icon:"🧾", items:["Tax Overview","Tax Records","Tax Payments","Filing Calendar","Compliance Reports"]},
-    {section:"Financial Reports", icon:"📑", items:["Profit & Loss","Balance Sheet","Cash Flow Statement","Trial Balance","General Ledger Report","Revenue Report","Expense Report","Loan Portfolio Report","Financial Position"]},
-    {section:"Audit", icon:"🛡️", items:["Accounting Audit Trail","Adjustments","Reconciliations","Transaction History"]},
-    {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket","Accountant Help Center","Accounting Knowledge Base","Accounting Procedures","Financial System Documentation","Chart of Accounts Guide","Reconciliation Guide","Payment Processing Guide","Tax & Compliance Guide","Financial Reporting Guide","System Status","Service Availability","Maintenance Schedule","System Announcements","Release Notes","Support Contacts","Escalate an Issue","Report a Financial System Issue","Report a Payment Issue","Report a Reconciliation Issue","Feature Requests","System Improvement Requests","Audit Support","Compliance Support","Data Recovery","Business Continuity","Disaster Recovery","Emergency Support"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Financial Responsibilities","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees"]},
+    {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow","Expense Monitoring","Financial Requests","Accounts Payable","Accounts Receivable","General Ledger","Chart of Accounts","Journal Entries","Bank Accounts","Bank Reconciliation","Financial Statements","Accounting Reports"]},
+    {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches","Regional Performance","Branch Comparison","Branch Status"]},
+    {section:"Financial Analytics", icon:"📈", items:["Revenue Analysis","Expense Analysis","Profitability Analysis","Cashflow Analysis","Portfolio Financial Analysis","Collection Analysis","Disbursement Analysis","Fees & Charges Analysis","Penalties Analysis","Financial Performance"]},
+    {section:"Financial Controls", icon:"🛡️", items:["Transaction Verification","Payment Verification","Loan Financial Validation","Reconciliation","Variance Analysis","Suspense Accounts","Adjustments","Refunds","Write-Offs","Control Exceptions"]},
+    {section:"Clients", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Data Quality","View Client"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Financial Validation","Loan Portfolio Monitoring","View Loans"]},
+    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","Refunds","Payment Adjustments"]},
+    {section:"Financial Reports", icon:"📑", items:["Daily Financial Report","Cashflow Report","Income Statement","Balance Sheet","Trial Balance","General Ledger Report","Receivables Report","Payables Report","Loan Portfolio Report","Reconciliation Reports"]},
+    {section:"Budget & Planning", icon:"💰", items:["Annual Budget","Budget Monitoring","Budget Variance","Branch Budgets","Expense Budgets","Financial Forecasts"]},
+    {section:"My Account", icon:"🪪", items:["View Details","My Workplan","Leave Application","Salary Advance","Update Details"]},
+    {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "CEO": [
     {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees","Employee Transfers","Workforce Planning"]},
@@ -1018,12 +1017,20 @@ const LABEL_ROUTES = {
    sections — never routed into a module NAV_PERMISSIONS denies them. */
 const ROLE_ROUTE_OVERRIDES = {
   "Accountant": {
-    "Loan Applications":{section:"dashboard"}, "Pending Loan Approvals":{section:"dashboard"}, "Write-offs":{section:"dashboard"},
+    // "Loan Applications" and "Loan Portfolio Report" are now real items
+    // in the Accountant's own real LoanBook/Financial Reports sections
+    // (see SIDEBAR_MENUS) and must resolve to their real shared pages via
+    // the generic LABEL_ROUTES map below, same as every other role — no
+    // override here for either anymore. The remaining overrides are for
+    // labels that only ever existed on the Accountant's own old,
+    // superseded sidebar structure and aren't reachable from their real
+    // sidebar at all anymore; left in place since they're harmless and
+    // out of scope for this restructure.
+    "Pending Loan Approvals":{section:"dashboard"}, "Write-offs":{section:"dashboard"},
     "Loan Financial Verification":{section:"dashboard"}, "Loan Approval History":{section:"dashboard"},
     "Pending Disbursements":{section:"dashboard"}, "Approved Disbursements":{section:"dashboard"}, "Disbursed Loans":{section:"dashboard"},
     "Loan Approvals":{section:"dashboard"}, "Waiting for Accountant":{section:"dashboard"}, "Financial Approval":{section:"dashboard"},
     "Disbursement Approval":{section:"dashboard"}, "Returned Applications":{section:"dashboard"}, "Approval History":{section:"dashboard"},
-    "Loan Portfolio Report":{section:"dashboard"},
   },
   "CEO": {
     "Revenue":{section:"dashboard"}, "Loan Book":{section:"dashboard"}, "Disbursements":{section:"dashboard"}, "Collections":{section:"dashboard"},

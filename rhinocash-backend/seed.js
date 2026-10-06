@@ -69,7 +69,11 @@ async function seedModules() {
     // rendering "—" for a client that genuinely existed and was correctly
     // scoped everywhere else). Reviewing a loan for financial sign-off
     // without knowing who it's for isn't meaningful.
-    accountant: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'investors', 'reports', 'support', 'account'],
+    // 'branches'/'staff' added alongside the above — the Accountant
+    // sidebar now includes real Branches & Regions and Employees
+    // submenus too, same read/visibility-only reasoning: no
+    // manage_branches/manage_users action permission accompanies it.
+    accountant: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'investors', 'reports', 'staff', 'support', 'account'],
     admin: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'investors', 'reports', 'audit', 'staff', 'support', 'account'],
     // CEO/Director get read visibility into 'accounting' (cash position,
     // P&L, ledger) — the original spec explicitly lists Cashflow/Revenue/
