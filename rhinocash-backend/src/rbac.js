@@ -55,7 +55,10 @@ async function hasPermission(user, permissionId) {
 // actions are still separately gated by module+action permissions above.
 async function branchScopeSQL(user, branchColumn = 'branch_id') {
   const roleId = user.role_id;
-  if (['admin', 'ceo', 'director', 'accountant', 'investor'].includes(roleId)) {
+  // HR is a head-office role with no single-branch assignment of its own —
+  // it needs company-wide visibility into staff records to do its job at
+  // all, same reasoning as Admin/CEO/Director/Accountant/Investor here.
+  if (['admin', 'ceo', 'director', 'accountant', 'investor', 'hr'].includes(roleId)) {
     return { clause: '1=1', params: [] };
   }
   if (roleId === 'regional_manager') {
@@ -76,7 +79,7 @@ async function branchScopeSQL(user, branchColumn = 'branch_id') {
 // just need a yes/no, not another query. Returns null to mean "all branches".
 async function branchIdsInScope(user) {
   const roleId = user.role_id;
-  if (['admin', 'ceo', 'director', 'accountant', 'operational_manager'].includes(roleId)) return null;
+  if (['admin', 'ceo', 'director', 'accountant', 'operational_manager', 'hr'].includes(roleId)) return null;
   if (roleId === 'regional_manager') {
     const rows = await all('SELECT id FROM branches WHERE region_id = ?', [user.region_id]);
     return rows.map(b => b.id);

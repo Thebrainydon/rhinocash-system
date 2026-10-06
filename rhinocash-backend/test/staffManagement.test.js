@@ -169,12 +169,12 @@ async function get_role(id, token) {
     assert(r.status === 401, 'U: GET /api/roles requires real authentication, same as every other endpoint');
   }
 
-  // V. The real, authoritative role list — the 8 real seeded roles, no duplicates invented.
+  // V. The real, authoritative role list — the 9 real seeded roles, no duplicates invented.
   {
     const r = await api('GET', '/api/roles', { token: adminToken });
     assert(r.status === 200, 'V: an authenticated user can list the real system roles');
     const ids = r.json.roles.map(x => x.id).sort();
-    assert(JSON.stringify(ids) === JSON.stringify(['accountant', 'admin', 'ceo', 'director', 'loan_officer', 'manager', 'operational_manager', 'regional_manager']), 'V: the real roles table holds exactly the 8 real seeded staff roles — Investor is a separate principal type, never a row here, so it is correctly absent');
+    assert(JSON.stringify(ids) === JSON.stringify(['accountant', 'admin', 'ceo', 'director', 'hr', 'loan_officer', 'manager', 'operational_manager', 'regional_manager']), 'V: the real roles table holds exactly the 9 real seeded staff roles — Investor is a separate principal type, never a row here, so it is correctly absent');
     assert(r.json.roles.every(x => x.userCount === undefined), 'V: without ?with_counts=1, GET /api/roles returns the bare role rows — no aggregation, matching the same opt-in pattern already used by GET /api/branches and GET /api/regions');
   }
 

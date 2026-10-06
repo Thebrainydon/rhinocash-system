@@ -412,7 +412,7 @@ const isThisMonth = d => { const n=new Date(); const x=new Date(d); return n.get
 const escapeHtml = s => (s||"").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 /* ---------------- Role / Nav config ---------------- */
-const ROLES = ["Admin","Manager","Operational Manager","Regional Manager","Accountant","CEO","Director","Investor","Loan Officer"];
+const ROLES = ["Admin","Manager","Operational Manager","Regional Manager","Accountant","CEO","Director","Investor","HR","Loan Officer"];
 const NAV = [
   {id:"dashboard", num:1, label:"Dashboard"},
   {id:"clients", num:2, label:"Clients"},
@@ -441,6 +441,12 @@ const NAV_PERMISSIONS = {
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
+  // HR has no lending/accounting/branch authority — just company-wide
+  // visibility into the real Staff Directory ("staff") it shares with
+  // every other operational role, plus the universal notifications/
+  // support/account baseline. No "reports" grant: nothing in HR's sidebar
+  // currently resolves to it (see ROLE_ROUTE_OVERRIDES/LABEL_ROUTES).
+  "HR": ["dashboard","staff","notifications","support","account"],
   "Loan Officer": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","support","account"],
 };
 /* Permission matrix backing the Admin "Role & Permission Management" screen.
@@ -457,6 +463,7 @@ const DEFAULT_PERMISSIONS_MATRIX = {
   "CEO":         {"Approve Loans":false,"Disburse Loans":false,"Record Payments":false,"Reverse Payment":false, "Post Accounting Entries":false,"Manage Users":false,"Manage Branches":false,"Open New Branch":false, "Write Off Loans":false, "Manage System Settings":false},
   "Director":    {"Approve Loans":false,"Disburse Loans":false,"Record Payments":false,"Reverse Payment":false, "Post Accounting Entries":false,"Manage Users":false,"Manage Branches":false,"Open New Branch":false, "Write Off Loans":false, "Manage System Settings":false},
   "Investor":    {"Approve Loans":false,"Disburse Loans":false,"Record Payments":false,"Reverse Payment":false, "Post Accounting Entries":false,"Manage Users":false,"Manage Branches":false,"Open New Branch":false, "Write Off Loans":false, "Manage System Settings":false},
+  "HR":          {"Approve Loans":false,"Disburse Loans":false,"Record Payments":false,"Reverse Payment":false, "Post Accounting Entries":false,"Manage Users":false,"Manage Branches":false,"Open New Branch":false, "Write Off Loans":false, "Manage System Settings":false},
   "Loan Officer":{"Approve Loans":false,"Disburse Loans":false,"Record Payments":true, "Reverse Payment":false, "Post Accounting Entries":false,"Manage Users":false,"Manage Branches":false,"Open New Branch":false, "Write Off Loans":false, "Manage System Settings":false},
 };
 /* Access level shown/suggested per role — editable per-user, per the spec's
@@ -465,6 +472,7 @@ const ACCESS_LEVEL_BY_ROLE = {
   "Loan Officer":"Portfolio Access", "Manager":"Branch Management Access", "Operational Manager":"Operations & Branch Expansion Access",
   "Regional Manager":"Regional Management Access", "Admin":"Full System Access", "Accountant":"Accounting & Financial Access",
   "CEO":"Executive Management Access", "Director":"Strategic & Governance Access", "Investor":"Investor Access",
+  "HR":"HR & People Management Access",
 };
 /* Admin > Roles & Access Control > Roles — short, factual descriptions of
    what each real system role actually does in this app (not marketing
@@ -481,6 +489,7 @@ const ROLE_DESCRIPTIONS = {
   "Admin": "Master System Administrator — the only role with full system configuration, user management and role/permission authority.",
   "CEO": "Executive oversight of company-wide performance, portfolio health and financial results.",
   "Director": "Governance and ownership oversight — capital, shareholders, board matters and strategic risk.",
+  "HR": "Human Resources — manages staff records and holds company-wide visibility into employees across every branch.",
 };
 /* Groups the real permission ids (GET /api/permissions — see seed.js's
    seedPermissions()) into display categories for the Role Details view.
@@ -702,6 +711,23 @@ const SIDEBAR_MENUS = {
     {section:"Transactions", icon:"💳", items:["Capital Transactions","Return Payments","Transaction History","Payment Statements","Transaction Reports"]},
     {section:"Company Information", icon:"🏛️", items:["Company Profile","Company Structure","Business Overview","Branch Overview","Strategic Updates"]},
     {section:"My Account", icon:"🪪", items:["View Details","Investment Profile","Payment Details","Update Details","Security Settings"]},
+    {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
+  ],
+  "HR": [
+    {section:"Employees", icon:"👥", items:["Add Employee","View Employees","Employee Profiles","Employee Transfers","Employee Documents","Employee Status","Employee Directory","Employee History"]},
+    {section:"User & Access Management", icon:"🔐", items:["User Accounts","User Profiles","Roles & Permissions","Role Assignments","Access Requests","Access Approvals","Account Activation","Account Suspension","Password & Security","Login Activity","Access Audit Log","User Access Reports"]},
+    {section:"Recruitment", icon:"📋", items:["Job Vacancies","Create Vacancy","Applications","Shortlisted Candidates","Interviews","Recruitment Pipeline","Hiring Decisions"]},
+    {section:"Attendance", icon:"🕒", items:["Attendance Overview","Daily Attendance","Attendance Records","Late Arrivals","Absence Tracking","Attendance Exceptions","Attendance Reports"]},
+    {section:"Leave Management", icon:"🏖️", items:["Leave Applications","Pending Leave Requests","Approved Leave","Leave Calendar","Leave Balances","Leave Types","Leave Reports"]},
+    {section:"Payroll", icon:"💵", items:["Payroll Overview","Employee Salaries","Payroll Processing","Salary Advances","Allowances","Deductions","Payslips","Payroll History","Payroll Reports"]},
+    {section:"Performance Management", icon:"🎯", items:["Performance Reviews","Staff Targets","Performance Plans","Performance Tracking","Appraisals","Performance Improvement Plans","Performance Reports"]},
+    {section:"Employee Benefits", icon:"🎁", items:["Benefits Overview","Employee Benefits","Medical Benefits","Allowances","Staff Welfare","Benefits Reports"]},
+    {section:"Training & Development", icon:"🎓", items:["Training Programs","Training Requests","Training Calendar","Employee Training","Skills & Competencies","Training Reports"]},
+    {section:"Employee Relations", icon:"🤝", items:["Employee Requests","Complaints","Grievances","Disciplinary Cases","Employee Relations","Resolutions","Case History"]},
+    {section:"HR Administration", icon:"🏢", items:["Departments","Job Titles","Job Grades","Employment Types","Branch Assignments","HR Policies","HR Documents"]},
+    {section:"HR Analytics", icon:"📊", items:["Workforce Analytics","Headcount Analysis","Staff Turnover","Attendance Analytics","Leave Analytics","Payroll Analytics","Performance Analytics","HR Dashboard Reports"]},
+    {section:"HR Compliance", icon:"⚖️", items:["Employment Compliance","Employee Documents","Contract Tracking","Policy Compliance","Compliance Calendar","Compliance Reports"]},
+    {section:"My Account", icon:"🪪", items:["View Details","My Workplan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
 };
@@ -1056,6 +1082,16 @@ const ROLE_ROUTE_OVERRIDES = {
     "Collection Reports":{section:"dashboard"}, "Transaction History":{section:"dashboard"},
     "Branch Overview":{section:"dashboard"},
   },
+  "HR": {
+    // "Login Activity" already has a real, generic global route (see
+    // LABEL_ROUTES below) into the Audit Logs module — a company-wide
+    // record of every user's logins AND financial/system actions. HR only
+    // holds the "staff" module, not "audit", and granting the latter would
+    // expose financial audit detail outside HR's intended scope — so this
+    // is redirected rather than the module granted, same reasoning as the
+    // Investor overrides above.
+    "Login Activity":{section:"dashboard"},
+  },
   // Scoped to Loan Officer only — "Collection Report" is also a generic,
   // not-yet-built placeholder label in Manager/Ops/Regional's own Reports
   // section, so this must not become a global LABEL_ROUTES entry (that
@@ -1317,7 +1353,7 @@ async function withRequest(key, fn, opts){
 const ROLE_ID_TO_DISPLAY = {
   loan_officer:"Loan Officer", manager:"Manager", regional_manager:"Regional Manager",
   operational_manager:"Operational Manager", accountant:"Accountant", admin:"Admin",
-  ceo:"CEO", director:"Director",
+  ceo:"CEO", director:"Director", hr:"HR",
 };
 const ROLE_DISPLAY_TO_ID = Object.fromEntries(Object.entries(ROLE_ID_TO_DISPLAY).map(([k,v])=>[v,k]));
 
@@ -4002,8 +4038,44 @@ function renderDashboard(){
     case "Investor": return renderInvestorDashboard();
     case "Regional Manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
     case "Manager": return renderManagerDashboard();
+    case "HR": return renderHRDashboard();
     default: return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard(); // Operational Manager — company-wide operational oversight
   }
+}
+
+// HR is a brand-new role — its own People/Recruitment/Payroll analytics
+// submenus aren't built yet (each will be wired up one by one later, same
+// as every other role's new sidebar sections), so this is deliberately a
+// simple, honest welcome card rather than invented KPIs or borrowed
+// content from another role's dashboard (the lending-ops figures in
+// renderAdvancedDashboard() — the `default` case above — have nothing to
+// do with HR and would be actively misleading here).
+function renderHRDashboard(){
+  const meRaw = DB.me;
+  if(!meRaw) return `<div class="empty">No HR profile found.</div>`;
+  const me = { name: meRaw.name, leaveDays: meRaw.leave_days_balance ?? 0 };
+  return `
+    <div class="card">
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0; overflow:hidden;">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:19px; font-weight:800; color:var(--navy);">${escapeHtml(me.name)}</div>
+          <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft); margin-top:8px;">
+            <div class="profile-info-row">💼 Human Resources</div>
+            <div class="profile-info-row">🌍 Company-wide</div>
+            <div class="profile-info-row">🏖️ ${me.leaveDays} Leave Days</div>
+            <div class="profile-info-row" style="border-bottom:none;">👁️ HR & People Management Access</div>
+          </div>
+          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
+          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
+        </div>
+      </div>
+      <div class="pill-row" style="margin-top:16px;">
+        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">View Employees</button>
+      </div>
+    </div>
+    <div class="section-note">HR analytics (headcount, turnover, attendance, leave and payroll trends) are not built yet — they'll be added section by section. The sidebar reflects the full intended structure; items with no page yet land on an honest "not built" screen rather than showing fabricated figures.</div>
+  `;
 }
 
 function renderOfficerDashboard(){

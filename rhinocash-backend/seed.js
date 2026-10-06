@@ -33,6 +33,7 @@ async function seedRoles() {
     ['admin', 'Admin', 'Master System Administration Access', 'Master System Administrator — the only role with full system configuration, user management and role/permission authority.'],
     ['ceo', 'CEO', 'Executive Management Access', 'Executive oversight of company-wide performance, portfolio health and financial results.'],
     ['director', 'Director', 'Strategic & Governance Access', 'Governance and ownership oversight — capital, shareholders, board matters and strategic risk.'],
+    ['hr', 'HR', 'HR & People Management Access', 'Human Resources — manages staff records and holds company-wide visibility into employees across every branch.'],
   ];
   for (const [id, name, level, description] of roles) {
     await run(
@@ -97,6 +98,14 @@ async function seedModules() {
     // above: no approve_loans/disburse_loans/record_payments/manage_users
     // action permission accompanies it.
     director: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'audit', 'support', 'account'],
+    // HR has no lending/accounting/branch authority — just the Staff
+    // Management module it shares (read-level, same as every other
+    // operational role) with the universal dashboard/support/account
+    // baseline. No 'audit' — that module is the full company-wide
+    // financial/system audit trail, out of HR's intended scope (see
+    // ROLE_ROUTE_OVERRIDES["HR"] in index.html, which redirects HR's own
+    // "Login Activity" sidebar item rather than granting this module).
+    hr: ['dashboard', 'staff', 'support', 'account'],
   };
   for (const [role, mods] of Object.entries(roleModules)) {
     for (const m of mods) {
@@ -133,6 +142,18 @@ async function seedPermissions() {
     // accounts, and not the really dangerous sub-actions."
     ceo: { manage_users: 1 },
     director: { manage_users: 1 },
+    // HR holds no action permission yet: its one real, structural route
+    // (Employees > View Employees) is gated by module access only
+    // (requireModule('staff')), not by any of these 10 action
+    // permissions. manage_users specifically would do nothing for HR
+    // today even if granted — canActOnStaffRecord() in rbac.js is
+    // hard-restricted to admin/ceo/director regardless of permission —
+    // so granting it now would only have the side effect of silently
+    // handing HR company-wide leave/salary-advance decide authority
+    // (misc.js's canDecideOn()) before that's actually been asked for.
+    // Revisit when HR's own Leave Management / User & Access Management
+    // submenus are built out.
+    hr: {},
   };
   for (const [role, perms2] of Object.entries(matrix)) {
     for (const [pid] of perms) {
