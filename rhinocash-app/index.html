@@ -2962,7 +2962,32 @@ function renderInvestorIntelligenceDrillDown(feature){
   }
   return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
 }
+async function loadAdminAnalyticsConfiguration(){
+  return withRequest('intel-admin-analytics-config', async ()=>{ DB.adminAnalyticsConfig = (await api.get('/api/intelligence/analytics-configuration')).dimensions; });
+}
+function renderAdminAnalyticsConfiguration(){
+  if(!DB.adminAnalyticsConfig) loadAdminAnalyticsConfiguration();
+  if(!DB.adminAnalyticsConfig) return `<div class="card"><div class="card-title">Analytics Configuration</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Analytics Configuration</div>
+    <div class="section-note">Every real Drill-Down Analytics dimension and which roles currently hold it.</div>
+    <div class="table-wrap"><table><tr><th>Dimension</th><th>Granted To</th></tr>${
+      DB.adminAnalyticsConfig.map(d=>`<tr><td><strong>${escapeHtml(d.label)}</strong></td><td>${d.roles.length ? d.roles.map(r=>escapeHtml(ROLE_ID_TO_DISPLAY[r]||r)).join(", ") : `<span class="hint">Not granted to any role yet</span>`}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadAdminKpiConfiguration(){
+  return withRequest('intel-admin-kpi-config', async ()=>{ DB.adminKpiConfig = await api.get('/api/intelligence/kpi-configuration'); });
+}
+function renderAdminKpiConfiguration(){
+  if(!DB.adminKpiConfig) loadAdminKpiConfiguration();
+  if(!DB.adminKpiConfig) return `<div class="card"><div class="card-title">KPI Configuration</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">KPI Configuration</div>
+    <div class="section-note">${escapeHtml(DB.adminKpiConfig.note)}</div>
+    <div class="pill-row">${DB.adminKpiConfig.parBuckets.map(b=>`<span class="badge blue">${b}+ days</span>`).join("")}</div>
+  </div>`;
+}
 function renderIntelligenceDrillDown(feature){
+  if(feature.id==='drill-analytics-configuration') return renderAdminAnalyticsConfiguration();
+  if(feature.id==='drill-kpi-configuration') return renderAdminKpiConfiguration();
   if(session.role==="Investor") return renderInvestorIntelligenceDrillDown(feature);
   if(!DB.intelligenceDrillDown) DB.intelligenceDrillDown = {};
   const data = DB.intelligenceDrillDown[feature.id];

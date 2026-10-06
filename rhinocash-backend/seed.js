@@ -351,14 +351,7 @@ async function seedIntelligence() {
       // operational outputs above — per the spec's explicit distinction.
       'pred-prediction-models', 'pred-prediction-rules', 'pred-thresholds',
       'explain-explanation-rules', 'explain-decision-factors',
-      // 'drill-analytics-configuration'/'drill-kpi-configuration'
-      // deliberately NOT granted yet: unlike every other
-      // drilldown-analytics feature, these aren't real-data dimensions —
-      // they're Admin's own config screens (Intelligence > Admin config
-      // pages, a separate task), which don't exist yet. Granting them now
-      // would put a real, clickable sidebar item in front of Admin with
-      // nothing real behind it the moment drilldown-analytics (correctly)
-      // went live for every other role. Add back once those pages exist.
+      'drill-analytics-configuration', 'drill-kpi-configuration',
       'workspace-templates', 'workspace-widget-management', 'workspace-role-defaults',
     ],
   };

@@ -939,6 +939,35 @@ function register_workspace(router) {
     await logAction(req, { action: 'Changed role workspace defaults', module: 'intelligence', recordType: 'Role', recordId: req.params.roleId, newValue: hiddenWidgets });
     res.json({ ok: true, hiddenWidgets });
   });
+
+  // Admin > Intelligence > Drill-Down Analytics > "Analytics
+  // Configuration" — a real, read-only account of every Drill-Down
+  // dimension and which real roles currently hold it (role_intelligence_
+  // access), never a second, invented settings surface.
+  router.get('/api/intelligence/analytics-configuration', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Analytics Configuration'), async (req, res) => {
+    const features = await all("SELECT id, label FROM intelligence_features WHERE category_id = 'drilldown-analytics' ORDER BY sort_order");
+    const grants = await all(
+      `SELECT ria.feature_id, ria.role_id FROM role_intelligence_access ria
+       JOIN intelligence_features f ON f.id = ria.feature_id WHERE f.category_id = 'drilldown-analytics'`
+    );
+    const rolesByFeature = new Map();
+    grants.forEach(g => {
+      if (!rolesByFeature.has(g.feature_id)) rolesByFeature.set(g.feature_id, []);
+      rolesByFeature.get(g.feature_id).push(g.role_id);
+    });
+    res.json({ dimensions: features.map(f => ({ id: f.id, label: f.label, roles: rolesByFeature.get(f.id) || [] })) });
+  });
+
+  // Admin > Intelligence > Drill-Down Analytics > "KPI Configuration" — the
+  // real, fixed PAR aging buckets every risk/drill-down view (computePAR)
+  // uses — honestly reported as not yet editable, not hidden behind a
+  // fake settings form.
+  router.get('/api/intelligence/kpi-configuration', requireAuth, requirePermission('manage_users'), requireAdminOnly('view KPI Configuration'), async (req, res) => {
+    res.json({
+      parBuckets: [1, 7, 30, 60, 90],
+      note: 'These are the real, fixed days-overdue buckets every PAR/aging computation in Drill-Down Analytics, Predictive Analytics and Reports/LoanBook shares (computePAR) — not yet editable from here; the portfolio-quality rating thresholds applied on top of these buckets are editable under Predictive Analytics > Thresholds.',
+    });
+  });
 }
 
 module.exports = { register };
