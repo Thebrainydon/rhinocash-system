@@ -1149,7 +1149,7 @@ const ROLE_ROUTE_OVERRIDES = {
 // sidebar or a route until its real page actually exists. Widened as
 // each remaining category is built; never widen this for a category
 // whose render path isn't genuinely done yet.
-const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions", "personalizable-workspaces", "fraud-risk-detection"]);
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions", "personalizable-workspaces", "fraud-risk-detection", "whatif-simulation"]);
 // The real catalog of optional, hideable Dashboard widgets per role — must
 // match DASHBOARD_WIDGET_CATALOG/INVESTOR_WIDGET_CATALOG in the backend's
 // intelligence.js exactly (same keys), since isDashboardWidgetHidden()
@@ -1547,7 +1547,7 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{}, intelligenceFraud:{},
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{}, intelligenceFraud:{}, intelligenceWhatIf:{},
     workspaceState:null };
 
   const isInvestor = session.role === "Investor";
@@ -3592,6 +3592,77 @@ function renderIntelligenceFraud(feature){
   return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
 }
 
+async function loadAdminWhatIfModels(){
+  return withRequest('intel-admin-whatif-models', async ()=>{ DB.adminWhatIfModels = (await api.get('/api/intelligence/whatif-simulation-models')).models; });
+}
+function renderAdminWhatIfModels(){
+  if(!DB.adminWhatIfModels) loadAdminWhatIfModels();
+  if(!DB.adminWhatIfModels) return `<div class="card"><div class="card-title">Simulation Models</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Simulation Models</div>
+    <div class="section-note">The real formula behind every What-If scenario — no forecasting model, just real current data and arithmetic.</div>
+    <div class="table-wrap"><table><tr><th>Kind</th><th>Formula</th></tr>${
+      DB.adminWhatIfModels.map(m=>`<tr><td><strong>${escapeHtml(m.kind)}</strong></td><td>${escapeHtml(m.formula)}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadAdminWhatIfBounds(){
+  return withRequest('intel-admin-whatif-bounds', async ()=>{ DB.adminWhatIfBounds = await api.get('/api/intelligence/whatif-simulation-bounds'); });
+}
+async function submitAdminWhatIfBounds(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  return withRequest('intel-admin-whatif-bounds', async ()=>{
+    DB.adminWhatIfBounds = await api.put('/api/intelligence/whatif-simulation-bounds', { deltaMin: Number(f.deltaMin), deltaMax: Number(f.deltaMax) });
+  }, { mutates: true });
+}
+function renderAdminWhatIfBounds(){
+  if(!DB.adminWhatIfBounds) loadAdminWhatIfBounds();
+  if(!DB.adminWhatIfBounds) return `<div class="card"><div class="card-title">Simulation Bounds</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const b = DB.adminWhatIfBounds;
+  return `<div class="card"><div class="card-title">Simulation Bounds</div>
+    <div class="section-note">The real, live min/max delta every What-If scenario clamps a user's requested change to.</div>
+    <form onsubmit="return submitAdminWhatIfBounds(event)" class="form-grid">
+      <div class="field"><label>Minimum delta</label><input type="number" name="deltaMin" value="${b.deltaMin}"></div>
+      <div class="field"><label>Maximum delta</label><input type="number" name="deltaMax" value="${b.deltaMax}"></div>
+      <div></div>
+      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+    </form></div>`;
+}
+async function loadIntelligenceWhatIf(featureId, delta){
+  return withRequest('whatif-'+featureId, async ()=>{
+    DB.intelligenceWhatIf[featureId] = await api.get('/api/intelligence/whatif/'+featureId+'?delta='+encodeURIComponent(delta));
+  });
+}
+async function submitWhatIfDelta(ev, featureId){
+  ev.preventDefault();
+  const delta = Number(new FormData(ev.target).get('delta'));
+  return loadIntelligenceWhatIf(featureId, delta);
+}
+function fmtWhatIfMetric(value, unit){
+  if(unit==='currency') return fmt(value);
+  if(unit==='%') return value.toFixed(1)+'%';
+  return fmtNum(Math.round(value));
+}
+function renderIntelligenceWhatIf(feature){
+  if(feature.id==='whatif-simulation-models') return renderAdminWhatIfModels();
+  if(feature.id==='whatif-simulation-bounds') return renderAdminWhatIfBounds();
+  if(!DB.intelligenceWhatIf) DB.intelligenceWhatIf = {};
+  const data = DB.intelligenceWhatIf[feature.id];
+  if(!data) loadIntelligenceWhatIf(feature.id, 10);
+  if(!data) return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const bounds = data.deltaBounds || {deltaMin:-50, deltaMax:50};
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>
+    <div class="section-note">${escapeHtml(data.formula)}</div>
+    <form onsubmit="return submitWhatIfDelta(event,'${feature.id}')" class="pill-row">
+      <label style="font-size:13px; color:var(--ink-soft);">Simulated change</label>
+      <input type="number" name="delta" value="${data.delta}" min="${bounds.deltaMin}" max="${bounds.deltaMax}" step="any" style="width:90px;">
+      <button class="btn btn-sm btn-primary" type="submit">Simulate</button>
+    </form>
+    <div class="table-wrap" style="margin-top:12px;"><table><tr><th>Metric</th><th>Baseline</th><th>Projected</th></tr>${
+      data.metrics.map(m=>`<tr><td>${escapeHtml(m.label)}</td><td>${fmtWhatIfMetric(m.baseline,m.unit)}</td><td>${fmtWhatIfMetric(m.projected,m.unit)}</td></tr>`).join("")
+    }</table></div>
+  </div>`;
+}
+
 function renderIntelligence(){
   const catalog = DB && DB.intelligenceCatalog;
   // Same label can legitimately belong to more than one feature across
@@ -3609,6 +3680,7 @@ function renderIntelligence(){
     case "explainable-decisions": return renderIntelligenceExplainable(feature);
     case "personalizable-workspaces": return renderIntelligenceWorkspace(feature);
     case "fraud-risk-detection": return renderIntelligenceFraud(feature);
+    case "whatif-simulation": return renderIntelligenceWhatIf(feature);
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }

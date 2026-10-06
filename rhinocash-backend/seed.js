@@ -180,6 +180,7 @@ async function seedIntelligence() {
     ['explainable-decisions', 'Explainable Decisions', '💡', 3],
     ['personalizable-workspaces', 'Personalizable Workspaces', '🧩', 4],
     ['fraud-risk-detection', 'Fraud & Risk Detection', '🚨', 5],
+    ['whatif-simulation', 'What-If Simulation', '🧮', 6],
   ];
   for (const [id, label, icon, sort] of categories) {
     await run('INSERT INTO intelligence_categories (id, label, icon, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, label, icon, sort]);
@@ -192,6 +193,10 @@ async function seedIntelligence() {
   await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_rapid_writeoff_days', '14') ON CONFLICT DO NOTHING`);
   await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_advance_request_count_threshold', '3') ON CONFLICT DO NOTHING`);
   await run(`INSERT INTO intelligence_settings (key, value) VALUES ('fraud_advance_request_window_days', '30') ON CONFLICT DO NOTHING`);
+  // Default What-If Simulation bounds — real, editable later via
+  // Admin > Intelligence > Simulation Bounds (PUT /api/intelligence/whatif-simulation-bounds).
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('whatif_delta_min', '-50') ON CONFLICT DO NOTHING`);
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('whatif_delta_max', '50') ON CONFLICT DO NOTHING`);
 
   // [id, category_id, label, sort_order] — one row per unique real label
   // across every role's spec; a label repeated verbatim across roles
@@ -310,6 +315,19 @@ async function seedIntelligence() {
     ['fraud-staff-advance-pattern', 'fraud-risk-detection', 'Staff Advance Pattern Alerts', 8],
     ['fraud-detection-rules', 'fraud-risk-detection', 'Fraud Detection Rules', 9],
     ['fraud-thresholds', 'fraud-risk-detection', 'Fraud Thresholds', 10],
+    // What-If Simulation — real arithmetic projections on real current
+    // data (never a forecast model). One feature id per scenario, shared
+    // across every role that holds it, same pattern as every category above.
+    ['whatif-collection-rate', 'whatif-simulation', 'Collection Rate Simulation', 1],
+    ['whatif-disbursement-volume', 'whatif-simulation', 'Disbursement Volume Simulation', 2],
+    ['whatif-portfolio-growth', 'whatif-simulation', 'Portfolio Growth Simulation', 3],
+    ['whatif-par-change', 'whatif-simulation', 'Portfolio Risk Simulation', 4],
+    ['whatif-expense-change', 'whatif-simulation', 'Expense Simulation', 5],
+    ['whatif-revenue-growth', 'whatif-simulation', 'Revenue Growth Simulation', 6],
+    ['whatif-capital-utilization', 'whatif-simulation', 'Capital Utilization Simulation', 7],
+    ['whatif-headcount-change', 'whatif-simulation', 'Headcount & Payroll Simulation', 8],
+    ['whatif-simulation-models', 'whatif-simulation', 'Simulation Models', 9],
+    ['whatif-simulation-bounds', 'whatif-simulation', 'Simulation Bounds', 10],
   ];
   for (const [id, cat, label, sort] of features) {
     await run('INSERT INTO intelligence_features (id, category_id, label, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, cat, label, sort]);
@@ -328,6 +346,7 @@ async function seedIntelligence() {
       'pred-my-collection-prediction', 'pred-client-risk-indicators', 'pred-early-warning-signals',
       'explain-loan-decision-explanation', 'explain-client-risk-explanation', 'explain-collection-priority-explanation',
       'fraud-duplicate-clients', 'fraud-overpayment-pattern',
+      'whatif-collection-rate',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     manager: [
@@ -335,6 +354,7 @@ async function seedIntelligence() {
       'explain-loan-decision-explanation', 'explain-risk-explanation', 'explain-approval-explanation', 'explain-collection-priority-explanation',
       'drill-portfolio', 'drill-collections', 'drill-arrears', 'drill-officer-performance',
       'fraud-duplicate-clients', 'fraud-payment-reversals', 'fraud-rapid-writeoff',
+      'whatif-collection-rate', 'whatif-disbursement-volume',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     regional_manager: [
@@ -342,6 +362,7 @@ async function seedIntelligence() {
       'explain-loan-decisions', 'explain-risk-decisions', 'explain-branch-performance',
       'drill-region', 'drill-branch', 'drill-officer', 'drill-client', 'drill-loan', 'drill-payment',
       'fraud-duplicate-clients', 'fraud-rapid-writeoff', 'fraud-overview',
+      'whatif-collection-rate', 'whatif-portfolio-growth',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     operational_manager: [
@@ -349,6 +370,7 @@ async function seedIntelligence() {
       'explain-approval-decisions', 'explain-risk-decisions', 'explain-operational-alerts',
       'drill-operations', 'drill-branches', 'drill-officers', 'drill-collections', 'drill-portfolio',
       'fraud-payment-reversals', 'fraud-rapid-writeoff', 'fraud-officer-approval-pattern',
+      'whatif-disbursement-volume', 'whatif-par-change',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     accountant: [
@@ -356,6 +378,7 @@ async function seedIntelligence() {
       'explain-payment-allocation', 'explain-financial-exceptions', 'explain-accounting-adjustments',
       'drill-revenue', 'drill-collections', 'drill-disbursements', 'drill-expenses', 'drill-profitability', 'drill-cashflow',
       'fraud-payment-reversals', 'fraud-overpayment-pattern',
+      'whatif-expense-change', 'whatif-par-change',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     ceo: [
@@ -363,6 +386,7 @@ async function seedIntelligence() {
       'explain-credit-decisions', 'explain-risk-decisions', 'explain-business-alerts', 'explain-performance-changes',
       'drill-company', 'drill-region', 'drill-branch', 'drill-officer', 'drill-client', 'drill-loan', 'drill-payment',
       'fraud-overview', 'fraud-branch-risk-ranking',
+      'whatif-revenue-growth', 'whatif-par-change',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     director: [
@@ -370,6 +394,7 @@ async function seedIntelligence() {
       'explain-strategic-decisions', 'explain-credit-decisions', 'explain-risk-decisions', 'explain-financial-changes',
       'drill-company', 'drill-region', 'drill-branch', 'drill-product', 'drill-portfolio', 'drill-loan',
       'fraud-officer-approval-pattern', 'fraud-overview',
+      'whatif-revenue-growth', 'whatif-capital-utilization',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     hr: [
@@ -377,6 +402,7 @@ async function seedIntelligence() {
       'explain-performance-decisions', 'explain-hr-alerts',
       'drill-organization', 'drill-department', 'drill-branch', 'drill-employee',
       'fraud-staff-advance-pattern',
+      'whatif-headcount-change',
       'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
     ],
     admin: [
@@ -386,6 +412,7 @@ async function seedIntelligence() {
       'explain-explanation-rules', 'explain-decision-factors',
       'drill-analytics-configuration', 'drill-kpi-configuration',
       'fraud-detection-rules', 'fraud-thresholds',
+      'whatif-simulation-models', 'whatif-simulation-bounds',
       'workspace-templates', 'workspace-widget-management', 'workspace-role-defaults',
     ],
   };

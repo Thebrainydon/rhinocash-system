@@ -11,6 +11,7 @@ const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { effectiveIntelligenceFeatures, hasIntelligenceAccess, branchIdsInScope, hasInvestorIntelligenceAccess } = require('./../rbac');
 const { computePAR, ledgerBalance } = require('./accounting');
+const { collectionTotals } = require('./collections');
 const { verifyToken, tokenHash } = require('./../crypto');
 const crypto = require('node:crypto');
 
@@ -601,6 +602,167 @@ async function computeFraud(featureId, req) {
   }
 }
 
+// ---- What-If Simulation -------------------------------------------------
+// Real arithmetic projections on real CURRENT data — never a forecast
+// model, never invented future data. Every scenario starts from a real
+// baseline (today's actual collection rate, actual PAR, actual revenue,
+// ...), applies the caller's own delta, and reports both numbers side by
+// side with an honest, literal formula string. Two deltas semantics,
+// stated per metric: "percentage points" (rates already expressed as a
+// %, e.g. collection rate, PAR, capital utilization) or "percentage
+// change" (amounts, e.g. disbursement volume, revenue, payroll) — a rate
+// cannot sensibly be scaled multiplicatively the same way an amount can.
+async function getWhatIfSettings() {
+  const rows = await all("SELECT key, value FROM intelligence_settings WHERE key IN ('whatif_delta_min','whatif_delta_max')");
+  const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  const n = (key, def) => { const v = parseFloat(byKey[key]); return Number.isFinite(v) ? v : def; };
+  return { deltaMin: n('whatif_delta_min', -50), deltaMax: n('whatif_delta_max', 50) };
+}
+function clampDelta(deltaRaw, bounds) {
+  const d = parseFloat(deltaRaw);
+  if (!Number.isFinite(d)) return 0;
+  return Math.max(bounds.deltaMin, Math.min(bounds.deltaMax, d));
+}
+async function computeWhatIf(featureId, req, deltaRaw) {
+  const scope = await branchIdsInScope(req.user);
+  const bounds = await getWhatIfSettings();
+  const delta = clampDelta(deltaRaw, bounds);
+  const loanScope = scopeClause(scope, 'l.branch_id');
+  const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  switch (featureId) {
+    case 'whatif-collection-rate': {
+      const loanIds = (await all(
+        `SELECT l.id FROM loans l WHERE ${loanScope.clause} ${officerId ? 'AND l.officer_id = ?' : ''}`,
+        officerId ? [...loanScope.params, officerId] : loanScope.params
+      )).map(r => r.id);
+      const { expected, collected } = await collectionTotals(loanIds, monthStart, today);
+      const baselineRate = expected > 0 ? (collected / expected * 100) : 0;
+      const projectedRate = Math.max(0, baselineRate + delta);
+      const projectedCollected = expected * (projectedRate / 100);
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Collection Rate: delta is added as percentage points to the real current month-to-date rate. Projected Collections = month-to-date expected amount × the projected rate.',
+        metrics: [
+          { label: 'Collection Rate', baseline: baselineRate, projected: projectedRate, unit: '%' },
+          { label: 'Projected Collections (MTD)', baseline: collected, projected: projectedCollected, unit: 'currency' },
+        ],
+      };
+    }
+    case 'whatif-disbursement-volume': {
+      const row = await get(
+        `SELECT COALESCE(SUM(l.principal),0) as v FROM loans l WHERE ${loanScope.clause} AND l.disbursed_at LIKE ?`,
+        [...loanScope.params, `${monthKeyOffset(0)}%`]
+      );
+      const projected = row.v * (1 + delta / 100);
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Disbursement Volume: delta is applied as a percentage change to the real current month-to-date disbursed principal.',
+        metrics: [{ label: 'Disbursement Volume (MTD)', baseline: row.v, projected, unit: 'currency' }],
+      };
+    }
+    case 'whatif-portfolio-growth': {
+      const row = await get(
+        `SELECT COALESCE(SUM(ls.total_due - ls.paid_amount),0) as outstanding FROM loan_schedule ls JOIN loans l ON l.id = ls.loan_id WHERE ${loanScope.clause} AND l.status IN ('Active','Disbursed')`,
+        loanScope.params
+      );
+      const baseline = Math.max(0, row.outstanding);
+      const projected = baseline * (1 + delta / 100);
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Portfolio Growth: delta is applied as a percentage change to the real current outstanding loan balance in your region.',
+        metrics: [{ label: 'Portfolio Outstanding', baseline, projected, unit: 'currency' }],
+      };
+    }
+    case 'whatif-par-change': {
+      const risk = await riskView(scope);
+      const par30 = risk.par.find(p => p.threshold === 30) || { percentage: 0 };
+      const projectedPct = Math.max(0, Math.min(100, par30.percentage + delta));
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: `PAR Change: delta is added as percentage points to the real current PAR-30 (${risk.formula}). Provision for bad debts is not modeled here — see the real, editable tiered-rate provision on the Accountant dashboard.`,
+        metrics: [{ label: 'PAR-30', baseline: par30.percentage, projected: projectedPct, unit: '%' }],
+      };
+    }
+    case 'whatif-expense-change': {
+      const row = await get(`SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE created_at LIKE ?`, [`${monthKeyOffset(0)}%`]);
+      const revenueRow = await get(
+        `SELECT COALESCE(SUM(je.credit),0) as v FROM journal_entries je JOIN payments p ON p.id = je.ref_id AND je.ref_type='payment' JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND je.entry_date LIKE ?`,
+        [...loanScope.params, `${monthKeyOffset(0)}%`]
+      );
+      const projectedExpenses = row.v * (1 + delta / 100);
+      const baselineProfit = revenueRow.v - row.v;
+      const projectedProfit = revenueRow.v - projectedExpenses;
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Expense Change: delta is applied as a percentage change to the real current month-to-date expenses. Net Profit = real revenue (held constant) − expenses.',
+        metrics: [
+          { label: 'Expenses (MTD)', baseline: row.v, projected: projectedExpenses, unit: 'currency' },
+          { label: 'Net Profit (MTD)', baseline: baselineProfit, projected: projectedProfit, unit: 'currency' },
+        ],
+      };
+    }
+    case 'whatif-revenue-growth': {
+      const revenueRow = await get(
+        `SELECT COALESCE(SUM(je.credit),0) as v FROM journal_entries je JOIN payments p ON p.id = je.ref_id AND je.ref_type='payment' JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND je.entry_date LIKE ?`,
+        [...loanScope.params, `${monthKeyOffset(0)}%`]
+      );
+      const expensesRow = await get(`SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE created_at LIKE ?`, [`${monthKeyOffset(0)}%`]);
+      const projectedRevenue = revenueRow.v * (1 + delta / 100);
+      const baselineProfit = revenueRow.v - expensesRow.v;
+      const projectedProfit = projectedRevenue - expensesRow.v;
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Revenue Growth: delta is applied as a percentage change to the real current month-to-date revenue. Net Profit = projected revenue − real expenses (held constant).',
+        metrics: [
+          { label: 'Revenue (MTD)', baseline: revenueRow.v, projected: projectedRevenue, unit: 'currency' },
+          { label: 'Net Profit (MTD)', baseline: baselineProfit, projected: projectedProfit, unit: 'currency' },
+        ],
+      };
+    }
+    case 'whatif-capital-utilization': {
+      // Share capital has no real backing table in this system yet (the
+      // Director dashboard's own "Ownership & Equity" card is explicitly
+      // browser-session-only, not database-backed) — so this uses only
+      // the real, persisted investor capital, not a fabricated combined
+      // "total capital employed" figure.
+      const outstandingRow = await get(
+        `SELECT COALESCE(SUM(ls.total_due - ls.paid_amount),0) as outstanding FROM loan_schedule ls JOIN loans l ON l.id = ls.loan_id WHERE l.status IN ('Active','Disbursed')`
+      );
+      const investorCapitalRow = await get(`SELECT COALESCE(SUM(amount),0) as v FROM investors WHERE status = 'Active'`);
+      const totalInvestorCapital = investorCapitalRow.v;
+      const baselineDeployed = Math.max(0, outstandingRow.outstanding);
+      const projectedDeployed = baselineDeployed * (1 + delta / 100);
+      const baselineUtilization = totalInvestorCapital > 0 ? (baselineDeployed / totalInvestorCapital * 100) : 0;
+      const projectedUtilization = totalInvestorCapital > 0 ? (projectedDeployed / totalInvestorCapital * 100) : 0;
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Investor Capital Utilization: delta is applied as a percentage change to the real current capital deployed (outstanding loan book). Utilization = capital deployed ÷ real active investor capital (share capital has no database-backed figure yet, so it is not included).',
+        metrics: [
+          { label: 'Capital Deployed', baseline: baselineDeployed, projected: projectedDeployed, unit: 'currency' },
+          { label: 'Investor Capital Utilization', baseline: baselineUtilization, projected: projectedUtilization, unit: '%' },
+        ],
+      };
+    }
+    case 'whatif-headcount-change': {
+      const row = await get(`SELECT COUNT(*) as n, COALESCE(SUM(basic_salary),0) as payroll FROM users WHERE status = 'Active'`);
+      const projectedHeadcount = Math.round(row.n * (1 + delta / 100));
+      const projectedPayroll = row.payroll * (1 + delta / 100);
+      return {
+        featureId, kind: 'projection', delta, deltaBounds: bounds,
+        formula: 'Headcount & Payroll: delta is applied as a percentage change to the real current active headcount and the real current total monthly basic_salary payroll (scaled proportionally).',
+        metrics: [
+          { label: 'Headcount', baseline: row.n, projected: projectedHeadcount, unit: 'count' },
+          { label: 'Monthly Payroll Cost', baseline: row.payroll, projected: projectedPayroll, unit: 'currency' },
+        ],
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 function requireAdminOnly(action) {
   return (req, res, next) => {
     if (req.user.role_id !== 'admin') {
@@ -699,6 +861,61 @@ function register(router) {
     }
     await logAction(req, { action: 'Changed Fraud thresholds', module: 'intelligence', recordType: 'IntelligenceSetting', recordId: 'fraud-thresholds', newValue: fields });
     res.json(await getFraudSettings());
+  });
+
+  // What-If Simulation — same inline-check pattern. delta comes from the
+  // query string (a real user input, not a stored scenario) and is
+  // always clamped server-side to the real, Admin-editable bounds below.
+  router.get('/api/intelligence/whatif/:kind', requireAuth, async (req, res, next) => {
+    if (!(await hasIntelligenceAccess(req.user, req.params.kind))) {
+      return next({ status: 403, message: `You do not have access to the "${req.params.kind}" Intelligence feature` });
+    }
+    const result = await computeWhatIf(req.params.kind, req, req.query.delta);
+    if (!result) return next({ status: 404, message: `No simulation available for "${req.params.kind}"` });
+    res.json(result);
+  });
+
+  // Admin > Intelligence > What-If Simulation > "Simulation Models" — a
+  // real, honest account of every scenario's actual formula (no invented
+  // forecasting engine).
+  router.get('/api/intelligence/whatif-simulation-models', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Simulation Models'), async (req, res) => {
+    res.json({
+      models: [
+        { kind: 'whatif-collection-rate', formula: 'Real month-to-date expected/collected amounts (the same collectionTotals() Collection Rate/MTD pages use); delta is added in percentage points.' },
+        { kind: 'whatif-disbursement-volume', formula: 'Real month-to-date disbursed principal; delta is a percentage change.' },
+        { kind: 'whatif-portfolio-growth', formula: 'Real current outstanding loan balance in scope; delta is a percentage change.' },
+        { kind: 'whatif-par-change', formula: 'Real current PAR-30 (the same computePAR() every other Intelligence category and Reports/LoanBook use); delta is added in percentage points. Provision for bad debts is not modeled.' },
+        { kind: 'whatif-expense-change', formula: 'Real month-to-date expenses and revenue; delta applies to expenses only (percentage change), revenue held constant.' },
+        { kind: 'whatif-revenue-growth', formula: 'Real month-to-date revenue and expenses; delta applies to revenue only (percentage change), expenses held constant.' },
+        { kind: 'whatif-capital-utilization', formula: 'Real outstanding loan book ÷ real active investor capital; delta applies to the loan book (percentage change).' },
+        { kind: 'whatif-headcount-change', formula: 'Real active headcount and real total basic_salary payroll; delta applies to both proportionally (percentage change).' },
+      ],
+    });
+  });
+  // Admin > Intelligence > What-If Simulation > "Simulation Bounds" — the
+  // real, persisted, editable min/max delta every scenario above clamps
+  // to, so a user can never request a nonsensical simulated change.
+  router.get('/api/intelligence/whatif-simulation-bounds', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Simulation Bounds'), async (req, res) => {
+    res.json(await getWhatIfSettings());
+  });
+  router.put('/api/intelligence/whatif-simulation-bounds', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit Simulation Bounds'), async (req, res, next) => {
+    const min = parseFloat(req.body.deltaMin);
+    const max = parseFloat(req.body.deltaMax);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max || min < -1000 || max > 1000) {
+      return next({ status: 400, message: 'deltaMin must be less than deltaMax, both within [-1000, 1000]' });
+    }
+    await run(
+      `INSERT INTO intelligence_settings (key, value, updated_by, updated_at) VALUES ('whatif_delta_min', ?, ?, iso_now())
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [String(min), req.user.id]
+    );
+    await run(
+      `INSERT INTO intelligence_settings (key, value, updated_by, updated_at) VALUES ('whatif_delta_max', ?, ?, iso_now())
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [String(max), req.user.id]
+    );
+    await logAction(req, { action: 'Changed What-If simulation bounds', module: 'intelligence', recordType: 'IntelligenceSetting', recordId: 'whatif-simulation-bounds', newValue: { min, max } });
+    res.json(await getWhatIfSettings());
   });
 
   // Admin > Intelligence > Explainable Decisions > "Explanation Rules" /
