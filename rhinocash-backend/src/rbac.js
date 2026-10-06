@@ -33,6 +33,46 @@ async function hasModuleAccess(user, moduleId) {
   return (await effectiveModules(user)).includes(moduleId);
 }
 
+// ---- Intelligence feature access — same real data-driven shape as the
+// module model above (role_intelligence_access / user_intelligence_access
+// mirror role_modules / user_module_access exactly), just at individual
+// submenu-item granularity instead of whole-section granularity. A role
+// created via POST /api/roles (a "custom role") gets rows here through the
+// exact same generic grant endpoint every structural role uses — nothing
+// is hardcoded to the 9 named roles.
+async function roleIntelligenceFeatures(roleId) {
+  const rows = await all('SELECT feature_id FROM role_intelligence_access WHERE role_id = ?', [roleId]);
+  return rows.map(r => r.feature_id);
+}
+
+async function effectiveIntelligenceFeatures(user) {
+  const base = await roleIntelligenceFeatures(user.role_id);
+  const overrideRows = await all('SELECT feature_id FROM user_intelligence_access WHERE user_id = ?', [user.id]);
+  if (overrideRows.length === 0) return base;
+  const overrideSet = new Set(overrideRows.map(r => r.feature_id));
+  return base.filter(f => overrideSet.has(f));
+}
+
+async function hasIntelligenceAccess(user, featureId) {
+  return (await effectiveIntelligenceFeatures(user)).includes(featureId);
+}
+
+// Investor is not a row in `roles` (a structurally separate principal
+// type/table — see seedRoles()'s comment and investors.js), so it can
+// never hold a role_intelligence_access row. This mirrors the exact
+// pre-existing pattern Investor's NAV_PERMISSIONS/SIDEBAR_MENUS already
+// use in index.html: a small, explicit, hand-maintained grant list rather
+// than one read from the dynamic per-role tables.
+const INVESTOR_INTELLIGENCE_FEATURES = [
+  'pred-investment-performance', 'pred-portfolio-performance', 'pred-profit-forecast', 'pred-investment-return-forecast',
+  'explain-investment-performance', 'explain-major-portfolio-changes',
+  'drill-investment', 'drill-portfolio', 'drill-profit', 'drill-distributions',
+  'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences',
+];
+function hasInvestorIntelligenceAccess(featureId) {
+  return INVESTOR_INTELLIGENCE_FEATURES.includes(featureId);
+}
+
 // Effective action permission = personal override wins, else role default.
 async function hasPermission(user, permissionId) {
   const override = await get(
@@ -129,6 +169,7 @@ async function computeFinalAccess(user) {
     branch: branch ? branch.name : null,
     region: region ? region.name : null,
     modules: await effectiveModules(user),
+    intelligence: await effectiveIntelligenceFeatures(user),
     finalLine: `${role ? role.name : user.role_id} — ${user.access_level}`,
   };
 }
@@ -148,6 +189,8 @@ function canActOnStaffRecord(actor, targetRoleId) {
 
 module.exports = {
   roleModules, rolePermissions, effectiveModules, hasModuleAccess, hasPermission,
+  roleIntelligenceFeatures, effectiveIntelligenceFeatures, hasIntelligenceAccess,
+  INVESTOR_INTELLIGENCE_FEATURES, hasInvestorIntelligenceAccess,
   branchScopeSQL, branchIdsInScope, isBranchAllowed, assertRecordInScope, resolveWriteBranchId,
   computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES,
 };

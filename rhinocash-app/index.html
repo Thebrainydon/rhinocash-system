@@ -536,7 +536,19 @@ const CAN_MANAGE_SETTINGS = r => hasPermission(r, "Manage System Settings");
 function isSectionAllowed(section){
   if(section==="placeholder") return true;
   const base = NAV_PERMISSIONS[session.role] || [];
-  if(!base.includes(section)) return false;
+  // "intelligence" is deliberately exempt from the NAV_PERMISSIONS gate —
+  // that map is a hardcoded object keyed by the 9 structural roles' exact
+  // display names (plus Investor), so a custom role created through
+  // POST /api/roles (which gets no entry here at all, base=[]) would
+  // otherwise be unable to reach Intelligence no matter what Admin grants
+  // it through PUT /api/roles/:id/intelligence — defeating the one
+  // explicit "must work with the custom-role system" requirement this
+  // module has. Real authorization still fully applies: which items even
+  // appear is built from the session's own real finalAccess.intelligence
+  // (buildIntelligenceSections()), and every data request is re-checked
+  // server-side per individual feature (requireIntelligenceFeature/
+  // hasIntelligenceAccess) regardless of this client-side section gate.
+  if(section!=="intelligence" && !base.includes(section)) return false;
   if(session.role==="Investor") return true;
   // "notifications" is deliberately not a real backend module (see
   // seed.js's `modules` list and misc.js's /api/notifications route, which
@@ -547,6 +559,15 @@ function isSectionAllowed(section){
   // (which never includes "notifications", since it isn't one of the 12
   // real modules to begin with) got "Access denied" trying to view it.
   if(section==="notifications") return true;
+  // Same reasoning as "notifications" above, for the second-level
+  // per-user finalAccess.modules check: "intelligence" is governed by its
+  // own entirely separate real permission tables (role_intelligence_access/
+  // user_intelligence_access), never by the 12 real backend modules this
+  // list is drawn from, so it can never appear in it — without this, any
+  // user with a custom per-user module restriction set by Admin would get
+  // "Access denied" here regardless of their real, server-granted
+  // Intelligence features.
+  if(section==="intelligence") return true;
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
   // after any per-user Admin-set restriction. This is a UI hint only;
@@ -932,6 +953,10 @@ const LABEL_ROUTES = {
   "Staff Portfolios": {section:"staff-portfolios"},
   "Daily Workplan": {section:"staff-workplans"},
   "View Employees": {section:"staff", subtab:"Company Employees"},
+  // HR's Intelligence > Drill-Down Analytics > "Employee" item reuses this
+  // exact real page rather than a second, duplicate employee listing —
+  // per the spec's own "integrate rather than duplicate" rule.
+  "Employee": {section:"staff", subtab:"Company Employees"},
   "Create User": {section:"staff", subtab:"Create User"},
   "Roles": {section:"staff", subtab:"Roles"},
   "Create Role": {section:"staff", subtab:"Create Role"},
@@ -1118,6 +1143,13 @@ const ROLE_ROUTE_OVERRIDES = {
     "Create a Ticket": null,
   },
 };
+// Intelligence categories with a real, built render path — gated
+// explicitly so a feature already seeded/granted (role_intelligence_access
+// is seeded for every Phase-1 category up front) never reaches the
+// sidebar or a route until its real page actually exists. Widened as
+// each remaining category is built; never widen this for a category
+// whose render path isn't genuinely done yet.
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics"]);
 function resolveRoute(itemLabel){
   const override = ROLE_ROUTE_OVERRIDES[session.role];
   // `in`, not truthiness — a real override can deliberately be `null`
@@ -1125,7 +1157,21 @@ function resolveRoute(itemLabel){
   // the generic LABEL_ROUTES fallback below, not just fail to provide
   // one of its own.
   if(override && itemLabel in override) return override[itemLabel];
-  return LABEL_ROUTES[itemLabel];
+  if(LABEL_ROUTES[itemLabel]) return LABEL_ROUTES[itemLabel];
+  // Intelligence: a label with no existing route that matches a real,
+  // built-category feature this session actually holds (same real grant
+  // list buildIntelligenceSections() renders the sidebar from) routes to
+  // the shared Intelligence page, keyed by its own exact label. A label
+  // matching an unbuilt-category feature, or no feature at all, correctly
+  // falls through to undefined (placeholder) below — never shown in the
+  // sidebar in the first place, so never reachable by a real click.
+  const catalog = DB && DB.intelligenceCatalog;
+  if(catalog && catalog.features && catalog.features.length){
+    const granted = new Set((DB.me && DB.me.finalAccess && DB.me.finalAccess.intelligence) || []);
+    const feature = catalog.features.find(f=>f.label===itemLabel && granted.has(f.id) && BUILT_INTELLIGENCE_CATEGORIES.has(f.category_id));
+    if(feature) return {section:"intelligence", subtab:itemLabel};
+  }
+  return undefined;
 }
 function sidebarNavigate(itemLabel){
   // "Create a Lead" is a quick action reachable from anywhere, not a page
@@ -1434,10 +1480,18 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{} };
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{} };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
+  // The Intelligence feature catalog (categories + every feature's id/
+  // label) — needed by every principal type, staff and Investor alike, to
+  // label the dynamic Intelligence sidebar section built from this user's
+  // own real finalAccess.intelligence grant list (see renderApp()). Not
+  // itself permission-gated: it's just ids/labels, no data, and every
+  // authenticated principal needs it purely to render their own already-
+  // granted items.
+  calls.push(api.get('/api/intelligence/catalog').then(r=>{ DB.intelligenceCatalog = { categories: r.categories, features: r.features }; }).catch(()=>{ DB.intelligenceCatalog = { categories: [], features: [] }; }));
   // These three are staff-only (requireAuth rejects an investor token
   // outright — investors have no role_id at all, by design). Calling them
   // unconditionally for an investor session was a real bug: the resulting
@@ -2176,6 +2230,35 @@ function initPendingCharts(){
   });
 }
 
+// Builds the real, permission-driven Intelligence sidebar sections for
+// the current session — one collapsible section per Intelligence
+// category the user actually has a granted feature in, containing only
+// the specific feature labels really granted (the server's own
+// finalAccess.intelligence — role default intersected with any per-user
+// override, exactly as rbac.js's effectiveIntelligenceFeatures computes
+// it; this never recomputes that logic client-side, just renders it).
+// Never hardcoded per role name: a brand-new custom role shows exactly
+// what Admin granted it through PUT /api/roles/:id/intelligence,
+// automatically, with no sidebar code change.
+function buildIntelligenceSections(){
+  const catalog = DB && DB.intelligenceCatalog;
+  if(!catalog || !catalog.categories || !catalog.categories.length) return [];
+  const granted = new Set((DB.me && DB.me.finalAccess && DB.me.finalAccess.intelligence) || []);
+  if(!granted.size) return [];
+  const featuresByCategory = {};
+  (catalog.features||[]).forEach(f=>{
+    // Never show a category whose real page isn't built yet, even though
+    // its grants are already seeded — avoids a sidebar item with nowhere
+    // real to go (see BUILT_INTELLIGENCE_CATEGORIES, defined alongside
+    // resolveRoute()).
+    if(!granted.has(f.id) || !BUILT_INTELLIGENCE_CATEGORIES.has(f.category_id)) return;
+    (featuresByCategory[f.category_id] = featuresByCategory[f.category_id] || []).push(f);
+  });
+  return catalog.categories
+    .filter(c => featuresByCategory[c.id] && featuresByCategory[c.id].length)
+    .map(c => ({ section: c.label, icon: c.icon, items: featuresByCategory[c.id].map(f=>f.label) }));
+}
+
 function renderApp(){
   const root = document.getElementById('root');
   if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
@@ -2186,7 +2269,15 @@ function renderApp(){
   // POST /api/auth/change-password every other "change my password" form
   // in this app already uses.
   if(session.mustChangePassword){ root.innerHTML = renderForcedPasswordReset() + (modal ? renderModal() : ""); return; }
-  const menu = SIDEBAR_MENUS[session.role] || [];
+  const baseMenu = SIDEBAR_MENUS[session.role] || [];
+  // Intelligence sits immediately before My Account for every role, per
+  // spec — spliced in dynamically (never a static per-role array) right
+  // before whichever entry is this role's own "My Account" section.
+  const intelSections = buildIntelligenceSections();
+  const myAccountIdx = baseMenu.findIndex(s=>s.section==="My Account");
+  const menu = !intelSections.length ? baseMenu
+    : myAccountIdx===-1 ? [...baseMenu, ...intelSections]
+    : [...baseMenu.slice(0,myAccountIdx), ...intelSections, ...baseMenu.slice(myAccountIdx)];
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
   // rendered for every role (Investor included) below.
@@ -2718,8 +2809,134 @@ function renderSection(){
     case "business-analytics": return renderBusinessAnalyticsModule();
     case "support": return renderSupport();
     case "account": return renderAccount();
+    case "intelligence": return renderIntelligence();
     case "placeholder": return renderPlaceholder();
     default: return "";
+  }
+}
+// Intelligence — one shared dispatcher for every category, keyed by the
+// clicked item's own exact label (session.subtab), resolved back to its
+// real feature id via the catalog. Each category gets its own real
+// sub-renderer as it's built (see BUILT_INTELLIGENCE_CATEGORIES); this
+// function grows a new `case` per category, never a new top-level section.
+async function loadIntelligenceDrillDown(featureId){
+  return withRequest('intel-drilldown-'+featureId, async ()=>{
+    const r = await api.get('/api/intelligence/drilldown/'+featureId);
+    DB.intelligenceDrillDown[featureId] = r;
+  });
+}
+// Generic renderer for every Drill-Down Analytics feature with no
+// existing-page equivalent — one real server-computed JSON shape per
+// dimension (see intelligence.js's computeDrillDown()), rendered as a
+// simple real table/stat row. Genuinely new dimensions only; "Collections",
+// "Arrears", "Branches", "Revenue", "Disbursements", "Expenses", "Cashflow"
+// and "Employee" all resolve to their own existing real page instead (see
+// LABEL_ROUTES) and never reach this function at all.
+// Investor sessions authenticate via requireInvestorAuth (req.investor),
+// never requireAuth (req.user) — the generic staff
+// /api/intelligence/drilldown/:dimension endpoint would 401 them
+// outright. Investor's 4 drill-down items are instead rendered purely
+// from the real investor-scoped data every Investor session already
+// loads at login (DB.me, DB.investorPayouts, DB.investorCompanyPerformance
+// — the exact same real fields renderInvestorDashboard() itself uses),
+// never a second fetch.
+function renderInvestorIntelligenceDrillDown(feature){
+  const kpis = (items) => `<div class="kpi-tile-grid" style="margin-bottom:12px;">${items.map(([label,value])=>
+    `<div class="kpi"><div class="kpi-value" style="font-size:20px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`
+  ).join("")}</div>`;
+  const inv = DB.me || {};
+  const payouts = (DB.investorPayouts||[]).filter(p=>p.investorId===inv.id).sort((a,b)=>(a.period||"").localeCompare(b.period||""));
+  const profitEarned = payouts.reduce((s,r)=>s+(r.investorProfit||0),0);
+  const profitPaid = payouts.filter(r=>r.status==="Paid").reduce((s,r)=>s+(r.investorProfit||0),0);
+  let body;
+  switch(feature.id){
+    case 'drill-investment':
+      body = kpis([["Amount Invested",fmt(inv.amount||0)],["Profit Share",`${inv.profitSharePct||0}%`],["Term",`${inv.termMonths||0} months`],["Status",escapeHtml(inv.status||"—")]]);
+      break;
+    case 'drill-portfolio': {
+      const perf = DB.investorCompanyPerformance || {};
+      body = kpis([["Active Clients",perf.activeClients||0],["Outstanding Portfolio",fmt(perf.outstandingPortfolio||0)],["All-Time Interest Income",fmt(perf.allTimeInterestIncome||0)]]);
+      break;
+    }
+    case 'drill-profit':
+      body = kpis([["Profit Earned",fmt(profitEarned)],["Profit Paid",fmt(profitPaid)],["Profit Pending",fmt(profitEarned-profitPaid)]]);
+      break;
+    case 'drill-distributions':
+      body = `<div class="table-wrap"><table><tr><th>Period</th><th>Profit</th><th>Status</th></tr>${
+        payouts.map(p=>`<tr><td>${escapeHtml(p.period||"—")}</td><td>${fmtNum(p.investorProfit||0)}</td><td><span class="badge ${p.status==='Paid'?'green':'amber'}">${escapeHtml(p.status||"—")}</span></td></tr>`).join("") || `<tr><td colspan="3" class="empty">No distributions recorded yet.</td></tr>`
+      }</table></div>`;
+      break;
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
+function renderIntelligenceDrillDown(feature){
+  if(session.role==="Investor") return renderInvestorIntelligenceDrillDown(feature);
+  if(!DB.intelligenceDrillDown) DB.intelligenceDrillDown = {};
+  const data = DB.intelligenceDrillDown[feature.id];
+  if(!data) loadIntelligenceDrillDown(feature.id);
+  if(!data) return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
+  // Reuses the exact real .kpi-tile-grid/.kpi/.kpi-value/.kpi-label classes
+  // every dashboard's kpiTiles()/statGrid() already use — no new CSS.
+  const kpis = (items) => `<div class="kpi-tile-grid" style="margin-bottom:12px;">${items.map(([label,value])=>
+    `<div class="kpi"><div class="kpi-value" style="font-size:20px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`
+  ).join("")}</div>`;
+  let body;
+  switch(feature.id){
+    case 'drill-portfolio':
+      body = kpis([["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)],["Outstanding Balance",fmt(data.outstandingBalance)]]);
+      break;
+    case 'drill-officer': case 'drill-officers': case 'drill-officer-performance':
+      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.officers,['name','activeloans','principal'])}</table></div>`;
+      break;
+    case 'drill-region':
+      body = `<div class="table-wrap"><table><tr><th>Region</th><th>Branches</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.regions,['name','branchcount','activeloans','principal'])}</table></div>`;
+      break;
+    case 'drill-branch':
+      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.branches,['name','activeloans','principal'])}</table></div>`;
+      break;
+    case 'drill-client':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Outstanding</th></tr>${rowsFor(data.topClientsByOutstanding,['name','outstanding'])}</table></div>`;
+      break;
+    case 'drill-loan':
+      body = `<div class="table-wrap"><table><tr><th>Status</th><th>Loans</th><th>Principal</th></tr>${rowsFor(data.byStatus,['status','loancount','principal'])}</table></div>`;
+      break;
+    case 'drill-payment':
+      body = `<div class="section-note">Last 30 days, within your scope.</div><div class="table-wrap"><table><tr><th>Channel</th><th>Payments</th><th>Amount</th></tr>${rowsFor(data.last30DaysByChannel,['channel','paymentcount','amount'])}</table></div>`;
+      break;
+    case 'drill-operations':
+      body = kpis([["Branches",data.branchCount],["Officers",data.officerCount],["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)]]);
+      break;
+    case 'drill-profitability':
+      body = `<div class="section-note">${data.month}, within your scope.</div>` + kpis([["Revenue",fmt(data.revenue)],["Expenses",fmt(data.expenses)],["Net Profit",fmt(data.netProfit)],["Margin",data.marginPct.toFixed(1)+"%"]]);
+      break;
+    case 'drill-company':
+      body = kpis([["Total Clients",data.totalClients],["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)],["Branches",data.branchCount],["Staff",data.staffCount]]);
+      break;
+    case 'drill-product':
+      body = `<div class="table-wrap"><table><tr><th>Product</th><th>Loans</th><th>Principal</th><th>Avg Size</th></tr>${rowsFor(data.products,['name','loancount','principal','avgsize'])}</table></div>`;
+      break;
+    case 'drill-organization':
+      body = kpis([["Departments",data.departmentCount],["Branches",data.branchCount],["Employees",data.employeeCount]]) +
+        `<div class="table-wrap"><table><tr><th>Employment Status</th><th>Count</th></tr>${rowsFor(data.byEmploymentStatus,['employment_status','n'])}</table></div>`;
+      break;
+    case 'drill-department':
+      body = `<div class="table-wrap"><table><tr><th>Department</th><th>Employees</th></tr>${rowsFor(data.departments,['name','employeecount'])}</table></div>`;
+      break;
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
+function renderIntelligence(){
+  const catalog = DB && DB.intelligenceCatalog;
+  const feature = catalog && (catalog.features||[]).find(f=>f.label===session.subtab);
+  if(!feature) return `<div class="empty">Unknown Intelligence feature.</div>`;
+  switch(feature.category_id){
+    case "drilldown-analytics": return renderIntelligenceDrillDown(feature);
+    default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }
 function renderPlaceholder(){

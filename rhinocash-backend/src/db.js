@@ -1205,6 +1205,52 @@ CREATE INDEX IF NOT EXISTS idx_payments_loan ON payments(loan_id);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- ===================== Intelligence module access model =====================
+-- Mirrors the modules/role_modules/user_module_access pattern exactly, but
+-- at the finer "feature" (individual submenu item) granularity the real
+-- spec requires (e.g. grant "Predictive Analytics > Collection Prediction"
+-- alone, not the whole category). Fully data-driven — a role created
+-- through POST /api/roles (is_system=0, a "custom role") gets rows in
+-- role_intelligence_access exactly the same way the 9 structural roles do,
+-- via the same generic grant endpoint; nothing here is hardcoded to a
+-- fixed role list.
+CREATE TABLE IF NOT EXISTS intelligence_categories (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL UNIQUE,
+  icon TEXT NOT NULL DEFAULT '🧠',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS intelligence_features (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL REFERENCES intelligence_categories(id),
+  label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS role_intelligence_access (
+  role_id TEXT NOT NULL REFERENCES roles(id),
+  feature_id TEXT NOT NULL REFERENCES intelligence_features(id),
+  PRIMARY KEY (role_id, feature_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_intelligence_access (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  feature_id TEXT NOT NULL REFERENCES intelligence_features(id),
+  PRIMARY KEY (user_id, feature_id)
+);
+
+-- Personalizable Workspaces: a real, per-user saved dashboard layout
+-- (which cards/widgets show and in what order), distinct from the
+-- existing report_filter_presets (extended below with a scope column
+-- to become the generic "Saved Views" store reused across every
+-- Intelligence drill-down screen, not just Reports).
+CREATE TABLE IF NOT EXISTS user_workspace_preferences (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  layout_json TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
 `;
 
 // The FK additions on branches.manager_id / branch_proposals.* reference
@@ -1369,6 +1415,13 @@ async function initSchema() {
   // (see POST /api/leads/:id/convert, which previously only ever assigned
   // the CONVERTER, never the lead's own real intended officer).
   await ensureColumn('client_leads', 'officer_id TEXT REFERENCES users(id)');
+  // Generalizes the existing report_filter_presets store (previously
+  // Reports-only) into the generic "Saved Views" mechanism every
+  // Intelligence drill-down/predictive screen reuses — same real table,
+  // same real endpoints, just scoped by caller instead of duplicated.
+  // Existing rows (all genuinely Reports presets) default to 'reports'
+  // so nothing already saved changes meaning.
+  await ensureColumn('report_filter_presets', "scope TEXT NOT NULL DEFAULT 'reports'");
 }
 
 // Explicit startup self-test: prove the database can actually be written

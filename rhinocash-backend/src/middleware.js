@@ -5,7 +5,7 @@
 'use strict';
 const { get, run } = require('./db');
 const { verifyToken, tokenHash } = require('./crypto');
-const { hasModuleAccess, hasPermission } = require('./rbac');
+const { hasModuleAccess, hasPermission, hasIntelligenceAccess, hasInvestorIntelligenceAccess } = require('./rbac');
 
 function extractToken(req) {
   const h = req.headers.authorization || '';
@@ -60,6 +60,35 @@ function requireAnyModule(...moduleIds) {
   };
 }
 
+// Real, server-side protection for direct URL/API access to an
+// Intelligence feature — the same chokepoint requireModule() is for
+// ordinary sections, just at individual-submenu-item granularity. A
+// custom role with no row in role_intelligence_access for this feature_id
+// is blocked exactly like any of the 9 structural roles would be.
+function requireIntelligenceFeature(featureId) {
+  return async (req, res, next) => {
+    if (!(await hasIntelligenceAccess(req.user, featureId))) {
+      const { logAction } = require('./audit');
+      await logAction(req, { action: 'Blocked unauthorized Intelligence feature access', module: 'intelligence', recordType: 'IntelligenceFeature', recordId: featureId });
+      return next({ status: 403, message: `You do not have access to the "${featureId}" Intelligence feature` });
+    }
+    next();
+  };
+}
+
+// Investor's counterpart to requireIntelligenceFeature — req.investor (set
+// by requireInvestorAuth), not req.user, and checked against the small
+// hardcoded INVESTOR_INTELLIGENCE_FEATURES list (see rbac.js) since
+// Investor has no role_intelligence_access row to query.
+function requireInvestorIntelligenceFeature(featureId) {
+  return (req, res, next) => {
+    if (!hasInvestorIntelligenceAccess(featureId)) {
+      return next({ status: 403, message: `You do not have access to the "${featureId}" Intelligence feature` });
+    }
+    next();
+  };
+}
+
 function requirePermission(permissionId) {
   return async (req, res, next) => {
     if (!(await hasPermission(req.user, permissionId))) {
@@ -71,4 +100,4 @@ function requirePermission(permissionId) {
   };
 }
 
-module.exports = { requireAuth, requireModule, requireAnyModule, requirePermission, extractToken };
+module.exports = { requireAuth, requireModule, requireAnyModule, requirePermission, requireIntelligenceFeature, requireInvestorIntelligenceFeature, extractToken };

@@ -11,7 +11,7 @@ const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 const SESSION_ACTIVE_WINDOW_SQL = "interval '-5 seconds'";
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { hasPermission } = require('./../rbac');
+const { hasPermission, INVESTOR_INTELLIGENCE_FEATURES } = require('./../rbac');
 const { describeBrowser } = require('./../userAgent');
 const crypto = require('node:crypto');
 
@@ -115,6 +115,7 @@ function register(router) {
     res.json({
       id: inv.id, name: inv.name, amount: inv.amount, profitSharePct: inv.profit_share_pct,
       termMonths: inv.term_months, startDate: inv.start_date, status: inv.status,
+      finalAccess: { intelligence: INVESTOR_INTELLIGENCE_FEATURES },
     });
   });
 
