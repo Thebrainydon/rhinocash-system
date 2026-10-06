@@ -202,12 +202,12 @@ function register(router) {
   // Real, per-user saved report filter presets — same genuine pattern as
   // the Support Center's ticket_filter_presets, reused for Reports.
   router.get('/api/report-filter-presets', requireAuth, requireModule('reports'), async (req, res) => {
-    res.json({ presets: await all('SELECT * FROM report_filter_presets WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]) });
+    res.json({ presets: await all("SELECT * FROM report_filter_presets WHERE user_id = ? AND scope = 'reports' ORDER BY created_at DESC", [req.user.id]) });
   });
   router.post('/api/report-filter-presets', requireAuth, requireModule('reports'), async (req, res, next) => {
     if (!req.body.name || !req.body.filters) return next({ status: 400, message: 'name and filters are required' });
     const id = 'rfp_' + crypto.randomUUID();
-    await run('INSERT INTO report_filter_presets (id, user_id, name, filters_json) VALUES (?,?,?,?)', [id, req.user.id, req.body.name, JSON.stringify(req.body.filters)]);
+    await run("INSERT INTO report_filter_presets (id, user_id, name, filters_json, scope) VALUES (?,?,?,?,'reports')", [id, req.user.id, req.body.name, JSON.stringify(req.body.filters)]);
     res.status(201).json({ preset: await get('SELECT * FROM report_filter_presets WHERE id = ?', [id]) });
   });
   router.delete('/api/report-filter-presets/:id', requireAuth, requireModule('reports'), async (req, res, next) => {

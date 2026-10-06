@@ -1252,6 +1252,27 @@ CREATE TABLE IF NOT EXISTS user_workspace_preferences (
   updated_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- Investor is a separate principal type with no row in users(id) (see
+-- rbac.js's INVESTOR_INTELLIGENCE_FEATURES / hasInvestorIntelligenceAccess)
+-- — a real, parallel table rather than trying to force its id through the
+-- staff-only FK above. Same layout_json shape: {hiddenWidgets, savedViews,
+-- defaultLanding}.
+CREATE TABLE IF NOT EXISTS investor_workspace_preferences (
+  investor_id TEXT PRIMARY KEY REFERENCES investors(id),
+  layout_json TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
+
+-- Admin > Intelligence > Personalizable Workspaces > "Role Defaults" — the
+-- real, editable default hidden-widget set new/existing users of a role
+-- start from before they ever save their own personal override.
+CREATE TABLE IF NOT EXISTS role_workspace_defaults (
+  role_id TEXT PRIMARY KEY REFERENCES roles(id),
+  hidden_widgets_json TEXT NOT NULL DEFAULT '[]',
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
+
 -- Admin > Intelligence > Predictive Analytics > "Prediction Rules" — the
 -- one real, persisted, editable parameter the trend-comparison engine
 -- actually reads (trend_window_months). Generic key/value so a future

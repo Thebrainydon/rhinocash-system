@@ -1149,7 +1149,74 @@ const ROLE_ROUTE_OVERRIDES = {
 // sidebar or a route until its real page actually exists. Widened as
 // each remaining category is built; never widen this for a category
 // whose render path isn't genuinely done yet.
-const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions"]);
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions", "personalizable-workspaces"]);
+// The real catalog of optional, hideable Dashboard widgets per role — must
+// match DASHBOARD_WIDGET_CATALOG/INVESTOR_WIDGET_CATALOG in the backend's
+// intelligence.js exactly (same keys), since isDashboardWidgetHidden()
+// checks these exact strings against each widget's own call site.
+const DASHBOARD_WIDGET_CATALOG = {
+  loan_officer: [
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:My Clients' Loan Cycles", label: "My Clients' Loan Cycles (chart)" },
+    { key: 'pie:My Loan Products Distribution', label: 'My Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution — All Officers', label: 'OLB Distribution — All Officers (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  manager: [
+    { key: 'teamCollectionPerformance', label: "Team Collection Performance" },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:Branch Clients' Loan Cycles", label: "Branch Clients' Loan Cycles (chart)" },
+    { key: 'pie:Branch Loan Products Distribution', label: 'Branch Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution — Branch Officers', label: 'OLB Distribution — Branch Officers (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  regional_manager: [
+    { key: 'branchComparison', label: 'Regional Branch Comparison' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: 'pie:Loan Products Distribution', label: 'Loan Products Distribution (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  operational_manager: [
+    { key: 'branchComparison', label: 'Organization Branch Comparison' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'orgCounts', label: 'Organization Counts' },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:Active Clients' Loan Cycles", label: "Active Clients' Loan Cycles (chart)" },
+    { key: 'pie:Loan Products Distribution', label: 'Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution by Officer', label: 'OLB Distribution by Officer (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  accountant: [
+    { key: 'postedUnpostedCollections', label: 'Posted/Unposted Collections' },
+  ],
+  ceo: [
+    { key: 'ceo-branch-leaderboard', label: 'Branch Leaderboard' },
+    { key: 'ceo-top-officers', label: 'Top Performing Officers' },
+    { key: 'ceo-portfolio-quality', label: 'Portfolio Quality' },
+    { key: 'ceo-liquidity', label: 'Liquidity' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  director: [
+    { key: 'portfolioRisk', label: 'Portfolio Risk' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  hr: [],
+};
+const INVESTOR_WIDGET_CATALOG = [
+  { key: 'investor-investment-timeline', label: 'Investment Timeline' },
+  { key: 'investor-company-performance', label: 'Company Performance — Limited View' },
+  { key: 'investor-collection-performance', label: 'Portfolio Collection Performance' },
+  { key: 'investor-payment-history', label: 'Payment History' },
+];
 function resolveRoute(itemLabel){
   const override = ROLE_ROUTE_OVERRIDES[session.role];
   // `in`, not truthiness — a real override can deliberately be `null`
@@ -1480,7 +1547,8 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{} };
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{},
+    workspaceState:null };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -1492,6 +1560,11 @@ async function loadCoreData(){
   // authenticated principal needs it purely to render their own already-
   // granted items.
   calls.push(api.get('/api/intelligence/catalog').then(r=>{ DB.intelligenceCatalog = { categories: r.categories, features: r.features }; }).catch(()=>{ DB.intelligenceCatalog = { categories: [], features: [] }; }));
+  // Personalizable Workspaces state (hidden dashboard widgets, saved
+  // views, default landing page) — same dual-audience reasoning as the
+  // catalog above: harmless to fetch even for a principal with no
+  // workspace-* grants (it just comes back empty).
+  calls.push(api.get('/api/intelligence/workspace/state').then(r=>{ DB.workspaceState = r; }).catch(()=>{ DB.workspaceState = { hiddenWidgets:[], savedViews:[], defaultLanding:null }; }));
   // These three are staff-only (requireAuth rejects an investor token
   // outright — investors have no role_id at all, by design). Calling them
   // unconditionally for an investor session was a real bug: the resulting
@@ -1694,6 +1767,7 @@ function pieLegend(data){
     </div>`).join("") || `<div class="empty">No data</div>`}</div>`;
 }
 function pieCard(title, sub, data, size){
+  if(isDashboardWidgetHidden('pie:'+title)) return '';
   return `<div class="card">
     <div class="card-title">${title} ${sub?`<small>${sub}</small>`:""}</div>
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
@@ -2338,6 +2412,7 @@ function renderApp(){
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
             ${NAV_PERMISSIONS[session.role]?.includes('payments') ? `<div class="bell" onclick="openPendingPaymentsPanel()" title="Pending Payments">🗐</div>` : ""}
             ${(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')) ? `<div class="bell" onclick="openC2bPaymentsPanel()" title="Payments">💵${DB.c2bUnmatchedCount>0?`<span class="bell-dot">${DB.c2bUnmatchedCount}</span>`:""}</div>` : ""}
+            ${((DB.me && DB.me.finalAccess && DB.me.finalAccess.intelligence) || []).includes('workspace-saved-views') ? `<div class="bell" onclick="promptSaveCurrentView()" title="Save this view">⭐</div>` : ""}
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')" style="${DB.myAvatarDataUri?'padding:0; overflow:hidden;':''}">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`:session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
@@ -2679,6 +2754,14 @@ async function doLogin(ev){
     session.authenticated = true;
     renderApp();
     await loadCoreData();
+    // Personalizable Workspaces > My Preferences — a real default landing
+    // page, silently ignored (never a toast) if it points somewhere this
+    // session's own current permissions no longer allow.
+    const defaultLanding = DB.workspaceState && DB.workspaceState.defaultLanding;
+    if(defaultLanding && defaultLanding.section && isSectionAllowed(defaultLanding.section)){
+      session.section = defaultLanding.section;
+      session.subtab = defaultLanding.subtab || null;
+    }
     session.loggedIn = true;
     resetIdleLogoutTimer();
     renderApp();
@@ -3214,6 +3297,188 @@ function renderIntelligenceExplainable(feature){
   }
   return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
 }
+// ---- Personalizable Workspaces -----------------------------------------
+function currentWorkspaceCatalog(){
+  if(session.role==="Investor") return INVESTOR_WIDGET_CATALOG;
+  return DASHBOARD_WIDGET_CATALOG[(DB.me && DB.me.role_id) || ""] || [];
+}
+async function submitDashboardLayout(ev){
+  ev.preventDefault();
+  const checked = new Set(new FormData(ev.target).getAll('visible'));
+  const catalog = currentWorkspaceCatalog();
+  const hiddenWidgets = catalog.filter(w=>!checked.has(w.key)).map(w=>w.key);
+  return withRequest('workspace-layout-save', async ()=>{
+    await api.put('/api/intelligence/workspace/hidden-widgets', { hiddenWidgets });
+    if(!DB.workspaceState) DB.workspaceState = { hiddenWidgets:[], savedViews:[], defaultLanding:null };
+    DB.workspaceState.hiddenWidgets = hiddenWidgets;
+  }, { mutates: true });
+}
+function renderWorkspaceDashboardLayout(){
+  const catalog = currentWorkspaceCatalog();
+  const hidden = new Set((DB.workspaceState && DB.workspaceState.hiddenWidgets) || []);
+  if(!catalog.length){
+    return `<div class="card"><div class="card-title">Dashboard Layout</div>
+      <div class="empty">Your Dashboard doesn't have any optional widgets to show or hide yet — every section on it is core content.</div></div>`;
+  }
+  return `<div class="card"><div class="card-title">Dashboard Layout</div>
+    <div class="section-note">Choose which optional widgets appear on your own Dashboard. Core figures (KPIs, arrears, waiting-approval queues) always show — this only controls the supplementary charts and tables below them.</div>
+    <form onsubmit="return submitDashboardLayout(event)">
+      ${catalog.map(w=>`<label style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line);">
+        <input type="checkbox" name="visible" value="${escapeHtml(w.key)}" ${hidden.has(w.key)?'':'checked'}> ${escapeHtml(w.label)}
+      </label>`).join("")}
+      <button class="btn btn-primary btn-sm" style="margin-top:12px;" type="submit">Save Layout</button>
+    </form>
+  </div>`;
+}
+
+// The ⭐ top-bar icon — captures wherever the user genuinely is RIGHT NOW
+// (session.section/session.subtab), not a page they'd have to navigate
+// away from first to reach a dedicated "save" screen.
+async function promptSaveCurrentView(){
+  const name = prompt("Name this view:", session.subtab || session.section || "My View");
+  if(!name) return;
+  return withRequest('workspace-saved-view-create', async ()=>{
+    const r = await api.post('/api/intelligence/workspace/saved-views', { name, section: session.section, subtab: session.subtab || null });
+    if(!DB.workspaceState) DB.workspaceState = { hiddenWidgets:[], savedViews:[], defaultLanding:null };
+    DB.workspaceState.savedViews = r.savedViews;
+  }, { mutates: true });
+}
+async function deleteSavedView(id){
+  return withRequest('workspace-saved-view-delete-'+id, async ()=>{
+    const r = await api.del('/api/intelligence/workspace/saved-views/'+encodeURIComponent(id));
+    DB.workspaceState.savedViews = r.savedViews;
+  }, { mutates: true });
+}
+function renderWorkspaceSavedViews(){
+  const views = (DB.workspaceState && DB.workspaceState.savedViews) || [];
+  return `<div class="card"><div class="card-title">Saved Views</div>
+    <div class="section-note">Bookmark any page you're on via the ⭐ icon in the top bar, then jump straight back to it from here.</div>
+    <div class="table-wrap"><table><tr><th>Name</th><th>Saved</th><th></th></tr>${
+      views.map(v=>`<tr><td>${escapeHtml(v.name)}</td><td>${new Date(v.createdAt).toLocaleDateString()}</td>
+        <td><button class="btn btn-sm btn-outline" onclick="goTo('${v.section.replace(/'/g,"\\'")}', ${v.subtab?`'${v.subtab.replace(/'/g,"\\'")}'`:'null'})">Go</button>
+        <button class="btn btn-sm btn-outline" onclick="deleteSavedView('${v.id}')">Delete</button></td></tr>`).join("")
+      || `<tr><td colspan="3" class="empty">No saved views yet — use the ⭐ icon in the top bar to save your first one.</td></tr>`
+    }</table></div>
+  </div>`;
+}
+
+function myNavigableLabels(){
+  const menus = SIDEBAR_MENUS[session.role] || [];
+  const labels = [];
+  menus.forEach(sec=>(sec.items||[]).forEach(label=>{ if(resolveRoute(label) && !labels.includes(label)) labels.push(label); }));
+  return labels;
+}
+async function submitDefaultLanding(ev){
+  ev.preventDefault();
+  const label = new FormData(ev.target).get('landingLabel');
+  return withRequest('workspace-prefs-save', async ()=>{
+    let r;
+    if(!label){
+      r = await api.put('/api/intelligence/workspace/default-landing', { clear: true });
+    } else {
+      const route = resolveRoute(label);
+      r = await api.put('/api/intelligence/workspace/default-landing', { section: route.section, subtab: route.subtab || null });
+    }
+    if(!DB.workspaceState) DB.workspaceState = { hiddenWidgets:[], savedViews:[], defaultLanding:null };
+    DB.workspaceState.defaultLanding = r.defaultLanding;
+  }, { mutates: true });
+}
+function renderWorkspaceMyPreferences(){
+  const labels = myNavigableLabels();
+  const current = DB.workspaceState && DB.workspaceState.defaultLanding;
+  // The saved defaultLanding is stored as resolved {section,subtab} — find
+  // which of this role's own real labels currently resolves to that same
+  // destination, so the dropdown shows the right selection.
+  const currentLabel = current ? labels.find(l=>{ const r=resolveRoute(l); return r && r.section===current.section && (r.subtab||null)===(current.subtab||null); }) : null;
+  return `<div class="card"><div class="card-title">My Preferences</div>
+    <div class="section-note">Choose which page opens automatically right after you log in, instead of the Dashboard.</div>
+    <form onsubmit="return submitDefaultLanding(event)" class="pill-row">
+      <select name="landingLabel">
+        <option value="">Dashboard (default)</option>
+        ${labels.map(l=>`<option value="${escapeHtml(l)}" ${currentLabel===l?'selected':''}>${escapeHtml(l)}</option>`).join("")}
+      </select>
+      <button class="btn btn-primary btn-sm" type="submit">Save</button>
+    </form>
+  </div>`;
+}
+
+async function loadAdminWorkspaceTemplates(){
+  return withRequest('intel-admin-ws-templates', async ()=>{ DB.adminWorkspaceTemplates = await api.get('/api/intelligence/workspace/templates'); });
+}
+function renderAdminWorkspaceTemplates(){
+  if(!DB.adminWorkspaceTemplates) loadAdminWorkspaceTemplates();
+  if(!DB.adminWorkspaceTemplates) return `<div class="card"><div class="card-title">Workspace Templates</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const roles = DB.adminWorkspaceTemplates.roles;
+  return `<div class="card"><div class="card-title">Workspace Templates</div>
+    <div class="section-note">The real widget set each role's own Dashboard is built from — the "template" every user of that role starts from.</div>
+    ${Object.entries(roles).map(([roleId,widgets])=>`<div style="margin-top:14px;"><strong>${escapeHtml(ROLE_ID_TO_DISPLAY[roleId]||roleId)}</strong>
+      <div class="hint">${widgets.length ? widgets.map(w=>escapeHtml(w.label)).join(", ") : "No optional widgets on this role's Dashboard."}</div></div>`).join("")}
+    <div style="margin-top:14px;"><strong>Investor</strong><div class="hint">${(DB.adminWorkspaceTemplates.investor||[]).map(w=>escapeHtml(w.label)).join(", ")}</div></div>
+  </div>`;
+}
+
+async function loadAdminWidgetManagement(){
+  return withRequest('intel-admin-ws-widgets', async ()=>{ DB.adminWorkspaceWidgets = (await api.get('/api/intelligence/workspace/widgets')).widgets; });
+}
+function renderAdminWidgetManagement(){
+  if(!DB.adminWorkspaceWidgets) loadAdminWidgetManagement();
+  if(!DB.adminWorkspaceWidgets) return `<div class="card"><div class="card-title">Widget Management</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Widget Management</div>
+    <div class="section-note">The real, deduplicated inventory of every optional Dashboard widget across all roles.</div>
+    <div class="table-wrap"><table><tr><th>Widget</th><th>Used By</th></tr>${
+      DB.adminWorkspaceWidgets.map(w=>`<tr><td>${escapeHtml(w.label)}</td><td>${w.roles.map(r=>escapeHtml(ROLE_ID_TO_DISPLAY[r]||r)).join(", ")}</td></tr>`).join("")
+    }</table></div>
+  </div>`;
+}
+
+async function loadAdminRoleDefaults(roleId){
+  return withRequest('intel-admin-ws-role-defaults-'+roleId, async ()=>{
+    DB.adminRoleDefaults = { roleId, ...(await api.get('/api/intelligence/workspace/role-defaults/'+encodeURIComponent(roleId))) };
+  });
+}
+async function submitAdminRoleDefaults(ev, roleId){
+  ev.preventDefault();
+  const checked = new Set(new FormData(ev.target).getAll('visible'));
+  const catalog = DASHBOARD_WIDGET_CATALOG[roleId] || [];
+  const hiddenWidgets = catalog.filter(w=>!checked.has(w.key)).map(w=>w.key);
+  return withRequest('intel-admin-ws-role-defaults-save', async ()=>{
+    await api.put('/api/intelligence/workspace/role-defaults/'+encodeURIComponent(roleId), { hiddenWidgets });
+    DB.adminRoleDefaults = { roleId, hiddenWidgets };
+  }, { mutates: true });
+}
+function renderAdminRoleDefaults(){
+  const roleId = (DB.adminRoleDefaults && DB.adminRoleDefaults.roleId) || 'loan_officer';
+  if(!DB.adminRoleDefaults || DB.adminRoleDefaults.roleId!==roleId) loadAdminRoleDefaults(roleId);
+  const roleOptions = Object.keys(DASHBOARD_WIDGET_CATALOG);
+  const catalog = DASHBOARD_WIDGET_CATALOG[roleId] || [];
+  const hidden = new Set((DB.adminRoleDefaults && DB.adminRoleDefaults.hiddenWidgets) || []);
+  return `<div class="card"><div class="card-title">Role Defaults</div>
+    <div class="section-note">Set the default widget visibility new and existing users of a role start from, before they ever save their own personal Dashboard Layout.</div>
+    <div class="pill-row" style="margin-bottom:12px;">
+      <select onchange="loadAdminRoleDefaults(this.value)">
+        ${roleOptions.map(r=>`<option value="${r}" ${r===roleId?'selected':''}>${escapeHtml(ROLE_ID_TO_DISPLAY[r]||r)}</option>`).join("")}
+      </select>
+    </div>
+    ${!catalog.length ? `<div class="empty">This role's Dashboard has no optional widgets.</div>` :
+    `<form onsubmit="return submitAdminRoleDefaults(event,'${roleId}')">
+      ${catalog.map(w=>`<label style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line);">
+        <input type="checkbox" name="visible" value="${escapeHtml(w.key)}" ${hidden.has(w.key)?'':'checked'}> ${escapeHtml(w.label)}
+      </label>`).join("")}
+      <button class="btn btn-primary btn-sm" style="margin-top:12px;" type="submit">Save Role Defaults</button>
+    </form>`}
+  </div>`;
+}
+
+function renderIntelligenceWorkspace(feature){
+  if(feature.id==='workspace-templates') return renderAdminWorkspaceTemplates();
+  if(feature.id==='workspace-widget-management') return renderAdminWidgetManagement();
+  if(feature.id==='workspace-role-defaults') return renderAdminRoleDefaults();
+  if(feature.id==='workspace-dashboard-layout') return renderWorkspaceDashboardLayout();
+  if(feature.id==='workspace-saved-views') return renderWorkspaceSavedViews();
+  if(feature.id==='workspace-my-preferences') return renderWorkspaceMyPreferences();
+  return `<div class="empty">Unknown Workspace feature.</div>`;
+}
+
 function renderIntelligence(){
   const catalog = DB && DB.intelligenceCatalog;
   // Same label can legitimately belong to more than one feature across
@@ -3229,6 +3494,7 @@ function renderIntelligence(){
     case "drilldown-analytics": return renderIntelligenceDrillDown(feature);
     case "predictive-analytics": return renderIntelligencePredictive(feature);
     case "explainable-decisions": return renderIntelligenceExplainable(feature);
+    case "personalizable-workspaces": return renderIntelligenceWorkspace(feature);
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }
@@ -4243,6 +4509,14 @@ function renderBusinessAnalyticsModule(){
   return renderLoanSizesPage(st, bName, branchIds);
 }
 
+// Personalizable Workspaces > Dashboard Layout — a single, shared
+// visibility gate every optional Dashboard widget below checks, driven by
+// the real per-principal (or role-default) hiddenWidgets list loaded into
+// DB.workspaceState at login. Hiding a widget never touches what data it
+// would have shown — it's purely a real, persisted display preference.
+function isDashboardWidgetHidden(key){
+  return !!(DB.workspaceState && DB.workspaceState.hiddenWidgets && DB.workspaceState.hiddenWidgets.includes(key));
+}
 function kpiTiles(st){
   const prevMonthName = new Date(new Date().setMonth(new Date().getMonth()-1)).toLocaleString('en-KE',{month:'short', year:'numeric'});
   const curMonthName = new Date().toLocaleString('en-KE',{month:'short', year:'numeric'});
@@ -4294,6 +4568,7 @@ function arrearsBanner(st){
   </div>`;
 }
 function orgCounts(){
+  if(isDashboardWidgetHidden('orgCounts')) return '';
   return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.branches.filter(b=>b.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Branches</div></div><div style="font-size:22px;">🏢</div></div></div>
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${DB.staff.filter(s=>s.status==='Active').length}</div><div class="kpi-label" style="margin-top:2px;">Active Staff</div></div><div style="font-size:22px;">🪪</div></div></div>
@@ -4314,6 +4589,7 @@ function branchStaffCounts(branchIds){
   </div>`;
 }
 function staffPerformanceTable(highlightId, branchIds, scopeLabel){
+  if(isDashboardWidgetHidden('staffPerformanceTable')) return '';
   const ranked = rankedOfficerScores(branchIds);
   const rows = ranked.map((r,i)=>`<tr style="${r.officer.id===highlightId?'background:var(--blue-bg); font-weight:700;':''}">
       <td>${escapeHtml(r.officer.name)}</td><td>${r.score.toFixed(1)}%</td><td>${i+1} of ${ranked.length}</td></tr>`).join("");
@@ -4322,6 +4598,7 @@ function staffPerformanceTable(highlightId, branchIds, scopeLabel){
     ${rows || `<tr><td colspan="3" class="empty">No loan officers in scope.</td></tr>`}</table></div></div>`;
 }
 function performanceIndicatorsTable(highlightId, branchIds, scopeLabel){
+  if(isDashboardWidgetHidden('performanceIndicatorsTable')) return '';
   const rows = buildIndicatorMatrix(branchIds);
   const scoreBadge = (v) => `<span class="badge ${v>=80?'green':v>=40?'amber':'red'}">${v.toFixed(1)}%</span>`;
   const trs = rows.map(r=>{
@@ -4641,6 +4918,7 @@ function renderOfficerDashboard(){
 }
 
 function branchPerformanceBars(branchIds){
+  if(isDashboardWidgetHidden('branchPerformanceBars')) return '';
   const branches = branchIds ? DB.branches.filter(b=>branchIds.includes(b.id)) : DB.branches;
   const branchPerf = branches.map(b=>{
     const bl = activeLoans().filter(l=>l.branchId===b.id);
@@ -4687,6 +4965,7 @@ async function loadOfficerComparison(){
   return withRequest('load-officercomp', async ()=>{ DB.acctPages.officerComp = await api.get('/api/collections/officer-comparison'); });
 }
 function renderTeamCollectionPerformanceCard(){
+  if(isDashboardWidgetHidden('teamCollectionPerformance')) return '';
   const state = DB.acctPages.officerComp;
   if(!state) loadOfficerComparison();
   if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
@@ -4706,6 +4985,7 @@ async function loadBranchComparison(regionId){
   });
 }
 function renderBranchComparisonCard(title, regionId){
+  if(isDashboardWidgetHidden('branchComparison')) return '';
   const state = DB.acctPages.branchComp;
   if(!state) loadBranchComparison(regionId);
   if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
@@ -4719,6 +4999,7 @@ function renderBranchComparisonCard(title, regionId){
 
 // Accountant — Posted vs Unposted Collections (reuses real payment status data, no new engine).
 function renderPostedUnpostedCollectionsCard(){
+  if(isDashboardWidgetHidden('postedUnpostedCollections')) return '';
   const posted = DB.payments.filter(p=>p.status==='Posted');
   const unposted = DB.payments.filter(p=>p.status==='Unposted');
   const postedTotal = posted.reduce((s,p)=>s+p.amount,0);
@@ -4748,6 +5029,7 @@ async function loadDirectorPortfolioRisk(){
   });
 }
 function renderPortfolioRiskCard(){
+  if(isDashboardWidgetHidden('portfolioRisk')) return '';
   const state = DB.acctPages.directorRisk;
   if(!state) loadDirectorPortfolioRisk();
   if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
@@ -5717,6 +5999,7 @@ function renderCEODashboard(){
       <div class="card"><div class="card-title">Disbursement Growth <small>last 6 months</small></div>${lineChart(monthlySeries(6).map(m=>({label:m.label, value:m.disbursed})))}</div>
     </div>
 
+    ${isDashboardWidgetHidden('ceo-branch-leaderboard') ? '' : `
     <div class="card">
       <div class="card-title">Branch Leaderboard</div>
       <div class="table-wrap"><table>
@@ -5725,14 +6008,16 @@ function renderCEODashboard(){
           <td>${b.collRate.toFixed(0)}%</td><td>${b.par.toFixed(1)}%</td><td>${b.targetAchievement.toFixed(0)}%</td><td>${b.score.toFixed(0)}</td>
           <td><span class="badge ${tierColor(tierFor(b.score))}">${tierFor(b.score)}</span></td></tr>`).join("")}
       </table></div>
-    </div>
+    </div>`}
 
+    ${isDashboardWidgetHidden('ceo-top-officers') ? '' : `
     <div class="card">
       <div class="card-title">Top Performing Officers <small>company-wide, this month</small></div>
       <div class="table-wrap"><table><tr><th>Officer</th><th>Score</th><th>New Clients</th><th>Revenue Contribution</th></tr>
       ${topOfficers.map(o=>`<tr><td>${escapeHtml(o.officer.name)}</td><td>${o.score.toFixed(1)}%</td><td>${o.stats.newLoans}</td><td>${fmt(o.stats.interestIncomeMTD)}</td></tr>`).join("")}</table></div>
-    </div>
+    </div>`}
 
+    ${isDashboardWidgetHidden('ceo-portfolio-quality') ? '' : `
     <div class="card">
       <div class="card-title">Portfolio Quality <small>PAR at multiple thresholds</small></div>
       <div class="grid3" style="margin-bottom:10px;">
@@ -5744,8 +6029,9 @@ function renderCEODashboard(){
         <tr><td>Recoveries</td><td style="text-align:right;">${fmt(0)} <span class="hint">(not yet tracked)</span></td></tr>
         <tr><td>Collection efficiency (OTC, org-wide)</td><td style="text-align:right;">${st.otcPct.toFixed(1)}%</td></tr>
       </table>
-    </div>
+    </div>`}
 
+    ${isDashboardWidgetHidden('ceo-liquidity') ? '' : `
     <div class="card">
       <div class="card-title">Liquidity</div>
       <div class="grid3">
@@ -5755,7 +6041,7 @@ function renderCEODashboard(){
       </div>
       ${lineChart([{label:"Now", value:Math.abs(cashPosition)}, {label:"+7d", value:Math.abs(cashPosition)+expected7-undisbursedApproved}, {label:"+30d", value:Math.abs(cashPosition)+expected30d-undisbursedApproved}])}
       <div class="hint" style="margin-top:6px;">${liquidityNote}</div>
-    </div>
+    </div>`}
 
     ${branchPerformanceBars()}
     ${staffPerformanceTable(null)}
@@ -6067,6 +6353,7 @@ function renderInvestorDashboard(){
       <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="exportCSV('monthly_profit_statement', ['Period','Company Net Profit','Share %','Investor Profit','Status'], ${JSON.stringify(payouts.map(r=>[r.period, r.companyNetProfit, inv.profitSharePct+'%', r.investorProfit, r.investorProfit<=0?'No Profit Generated':r.status]))})">Export Monthly Profit Statement (CSV)</button>
     </div>
 
+    ${isDashboardWidgetHidden('investor-investment-timeline') ? '' : `
     <div class="card">
       <div class="card-title">Investment Timeline</div>
       <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:12px;">
@@ -6075,7 +6362,7 @@ function renderInvestorDashboard(){
           return `<span class="badge ${isPast?'green':'grey'}">${label}</span>${i<inv.termMonths+2?'<span style="color:var(--ink-faint);">→</span>':''}`;
         }).join("")}
       </div>
-    </div>
+    </div>`}
 
     <div class="grid2">
       <div class="card">
@@ -6095,6 +6382,7 @@ function renderInvestorDashboard(){
       </div>
     </div>
 
+    ${isDashboardWidgetHidden('investor-company-performance') ? '' : `
     <div class="card">
       <div class="card-title">Company Performance — Limited View <small>aggregate figures only, no client or staff detail</small></div>
       <div class="grid3">
@@ -6103,8 +6391,9 @@ function renderInvestorDashboard(){
         <div class="kpi"><div class="kpi-label">Disbursed This Month</div><div class="kpi-value">${perf.disbursedMTD!=null ? fmt(perf.disbursedMTD) : '—'}</div></div>
       </div>
       ${DB.investorCompanyPerformance ? '' : `<div class="hint" style="margin-top:8px;">Company performance data is temporarily unavailable — showing your own investment data only.</div>`}
-    </div>
+    </div>`}
 
+    ${isDashboardWidgetHidden('investor-collection-performance') ? '' : `
     <div class="card">
       <div class="card-title">Portfolio Collection Performance <small>aggregate only — from the real, restricted investor collections endpoint</small></div>
       ${DB.investorCollectionsSummary ? `
@@ -6115,14 +6404,15 @@ function renderInvestorDashboard(){
       </div>
       <div class="hint" style="margin-top:10px;">Portfolio at Risk (overdue): ${fmt(DB.investorCollectionsSummary.portfolioAtRisk.amount)}</div>
       ` : `<div class="hint">Collection performance data is temporarily unavailable.</div>`}
-    </div>
+    </div>`}
 
+    ${isDashboardWidgetHidden('investor-payment-history') ? '' : `
     <div class="card">
       <div class="card-title">Payment History</div>
       <div class="table-wrap"><table><tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th><th>Reference</th><th>Status</th></tr>
       ${payouts.filter(r=>r.status==="Paid").map(r=>`<tr><td>${r.paidAt ? new Date(r.paidAt).toLocaleDateString() : '—'}</td><td>${r.period ? new Date(r.period+'-01').toLocaleString('en-KE',{month:'long',year:'numeric'}) : '—'} Profit Share</td>
         <td>${fmt(r.investorProfit)}</td><td>Profit Share</td><td>${escapeHtml(r.reference||'—')}</td><td><span class="badge green">Paid</span></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No payments recorded yet.</td></tr>`}</table></div>
-    </div>
+    </div>`}
 
     <div class="card">
       <div class="card-title">Capital Return</div>

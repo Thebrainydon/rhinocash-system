@@ -9,9 +9,10 @@
 const { all, get, run } = require('./../db');
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { effectiveIntelligenceFeatures, hasIntelligenceAccess, branchIdsInScope } = require('./../rbac');
+const { effectiveIntelligenceFeatures, hasIntelligenceAccess, branchIdsInScope, hasInvestorIntelligenceAccess } = require('./../rbac');
 const { computePAR, ledgerBalance } = require('./accounting');
 const { verifyToken, tokenHash } = require('./../crypto');
+const crypto = require('node:crypto');
 
 // The Intelligence catalog (categories + feature ids/labels, no data) is
 // the one endpoint both staff AND Investor sessions need — Investor has
@@ -649,6 +650,294 @@ function register(router) {
     const after = await effectiveIntelligenceFeatures(user);
     await logAction(req, { action: 'Set user Intelligence access', module: 'intelligence', recordType: 'User', recordId: user.id, previousValue: before, newValue: after, reason: req.body.reason });
     res.json({ ok: true, featureIds: after });
+  });
+
+  register_workspace(router);
+}
+
+// ---- Personalizable Workspaces -----------------------------------------
+// Dashboard Layout / Saved Views / My Preferences — all real, persisted
+// per-principal state, never a client-only convenience. Investor is a
+// separate principal type with no row in users(id) (same reasoning as
+// INVESTOR_INTELLIGENCE_FEATURES elsewhere in this file), so it gets its
+// own parallel investor_workspace_preferences table rather than being
+// forced through the staff-only FK — both share the exact same
+// layout_json shape: { hiddenWidgets: string[], savedViews: {id,name,
+// section,subtab,createdAt}[], defaultLanding: {section,subtab}|null }.
+
+// The real catalog of widgets each role's actual Dashboard page is built
+// from (the SAME pieCard()/staffPerformanceTable()/etc. calls already
+// live on that page — see index.html) — never a second, invented set.
+// Keys for pie charts are "pie:<exact literal title>" (pieCard() itself
+// checks this), everything else is the shared function's own name. Not
+// every role's Dashboard is built from cleanly reusable, titled widgets
+// (the Accountant/CEO/Director/Investor pages are mostly bespoke inline
+// cards) — those roles honestly get a smaller catalog rather than a
+// fabricated one.
+const DASHBOARD_WIDGET_CATALOG = {
+  loan_officer: [
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:My Clients' Loan Cycles", label: "My Clients' Loan Cycles (chart)" },
+    { key: 'pie:My Loan Products Distribution', label: 'My Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution — All Officers', label: 'OLB Distribution — All Officers (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  manager: [
+    { key: 'teamCollectionPerformance', label: "Team Collection Performance" },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:Branch Clients' Loan Cycles", label: "Branch Clients' Loan Cycles (chart)" },
+    { key: 'pie:Branch Loan Products Distribution', label: 'Branch Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution — Branch Officers', label: 'OLB Distribution — Branch Officers (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  regional_manager: [
+    { key: 'branchComparison', label: 'Regional Branch Comparison' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: 'pie:Loan Products Distribution', label: 'Loan Products Distribution (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  operational_manager: [
+    { key: 'branchComparison', label: 'Organization Branch Comparison' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'orgCounts', label: 'Organization Counts' },
+    { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
+    { key: "pie:Active Clients' Loan Cycles", label: "Active Clients' Loan Cycles (chart)" },
+    { key: 'pie:Loan Products Distribution', label: 'Loan Products Distribution (chart)' },
+    { key: 'pie:OLB Distribution by Officer', label: 'OLB Distribution by Officer (chart)' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  accountant: [
+    { key: 'postedUnpostedCollections', label: 'Posted/Unposted Collections' },
+  ],
+  ceo: [
+    { key: 'ceo-branch-leaderboard', label: 'Branch Leaderboard' },
+    { key: 'ceo-top-officers', label: 'Top Performing Officers' },
+    { key: 'ceo-portfolio-quality', label: 'Portfolio Quality' },
+    { key: 'ceo-liquidity', label: 'Liquidity' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  director: [
+    { key: 'portfolioRisk', label: 'Portfolio Risk' },
+    { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
+    { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
+    { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
+  ],
+  hr: [],
+};
+const INVESTOR_WIDGET_CATALOG = [
+  { key: 'investor-investment-timeline', label: 'Investment Timeline' },
+  { key: 'investor-company-performance', label: 'Company Performance — Limited View' },
+  { key: 'investor-collection-performance', label: 'Portfolio Collection Performance' },
+  { key: 'investor-payment-history', label: 'Payment History' },
+];
+const ALL_WIDGET_KEYS = new Set([
+  ...Object.values(DASHBOARD_WIDGET_CATALOG).flat().map(w => w.key),
+  ...INVESTOR_WIDGET_CATALOG.map(w => w.key),
+]);
+
+function emptyWorkspaceState() {
+  return { hiddenWidgets: [], savedViews: [], defaultLanding: null };
+}
+function parseWorkspaceState(layoutJson) {
+  if (!layoutJson) return emptyWorkspaceState();
+  try {
+    const parsed = JSON.parse(layoutJson);
+    return {
+      hiddenWidgets: Array.isArray(parsed.hiddenWidgets) ? parsed.hiddenWidgets : [],
+      savedViews: Array.isArray(parsed.savedViews) ? parsed.savedViews : [],
+      defaultLanding: parsed.defaultLanding && typeof parsed.defaultLanding === 'object' ? parsed.defaultLanding : null,
+    };
+  } catch {
+    return emptyWorkspaceState();
+  }
+}
+
+// Same reasoning as isAuthenticated() above (the Intelligence catalog
+// endpoint) — a real dual-audience principal check, done inline, never
+// nested middleware-calling-middleware.
+async function currentPrincipal(req) {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  if (!token) return null;
+  const payload = verifyToken(token);
+  if (!payload) return null;
+  const session = await get('SELECT * FROM sessions WHERE token_hash = ?', [tokenHash(token)]);
+  if (!session || session.revoked_at) return null;
+  if (new Date(session.expires_at).getTime() < Date.now()) return null;
+  if (payload.type === 'investor') {
+    const investor = await get('SELECT * FROM investors WHERE id = ?', [payload.sub]);
+    if (!investor || investor.status !== 'Active') return null;
+    return { kind: 'investor', id: investor.id, roleId: null };
+  }
+  const user = await get('SELECT * FROM users WHERE id = ?', [payload.sub]);
+  if (!user || user.status !== 'Active') return null;
+  return { kind: 'user', id: user.id, roleId: user.role_id };
+}
+async function principalHasFeature(principal, featureId) {
+  if (principal.kind === 'investor') return hasInvestorIntelligenceAccess(featureId);
+  return hasIntelligenceAccess({ id: principal.id, role_id: principal.roleId }, featureId);
+}
+async function loadWorkspaceState(principal) {
+  if (principal.kind === 'investor') {
+    const row = await get('SELECT layout_json FROM investor_workspace_preferences WHERE investor_id = ?', [principal.id]);
+    return parseWorkspaceState(row && row.layout_json);
+  }
+  const row = await get('SELECT layout_json FROM user_workspace_preferences WHERE user_id = ?', [principal.id]);
+  const state = parseWorkspaceState(row && row.layout_json);
+  // A user who has never saved their own hiddenWidgets inherits the
+  // role's real, Admin-configured default (Role Defaults) rather than
+  // always starting from "everything visible" — but a user's OWN saved
+  // list, even an empty one they explicitly chose, always wins.
+  if (!row) {
+    const roleDefault = await get('SELECT hidden_widgets_json FROM role_workspace_defaults WHERE role_id = ?', [principal.roleId]);
+    if (roleDefault) {
+      try { state.hiddenWidgets = JSON.parse(roleDefault.hidden_widgets_json) || []; } catch { /* ignore */ }
+    }
+  }
+  return state;
+}
+async function saveWorkspaceState(principal, state) {
+  const json = JSON.stringify(state);
+  if (principal.kind === 'investor') {
+    await run(
+      `INSERT INTO investor_workspace_preferences (investor_id, layout_json, updated_at) VALUES (?,?,iso_now())
+       ON CONFLICT(investor_id) DO UPDATE SET layout_json = excluded.layout_json, updated_at = excluded.updated_at`,
+      [principal.id, json]
+    );
+  } else {
+    await run(
+      `INSERT INTO user_workspace_preferences (user_id, layout_json, updated_at) VALUES (?,?,iso_now())
+       ON CONFLICT(user_id) DO UPDATE SET layout_json = excluded.layout_json, updated_at = excluded.updated_at`,
+      [principal.id, json]
+    );
+  }
+}
+
+function register_workspace(router) {
+  router.get('/api/intelligence/workspace/state', async (req, res, next) => {
+    const principal = await currentPrincipal(req);
+    if (!principal) return next({ status: 401, message: 'Not authenticated' });
+    res.json(await loadWorkspaceState(principal));
+  });
+
+  router.put('/api/intelligence/workspace/hidden-widgets', async (req, res, next) => {
+    const principal = await currentPrincipal(req);
+    if (!principal) return next({ status: 401, message: 'Not authenticated' });
+    if (!(await principalHasFeature(principal, 'workspace-dashboard-layout'))) {
+      return next({ status: 403, message: 'You do not have access to the Dashboard Layout Intelligence feature' });
+    }
+    const hiddenWidgets = Array.isArray(req.body.hiddenWidgets) ? req.body.hiddenWidgets.filter(k => typeof k === 'string') : null;
+    if (!hiddenWidgets) return next({ status: 400, message: 'hiddenWidgets must be an array of strings' });
+    const state = await loadWorkspaceState(principal);
+    state.hiddenWidgets = hiddenWidgets;
+    await saveWorkspaceState(principal, state);
+    res.json({ ok: true, hiddenWidgets });
+  });
+
+  router.post('/api/intelligence/workspace/saved-views', async (req, res, next) => {
+    const principal = await currentPrincipal(req);
+    if (!principal) return next({ status: 401, message: 'Not authenticated' });
+    if (!(await principalHasFeature(principal, 'workspace-saved-views'))) {
+      return next({ status: 403, message: 'You do not have access to the Saved Views Intelligence feature' });
+    }
+    const name = (req.body.name || '').trim();
+    const section = (req.body.section || '').trim();
+    if (!name || !section) return next({ status: 400, message: 'name and section are required' });
+    const state = await loadWorkspaceState(principal);
+    if (state.savedViews.length >= 50) return next({ status: 400, message: 'You already have 50 saved views — delete one first' });
+    const view = { id: 'wv_' + crypto.randomUUID(), name, section, subtab: req.body.subtab || null, createdAt: new Date().toISOString() };
+    state.savedViews.push(view);
+    await saveWorkspaceState(principal, state);
+    res.status(201).json({ ok: true, view, savedViews: state.savedViews });
+  });
+
+  router.delete('/api/intelligence/workspace/saved-views/:id', async (req, res, next) => {
+    const principal = await currentPrincipal(req);
+    if (!principal) return next({ status: 401, message: 'Not authenticated' });
+    const state = await loadWorkspaceState(principal);
+    const before = state.savedViews.length;
+    state.savedViews = state.savedViews.filter(v => v.id !== req.params.id);
+    if (state.savedViews.length === before) return next({ status: 404, message: 'Saved view not found' });
+    await saveWorkspaceState(principal, state);
+    res.json({ ok: true, savedViews: state.savedViews });
+  });
+
+  router.put('/api/intelligence/workspace/default-landing', async (req, res, next) => {
+    const principal = await currentPrincipal(req);
+    if (!principal) return next({ status: 401, message: 'Not authenticated' });
+    if (!(await principalHasFeature(principal, 'workspace-my-preferences'))) {
+      return next({ status: 403, message: 'You do not have access to the My Preferences Intelligence feature' });
+    }
+    const state = await loadWorkspaceState(principal);
+    if (req.body.clear) {
+      state.defaultLanding = null;
+    } else {
+      const section = (req.body.section || '').trim();
+      if (!section) return next({ status: 400, message: 'section is required (or pass clear:true)' });
+      state.defaultLanding = { section, subtab: req.body.subtab || null };
+    }
+    await saveWorkspaceState(principal, state);
+    res.json({ ok: true, defaultLanding: state.defaultLanding });
+  });
+
+  // Admin > Intelligence > Personalizable Workspaces > "Workspace
+  // Templates" — a real, read-only account of the actual widget catalog
+  // every role's own Dashboard is built from (not a second, invented
+  // design-time artifact).
+  router.get('/api/intelligence/workspace/templates', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Workspace Templates'), async (req, res) => {
+    res.json({ roles: DASHBOARD_WIDGET_CATALOG, investor: INVESTOR_WIDGET_CATALOG });
+  });
+
+  // Admin > Intelligence > Personalizable Workspaces > "Widget
+  // Management" — the deduplicated real widget inventory across every
+  // role, with which roles each one belongs to.
+  router.get('/api/intelligence/workspace/widgets', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Widget Management'), async (req, res) => {
+    const byKey = new Map();
+    for (const [role, widgets] of Object.entries(DASHBOARD_WIDGET_CATALOG)) {
+      for (const w of widgets) {
+        if (!byKey.has(w.key)) byKey.set(w.key, { key: w.key, label: w.label, roles: [] });
+        byKey.get(w.key).roles.push(role);
+      }
+    }
+    for (const w of INVESTOR_WIDGET_CATALOG) {
+      if (!byKey.has(w.key)) byKey.set(w.key, { key: w.key, label: w.label, roles: [] });
+      byKey.get(w.key).roles.push('investor');
+    }
+    res.json({ widgets: [...byKey.values()] });
+  });
+
+  // Admin > Intelligence > Personalizable Workspaces > "Role Defaults" —
+  // a REAL, editable default: any user of this role with no personal
+  // override starts from this hidden-widget set (see loadWorkspaceState).
+  router.get('/api/intelligence/workspace/role-defaults/:roleId', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Role Defaults'), async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.roleId]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    const row = await get('SELECT hidden_widgets_json FROM role_workspace_defaults WHERE role_id = ?', [req.params.roleId]);
+    let hiddenWidgets = [];
+    if (row) { try { hiddenWidgets = JSON.parse(row.hidden_widgets_json) || []; } catch { /* ignore */ } }
+    res.json({ roleId: req.params.roleId, hiddenWidgets });
+  });
+  router.put('/api/intelligence/workspace/role-defaults/:roleId', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit Role Defaults'), async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.roleId]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    const hiddenWidgets = Array.isArray(req.body.hiddenWidgets) ? req.body.hiddenWidgets.filter(k => typeof k === 'string') : null;
+    if (!hiddenWidgets) return next({ status: 400, message: 'hiddenWidgets must be an array of strings' });
+    const unknown = hiddenWidgets.filter(k => !ALL_WIDGET_KEYS.has(k));
+    if (unknown.length) return next({ status: 400, message: `Unknown widget key(s): ${unknown.join(', ')}` });
+    await run(
+      `INSERT INTO role_workspace_defaults (role_id, hidden_widgets_json, updated_by, updated_at) VALUES (?,?,?,iso_now())
+       ON CONFLICT(role_id) DO UPDATE SET hidden_widgets_json = excluded.hidden_widgets_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [req.params.roleId, JSON.stringify(hiddenWidgets), req.user.id]
+    );
+    await logAction(req, { action: 'Changed role workspace defaults', module: 'intelligence', recordType: 'Role', recordId: req.params.roleId, newValue: hiddenWidgets });
+    res.json({ ok: true, hiddenWidgets });
   });
 }
 
