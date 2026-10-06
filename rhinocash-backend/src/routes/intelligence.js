@@ -343,6 +343,119 @@ async function computePredictive(featureId, req) {
   }
 }
 
+// ---- Explainable Decisions -------------------------------------------
+// Surfaces the real, already-recorded reasoning behind a decision or
+// current state — the real loan_approvals audit trail (decision/comments/
+// previous->new status), the real client_risk_config thresholds behind a
+// risk classification, the real payment_allocations breakdown, the real
+// adjustments.reason — never a generated/invented explanation. Every
+// "why" here is a real stored field, read back, not synthesized.
+async function computeExplainable(featureId, req) {
+  const scope = await branchIdsInScope(req.user);
+  const loanScope = scopeClause(scope, 'l.branch_id');
+  switch (featureId) {
+    case 'explain-loan-decision-explanation':
+    case 'explain-loan-decisions':
+    case 'explain-credit-decisions':
+    case 'explain-approval-decisions':
+    case 'explain-approval-explanation':
+    case 'explain-strategic-decisions': {
+      const rows = await all(
+        `SELECT la.id, la.decision, la.comments, la.previous_status, la.new_status, la.created_at, la.role_id,
+                c.name as clientName, l.principal
+         FROM loan_approvals la JOIN loans l ON l.id = la.loan_id JOIN clients c ON c.id = l.client_id
+         WHERE ${loanScope.clause} ORDER BY la.created_at DESC LIMIT 25`,
+        loanScope.params
+      );
+      return { featureId, kind: 'decisions', decisions: rows };
+    }
+    case 'explain-client-risk-explanation':
+      return { featureId, kind: 'risk', ...(await riskView(scope, req.user.id)) };
+    case 'explain-risk-explanation':
+    case 'explain-risk-decisions':
+      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+    case 'explain-collection-priority-explanation': {
+      const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
+      const rows = await all(
+        `SELECT l.id as loanId, c.name as clientName, ls.due_date, ls.total_due - ls.paid_amount as outstanding,
+                (CURRENT_DATE - ls.due_date::date) as daysOverdue
+         FROM loan_schedule ls JOIN loans l ON l.id = ls.loan_id JOIN clients c ON c.id = l.client_id
+         WHERE ${loanScope.clause} AND l.status IN ('Active','Disbursed') AND ls.paid_amount < ls.total_due - 0.01
+           AND ls.due_date < CURRENT_DATE::text ${officerId ? 'AND l.officer_id = ?' : ''}
+         ORDER BY daysOverdue DESC, outstanding DESC LIMIT 25`,
+        officerId ? [...loanScope.params, officerId] : loanScope.params
+      );
+      return { featureId, kind: 'priority-list', items: rows };
+    }
+    case 'explain-branch-performance': {
+      const rows = await all(
+        `SELECT b.id, b.name, COALESCE(SUM(l.principal),0) as principal, COUNT(l.id) as activeLoans
+         FROM branches b LEFT JOIN loans l ON l.branch_id = b.id AND l.status IN ('Active','Disbursed')
+         WHERE ${scopeClause(scope,'b.id').clause} GROUP BY b.id, b.name ORDER BY principal DESC`,
+        scopeClause(scope,'b.id').params
+      );
+      return { featureId, kind: 'branch-explain', branches: rows };
+    }
+    case 'explain-operational-alerts':
+    case 'explain-business-alerts':
+    case 'explain-hr-alerts': {
+      const alerts = [];
+      const risk = await riskView(scope);
+      const par30 = (risk.par.find(p => p.threshold === 30) || {}).percentage || 0;
+      if (risk.qualityRating !== 'Current') alerts.push({ severity: risk.qualityRating, message: `Portfolio quality is "${risk.qualityRating}" — PAR-30 at ${par30.toFixed(1)}% (threshold ${risk.thresholds.watch}%).` });
+      const pendingLeave = await get(`SELECT COUNT(*) as n FROM leave_requests WHERE status = 'Pending' AND created_at < (CURRENT_DATE - INTERVAL '5 days')::text`);
+      if (pendingLeave.n > 0) alerts.push({ severity: 'Watch', message: `${pendingLeave.n} leave request(s) have been pending for more than 5 days.` });
+      const pendingAdvances = await get(`SELECT COUNT(*) as n FROM salary_advance_requests WHERE status = 'Pending' AND created_at < (CURRENT_DATE - INTERVAL '5 days')::text`);
+      if (pendingAdvances.n > 0) alerts.push({ severity: 'Watch', message: `${pendingAdvances.n} salary advance request(s) have been pending for more than 5 days.` });
+      if (!alerts.length) alerts.push({ severity: 'None', message: 'No real alert conditions are currently triggered.' });
+      return { featureId, kind: 'alerts', alerts };
+    }
+    case 'explain-payment-allocation': {
+      const rows = await all(
+        `SELECT p.id as paymentId, p.amount, p.created_at, c.name as clientName, pa.bucket, pa.amount_applied
+         FROM payments p JOIN loans l ON l.id = p.loan_id JOIN clients c ON c.id = l.client_id
+         LEFT JOIN payment_allocations pa ON pa.payment_id = p.id
+         WHERE ${loanScope.clause} ORDER BY p.created_at DESC LIMIT 30`,
+        loanScope.params
+      );
+      return { featureId, kind: 'allocations', allocations: rows };
+    }
+    case 'explain-financial-exceptions': {
+      const rows = await all(
+        `SELECT id, category, note as description, amount, status, created_at FROM expenses
+         WHERE status = 'Rejected' OR (status = 'Pending' AND created_at < (CURRENT_DATE - INTERVAL '7 days')::text)
+         ORDER BY created_at DESC LIMIT 25`
+      );
+      return { featureId, kind: 'exceptions', exceptions: rows };
+    }
+    case 'explain-accounting-adjustments': {
+      const rows = await all(`SELECT id, reference, reason, amount, status, created_at FROM adjustments ORDER BY created_at DESC LIMIT 25`);
+      return { featureId, kind: 'adjustments', adjustments: rows };
+    }
+    case 'explain-performance-decisions': {
+      const rows = await all(
+        `SELECT u.id, u.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
+         FROM users u LEFT JOIN loans l ON l.officer_id = u.id
+         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
+         WHERE u.role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND u.branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}
+         GROUP BY u.id, u.name ORDER BY thisMonthCollected DESC LIMIT 50`,
+        [`${monthKeyOffset(0)}%`, ...(scope !== null && scope.length ? scope : [])]
+      );
+      return { featureId, kind: 'officer-list', officers: rows };
+    }
+    case 'explain-performance-changes':
+    case 'explain-financial-changes': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(je.credit),0) as v FROM journal_entries je JOIN payments p ON p.id = je.ref_id AND je.ref_type='payment' JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND je.entry_date LIKE ?`,
+        loanScope.params
+      );
+      return { featureId, kind: 'trend', label: 'Revenue', ...trend };
+    }
+    default:
+      return null;
+  }
+}
+
 function requireAdminOnly(action) {
   return (req, res, next) => {
     if (req.user.role_id !== 'admin') {
@@ -379,6 +492,43 @@ function register(router) {
     const result = await computePredictive(req.params.kind, req);
     if (!result) return next({ status: 404, message: `No predictive data available for "${req.params.kind}"` });
     res.json(result);
+  });
+
+  // Explainable Decisions — same inline-check pattern.
+  router.get('/api/intelligence/explain/:kind', requireAuth, async (req, res, next) => {
+    if (!(await hasIntelligenceAccess(req.user, req.params.kind))) {
+      return next({ status: 403, message: `You do not have access to the "${req.params.kind}" Intelligence feature` });
+    }
+    const result = await computeExplainable(req.params.kind, req);
+    if (!result) return next({ status: 404, message: `No explanation available for "${req.params.kind}"` });
+    res.json(result);
+  });
+
+  // Admin > Intelligence > Explainable Decisions > "Explanation Rules" /
+  // "Decision Factors" — real, honest, read-only accounts of what data
+  // this category's explanations actually draw from (no invented
+  // reasoning engine).
+  router.get('/api/intelligence/explanation-rules', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Intelligence explanation rules'), async (req, res) => {
+    res.json({
+      rules: [
+        { kind: 'decisions', source: 'The real loan_approvals audit trail (decision, comments, previous/new status) — every "why" shown is a real stored field, read back verbatim.' },
+        { kind: 'risk', source: 'The same real PAR/aging computation and client_risk_config thresholds Predictive Analytics and Reports/LoanBook already use.' },
+        { kind: 'priority-list', source: 'Real overdue loan_schedule rows ranked by real days-overdue and real outstanding balance.' },
+        { kind: 'alerts', source: 'Real current threshold breaches (portfolio quality rating, leave/salary-advance requests pending too long) — no alert fires without a real stored condition.' },
+        { kind: 'allocations', source: 'The real payment_allocations breakdown (principal/interest/penalty buckets) for each real payment.' },
+        { kind: 'exceptions / adjustments', source: 'Real expenses rows flagged Rejected or stale-Pending, and the real adjustments table\'s own stored reason field.' },
+      ],
+    });
+  });
+  router.get('/api/intelligence/decision-factors', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Intelligence decision factors'), async (req, res) => {
+    const thresholds = await all('SELECT rule_name, threshold_value, description FROM client_risk_config ORDER BY rule_name');
+    res.json({
+      factors: [
+        { factor: 'Loan approval workflow', detail: 'approval_workflow_steps (real sequential role order) + loan_approvals (real per-step decision record).' },
+        { factor: 'Portfolio quality thresholds', detail: 'client_risk_config — the same editable values shown under Predictive Analytics > Thresholds.', thresholds },
+        { factor: 'Alert staleness window', detail: 'Leave/salary-advance requests are flagged once Pending for more than 5 real days.' },
+      ],
+    });
   });
 
   // Admin > Intelligence > Predictive Analytics > "Prediction Rules" —

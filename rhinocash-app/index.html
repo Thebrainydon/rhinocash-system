@@ -1149,7 +1149,7 @@ const ROLE_ROUTE_OVERRIDES = {
 // sidebar or a route until its real page actually exists. Widened as
 // each remaining category is built; never widen this for a category
 // whose render path isn't genuinely done yet.
-const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics"]);
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics", "explainable-decisions"]);
 function resolveRoute(itemLabel){
   const override = ROLE_ROUTE_OVERRIDES[session.role];
   // `in`, not truthiness — a real override can deliberately be `null`
@@ -1480,7 +1480,7 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{} };
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{}, intelligenceExplainable:{} };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -2240,6 +2240,14 @@ function initPendingCharts(){
 // Never hardcoded per role name: a brand-new custom role shows exactly
 // what Admin granted it through PUT /api/roles/:id/intelligence,
 // automatically, with no sidebar code change.
+// Shared small-stat-tile row — the real existing .kpi-tile-grid/.kpi/
+// .kpi-value/.kpi-label classes every dashboard already uses, reused by
+// every Intelligence category's renderer rather than redefined per call.
+function intelKpis(items){
+  return `<div class="kpi-tile-grid" style="margin-bottom:12px;">${items.map(([label,value])=>
+    `<div class="kpi"><div class="kpi-value" style="font-size:20px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`
+  ).join("")}</div>`;
+}
 function buildIntelligenceSections(){
   const catalog = DB && DB.intelligenceCatalog;
   if(!catalog || !catalog.categories || !catalog.categories.length) return [];
@@ -3090,6 +3098,122 @@ function renderIntelligencePredictive(feature){
   }
   return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
 }
+async function loadAdminExplanationRules(){
+  return withRequest('intel-admin-explain-rules', async ()=>{ DB.adminExplanationRules = (await api.get('/api/intelligence/explanation-rules')).rules; });
+}
+function renderAdminExplanationRules(){
+  if(!DB.adminExplanationRules) loadAdminExplanationRules();
+  if(!DB.adminExplanationRules) return `<div class="card"><div class="card-title">Explanation Rules</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Explanation Rules</div>
+    <div class="section-note">What each Explainable Decisions view actually draws from — no invented reasoning.</div>
+    <div class="table-wrap"><table><tr><th>Kind</th><th>Source</th></tr>${
+      DB.adminExplanationRules.map(r=>`<tr><td><strong>${escapeHtml(r.kind)}</strong></td><td>${escapeHtml(r.source)}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadAdminDecisionFactors(){
+  return withRequest('intel-admin-decision-factors', async ()=>{ DB.adminDecisionFactors = (await api.get('/api/intelligence/decision-factors')).factors; });
+}
+function renderAdminDecisionFactors(){
+  if(!DB.adminDecisionFactors) loadAdminDecisionFactors();
+  if(!DB.adminDecisionFactors) return `<div class="card"><div class="card-title">Decision Factors</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Decision Factors</div>
+    <div class="section-note">The real, stored factors behind every decision/risk explanation.</div>
+    <div class="table-wrap"><table><tr><th>Factor</th><th>Detail</th></tr>${
+      DB.adminDecisionFactors.map(f=>`<tr><td><strong>${escapeHtml(f.factor)}</strong></td><td>${escapeHtml(f.detail)}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadIntelligenceExplainable(featureId){
+  return withRequest('intel-explain-'+featureId, async ()=>{
+    const r = await api.get('/api/intelligence/explain/'+featureId);
+    DB.intelligenceExplainable[featureId] = r;
+  });
+}
+function renderInvestorIntelligenceExplainable(feature){
+  const inv = DB.me || {};
+  const payouts = (DB.investorPayouts||[]).filter(p=>p.investorId===inv.id).sort((a,b)=>(a.period||"").localeCompare(b.period||""));
+  let body;
+  switch(feature.id){
+    case 'explain-investment-performance': {
+      const profitEarned = payouts.reduce((s,r)=>s+(r.investorProfit||0),0);
+      const profitPaid = payouts.filter(r=>r.status==="Paid").reduce((s,r)=>s+(r.investorProfit||0),0);
+      body = intelKpis([["Profit Earned",fmt(profitEarned)],["Profit Paid",fmt(profitPaid)],["Status",escapeHtml(inv.status||"—")]]);
+      break;
+    }
+    case 'explain-major-portfolio-changes': {
+      const perf = DB.investorCompanyPerformance || {};
+      body = intelKpis([["Active Clients",perf.activeClients||0],["Outstanding Portfolio",fmt(perf.outstandingPortfolio||0)]]) +
+        `<div class="section-note">Real recorded distributions, most recent first.</div>
+        <div class="table-wrap"><table><tr><th>Period</th><th>Profit</th><th>Status</th></tr>${
+          payouts.slice().reverse().slice(0,10).map(p=>`<tr><td>${escapeHtml(p.period||"—")}</td><td>${fmtNum(p.investorProfit||0)}</td><td>${escapeHtml(p.status||"—")}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No distributions recorded yet.</td></tr>`
+        }</table></div>`;
+      break;
+    }
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
+// Generic Explainable Decisions renderer — same "dispatch by real
+// server-computed result kind" pattern as Predictive Analytics.
+function renderIntelligenceExplainable(feature){
+  if(feature.id==='explain-explanation-rules') return renderAdminExplanationRules();
+  if(feature.id==='explain-decision-factors') return renderAdminDecisionFactors();
+  if(session.role==="Investor") return renderInvestorIntelligenceExplainable(feature);
+  if(!DB.intelligenceExplainable) DB.intelligenceExplainable = {};
+  const data = DB.intelligenceExplainable[feature.id];
+  if(!data) loadIntelligenceExplainable(feature.id);
+  if(!data) return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
+  let body;
+  switch(data.kind){
+    case 'decisions':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Decision</th><th>Status Change</th><th>Comments</th><th>Date</th></tr>${
+        (data.decisions||[]).map(d=>`<tr><td>${escapeHtml(d.clientname||"—")}</td><td><span class="badge ${d.decision==='Approved'?'green':d.decision==='Declined'?'red':'amber'}">${escapeHtml(d.decision)}</span></td><td>${escapeHtml(d.previous_status)} → ${escapeHtml(d.new_status)}</td><td>${escapeHtml(d.comments||"—")}</td><td>${new Date(d.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No decisions recorded in scope yet.</td></tr>`
+      }</table></div>`;
+      break;
+    case 'risk':
+      body = `<div class="section-note">As of ${data.asOf} · ${data.formula}</div>` +
+        intelKpis([["Quality Rating",escapeHtml(data.qualityRating)],["Total Outstanding",fmt(data.totalOutstanding)]]) +
+        `<div class="table-wrap"><table><tr><th>Overdue (days+)</th><th>Amount</th><th>% of Outstanding</th></tr>${
+          data.par.map(p=>`<tr><td>${p.threshold}</td><td>${fmtNum(p.amount)}</td><td>${p.percentage.toFixed(1)}%</td></tr>`).join("")
+        }</table></div>`;
+      break;
+    case 'priority-list':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Days Overdue</th><th>Outstanding</th></tr>${rowsFor(data.items,['clientname','daysoverdue','outstanding'])}</table></div>`;
+      break;
+    case 'branch-explain':
+      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.branches,['name','activeloans','principal'])}</table></div>`;
+      break;
+    case 'alerts':
+      body = `<div class="table-wrap"><table><tr><th>Severity</th><th>Alert</th></tr>${
+        data.alerts.map(a=>`<tr><td><span class="badge ${a.severity==='None'?'green':a.severity==='Critical'||a.severity==='Default'?'red':'amber'}">${escapeHtml(a.severity)}</span></td><td>${escapeHtml(a.message)}</td></tr>`).join("")
+      }</table></div>`;
+      break;
+    case 'allocations':
+      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Payment Amount</th><th>Bucket</th><th>Applied</th></tr>${
+        (data.allocations||[]).map(a=>`<tr><td>${escapeHtml(a.clientname||"—")}</td><td>${fmtNum(a.amount)}</td><td>${escapeHtml(a.bucket||"—")}</td><td>${a.amount_applied!=null?fmtNum(a.amount_applied):"—"}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No payments in scope yet.</td></tr>`
+      }</table></div>`;
+      break;
+    case 'exceptions':
+      body = `<div class="table-wrap"><table><tr><th>Category</th><th>Description</th><th>Amount</th><th>Status</th></tr>${rowsFor(data.exceptions,['category','description','amount','status'])}</table></div>`;
+      break;
+    case 'adjustments':
+      body = `<div class="table-wrap"><table><tr><th>Reference</th><th>Reason</th><th>Amount</th><th>Status</th></tr>${rowsFor(data.adjustments,['reference','reason','amount','status'])}</table></div>`;
+      break;
+    case 'trend': {
+      const sign = data.changePct>=0 ? '+' : '';
+      body = `<div class="section-note">${data.thisMonth} vs ${data.lastMonth} (${data.windowMonths}-month window)</div>` +
+        intelKpis([[`${data.label} (current)`,fmt(data.thisPeriod)],[`${data.label} (prior)`,fmt(data.lastPeriod)],["Change",`${sign}${data.changePct.toFixed(1)}%`]]);
+      break;
+    }
+    case 'officer-list':
+      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Collected This Month</th></tr>${rowsFor(data.officers,['name','thismonthcollected'])}</table></div>`;
+      break;
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
 function renderIntelligence(){
   const catalog = DB && DB.intelligenceCatalog;
   // Same label can legitimately belong to more than one feature across
@@ -3104,6 +3228,7 @@ function renderIntelligence(){
   switch(feature.category_id){
     case "drilldown-analytics": return renderIntelligenceDrillDown(feature);
     case "predictive-analytics": return renderIntelligencePredictive(feature);
+    case "explainable-decisions": return renderIntelligenceExplainable(feature);
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }
