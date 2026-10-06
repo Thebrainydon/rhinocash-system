@@ -182,6 +182,9 @@ async function seedIntelligence() {
   for (const [id, label, icon, sort] of categories) {
     await run('INSERT INTO intelligence_categories (id, label, icon, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, label, icon, sort]);
   }
+  // Default Predictive Analytics trend window — real, editable later via
+  // Admin > Intelligence > Prediction Rules (PUT /api/intelligence/settings/trend-window).
+  await run(`INSERT INTO intelligence_settings (key, value) VALUES ('trend_window_months', '1') ON CONFLICT DO NOTHING`);
 
   // [id, category_id, label, sort_order] — one row per unique real label
   // across every role's spec; a label repeated verbatim across roles

@@ -1149,7 +1149,7 @@ const ROLE_ROUTE_OVERRIDES = {
 // sidebar or a route until its real page actually exists. Widened as
 // each remaining category is built; never widen this for a category
 // whose render path isn't genuinely done yet.
-const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics"]);
+const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictive-analytics"]);
 function resolveRoute(itemLabel){
   const override = ROLE_ROUTE_OVERRIDES[session.role];
   // `in`, not truthiness — a real override can deliberately be `null`
@@ -1480,7 +1480,7 @@ async function loadCoreData(){
     leaveRequests:[], salaryAdvances:[], shareholders:[], investors:[], investorPayouts:[], taxObligations:[], boardMatters:[],
     permissionsMatrix:{}, branchProposals:[], accounts:[], me:null, cashPosition:null, integrationsStatus:null, targets:[], targetEligibleRecipients:[], targetHistory:[], paymentsPages:{}, acctPages:{},
     loanStatusBrowser:null, pendingPaymentsBrowser:null, ticketsBrowser:null, c2bPaymentsBrowser:null, c2bUnmatchedCount:0, requisitionForm:null, utilPaymentForm:null, bulkUploadForm:null, expectedCashflowData:null, leadForm:null, importClientsForm:null,
-    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{} };
+    docDataUris:{}, docDataUriLoading:{}, intelligenceCatalog:null, intelligenceDrillDown:{}, intelligencePredictive:{} };
 
   const isInvestor = session.role === "Investor";
   const calls = [];
@@ -2930,12 +2930,180 @@ function renderIntelligenceDrillDown(feature){
   }
   return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
 }
+async function loadIntelligencePredictive(featureId){
+  return withRequest('intel-predictive-'+featureId, async ()=>{
+    const r = await api.get('/api/intelligence/predictive/'+featureId);
+    DB.intelligencePredictive[featureId] = r;
+  });
+}
+// Investor-specific predictive items render from data already loaded at
+// login (same reasoning as drill-down's Investor branch — Investor
+// authenticates via requireInvestorAuth and can never call the generic
+// staff /api/intelligence/predictive/:kind endpoint).
+function renderInvestorIntelligencePredictive(feature){
+  const kpis = (items) => `<div class="kpi-tile-grid" style="margin-bottom:12px;">${items.map(([label,value])=>
+    `<div class="kpi"><div class="kpi-value" style="font-size:20px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`
+  ).join("")}</div>`;
+  const inv = DB.me || {};
+  const payouts = (DB.investorPayouts||[]).filter(p=>p.investorId===inv.id).sort((a,b)=>(a.period||"").localeCompare(b.period||""));
+  let body;
+  switch(feature.id){
+    case 'pred-investment-performance':
+      body = kpis([["Amount Invested",fmt(inv.amount||0)],["Profit Share",`${inv.profitSharePct||0}%`],["Status",escapeHtml(inv.status||"—")]]);
+      break;
+    case 'pred-profit-forecast': {
+      const profitEarned = payouts.reduce((s,r)=>s+(r.investorProfit||0),0);
+      const profitPaid = payouts.filter(r=>r.status==="Paid").reduce((s,r)=>s+(r.investorProfit||0),0);
+      body = kpis([["Profit Earned",fmt(profitEarned)],["Profit Paid",fmt(profitPaid)],["Profit Pending",fmt(profitEarned-profitPaid)]]);
+      break;
+    }
+    case 'pred-portfolio-performance': {
+      const perf = DB.investorCompanyPerformance || {};
+      body = kpis([["Active Clients",perf.activeClients||0],["Outstanding Portfolio",fmt(perf.outstandingPortfolio||0)],["All-Time Interest Income",fmt(perf.allTimeInterestIncome||0)]]);
+      break;
+    }
+    case 'pred-investment-return-forecast': {
+      const last2 = payouts.slice(-2);
+      const thisPeriod = last2[1] ? last2[1].investorProfit||0 : 0;
+      const lastPeriod = last2[0] ? last2[0].investorProfit||0 : 0;
+      const changePct = lastPeriod>0 ? ((thisPeriod-lastPeriod)/lastPeriod*100) : (thisPeriod>0?100:0);
+      body = kpis([["Latest Period Profit",fmt(thisPeriod)],["Prior Period Profit",fmt(lastPeriod)],["Change",`${changePct>=0?'+':''}${changePct.toFixed(1)}%`]]);
+      break;
+    }
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
+// Generic Predictive Analytics renderer — dispatches by the real
+// server-computed result `kind` (trend/risk/officer-list/branch-list/
+// capital/point/no-data), not by individual feature id, since every one
+// of the ~26 operational features normalizes to one of these 7 shapes
+// (see intelligence.js's computePredictive()).
+// Admin's 3 Predictive Analytics items are CONFIGURATION screens, not
+// operational outputs — they hit their own dedicated endpoints, never
+// the generic /api/intelligence/predictive/:kind (computePredictive has
+// no case for these ids at all; calling it would just 404).
+async function loadAdminPredictionModels(){
+  return withRequest('intel-admin-pred-models', async ()=>{ DB.adminPredictionModels = (await api.get('/api/intelligence/prediction-models')).models; });
+}
+function renderAdminPredictionModels(){
+  if(!DB.adminPredictionModels) loadAdminPredictionModels();
+  if(!DB.adminPredictionModels) return `<div class="card"><div class="card-title">Prediction Models</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Prediction Models</div>
+    <div class="section-note">The real methods this system's Predictive Analytics uses — no trained ML model, honest trend/aging statistics only.</div>
+    <div class="table-wrap"><table><tr><th>Kind</th><th>Method</th></tr>${
+      DB.adminPredictionModels.map(m=>`<tr><td><strong>${escapeHtml(m.kind)}</strong></td><td>${escapeHtml(m.method)}</td></tr>`).join("")
+    }</table></div></div>`;
+}
+async function loadAdminPredictionRules(){
+  return withRequest('intel-admin-pred-rules', async ()=>{ DB.adminPredictionRules = await api.get('/api/intelligence/settings/trend-window'); });
+}
+async function submitAdminPredictionRules(ev){
+  ev.preventDefault();
+  const months = Number(new FormData(ev.target).get('months'));
+  return withRequest('intel-admin-pred-rules-save', async ()=>{
+    DB.adminPredictionRules = await api.put('/api/intelligence/settings/trend-window', { months });
+  }, { mutates: true });
+}
+function renderAdminPredictionRules(){
+  if(!DB.adminPredictionRules) loadAdminPredictionRules();
+  if(!DB.adminPredictionRules) return `<div class="card"><div class="card-title">Prediction Rules</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Prediction Rules</div>
+    <div class="section-note">Every trend comparison (Collections, Portfolio, Revenue, Cashflow, Profit, Workforce...) compares the current month against this many months back.</div>
+    <form onsubmit="return submitAdminPredictionRules(event)" class="pill-row">
+      <input type="number" name="months" min="1" max="12" value="${DB.adminPredictionRules.trendWindowMonths}" style="width:80px;">
+      <button class="btn btn-sm btn-primary" type="submit">Save</button>
+    </form></div>`;
+}
+async function loadAdminThresholds(){
+  return withRequest('intel-admin-thresholds', async ()=>{ DB.adminThresholds = (await api.get('/api/intelligence/thresholds')).thresholds; });
+}
+async function submitAdminThreshold(ev, ruleName){
+  ev.preventDefault();
+  const threshold_value = Number(new FormData(ev.target).get('threshold_value'));
+  return withRequest('intel-admin-threshold-'+ruleName, async ()=>{
+    await api.put('/api/intelligence/thresholds/'+encodeURIComponent(ruleName), { threshold_value });
+    DB.adminThresholds = (await api.get('/api/intelligence/thresholds')).thresholds;
+  }, { mutates: true });
+}
+function renderAdminThresholds(){
+  if(!DB.adminThresholds) loadAdminThresholds();
+  if(!DB.adminThresholds) return `<div class="card"><div class="card-title">Thresholds</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  return `<div class="card"><div class="card-title">Thresholds</div>
+    <div class="section-note">The real, live risk/collection-rate thresholds already used across Reports, LoanBook and Collections — a change here takes effect everywhere immediately.</div>
+    <div class="table-wrap"><table><tr><th>Rule</th><th>Description</th><th>Value</th><th></th></tr>${
+      DB.adminThresholds.map(t=>`<tr><td>${escapeHtml(t.rule_name)}</td><td class="hint">${escapeHtml(t.description||"")}</td>
+        <td colspan="2"><form onsubmit="return submitAdminThreshold(event,'${t.rule_name}')" class="pill-row">
+          <input type="number" step="0.01" name="threshold_value" value="${t.threshold_value}" style="width:90px;">
+          <button class="btn btn-sm btn-outline" type="submit">Save</button>
+        </form></td></tr>`).join("") || `<tr><td colspan="4" class="empty">No thresholds configured yet.</td></tr>`
+    }</table></div></div>`;
+}
+function renderIntelligencePredictive(feature){
+  if(feature.id==='pred-prediction-models') return renderAdminPredictionModels();
+  if(feature.id==='pred-prediction-rules') return renderAdminPredictionRules();
+  if(feature.id==='pred-thresholds') return renderAdminThresholds();
+  if(session.role==="Investor") return renderInvestorIntelligencePredictive(feature);
+  if(!DB.intelligencePredictive) DB.intelligencePredictive = {};
+  const data = DB.intelligencePredictive[feature.id];
+  if(!data) loadIntelligencePredictive(feature.id);
+  if(!data) return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const kpis = (items) => `<div class="kpi-tile-grid" style="margin-bottom:12px;">${items.map(([label,value])=>
+    `<div class="kpi"><div class="kpi-value" style="font-size:20px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`
+  ).join("")}</div>`;
+  const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
+  let body;
+  switch(data.kind){
+    case 'trend': {
+      const sign = data.changePct>=0 ? '+' : '';
+      body = `<div class="section-note">${data.thisMonth} vs ${data.lastMonth} (${data.windowMonths}-month window)</div>` +
+        kpis([[`${data.label} (current)`,fmt(data.thisPeriod)],[`${data.label} (prior)`,fmt(data.lastPeriod)],["Change",`${sign}${data.changePct.toFixed(1)}%`]]);
+      break;
+    }
+    case 'risk': {
+      body = `<div class="section-note">As of ${data.asOf} · ${data.formula}</div>` +
+        kpis([["Quality Rating",escapeHtml(data.qualityRating)],["Total Outstanding",fmt(data.totalOutstanding)]]) +
+        `<div class="table-wrap"><table><tr><th>Overdue (days+)</th><th>Amount</th><th>% of Outstanding</th></tr>${
+          data.par.map(p=>`<tr><td>${p.threshold}</td><td>${fmtNum(p.amount)}</td><td>${p.percentage.toFixed(1)}%</td></tr>`).join("")
+        }</table></div>`;
+      break;
+    }
+    case 'officer-list':
+      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Collected This Month</th></tr>${rowsFor(data.officers,['name','thismonthcollected'])}</table></div>`;
+      break;
+    case 'branch-list':
+      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Collected This Month</th></tr>${rowsFor(data.branches,['name','thismonthcollected'])}</table></div>`;
+      break;
+    case 'capital':
+      body = kpis([["Total Capital",fmt(data.totalCapital)]]) +
+        `<div class="table-wrap"><table><tr><th>Holder</th><th>Type</th><th>%</th><th>Contributed</th></tr>${rowsFor(data.holders,['holder_name','holder_type','percentage','capital_contributed'])}</table></div>`;
+      break;
+    case 'point':
+      body = kpis([[data.label,fmt(data.value)]]);
+      break;
+    case 'no-data':
+      body = `<div class="empty">${escapeHtml(data.message)}</div>`;
+      break;
+    default:
+      body = `<div class="empty">No view built for this dimension yet.</div>`;
+  }
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+}
 function renderIntelligence(){
   const catalog = DB && DB.intelligenceCatalog;
-  const feature = catalog && (catalog.features||[]).find(f=>f.label===session.subtab);
+  // Same label can legitimately belong to more than one feature across
+  // different categories (e.g. Investor's "Investment Performance" exists
+  // in both Predictive Analytics and Explainable Decisions) — must apply
+  // the exact same granted+built-category disambiguation resolveRoute()
+  // used to get here, never a bare label match, or this could resolve to
+  // the wrong feature (and the wrong, possibly not-yet-built, category).
+  const granted = new Set((DB.me && DB.me.finalAccess && DB.me.finalAccess.intelligence) || []);
+  const feature = catalog && (catalog.features||[]).find(f=>f.label===session.subtab && granted.has(f.id) && BUILT_INTELLIGENCE_CATEGORIES.has(f.category_id));
   if(!feature) return `<div class="empty">Unknown Intelligence feature.</div>`;
   switch(feature.category_id){
     case "drilldown-analytics": return renderIntelligenceDrillDown(feature);
+    case "predictive-analytics": return renderIntelligencePredictive(feature);
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }

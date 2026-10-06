@@ -10,7 +10,7 @@ const { all, get, run } = require('./../db');
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { effectiveIntelligenceFeatures, hasIntelligenceAccess, branchIdsInScope } = require('./../rbac');
-const { computePAR } = require('./accounting');
+const { computePAR, ledgerBalance } = require('./accounting');
 const { verifyToken, tokenHash } = require('./../crypto');
 
 // The Intelligence catalog (categories + feature ids/labels, no data) is
@@ -167,6 +167,182 @@ async function computeDrillDown(dimension, scope) {
   }
 }
 
+// ---- Predictive Analytics -------------------------------------------
+// Real, honest trend indicators computed from stored dates — never a
+// trained model standing in for one. Each "forecast" is a real
+// month-over-month (or wider, per Admin's configurable trend window)
+// comparison of a real stored metric, or a real PAR/aging breakdown
+// (reusing accounting.js's own computePAR). Two features — Attendance
+// Trends and Turnover Prediction — have no real backing data anywhere in
+// this system (no attendance/clock-in table, no termination/separation
+// date field) and say so honestly rather than inventing numbers.
+async function getTrendWindowMonths() {
+  const row = await get("SELECT value FROM intelligence_settings WHERE key = 'trend_window_months'");
+  const n = row ? parseInt(row.value, 10) : 1;
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+function monthKeyOffset(monthsBack) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - monthsBack);
+  return d.toISOString().slice(0, 7);
+}
+// `sql` must select a single aliased column `v` and end with one LIKE ?
+// placeholder for the month-prefix; `scopeParams` are whatever params the
+// query needs before that final one.
+async function trendCompare(sql, scopeParams) {
+  const window = await getTrendWindowMonths();
+  const thisMonth = monthKeyOffset(0);
+  const lastMonth = monthKeyOffset(window);
+  const thisRow = await get(sql, [...scopeParams, `${thisMonth}%`]);
+  const lastRow = await get(sql, [...scopeParams, `${lastMonth}%`]);
+  const thisPeriod = thisRow.v || 0, lastPeriod = lastRow.v || 0;
+  const changePct = lastPeriod > 0 ? ((thisPeriod - lastPeriod) / lastPeriod * 100) : (thisPeriod > 0 ? 100 : 0);
+  return { thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+}
+async function qualityThresholds() {
+  const watch = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_watch_par30_pct'`)) || { threshold_value: 5 }).threshold_value;
+  const atRisk = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_atrisk_par30_pct'`)) || { threshold_value: 10 }).threshold_value;
+  const critical = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_critical_par30_pct'`)) || { threshold_value: 20 }).threshold_value;
+  const def = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_default_par30_pct'`)) || { threshold_value: 40 }).threshold_value;
+  const classify = par30 => par30 >= def ? 'Default' : par30 >= critical ? 'Critical' : par30 >= atRisk ? 'At Risk' : par30 >= watch ? 'Watch' : 'Current';
+  return { watch, atRisk, critical, def, classify };
+}
+async function riskView(scope, officerId) {
+  const par = await computePAR(scope, officerId);
+  const par30 = (par.par.find(p => p.threshold === 30) || {}).percentage || 0;
+  const q = await qualityThresholds();
+  return { ...par, qualityRating: q.classify(par30), thresholds: { watch: q.watch, atRisk: q.atRisk, critical: q.critical, default: q.def } };
+}
+async function computePredictive(featureId, req) {
+  const scope = await branchIdsInScope(req.user);
+  const loanScope = scopeClause(scope, 'l.branch_id');
+  switch (featureId) {
+    case 'pred-my-collection-prediction': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE l.officer_id = ? AND p.created_at LIKE ?`,
+        [req.user.id]
+      );
+      return { featureId, kind: 'trend', label: 'Collections', ...trend };
+    }
+    case 'pred-client-risk-indicators':
+      return { featureId, kind: 'risk', ...(await riskView(scope, req.user.id)) };
+    case 'pred-early-warning-signals':
+    case 'pred-operational-early-warnings':
+      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+    case 'pred-branch-collection-forecast':
+    case 'pred-regional-collection-forecast':
+    case 'pred-collection-forecast': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(p.amount),0) as v FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND p.created_at LIKE ?`,
+        loanScope.params
+      );
+      return { featureId, kind: 'trend', label: 'Collections', ...trend };
+    }
+    case 'pred-loan-default-prediction':
+    case 'pred-default-prediction':
+    case 'pred-risk-forecast':
+      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+    case 'pred-portfolio-forecast':
+    case 'pred-regional-portfolio-forecast': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(l.principal),0) as v FROM loans l WHERE ${loanScope.clause} AND l.disbursed_at LIKE ?`,
+        loanScope.params
+      );
+      return { featureId, kind: 'trend', label: 'Principal Disbursed', ...trend };
+    }
+    case 'pred-officer-performance-prediction':
+    case 'pred-staff-performance': {
+      const rows = await all(
+        `SELECT u.id, u.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
+         FROM users u LEFT JOIN loans l ON l.officer_id = u.id
+         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
+         WHERE u.role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND u.branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}
+         GROUP BY u.id, u.name ORDER BY thisMonthCollected DESC LIMIT 50`,
+        [`${monthKeyOffset(0)}%`, ...(scope !== null && scope.length ? scope : [])]
+      );
+      return { featureId, kind: 'officer-list', officers: rows };
+    }
+    case 'pred-branch-performance-prediction':
+    case 'pred-branch-performance': {
+      const rows = await all(
+        `SELECT b.id, b.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
+         FROM branches b LEFT JOIN loans l ON l.branch_id = b.id
+         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
+         WHERE ${scopeClause(scope,'b.id').clause} GROUP BY b.id, b.name ORDER BY thisMonthCollected DESC`,
+        [`${monthKeyOffset(0)}%`, ...scopeClause(scope,'b.id').params]
+      );
+      return { featureId, kind: 'branch-list', branches: rows };
+    }
+    case 'pred-operations-forecast': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(l.principal),0) as v FROM loans l WHERE ${loanScope.clause} AND l.disbursed_at LIKE ?`,
+        loanScope.params
+      );
+      return { featureId, kind: 'trend', label: 'Principal Disbursed', ...trend };
+    }
+    case 'pred-cashflow-forecast': {
+      // Needs the same month value twice (payments + expenses), so this
+      // is built directly rather than via the shared trendCompare helper
+      // (which only ever appends one month placeholder).
+      const window = await getTrendWindowMonths();
+      const thisMonth = monthKeyOffset(0), lastMonth = monthKeyOffset(window);
+      const net = async (mk) => (await get(
+        `SELECT (COALESCE((SELECT SUM(amount) FROM payments p JOIN loans l ON l.id=p.loan_id WHERE ${loanScope.clause} AND p.created_at LIKE ?),0) -
+                 COALESCE((SELECT SUM(amount) FROM expenses WHERE status='Paid' AND created_at LIKE ?),0)) as v`,
+        [...loanScope.params, `${mk}%`, `${mk}%`]
+      )).v || 0;
+      const thisPeriod = await net(thisMonth), lastPeriod = await net(lastMonth);
+      const changePct = lastPeriod !== 0 ? ((thisPeriod - lastPeriod) / Math.abs(lastPeriod) * 100) : (thisPeriod !== 0 ? 100 : 0);
+      return { featureId, kind: 'trend', label: 'Net Cashflow', thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+    }
+    case 'pred-revenue-forecast':
+    case 'pred-company-forecast': {
+      const trend = await trendCompare(
+        `SELECT COALESCE(SUM(je.credit),0) as v FROM journal_entries je JOIN payments p ON p.id = je.ref_id AND je.ref_type='payment' JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND je.entry_date LIKE ?`,
+        loanScope.params
+      );
+      return { featureId, kind: 'trend', label: 'Interest Revenue', ...trend };
+    }
+    case 'pred-liquidity-forecast': {
+      // Same real ledgerBalance() /api/accounting/cash-position itself
+      // uses — never a second, guessed account-id query.
+      const [cash, bank, mpesa] = await Promise.all([
+        ledgerBalance('cash', scope), ledgerBalance('bank', scope), ledgerBalance('mpesa', scope),
+      ]);
+      return { featureId, kind: 'point', label: 'Current Cash Position', value: cash + bank + mpesa, breakdown: { cash, bank, mpesa } };
+    }
+    case 'pred-profit-forecast': {
+      const window = await getTrendWindowMonths();
+      const thisMonth = monthKeyOffset(0), lastMonth = monthKeyOffset(window);
+      const profit = async (mk) => {
+        const rev = (await get(`SELECT COALESCE(SUM(je.credit),0) as v FROM journal_entries je JOIN payments p ON p.id = je.ref_id AND je.ref_type='payment' JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND je.entry_date LIKE ?`, [...loanScope.params, `${mk}%`])).v;
+        const exp = (await get(`SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE status='Paid' AND created_at LIKE ?`, [`${mk}%`])).v;
+        return rev - exp;
+      };
+      const thisPeriod = await profit(thisMonth), lastPeriod = await profit(lastMonth);
+      const changePct = lastPeriod !== 0 ? ((thisPeriod - lastPeriod) / Math.abs(lastPeriod) * 100) : (thisPeriod !== 0 ? 100 : 0);
+      return { featureId, kind: 'trend', label: 'Net Profit', thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+    }
+    case 'pred-capital-forecast': {
+      const rows = await all(`SELECT holder_name, holder_type, percentage, capital_contributed FROM equity_holdings ORDER BY capital_contributed DESC NULLS LAST`);
+      const total = rows.reduce((s, r) => s + Number(r.capital_contributed || 0), 0);
+      return { featureId, kind: 'capital', totalCapital: total, holders: rows };
+    }
+    case 'pred-workforce-trends': {
+      const trend = await trendCompare(
+        `SELECT COUNT(*) as v FROM users WHERE created_at LIKE ?`, []
+      );
+      return { featureId, kind: 'trend', label: 'New Hires', ...trend };
+    }
+    case 'pred-attendance-trends':
+      return { featureId, kind: 'no-data', message: 'No attendance/clock-in data is recorded anywhere in this system yet — this honestly reflects that rather than inventing a trend.' };
+    case 'pred-turnover-prediction':
+      return { featureId, kind: 'no-data', message: 'No employee separation/termination date is recorded anywhere in this system yet — this honestly reflects that rather than inventing a prediction.' };
+    default:
+      return null;
+  }
+}
+
 function requireAdminOnly(action) {
   return (req, res, next) => {
     if (req.user.role_id !== 'admin') {
@@ -192,6 +368,65 @@ function register(router) {
     const result = await computeDrillDown(req.params.dimension, scope);
     if (!result) return next({ status: 404, message: `No drill-down data available for "${req.params.dimension}"` });
     res.json(result);
+  });
+
+  // Predictive Analytics — :kind IS the real feature id (same inline
+  // check as drilldown above, for the same unhandled-rejection reason).
+  router.get('/api/intelligence/predictive/:kind', requireAuth, async (req, res, next) => {
+    if (!(await hasIntelligenceAccess(req.user, req.params.kind))) {
+      return next({ status: 403, message: `You do not have access to the "${req.params.kind}" Intelligence feature` });
+    }
+    const result = await computePredictive(req.params.kind, req);
+    if (!result) return next({ status: 404, message: `No predictive data available for "${req.params.kind}"` });
+    res.json(result);
+  });
+
+  // Admin > Intelligence > Predictive Analytics > "Prediction Rules" —
+  // the one real, persisted, editable trend-window setting every
+  // trendCompare() call above reads.
+  router.get('/api/intelligence/settings/trend-window', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Intelligence prediction settings'), async (req, res) => {
+    res.json({ trendWindowMonths: await getTrendWindowMonths() });
+  });
+  router.put('/api/intelligence/settings/trend-window', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit Intelligence prediction settings'), async (req, res, next) => {
+    const n = parseInt(req.body.months, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 12) return next({ status: 400, message: 'months must be an integer between 1 and 12' });
+    await run(
+      `INSERT INTO intelligence_settings (key, value, updated_by, updated_at) VALUES ('trend_window_months', ?, ?, iso_now())
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [String(n), req.user.id]
+    );
+    await logAction(req, { action: 'Changed Intelligence trend window', module: 'intelligence', recordType: 'IntelligenceSetting', recordId: 'trend_window_months', newValue: n });
+    res.json({ ok: true, trendWindowMonths: n });
+  });
+  // Admin > Intelligence > Predictive Analytics > "Prediction Models" —
+  // a real, honest, read-only account of the actual methods this system
+  // computes predictions with (no invented ML claims).
+  router.get('/api/intelligence/prediction-models', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Intelligence prediction models'), async (req, res) => {
+    res.json({
+      models: [
+        { kind: 'trend', method: 'Month-over-month comparison of a real stored metric (collections, disbursements, revenue, cashflow, profit, headcount), window configurable via Prediction Rules.' },
+        { kind: 'risk', method: 'PAR aging breakdown (1/7/30/60/90 days overdue) via the same computePAR() every Reports/LoanBook risk view already uses, classified against the real configurable Thresholds.' },
+        { kind: 'officer-list / branch-list', method: 'Real per-officer / per-branch current-month collection totals, ranked — not a trend, a real current snapshot.' },
+        { kind: 'capital', method: 'Real recorded equity_holdings contributions, no projection.' },
+        { kind: 'no-data', method: 'Attendance Trends and Turnover Prediction have no real backing data in this system (no attendance/clock-in table, no separation-date field) — they report that honestly instead of fabricating a number.' },
+      ],
+    });
+  });
+  // Admin > Intelligence > Predictive Analytics > "Thresholds" — the
+  // real, existing client_risk_config table (already read live by
+  // Reports/LoanBook/Collections) — a real edit here has a real,
+  // immediate effect on those pages too, not a second, decorative copy.
+  router.get('/api/intelligence/thresholds', requireAuth, requirePermission('manage_users'), requireAdminOnly('view risk thresholds'), async (req, res) => {
+    res.json({ thresholds: await all('SELECT * FROM client_risk_config ORDER BY rule_name') });
+  });
+  router.put('/api/intelligence/thresholds/:ruleName', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit risk thresholds'), async (req, res, next) => {
+    const value = Number(req.body.threshold_value);
+    if (!Number.isFinite(value)) return next({ status: 400, message: 'threshold_value must be a number' });
+    const existing = await get('SELECT * FROM client_risk_config WHERE rule_name = ?', [req.params.ruleName]);
+    if (!existing) return next({ status: 404, message: 'Unknown threshold rule' });
+    await run('UPDATE client_risk_config SET threshold_value = ?, updated_by = ?, updated_at = iso_now() WHERE rule_name = ?', [value, req.user.id, req.params.ruleName]);
+    await logAction(req, { action: 'Changed risk threshold', module: 'intelligence', recordType: 'ClientRiskConfig', recordId: req.params.ruleName, previousValue: existing.threshold_value, newValue: value });
+    res.json({ ok: true });
   });
 
 

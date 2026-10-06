@@ -1251,6 +1251,17 @@ CREATE TABLE IF NOT EXISTS user_workspace_preferences (
   layout_json TEXT NOT NULL DEFAULT '{}',
   updated_at TEXT NOT NULL DEFAULT iso_now()
 );
+
+-- Admin > Intelligence > Predictive Analytics > "Prediction Rules" — the
+-- one real, persisted, editable parameter the trend-comparison engine
+-- actually reads (trend_window_months). Generic key/value so a future
+-- real setting is one more row, never a schema change.
+CREATE TABLE IF NOT EXISTS intelligence_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
 `;
 
 // The FK additions on branches.manager_id / branch_proposals.* reference

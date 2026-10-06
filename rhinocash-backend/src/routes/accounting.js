@@ -63,11 +63,18 @@ async function assertPeriodOpen(dateStr) {
 // reuses this exact function rather than recalculating PAR a second way.
 // `scope` is the same real branch-id array (or null for company-wide)
 // resolveScopeForRequest()/branchIdsInScope() already produce elsewhere.
-async function computePAR(scope) {
+// `officerId` (optional) narrows further to one loan officer's own
+// portfolio — added for Intelligence > Predictive Analytics' Loan
+// Officer-level risk indicators, which need a scope finer than any
+// branch-level caller ever did; every existing call site is unaffected
+// (undefined officerId = no extra filter, identical behavior to before).
+async function computePAR(scope, officerId) {
   const loanScope = scope === null ? '1=1' : (scope.length === 0 ? '1=0' : `l.branch_id IN (${scope.map(() => '?').join(',')})`);
   const params = scope !== null ? [...scope] : [];
+  const officerClause = officerId ? ' AND l.officer_id = ?' : '';
+  if (officerId) params.push(officerId);
   const loans = await all(
-    `SELECT l.id, l.branch_id FROM loans l WHERE ${loanScope} AND l.status IN ('Active','Disbursed')`, params
+    `SELECT l.id, l.branch_id FROM loans l WHERE ${loanScope}${officerClause} AND l.status IN ('Active','Disbursed')`, params
   );
   const thresholds = [1, 7, 30, 60, 90];
   const today = new Date().toISOString().slice(0, 10);
