@@ -326,56 +326,84 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .loading-screen{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:10px; color:var(--blue); font-size:16px; font-weight:700;}
 .loading-screen-spinner{display:inline-block; width:18px; height:18px; vertical-align:-3px; margin-left:5px; animation:loginSpin 0.8s linear infinite;}
 
-/* ---- Login screen ---- */
+/* ---- Login screen — split hero/form card, Rhinocash's own navy/rust
+   brand (never a one-off separate palette): full-bleed stacked hero-over-
+   form on mobile, a centered floating split-panel card on desktop. ---- */
 .login-screen{
-  --lime:#B8E62E; --lime-dark:#8FBF23;
-  min-height:100vh; background:linear-gradient(160deg,#150F30 0%,#241A4D 55%,#1A1140 100%);
-  display:flex; align-items:center; justify-content:center; padding:36px 18px;
+  min-height:100vh; background:#fff;
 }
-.login-wrap{width:100%; max-width:400px;}
-.login-logo-card{
-  background:rgba(0,0,0,0.25); border:1px solid rgba(184,230,46,0.2); border-radius:14px; padding:18px 20px 14px; text-align:center; margin-bottom:18px;
-  box-shadow:0 10px 30px rgba(0,0,0,0.35);
+@media (min-width:860px){
+  .login-screen{ background:var(--navy-deep); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 20px; }
 }
-.login-logo-img{width:100%; max-width:230px; height:auto; display:block; margin:0 auto;}
-.login-logo-mark{font-size:26px; font-weight:800; color:var(--navy); letter-spacing:0.3px;}
-.login-logo-mark span{color:var(--rust);}
-.login-logo-tag{margin-top:2px; font-size:14.5px; font-weight:800; letter-spacing:0.6px; color:#2ECC71; border-top:2px solid var(--lime); padding-top:8px; display:inline-block;}
-.login-panel{
-  background:rgba(255,255,255,0.05); border:1px solid rgba(184,230,46,0.18); border-radius:14px; padding:26px 24px;
-  backdrop-filter:blur(2px);
+.login-card{ width:100%; }
+@media (min-width:860px){
+  .login-card{ max-width:780px; display:flex; border-radius:20px; overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,0.45); }
 }
-.login-title{color:var(--lime); font-size:21px; font-weight:800; text-align:center; margin-bottom:20px;}
-.login-field{margin-bottom:16px;}
-.login-field-row{display:flex; align-items:center; gap:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(184,230,46,0.35); border-radius:9px; padding:11px 14px;}
-.login-field-row.focus-ring{border-color:var(--lime);}
-.login-field-row svg{flex-shrink:0; opacity:0.85;}
-.login-field-row input{
-  background:transparent; border:none; outline:none; color:#fff; font-size:14px; width:100%;
+.login-hero{
+  position:relative; overflow:hidden; color:#fff; padding:26px 22px 24px;
+  background:linear-gradient(150deg, var(--navy) 0%, var(--navy-deep) 100%);
+  border-radius:0 0 26px 26px;
 }
-.login-field-row input::placeholder{color:#A9A3C9;}
+@media (min-width:860px){
+  .login-hero{ flex:0 0 44%; border-radius:0; padding:40px 36px; display:flex; flex-direction:column; justify-content:space-between; }
+}
+.login-hero::before{ content:""; position:absolute; top:-70px; right:-70px; width:280px; height:280px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.09), transparent 70%); pointer-events:none; }
+.login-hero::after{ content:""; position:absolute; bottom:-90px; left:-50px; width:240px; height:240px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.07), transparent 70%); pointer-events:none; }
+.login-hero-top{ display:flex; align-items:center; gap:12px; position:relative; }
+.login-hero-logo{ width:46px; height:46px; border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
+.login-hero-logo img{ width:100%; height:100%; object-fit:contain; padding:5px; }
+.login-hero-name{ font-weight:800; font-size:16px; line-height:1.2; }
+.login-hero-tagline{ font-size:11px; opacity:0.75; margin-top:2px; }
+.login-hero-badge{ margin-top:18px; display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800; letter-spacing:0.7px; text-transform:uppercase; opacity:0.9; position:relative; }
+.login-hero-desktop{ display:none; }
+@media (min-width:860px){
+  .login-hero-desktop{ display:block; margin-top:36px; position:relative; }
+  .login-hero-headline{ font-size:27px; font-weight:800; line-height:1.25; }
+  .login-hero-desc{ font-size:13.5px; opacity:0.82; margin-top:10px; line-height:1.6; max-width:280px; }
+  .login-hero-features{ margin-top:22px; display:flex; flex-direction:column; gap:13px; }
+  .login-hero-feature{ display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600; }
+  .login-hero-feature .icon{ width:28px; height:28px; border-radius:8px; background:rgba(255,255,255,0.14); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px; }
+}
+.login-hero-protect{ display:none; }
+@media (min-width:860px){
+  .login-hero-protect{ display:flex; align-items:center; gap:6px; font-size:11px; opacity:0.72; position:relative; }
+}
+.login-form-panel{ padding:26px 22px 30px; background:#fff; }
+@media (min-width:860px){
+  .login-form-panel{ flex:1; padding:48px 42px; display:flex; flex-direction:column; justify-content:center; }
+}
+.login-eyebrow{ display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px; }
+.login-title{ font-size:24px; font-weight:800; color:var(--ink); margin:0; }
+.login-subtitle{ font-size:13px; color:var(--ink-soft); margin:5px 0 22px; }
+.login-field{ margin-bottom:14px; position:relative; }
+.login-field .field-icon{ position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-faint); display:flex; pointer-events:none; }
+.login-field input{
+  width:100%; box-sizing:border-box; padding:13px 14px 13px 42px; border:1.5px solid var(--line); border-radius:10px;
+  font-size:14px; color:var(--ink); background:#fff;
+}
+.login-field input::placeholder{ color:var(--ink-faint); }
+.login-field input:focus{ outline:none; border-color:var(--navy-soft); box-shadow:0 0 0 3px rgba(31,56,100,0.1); }
+.login-field .eye-toggle{ position:absolute; right:14px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--ink-faint); display:flex; background:none; border:none; padding:2px; }
+.login-field .eye-toggle:hover{ color:var(--navy); }
 .login-btn{
-  width:100%; background:linear-gradient(180deg,var(--lime),var(--lime-dark)); color:#152300; border:none; border-radius:9px;
-  padding:13px; font-size:15px; font-weight:800; cursor:pointer; margin-top:6px; letter-spacing:0.2px;
+  width:100%; background:linear-gradient(135deg, var(--navy-deep), var(--navy)); color:#fff; border:none; border-radius:10px;
+  padding:14px; font-size:14.5px; font-weight:800; cursor:pointer; margin-top:4px; letter-spacing:0.2px;
 }
-.login-btn:hover{opacity:0.92;}
+.login-btn:hover{ opacity:0.93; }
+.login-btn:disabled{ opacity:0.7; cursor:default; }
 .login-btn-spinner{display:inline-block; width:15px; height:15px; vertical-align:-3px; margin-right:7px; animation:loginSpin 0.8s linear infinite;}
 @keyframes loginSpin{ to{ transform:rotate(360deg); } }
-.login-forgot{text-align:right; margin-top:12px;}
-.login-forgot a{color:var(--lime); font-size:12.5px; text-decoration:none; cursor:pointer;}
-.login-demo-box{margin-top:18px; background:rgba(255,255,255,0.06); border:1px dashed rgba(184,230,46,0.3); border-radius:10px; padding:12px 14px;}
-.login-demo-box div.hd{color:#B9B4D6; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; font-weight:700; margin-bottom:8px;}
-.demo-user-chip{
-  display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.1); border:1px solid rgba(184,230,46,0.25);
-  color:#fff; border-radius:20px; padding:5px 12px; font-size:11.5px; cursor:pointer; margin:0 6px 6px 0;
-}
-.demo-user-chip:hover{background:rgba(255,255,255,0.18);}
-.login-footer{text-align:center; color:#8C86AD; font-size:11.5px; margin-top:22px; border-top:1px solid rgba(184,230,46,0.15); padding-top:14px;}
-.login-error{background:rgba(179,38,30,0.25); border:1px solid rgba(179,38,30,0.5); color:#FFD9D6; font-size:12.5px; padding:9px 12px; border-radius:8px; margin-bottom:14px;}
-.login-recovery-text{color:#C9C4E3; font-size:13px; text-align:center; margin-bottom:20px; line-height:1.5;}
-.login-back{text-align:center; margin-top:14px;}
-.login-back a{color:var(--lime); font-size:12.5px; text-decoration:none; cursor:pointer;}
-.login-recovery-success{background:rgba(184,230,46,0.15); border:1px solid rgba(184,230,46,0.4); color:#DFF6A8; font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:16px; text-align:center;}
+.login-forgot{ text-align:right; margin-top:12px; }
+.login-forgot a{ color:var(--navy); font-weight:700; font-size:12.5px; text-decoration:none; cursor:pointer; }
+.login-security-note{ display:flex; gap:9px; align-items:flex-start; background:var(--blue-bg); border-radius:10px; padding:11px 13px; margin-top:22px; font-size:11.5px; color:var(--ink-soft); line-height:1.5; }
+.login-security-note svg{ flex-shrink:0; margin-top:1px; color:var(--navy); }
+.login-page-footer{ text-align:center; color:var(--ink-faint); font-size:11px; padding:18px 0 22px; }
+@media (min-width:860px){ .login-page-footer{ color:rgba(255,255,255,0.4); } }
+.login-error{ background:var(--red-bg); border:1px solid rgba(179,38,30,0.3); color:var(--red); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
+.login-success-banner{ background:var(--green-bg); border:1px solid rgba(47,125,92,0.3); color:var(--green); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
+.login-recovery-success{ background:var(--green-bg); border:1px solid rgba(47,125,92,0.3); color:var(--green); font-size:12.5px; padding:12px 13px; border-radius:8px; margin-bottom:16px; text-align:center; line-height:1.5; }
+.login-back{ text-align:center; margin-top:16px; }
+.login-back a{ color:var(--navy); font-weight:700; font-size:12.5px; text-decoration:none; cursor:pointer; }
 
 /* ---- Responsive / mobile ---- */
 @media (max-width: 880px){
@@ -2527,40 +2555,83 @@ function renderApp(){
   wireFilterRowScrollSync();
 }
 
-function renderLogin(){
+// ---- Shared auth-screen chrome (Login / Password Recovery / Forced
+// Password Reset all build on this one hero+form-panel shell) — a split
+// card on desktop (hero left, form right), a stacked hero-over-form on
+// mobile, matching the reference layout exactly but in Rhinocash's own
+// navy/rust brand, never a separate one-off palette. ----
+const ICON_PERSON = '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>';
+const ICON_LOCK = '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+const ICON_ENVELOPE = '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>';
+const ICON_EYE = '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>';
+const ICON_EYE_OFF = '<path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.2-5.1M9.9 4.2A10.4 10.4 0 0 1 12 4c7 0 11 7 11 7a18.6 18.6 0 0 1-2.7 3.6"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/><path d="M1 1l22 22"/>';
+const ICON_SHIELD = '<path d="M12 2l8 3v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V5z"/>';
+const ICON_CHECK = '<path d="M20 6L9 17l-5-5"/>';
+function fieldIcon(path, size){ return `<span class="field-icon"><svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg></span>`; }
+function toggleLoginPasswordVisibility(btn){
+  const input = btn.parentElement.querySelector('input');
+  const nowText = input.type === 'password';
+  input.type = nowText ? 'text' : 'password';
+  btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${nowText ? ICON_EYE_OFF : ICON_EYE}</svg>`;
+}
+function renderAuthHero(){
   return `
-    <div class="login-screen">
-      <div class="login-wrap">
-        <div class="login-logo-card">
-          <img src="${LOGO_DATA_URI}" alt="Rhinocash Limited" class="login-logo-img">
-          <div class="login-logo-tag">RHINOCASH LIMITED</div>
+    <div class="login-hero">
+      <div class="login-hero-top">
+        <div class="login-hero-logo"><img src="${LOGO_DATA_URI}" alt="Rhinocash"></div>
+        <div>
+          <div class="login-hero-name">Rhinocash Limited</div>
+          <div class="login-hero-tagline">Core microfinance workspace</div>
         </div>
-        <div class="login-panel">
-          <div class="login-title">Account Login</div>
-          ${session.justLoggedOut ? `<div class="login-success" style="background:#1baf7a; color:#fff; padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:14px;">You have been securely logged out.</div>` : ""}
-          ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ""}
-          <form onsubmit="return doLogin(event)">
-            <div class="login-field">
-              <div class="login-field-row">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
-                <input name="username" placeholder="Email address" autocomplete="username" required ${session.loggingIn?'disabled':''}>
-              </div>
-            </div>
-            <div class="login-field">
-              <div class="login-field-row">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
-              </div>
-            </div>
-            <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Processing… please wait` : '▸ Login'}</button>
-          </form>
-          <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
-          <div class="hint" style="margin-top:16px; color:#C7CBDA; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
-        </div>
-        <div class="login-footer">Copyright © Rhinocash Limited 2026</div>
       </div>
+      <div class="login-hero-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Secure Staff Access</div>
+      <div class="login-hero-desktop">
+        <div class="login-hero-headline">Welcome back.</div>
+        <div class="login-hero-desc">Manage your institution's operations from one secure workspace built for clarity, control, and better service.</div>
+        <div class="login-hero-features">
+          <div class="login-hero-feature"><span class="icon">📊</span> Unified operations</div>
+          <div class="login-hero-feature"><span class="icon">🔒</span> Protected sessions</div>
+          <div class="login-hero-feature"><span class="icon">📈</span> Live insights</div>
+        </div>
+      </div>
+      <div class="login-hero-protect"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON_CHECK}</svg> Your connection is protected</div>
     </div>
   `;
+}
+function renderAuthShell(formPanelHtml){
+  return `
+    <div class="login-screen">
+      <div class="login-card">
+        ${renderAuthHero()}
+        <div class="login-form-panel">${formPanelHtml}</div>
+      </div>
+      <div class="login-page-footer">Copyright © Rhinocash Limited 2026</div>
+    </div>
+  `;
+}
+function renderLogin(){
+  return renderAuthShell(`
+    <div class="login-eyebrow">${fieldIcon(ICON_LOCK, 12)} Staff Portal</div>
+    <h2 class="login-title">Account Login</h2>
+    <div class="login-subtitle">Enter your details below to continue securely.</div>
+    ${session.justLoggedOut ? `<div class="login-success-banner">You have been securely logged out.</div>` : ""}
+    ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ""}
+    <form onsubmit="return doLogin(event)">
+      <div class="login-field">
+        ${fieldIcon(ICON_PERSON)}
+        <input name="username" placeholder="Username or Email address" autocomplete="username" required ${session.loggingIn?'disabled':''}>
+      </div>
+      <div class="login-field">
+        ${fieldIcon(ICON_LOCK)}
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
+        <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
+      </div>
+      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Processing… please wait` : '▸ Login'}</button>
+    </form>
+    <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
+    <div class="login-security-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Your sign-in is protected with session security and one-time verification where required.</div>
+    <div class="hint" style="margin-top:14px; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
+  `);
 }
 
 function openForgotPassword(){
@@ -2595,37 +2666,25 @@ async function doForgotPassword(ev){
 }
 function renderForgotPassword(){
   const st = forgotPasswordState;
-  return `
-    <div class="login-screen">
-      <div class="login-wrap">
-        <div class="login-logo-card">
-          <img src="${LOGO_DATA_URI}" alt="Rhinocash Limited" class="login-logo-img">
-          <div class="login-logo-tag">RHINOCASH LIMITED</div>
+  return renderAuthShell(`
+    <div class="login-eyebrow">${fieldIcon(ICON_LOCK, 12)} Staff Portal</div>
+    <h2 class="login-title">Password Recovery</h2>
+    ${st.submitted ? `
+      <div class="login-recovery-success" style="margin-top:14px;">${escapeHtml(st.message || "If that email is registered, password reset instructions have been sent.")}</div>
+      <div class="login-back"><a onclick="closeForgotPassword()">← Back to Login</a></div>
+    ` : `
+      <div class="login-subtitle">Enter your email address linked to the account</div>
+      ${st.error ? `<div class="login-error">${escapeHtml(st.error)}</div>` : ""}
+      <form onsubmit="return doForgotPassword(event)">
+        <div class="login-field">
+          ${fieldIcon(ICON_ENVELOPE)}
+          <input name="email" type="email" placeholder="Your Email address" autocomplete="email" required ${st.submitting?'disabled':''}>
         </div>
-        <div class="login-panel">
-          <div class="login-title">Password Recovery</div>
-          ${st.submitted ? `
-            <div class="login-recovery-success">${escapeHtml(st.message || "If that email is registered, password reset instructions have been sent.")}</div>
-            <div class="login-back"><a onclick="closeForgotPassword()">← Back to Login</a></div>
-          ` : `
-            <div class="login-recovery-text">Enter your email address linked to the account</div>
-            ${st.error ? `<div class="login-error">${escapeHtml(st.error)}</div>` : ""}
-            <form onsubmit="return doForgotPassword(event)">
-              <div class="login-field">
-                <div class="login-field-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
-                  <input name="email" type="email" placeholder="Email address" autocomplete="email" required ${st.submitting?'disabled':''}>
-                </div>
-              </div>
-              <button class="login-btn" type="submit" ${st.submitting?'disabled':''}>${st.submitting ? '⟳ Sending…' : '✔ Confirm'}</button>
-            </form>
-            <div class="login-back"><a onclick="closeForgotPassword()">← Back to Login</a></div>
-          `}
-        </div>
-        <div class="login-footer">Copyright © Rhinocash Limited 2026</div>
-      </div>
-    </div>
-  `;
+        <button class="login-btn" type="submit" ${st.submitting?'disabled':''}>${st.submitting ? '⟳ Sending…' : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;">${ICON_CHECK}</svg>Confirm`}</button>
+      </form>
+      <div class="login-back"><a onclick="closeForgotPassword()">← Back to Login</a></div>
+    `}
+  `);
 }
 
 // The forced password-reset screen — shown instead of the normal app shell
@@ -2664,37 +2723,25 @@ async function submitForcedPasswordReset(ev){
 }
 function renderForcedPasswordReset(){
   const st = pwResetState;
-  return `
-    <div class="login-screen">
-      <div class="login-wrap">
-        <div class="login-logo-card">
-          <img src="${LOGO_DATA_URI}" alt="Rhinocash Limited" class="login-logo-img">
-          <div class="login-logo-tag">RHINOCASH LIMITED</div>
-        </div>
-        <div class="login-panel">
-          <div class="login-title">Password Reset</div>
-          <div class="login-recovery-text">Update your account password to proceed</div>
-          ${st.error ? `<div class="login-error">${escapeHtml(st.error)}</div>` : ""}
-          <form onsubmit="return submitForcedPasswordReset(event)">
-            <div class="login-field">
-              <div class="login-field-row">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 5l3 3M18 3l3 3"/></svg>
-                <input name="newPassword" type="password" placeholder="New Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
-              </div>
-            </div>
-            <div class="login-field">
-              <div class="login-field-row">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
-                <input name="confirmPassword" type="password" placeholder="Re-type Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
-              </div>
-            </div>
-            <button class="login-btn" type="submit" ${st.submitting?'disabled':''}>${st.submitting ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Updating…` : '⟳ Update'}</button>
-          </form>
-        </div>
-        <div class="login-footer">Copyright © Rhinocash Limited 2026</div>
+  return renderAuthShell(`
+    <div class="login-eyebrow">${fieldIcon(ICON_LOCK, 12)} Staff Portal</div>
+    <h2 class="login-title">Password Reset</h2>
+    <div class="login-subtitle">Update your account password to proceed</div>
+    ${st.error ? `<div class="login-error">${escapeHtml(st.error)}</div>` : ""}
+    <form onsubmit="return submitForcedPasswordReset(event)">
+      <div class="login-field">
+        ${fieldIcon(ICON_LOCK)}
+        <input name="newPassword" type="password" placeholder="New Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
+        <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
       </div>
-    </div>
-  `;
+      <div class="login-field">
+        ${fieldIcon(ICON_LOCK)}
+        <input name="confirmPassword" type="password" placeholder="Re-type Password" autocomplete="new-password" minlength="8" required ${st.submitting?'disabled':''}>
+        <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
+      </div>
+      <button class="login-btn" type="submit" ${st.submitting?'disabled':''}>${st.submitting ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Updating…` : 'Update Password'}</button>
+    </form>
+  `);
 }
 
 // Real authentication — staff accounts and investor accounts use two
