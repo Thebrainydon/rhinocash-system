@@ -221,6 +221,30 @@ function register(router) {
     res.json({ user: await publicUser(await get('SELECT * FROM users WHERE id = ?', [req.user.id])), passwordChanged });
   });
 
+  // Real profile photo — the frontend already uploads the file's bytes
+  // through the generic POST /api/uploads first, then links the resulting
+  // path here. (This endpoint was referenced by the frontend but never
+  // actually registered — avatar saves were silently 404ing.)
+  router.post('/api/users/me/avatar', requireAuth, async (req, res, next) => {
+    if (!req.body.path) return next({ status: 400, message: 'path is required — upload the file via /api/uploads first' });
+    await run('UPDATE users SET avatar_path = ? WHERE id = ?', [req.body.path, req.user.id]);
+    await logAction(req, { action: 'Updated own avatar', module: 'account', recordType: 'User', recordId: req.user.id });
+    // Flat avatar_path, not the full {user} envelope — matches the one
+    // pre-existing frontend call site (handleMyAvatarFileChange), which
+    // was already written against this exact shape before this route
+    // itself existed.
+    res.json({ avatar_path: req.body.path });
+  });
+
+  // A reusable signature for loan forms/approval documents — same
+  // upload-then-link pattern as the avatar above.
+  router.post('/api/users/me/signature', requireAuth, async (req, res, next) => {
+    if (!req.body.path) return next({ status: 400, message: 'path is required — upload the file via /api/uploads first' });
+    await run('UPDATE users SET signature_path = ? WHERE id = ?', [req.body.path, req.user.id]);
+    await logAction(req, { action: 'Updated own signature', module: 'account', recordType: 'User', recordId: req.user.id });
+    res.json({ signature_path: req.body.path });
+  });
+
   router.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.length < 8) return next({ status: 400, message: 'New password must be at least 8 characters' });

@@ -25,7 +25,7 @@ function computeShif(gross) {
 // PAYE: the real 2023 Finance Act progressive monthly bands, computed on
 // taxable pay (gross less the real NSSF contribution), less the real
 // KES 2,400 monthly personal relief. Never negative.
-function computePaye(taxablePay) {
+function computePaye(taxablePay, reliefEnabled) {
   const bands = [[24000, 0.10], [8333, 0.25], [467667, 0.30], [300000, 0.325], [Infinity, 0.35]];
   let remaining = Math.max(0, taxablePay);
   let tax = 0;
@@ -35,7 +35,7 @@ function computePaye(taxablePay) {
     tax += amountInBand * rate;
     remaining -= amountInBand;
   }
-  const personalRelief = 2400;
+  const personalRelief = reliefEnabled ? 2400 : 0;
   return Math.max(0, Math.round((tax - personalRelief) * 100) / 100);
 }
 // A deterministic, human-legible payslip reference — not a financial
@@ -66,7 +66,7 @@ async function computePayslip(user, period) {
   const gross = Number(user.basic_salary) || 0;
   const nssf = computeNssf(gross);
   const shif = computeShif(gross);
-  const paye = computePaye(gross - nssf);
+  const paye = computePaye(gross - nssf, user.tax_relief !== 0 && user.tax_relief !== false);
   const advanceRow = await get(
     `SELECT COALESCE(SUM(amount),0) as v FROM salary_advance_requests WHERE user_id = ? AND status = 'Approved' AND (decided_at)::date BETWEEN (?)::date AND (?)::date`,
     [user.id, monthStart, monthEnd]
@@ -77,7 +77,10 @@ async function computePayslip(user, period) {
   const netPay = Math.round((gross - totalDeductions) * 100) / 100;
   return {
     period, basicSalary: gross, allowances: 0, bonus: 0, grossPay: gross,
-    nssf, shif, paye, salaryAdvance, otherDeductions, totalDeductions, netPay,
+    // pension is NSSF under its own name — Kenya's statutory pension
+    // scheme — shown as "Pension" on the Payroll tab rather than
+    // duplicating the figure under an unrelated second label.
+    nssf, pension: nssf, shif, paye, salaryAdvance, otherDeductions, totalDeductions, netPay,
     ref: payslipRef(user, period),
   };
 }

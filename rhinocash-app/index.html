@@ -122,6 +122,10 @@ body{
 }
 .topbar-left{display:flex; align-items:center; gap:10px; min-width:0;}
 .topbar-brand{font-weight:800; font-size:15px; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.topbar-pills{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+.topbar-pill{display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:20px; font-size:11.5px; font-weight:700; border:1px solid; white-space:nowrap;}
+.topbar-pill.branch{color:var(--blue); border-color:rgba(46,92,138,0.3); background:var(--blue-bg);}
+.topbar-pill.access{color:var(--green); border-color:rgba(47,125,92,0.3); background:var(--green-bg);}
 .topbar-right{display:flex; align-items:center; gap:10px; flex-shrink:0;}
 .role-select{
   border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 10px; font-size:12.5px;
@@ -454,6 +458,8 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 }
 .login-hero::before{ content:""; position:absolute; top:-70px; right:-70px; width:280px; height:280px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.09), transparent 70%); pointer-events:none; }
 .login-hero::after{ content:""; position:absolute; bottom:-90px; left:-50px; width:240px; height:240px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.07), transparent 70%); pointer-events:none; }
+.login-hero-money{ position:absolute; top:14px; right:14px; width:92px; height:auto; opacity:0.95; pointer-events:none; filter:drop-shadow(0 6px 14px rgba(0,0,0,0.35)); }
+@media (min-width:860px){ .login-hero-money{ top:24px; right:28px; width:112px; } }
 .login-hero-top{ display:flex; align-items:center; gap:12px; position:relative; }
 .login-hero-logo{ width:46px; height:46px; border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
 .login-hero-logo img{ width:100%; height:100%; object-fit:contain; padding:5px; }
@@ -1856,6 +1862,7 @@ async function loadCoreData(){
   }
   await Promise.all(calls);
   await loadMyAvatarDataUri();
+  await loadMySignatureDataUri();
 }
 async function refreshNotifications(){
   try{ const r = await api.get('/api/notifications'); DB.notifications = r.notifications.map(adaptNotification); }catch(e){}
@@ -1931,6 +1938,19 @@ function activeLoans(){ return DB.loans.filter(l=> ["Active","Disbursed"].includ
 function clientName(id){ const c=DB.clients.find(x=>x.id===id); return c?c.name:"—"; }
 function staffName(id){ const s=DB.staff.find(x=>x.id===id); if(s) return s.name; if(id && id===session.userId) return session.userName; return "—"; }
 function branchName(id){ const b=DB.branches.find(x=>x.id===id); return b?b.name:"—"; }
+// The topbar's own branch/access-level pills — shown on every page (the
+// topbar is shared chrome), real data only: no pill at all for whichever
+// one genuinely doesn't apply (e.g. an Investor has no branch_id).
+function topbarPillsHtml(){
+  const me = DB.me || {};
+  const branchLabel = me.branch_id ? branchName(me.branch_id) : null;
+  const accessLabel = me.access_level || ACCESS_LEVEL_BY_ROLE[session.role] || null;
+  if(!branchLabel && !accessLabel) return "";
+  return `<div class="topbar-pills">
+    ${branchLabel ? `<span class="topbar-pill branch">📍 ${escapeHtml(branchLabel)}</span>` : ""}
+    ${accessLabel ? `<span class="topbar-pill access">🛡️ ${escapeHtml(accessLabel)}</span>` : ""}
+  </div>`;
+}
 function productName(id){ const p=DB.products.find(x=>x.id===id); return p?p.name:"—"; }
 
 function kFmt(n){ return n>=1000000? (n/1000000).toFixed(1)+"M" : n>=1000? (n/1000).toFixed(0)+"K" : Math.round(n); }
@@ -2641,6 +2661,7 @@ function renderApp(){
           <div class="topbar-left">
             <div class="hamburger" onclick="toggleSidebar()">☰</div>
             <div class="topbar-brand">RHINOCASH LTD</div>
+            ${topbarPillsHtml()}
           </div>
           <div class="topbar-right">
             ${session.role!=="Investor" ? `<div class="bell" onclick="openTicketsPanel()" title="Tickets">💬</div>` : ""}
@@ -2661,6 +2682,7 @@ function renderApp(){
   `;
   initPendingCharts();
   wireFilterRowScrollSync();
+  initSignatureCanvas();
 }
 
 // ---- Shared auth-screen chrome (Login / Password Recovery / Forced
@@ -2685,6 +2707,11 @@ function toggleLoginPasswordVisibility(btn){
 function renderAuthHero(){
   return `
     <div class="login-hero">
+      <svg class="login-hero-money" viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <g transform="rotate(-10 60 55)"><rect x="14" y="36" width="92" height="40" rx="6" fill="#7a9b1e" stroke="#4e6612" stroke-width="1.5"/><circle cx="36" cy="56" r="12" fill="#fff" fill-opacity="0.22"/><text x="80" y="52" font-family="Arial,sans-serif" font-size="11" font-weight="800" fill="#fff" fill-opacity="0.9">KES</text><text x="80" y="66" font-family="Arial,sans-serif" font-size="13" font-weight="800" fill="#fff">1000</text></g>
+        <g transform="rotate(-2 60 55)"><rect x="18" y="26" width="92" height="40" rx="6" fill="#c9971f" stroke="#8a6410" stroke-width="1.5"/><circle cx="40" cy="46" r="12" fill="#fff" fill-opacity="0.22"/><text x="84" y="42" font-family="Arial,sans-serif" font-size="11" font-weight="800" fill="#fff" fill-opacity="0.9">KES</text><text x="84" y="56" font-family="Arial,sans-serif" font-size="13" font-weight="800" fill="#fff">500</text></g>
+        <g transform="rotate(7 60 55)"><rect x="10" y="16" width="92" height="40" rx="6" fill="#2c6e49" stroke="#164328" stroke-width="1.5"/><circle cx="32" cy="36" r="12" fill="#fff" fill-opacity="0.22"/><text x="76" y="32" font-family="Arial,sans-serif" font-size="11" font-weight="800" fill="#fff" fill-opacity="0.9">KES</text><text x="76" y="46" font-family="Arial,sans-serif" font-size="13" font-weight="800" fill="#fff">200</text></g>
+      </svg>
       <div class="login-hero-top">
         <div class="login-hero-logo"><img src="${LOGO_DATA_URI}" alt="Rhinocash"></div>
         <div>
@@ -2735,7 +2762,7 @@ function renderLogin(){
         <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
         <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
       </div>
-      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? 'Please wait…' : '▸ Login'}</button>
+      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? (session.loginPhase==='success' ? 'Redirecting…' : 'Please wait…') : '▸ Login'}</button>
     </form>
     <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
     <div class="login-security-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Your sign-in is protected with session security and one-time verification where required.</div>
@@ -16830,18 +16857,6 @@ async function loadStaffInteractions(year){
     DB.staffInteractions = { year, interactions: res.interactions };
   });
 }
-async function loadLoStaffLoans(){
-  return withRequest('load-lo-staff-loans', async ()=>{
-    // GET /api/loans/view already self-filters to officer_id = caller for
-    // a Loan Officer; every other role needs that same self-scoping passed
-    // explicitly (the backend only trusts an officer_id query param from a
-    // non-Loan-Officer caller), so this panel honestly shows nothing
-    // rather than quietly falling back to that role's whole branch/region.
-    const me = DB.me || {};
-    const res = await api.get(`/api/loans/view?category=All Loans&export=true&officer_id=${me.id}`);
-    DB.loStaffLoans = res.rows;
-  });
-}
 async function loadStaffPayroll(year){
   return withRequest('load-staff-payroll:'+year, async ()=>{
     const res = await api.get('/api/users/me/payroll?year='+year);
@@ -16970,15 +16985,126 @@ function renderLoanOfficerPayslipPrint(period){
     </div>
   `;
 }
-function openStaffActionsModal(){ openModal('staff-actions'); }
-function renderStaffActionsModal(){
+// ==================== Update Login modal (View Details' top-right
+// button) — the same real email/phone/password fields and the same real
+// PATCH /api/auth/me submitUpdateOwnDetails() already uses on the
+// Update Details page, just as a quick-access popup; plus a reusable
+// signature (My Signature) for loan forms/approval documents. ====================
+function openUpdateLoginModal(){ openModal('update-login'); }
+function renderUpdateLoginModal(){
+  const me = DB.me || {};
   return `
     <div style="position:relative;">
       <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Staff Actions</h3>
-      <div class="empty">No actions available</div>
+      <input type="file" id="my-avatar-file-input" accept="image/*" style="display:none;" onchange="handleMyAvatarFileChange(event)">
+      <div style="text-align:center;">
+        <div onclick="triggerMyAvatarFilePicker()" style="width:90px; height:90px; border-radius:50%; margin:0 auto; background:#EFEFEF; overflow:hidden; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+          ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:32px; color:#B0B0B0;">👤</span>`}
+        </div>
+        <div class="hint" style="margin:6px 0 16px; font-style:italic;">** Click on Image to Update **</div>
+      </div>
+      <form onsubmit="return submitUpdateOwnDetails(event)">
+        <div class="field"><label>E-mail</label><input name="email" type="email" value="${escapeHtml(me.email||'')}"></div>
+        <div class="field"><label>Contact</label><input name="phone" value="${escapeHtml(me.phone||'')}"></div>
+        <div class="field"><label>Password</label>
+          <div style="position:relative;">
+            <input id="vd-update-login-password" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep your current password" style="width:100%; padding-right:34px;">
+            <span onclick="togglePasswordVisibility('vd-update-login-password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer;" title="Show/hide">👁</span>
+          </div>
+        </div>
+        <div class="pill-row" style="justify-content:space-between; margin-top:14px;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="doLogout()">⏻ Logout</button>
+          <button type="submit" class="btn btn-green btn-sm">⟳ Update</button>
+        </div>
+      </form>
+      <div style="border-top:1px solid var(--line); margin-top:18px; padding-top:14px;">
+        <div class="card-title" style="margin:0 0 6px;">My Signature</div>
+        <div class="hint" style="margin-bottom:10px;">Save a reusable signature for loan forms and approval documents.</div>
+        <div style="width:160px; height:70px; border:1px dashed var(--line); border-radius:6px; margin-bottom:10px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#fff;">
+          ${DB.mySignatureDataUri ? `<img src="${DB.mySignatureDataUri}" style="max-width:100%; max-height:100%;">` : `<span style="color:var(--ink-faint); font-size:12px;">No signature yet</span>`}
+        </div>
+        <div class="pill-row">
+          <button type="button" class="btn btn-sm btn-green" onclick="openDrawSignatureModal()">✎ Draw Signature</button>
+          <input type="file" id="my-signature-file-input" accept="image/*" style="display:none;" onchange="handleMySignatureFileChange(event)">
+          <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('my-signature-file-input').click()">Upload</button>
+        </div>
+      </div>
     </div>
   `;
+}
+function handleMySignatureFileChange(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  return withRequest('my-signature-upload', async ()=>{
+    const uploaded = await uploadFile(file);
+    const res = await api.post('/api/users/me/signature', { path: uploaded.path });
+    DB.me = { ...DB.me, signature_path: res.signature_path };
+    await loadMySignatureDataUri();
+    toast("Signature updated");
+    renderApp();
+  }, {mutates:true});
+}
+// ==================== Draw Signature modal — a plain <canvas> freehand
+// pad (mouse + touch), wired up by initSignatureCanvas() right after
+// render (see renderApp()'s initPendingCharts() call) since a canvas
+// can't attach its own drawing handlers from an HTML string. ====================
+function openDrawSignatureModal(){ openModal('draw-signature'); }
+function renderDrawSignatureModal(){
+  return `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h3 style="color:var(--navy); margin:0;">Draw Signature</h3>
+      <button class="btn btn-outline btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <canvas id="signature-canvas" width="560" height="220" style="width:100%; height:220px; border:1px dashed var(--line); border-radius:8px; touch-action:none; background:#fff;"></canvas>
+    <div class="pill-row" style="justify-content:flex-end; margin-top:14px;">
+      <button class="btn btn-outline btn-sm" onclick="clearSignatureCanvas()">Clear</button>
+      <button class="btn btn-green btn-sm" onclick="saveSignatureCanvas()">Save Signature</button>
+    </div>
+  `;
+}
+function initSignatureCanvas(){
+  if(typeof document === 'undefined' || !document.getElementById) return;
+  const canvas = document.getElementById('signature-canvas');
+  if(!canvas || canvas.__sigWired) return;
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if(!ctx || !canvas.addEventListener) return;
+  canvas.__sigWired = true;
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#1C1C1E';
+  let drawing = false;
+  function pos(ev){
+    const rect = canvas.getBoundingClientRect();
+    const t = ev.touches && ev.touches.length ? ev.touches[0] : ev;
+    return { x: (t.clientX-rect.left) * (canvas.width/rect.width), y: (t.clientY-rect.top) * (canvas.height/rect.height) };
+  }
+  function start(ev){ drawing = true; const p = pos(ev); ctx.beginPath(); ctx.moveTo(p.x,p.y); if(ev.preventDefault) ev.preventDefault(); }
+  function move(ev){ if(!drawing) return; const p = pos(ev); ctx.lineTo(p.x,p.y); ctx.stroke(); if(ev.preventDefault) ev.preventDefault(); }
+  function end(){ drawing = false; }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive:false });
+  canvas.addEventListener('touchmove', move, { passive:false });
+  canvas.addEventListener('touchend', end);
+}
+function clearSignatureCanvas(){
+  const canvas = document.getElementById('signature-canvas');
+  if(!canvas || !canvas.getContext) return;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+function saveSignatureCanvas(){
+  const canvas = document.getElementById('signature-canvas');
+  if(!canvas || !canvas.toBlob){ toast('Signature pad is not available here'); return; }
+  return withRequest('save-signature', async ()=>{
+    const blob = await new Promise(resolve=>canvas.toBlob(resolve, 'image/png'));
+    if(!blob){ toast('Draw a signature first'); return; }
+    const file = new File([blob], 'signature.png', { type: 'image/png' });
+    const uploaded = await uploadFile(file);
+    const res = await api.post('/api/users/me/signature', { path: uploaded.path });
+    DB.me = { ...DB.me, signature_path: res.signature_path };
+    await loadMySignatureDataUri();
+    toast('Signature saved');
+    openModal('update-login');
+  }, {mutates:true});
 }
 function renderLoanOfficerViewDetails(){
   if(session.loStaffAccountOpen) return renderLoStaffAccountPage();
@@ -16986,88 +17112,134 @@ function renderLoanOfficerViewDetails(){
   const me = DB.me || {};
   if(!DB.staffAccounts) loadStaffAccounts();
   const txAccount = (DB.staffAccounts||[]).find(a=>a.account_type==='Transactional');
-  if(!DB.loPerformance) loadLoanOfficerPerformance();
+  if(!DB.loSalaryAdvances) loadLoSalaryAdvances();
+  if(!DB.myLeaveRequests) loadMyLeaveRequests();
+  const curYear = new Date().getFullYear();
+  if(!DB.staffPayroll || DB.staffPayroll.year !== String(curYear)) loadStaffPayroll(curYear);
+  const outstandingLoanBalance = (DB.loSalaryAdvances||[]).reduce((sum,s)=>sum+salaryAdvanceOutstandingBalance(s), 0);
+  const latestNetPay = DB.staffPayroll && DB.staffPayroll.months.length ? DB.staffPayroll.months[0].netPay : 0;
+  const vd = session.loViewDetailsState || (session.loViewDetailsState = defaultLoViewDetailsState());
   return `
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-          <h3 style="color:var(--navy); margin:0;">${escapeHtml(session.userName)}</h3>
-        </div>
-        <button class="btn btn-outline btn-sm" onclick="openStaffActionsModal()">Options</button>
+        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+        <button class="btn btn-outline btn-sm" onclick="openUpdateLoginModal()">✎ Update Login</button>
       </div>
 
-      <div style="background:#3E77A8; color:#fff; border-radius:12px; padding:16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+        <div style="width:56px; height:56px; border-radius:12px; flex-shrink:0; background:#EFEFEF; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+          ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:24px; color:#B0B0B0;">👤</span>`}
+        </div>
         <div>
-          <div style="display:flex; align-items:baseline; gap:6px;">
+          <div style="font-size:16px; font-weight:800; color:var(--navy);">${escapeHtml(session.userName)}</div>
+          <div class="hint">${escapeHtml(session.role)}${me.branch_id ? ' · '+branchName(me.branch_id) : ''}</div>
+          <div style="margin-top:2px;"><span style="color:var(--blue); font-weight:700; font-size:12.5px;">Job No: ${escapeHtml(me.staff_code||'—')}</span> <span class="badge green" style="margin-left:6px;">Active</span></div>
+        </div>
+      </div>
+
+      <div style="background:linear-gradient(135deg,#2C5F4F,#1F4538); color:#fff; border-radius:12px; padding:14px 16px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <div class="hint" style="color:#CFE5DC;">Wholesome Ledger Balance</div>
+          <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
             <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
-            <span style="font-size:24px; font-weight:800;">${fmtNum(txAccount?txAccount.balance:0)}</span>
+            <span style="font-size:22px; font-weight:800;">${fmtNum(txAccount?txAccount.balance:0)}</span>
           </div>
-          <div class="hint" style="color:#DCEBFA; margin-top:2px;">ACC Balances</div>
         </div>
-        <button class="btn btn-sm btn-green" onclick="openLoStaffAccount()">View</button>
+        <button class="btn btn-sm btn-outline" style="background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.4); color:#fff;" onclick="openLoStaffAccount()">⤴ Open wallet account</button>
       </div>
 
-      <div style="text-align:center; margin-bottom:18px;">
-        <div style="width:110px; height:110px; border-radius:12px; margin:0 auto; background:#EFEFEF; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-          ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:32px; color:#B0B0B0;">👤</span>`}
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;">
+        <div class="kpi" style="background:var(--dot-bg), #FBF0DD;">
+          <div class="kpi-label" style="color:var(--amber);">⊞ Leave Balance</div>
+          <div class="kpi-value" style="color:var(--amber); font-size:20px;">${me.leave_days_balance ?? 0} days</div>
         </div>
-        <div class="hint" style="margin-top:6px;">Profile</div>
+        <div class="kpi" style="background:var(--dot-bg), #FAEAE9;">
+          <div class="kpi-label" style="color:var(--red);">⊡ Loan Balance</div>
+          <div class="kpi-value" style="color:var(--red); font-size:20px;">KES ${fmtNum(outstandingLoanBalance)}</div>
+        </div>
+        <div class="kpi" style="background:var(--dot-bg), #F0E9FA;">
+          <div class="kpi-label" style="color:var(--purple);">▤ Latest Net Pay</div>
+          <div class="kpi-value" style="color:var(--purple); font-size:20px;">KES ${fmtNum(latestNetPay)}</div>
+        </div>
       </div>
 
-      <div class="detail-inline">
-        <div class="detail-label">Contact</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
-        <div class="detail-label">Idno</div><div class="detail-value">${escapeHtml(me.national_id||"—")}</div>
-        <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
-        <div class="detail-label">Gender</div><div class="detail-value">${escapeHtml(me.gender||"—")}</div>
-        <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||"—")}</div>
-        <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
-        <div class="detail-label">Roles</div><div class="detail-value">${session.role}</div>
-        <div class="detail-label">Access level</div><div class="detail-value">${escapeHtml(me.access_level||"—")}</div>
-        <div class="detail-label">Position</div><div class="detail-value">${escapeHtml(me.job_title||"—")}</div>
-        <div class="detail-label">Entry date</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
-        <div class="detail-label">Leaves</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
+      <div class="pill-row" style="gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px;">
+        ${vdTabsForRole().map(t=>`<div onclick="session.loViewDetailsState.tab='${t}'; renderApp();" style="padding:9px 14px; cursor:pointer; font-size:13px; font-weight:700; color:${vd.tab===t?'var(--navy)':'var(--ink-faint)'}; border-bottom:2px solid ${vd.tab===t?'var(--navy)':'transparent'}; margin-bottom:-1px;">${t}</div>`).join("")}
       </div>
 
-      ${renderLoViewDetailsFilterPanel()}
+      ${renderVdTabBody(vd)}
     </div>
   `;
 }
-// A single filter row (Performance/Interactions/Staff Loans/Leaves &
-// Payroll, plus a year picker and a Notes button) driving which real
-// panel renders below it — each panel loads its own real backend data,
-// nothing fabricated client-side.
-const LO_VIEW_DETAILS_PANELS = ['Performance','Interactions','Staff Loans','Leaves & Payroll'];
-function defaultLoViewDetailsState(){ return { panel:'Performance', year:new Date().getFullYear() }; }
-function renderLoViewDetailsFilterPanel(){
-  const vd = session.loViewDetailsState || (session.loViewDetailsState = defaultLoViewDetailsState());
+// Overview/Loans/Leaves/Payroll are the exact reference tabs and apply to
+// every role alike (universal staff data). Performance (New/Repeat Loans,
+// Arrears, Revenue targets) and Interactions (PTP/Collection/Arrears/
+// Production notes) are real, pre-existing panels whose own subject
+// matter is portfolio/collections work — only genuinely meaningful for
+// Loan Officer and Manager (Manager already shares the Loan Officer's own
+// Work Plan page on the same basis) — so only those two roles get them;
+// every other role would otherwise see an all-zero table with no real
+// data behind it.
+function vdTabsForRole(){
+  const base = ['Overview','Loans','Leaves','Payroll'];
+  return (session.role === 'Loan Officer' || session.role === 'Manager') ? [...base, 'Performance', 'Interactions'] : base;
+}
+function defaultLoViewDetailsState(){ return { tab:'Overview', year:new Date().getFullYear() }; }
+function renderVdTabBody(vd){
+  if(!vdTabsForRole().includes(vd.tab)) vd.tab = 'Overview';
+  if(vd.tab==='Loans') return renderVdLoansTab(vd);
+  if(vd.tab==='Leaves') return renderVdLeavesTab(vd);
+  if(vd.tab==='Payroll') return renderVdPayrollTab(vd);
+  if(vd.tab==='Performance') return renderVdPerformanceTab(vd);
+  if(vd.tab==='Interactions') return renderVdInteractionsTab(vd);
+  return renderVdOverviewTab(vd);
+}
+function renderVdOverviewTab(vd){
+  const me = DB.me || {};
+  const grantedModules = MODULE_LIST.filter(m=>isSectionAllowed(m.key)).length;
+  return `
+    <div class="card-title" style="justify-content:space-between;">
+      <span>Staff Information</span>
+      <small>Personal, employment and system assignment details</small>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="detail-label">Contact</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
+        <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
+        <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||"—")}</div>
+        <div class="detail-label">Roles</div><div class="detail-value">${grantedModules} assigned modules</div>
+        <div class="detail-label">Position</div><div class="detail-value"><span class="badge blue">${escapeHtml(me.job_title||session.role)}</span></div>
+        <div class="detail-label">Leaves</div><div class="detail-value">${me.leave_days_balance ?? 0} days</div>
+      </div>
+      <div>
+        <div class="detail-label">Idno</div><div class="detail-value">${escapeHtml(me.national_id||"—")}</div>
+        <div class="detail-label">Gender</div><div class="detail-value">${escapeHtml(me.gender||"—")}</div>
+        <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
+        <div class="detail-label">Access Level</div><div class="detail-value">${escapeHtml(me.access_level||"—")}</div>
+        <div class="detail-label">Entry Date</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
+      </div>
+    </div>
+  `;
+}
+function vdYearPickerRow(vd, extraHtml){
   const curYear = new Date().getFullYear();
   const meCreatedYear = DB.me && DB.me.created_at ? new Date(DB.me.created_at).getFullYear() : curYear;
   const yearOptions = [];
   for(let y=curYear; y>=Math.min(meCreatedYear, curYear-2); y--) yearOptions.push(y);
-  let panelBody;
-  if(vd.panel==='Interactions') panelBody = renderLoViewDetailsInteractionsPanel(vd);
-  else if(vd.panel==='Staff Loans') panelBody = renderLoViewDetailsStaffLoansPanel(vd);
-  else if(vd.panel==='Leaves & Payroll') panelBody = renderLoViewDetailsLeavesPayrollPanel(vd);
-  else panelBody = renderLoViewDetailsPerformancePanel(vd);
   return `
-    <div class="pill-row" style="align-items:center; gap:8px; margin:18px 0 10px; flex-wrap:wrap;">
-      <select onchange="session.loViewDetailsState.panel=this.value; renderApp();">
-        ${LO_VIEW_DETAILS_PANELS.map(p=>`<option value="${p}" ${vd.panel===p?'selected':''}>${p}</option>`).join("")}
-      </select>
+    <div class="pill-row" style="align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
       <select onchange="session.loViewDetailsState.year=Number(this.value); renderApp();">
         ${yearOptions.map(y=>`<option value="${y}" ${vd.year===y?'selected':''}>${y}</option>`).join("")}
       </select>
       <span style="flex:1 1 auto;"></span>
-      <button class="btn btn-outline btn-sm" onclick="openStaffCreateInteractionModal()">📝 Notes</button>
+      ${extraHtml||""}
     </div>
-    ${panelBody}
   `;
 }
-function renderLoViewDetailsPerformancePanel(vd){
+function renderVdPerformanceTab(vd){
   if(!DB.loPerformance || DB.loPerformance.year !== String(vd.year)) loadLoanOfficerPerformance(vd.year);
   const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `
+  return vdYearPickerRow(vd) + `
     <div class="card-title" style="background:var(--blue-bg);">${vd.year} Performance</div>
     <div class="table-wrap"><table>
       <tr>
@@ -17092,11 +17264,11 @@ function renderLoViewDetailsPerformancePanel(vd){
     </table></div>
   `;
 }
-function renderLoViewDetailsInteractionsPanel(vd){
+function renderVdInteractionsTab(vd){
   const fresh = DB.staffInteractions && DB.staffInteractions.year === vd.year;
   if(!fresh) loadStaffInteractions(vd.year);
   const rows = fresh ? DB.staffInteractions.interactions : null;
-  return `
+  return vdYearPickerRow(vd, `<button class="btn btn-outline btn-sm" onclick="openStaffCreateInteractionModal()">📝 Notes</button>`) + `
     <div class="card-title" style="background:var(--blue-bg); justify-content:center;">Staff Interactions</div>
     <div class="table-wrap"><table>
       <tr>
@@ -17112,76 +17284,147 @@ function renderLoViewDetailsInteractionsPanel(vd){
     </table></div>
   `;
 }
-function renderLoViewDetailsStaffLoansPanel(vd){
-  // A role with no real loanbook access (HR) genuinely has no loans to
-  // show here — never attempted, since GET /api/loans/view would just
-  // 403 and leave this panel stuck "loading" forever.
-  if(!isSectionAllowed('loanbook')){
-    return `<div class="card-title" style="background:var(--blue-bg);">Staff Loans</div><div class="empty">Not applicable for this role.</div>`;
-  }
-  if(!DB.loStaffLoans) loadLoStaffLoans();
-  const rows = DB.loStaffLoans;
+// The employee's OWN money owed to the company — the only real mechanism
+// for that in this codebase is Salary Advance (a one-off amount, never an
+// amortized loan schedule): it is fully deducted from the payslip of the
+// month it was decided, so a request's "balance" is the real amount while
+// still Pending or decided this month/a future month, and genuinely 0
+// once a past month's payslip has already deducted it.
+function salaryAdvanceOutstandingBalance(s){
+  if(s.status === 'Rejected') return 0;
+  if(s.status !== 'Approved') return Number(s.amount);
+  const decidedMonth = (s.decided_at||'').slice(0,7);
+  const curMonth = new Date().toISOString().slice(0,7);
+  return decidedMonth >= curMonth ? Number(s.amount) : 0;
+}
+function renderVdLoansTab(vd){
+  if(!DB.loSalaryAdvances) loadLoSalaryAdvances();
+  const rows = DB.loSalaryAdvances;
   return `
-    <div class="card-title" style="background:var(--blue-bg);">Staff Loans</div>
+    <div class="card-title" style="background:var(--blue-bg);">Loans</div>
     <div class="table-wrap"><table>
       <tr>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Loan ID</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Client</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Disbursement Date</th>
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Product</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Principal</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Loan Amount</th>
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Balance</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Status</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Disbursed</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">DPD</th>
       </tr>
-      ${rows===null||rows===undefined ? `<tr><td colspan="8" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(l=>`<tr>
-        <td>${l.loanId.slice(-8).toUpperCase()}</td>
-        <td>${escapeHtml(l.clientName)}</td>
-        <td>${escapeHtml(productName(l.productId))}</td>
-        <td>${fmtNum(l.principal)}</td>
-        <td>${fmtNum(l.balance)}</td>
-        <td>${escapeHtml(l.displayStatus)}</td>
-        <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString() : '—'}</td>
-        <td>${l.dpd}</td>
-      </tr>`).join("") : `<tr><td colspan="8" class="empty">No Loans Found</td></tr>`)}
+      ${rows===null||rows===undefined ? `<tr><td colspan="4" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(s=>`<tr>
+        <td>${new Date(s.decided_at||s.created_at).toLocaleDateString()}</td>
+        <td>Salary Advance</td>
+        <td>${fmtNum(s.amount)}</td>
+        <td>${fmtNum(salaryAdvanceOutstandingBalance(s))}</td>
+      </tr>`).join("") : `<tr><td colspan="4" class="empty">No staff loan records found.</td></tr>`)}
     </table></div>
   `;
 }
-function renderLoViewDetailsLeavesPayrollPanel(vd){
+function renderVdLeavesTab(vd){
   if(!DB.myLeaveRequests) loadMyLeaveRequests();
-  const payrollFresh = DB.staffPayroll && DB.staffPayroll.year === String(vd.year);
-  if(!payrollFresh) loadStaffPayroll(vd.year);
-  if(DB.myLeaveRequests===null || DB.myLeaveRequests===undefined || !payrollFresh){
-    return `<div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div><div class="table-wrap"><table><tr><td class="empty">${loadingDotsHtml()}</td></tr></table></div>`;
-  }
-  const leaveRows = (DB.myLeaveRequests||[]).filter(l=>new Date(l.start_date).getFullYear()===vd.year).map(l=>({
-    date: l.start_date, type: `${l.leave_type} Leave`, details: `${l.start_date} to ${l.end_date} (${l.status})`, info: '', sortKey: l.start_date,
-  }));
-  const payrollRows = DB.staffPayroll.months.map(p=>{
-    const [y,m] = p.period.split('-');
-    const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return { date: `${MONTH_ABBR[Number(m)-1]} 01`, type: `${MONTH_ABBR[Number(m)-1]} 01 Salary`,
-      details: `Safaricom MPESA, ${DB.me&&DB.me.branch_id?branchName(DB.me.branch_id):'—'} Branch\nCHQ No: ${p.ref}\nAcc: ${escapeHtml((DB.me&&DB.me.phone)||'')}`,
-      info: p.netPay, period: p.period, sortKey: p.period+'-01' };
-  });
-  const rows = [...leaveRows, ...payrollRows].sort((a,b)=> b.sortKey.localeCompare(a.sortKey));
+  const rows = DB.myLeaveRequests;
   return `
-    <div class="card-title" style="background:var(--blue-bg);">${vd.year} Leaves &amp; Payslips</div>
+    <div class="card-title" style="background:var(--blue-bg);">Leaves</div>
     <div class="table-wrap"><table>
       <tr>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Start</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">End</th>
         <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Type</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Details</th>
-        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Info</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Days</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Status</th>
       </tr>
-      ${rows.length ? rows.map(r=>`<tr>
-        <td>${escapeHtml(r.date)}</td>
-        <td>${escapeHtml(r.type)}</td>
-        <td style="white-space:pre-line;">${escapeHtml(r.details)}</td>
-        <td>${r.period ? `KES ${fmtNum(r.info)} <span class="clickable" style="cursor:pointer;" title="Print" onclick="printLoanOfficerPayslip('${r.period}')">🖨</span>` : escapeHtml(r.info||'')}</td>
-      </tr>`).join("") : `<tr><td colspan="4" class="empty">No Leaves or Payslips Found</td></tr>`}
+      ${rows===null||rows===undefined ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : (rows.length ? rows.map(l=>`<tr>
+        <td>${new Date(l.start_date).toLocaleDateString()}</td>
+        <td>${new Date(l.end_date).toLocaleDateString()}</td>
+        <td>${escapeHtml(l.leave_type)} Leave</td>
+        <td>${daysBetween(l.start_date, l.end_date)+1}</td>
+        <td>${statusBadge(l.status)}</td>
+      </tr>`).join("") : `<tr><td colspan="5" class="empty">No leave records found.</td></tr>`)}
     </table></div>
   `;
+}
+function exportMyP9(vd){
+  if(!DB.staffPayroll || DB.staffPayroll.year !== String(vd.year)){ toast('Still loading payroll data — try again in a moment'); return; }
+  const me = DB.me || {};
+  const columns = ['Month','Basic Salary','Allowances','Gross Pay','NSSF (Pension)','Taxable Pay','PAYE Tax','Personal Relief','Net Pay'];
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const rows = [...DB.staffPayroll.months].reverse().map(p=>{
+    const [y,m] = p.period.split('-');
+    return {
+      'Month': `${MONTH_NAMES[Number(m)-1]} ${y}`, 'Basic Salary': p.basicSalary, 'Allowances': p.allowances,
+      'Gross Pay': p.grossPay, 'NSSF (Pension)': p.pension, 'Taxable Pay': p.grossPay - p.pension,
+      'PAYE Tax': p.paye, 'Personal Relief': me.tax_relief ? 2400 : 0, 'Net Pay': p.netPay,
+    };
+  });
+  exportRowsToCsv(`P9-${vd.year}-${me.staff_code||'staff'}.csv`, columns, rows);
+}
+function renderVdPayrollTab(vd){
+  const payrollFresh = DB.staffPayroll && DB.staffPayroll.year === String(vd.year);
+  if(!payrollFresh) loadStaffPayroll(vd.year);
+  const me = DB.me || {};
+  const latest = payrollFresh && DB.staffPayroll.months.length ? DB.staffPayroll.months[0] : null;
+  return vdYearPickerRow(vd) + `
+    <div class="two-col">
+      <div>
+        <div class="detail-label">Basic Salary</div><div class="detail-value">KES ${fmtNum(latest?latest.basicSalary:0)}</div>
+        <div class="detail-label">Allowances</div><div class="detail-value">KES ${fmtNum(latest?latest.allowances:0)}</div>
+        <div class="detail-label">Pension</div><div class="detail-value">KES ${fmtNum(latest?latest.pension:0)}</div>
+      </div>
+      <div>
+        <div class="detail-label">KRA PIN</div><div class="detail-value">${escapeHtml(me.kra_pin||'Not provided')}</div>
+        <div class="detail-label">Tax Relief</div><div class="detail-value">${me.tax_relief ? 'Yes' : 'No'}</div>
+        <div class="detail-label">SHA No</div><div class="detail-value">${escapeHtml(me.sha_no||'Not provided')}</div>
+        <div class="detail-label">NSSF No</div><div class="detail-value">${escapeHtml(me.nssf_no||'Not provided')}</div>
+      </div>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">P9 Tax Deduction Form</div>
+    <div class="hint" style="margin-bottom:10px;">Download the annual KRA P9A Excel sheet from payroll — use the totals when filing on iTax.</div>
+    <div class="pill-row" style="align-items:center; gap:8px;">
+      <select onchange="session.loViewDetailsState.year=Number(this.value); renderApp();">
+        ${(()=>{ const curYear=new Date().getFullYear(); const meCreatedYear=DB.me&&DB.me.created_at?new Date(DB.me.created_at).getFullYear():curYear; const opts=[]; for(let y=curYear;y>=Math.min(meCreatedYear,curYear-2);y--) opts.push(y); return opts.map(y=>`<option value="${y}" ${vd.year===y?'selected':''}>${y}</option>`).join(""); })()}
+      </select>
+      <button class="btn btn-sm btn-green" onclick="exportMyP9(session.loViewDetailsState)">⬇ Download P9 Excel</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px; background:var(--blue-bg);">${vd.year} Payslips</div>
+    <div class="table-wrap"><table>
+      <tr>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Month</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Gross Pay</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Deductions</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Net Pay</th>
+        <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;"></th>
+      </tr>
+      ${!payrollFresh ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : (DB.staffPayroll.months.length ? DB.staffPayroll.months.map(p=>{
+        const [y,m] = p.period.split('-');
+        const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        return `<tr>
+          <td>${MONTH_NAMES[Number(m)-1]} ${y}</td>
+          <td>${fmtNum(p.grossPay)}</td>
+          <td>${fmtNum(p.totalDeductions)}</td>
+          <td>${fmtNum(p.netPay)}</td>
+          <td><button class="btn btn-sm btn-green" onclick="printLoanOfficerPayslip('${p.period}')">📄 Payslip</button></td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="5" class="empty">No payslips found.</td></tr>`)}
+    </table></div>
+  `;
+}
+// The two rolling tiles (Deposits/Withdrawals - 6 Months) and Held Funds
+// need a fixed trailing-6-month window independent of whatever From/To
+// range the Account Activity table below is showing — loaded separately
+// so changing one never disturbs the other.
+async function loadStaffAccount6moSummary(type){
+  return withRequest('load-staff-acc-6mo:'+type, async ()=>{
+    const from = new Date(); from.setMonth(from.getMonth()-6);
+    const params = new URLSearchParams();
+    params.set('from', from.toISOString().slice(0,10));
+    params.set('to', todayISO());
+    const res = await api.get(`/api/users/me/accounts/${type}/transactions?`+params.toString());
+    const txns = res.transactions || [];
+    const deposits = txns.filter(t=>t.type==='Deposit' && t.approval_status==='Completed').reduce((s,t)=>s+Number(t.amount),0);
+    const withdrawals = txns.filter(t=>t.type==='Withdrawal' && t.approval_status==='Completed').reduce((s,t)=>s+Number(t.amount),0);
+    const held = txns.filter(t=>t.approval_status==='Pending').reduce((s,t)=>s+Number(t.amount),0);
+    DB.staffAccount6mo = { type, deposits, withdrawals, held };
+  });
 }
 function renderLoStaffAccountPage(){
   const st = session.loStaffAccountState || (session.loStaffAccountState = defaultLoStaffAccountState());
@@ -17193,75 +17436,75 @@ function renderLoStaffAccountPage(){
   const txnsFresh = DB.staffAccountTransactions && DB.staffAccountTransactions.type===st.type && DB.staffAccountTransactions.from===st.from && DB.staffAccountTransactions.to===st.to;
   if(!txnsFresh) loadStaffAccountTransactions(st.type, st.from, st.to);
   const txns = txnsFresh ? DB.staffAccountTransactions.transactions : null;
+  const summaryFresh = DB.staffAccount6mo && DB.staffAccount6mo.type===st.type;
+  if(!summaryFresh) loadStaffAccount6moSummary(st.type);
+  const summary = summaryFresh ? DB.staffAccount6mo : null;
   return `
     <div class="card">
-      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
-        <span class="btn btn-outline btn-sm" onclick="closeLoStaffAccount()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-        <h3 style="color:var(--navy); margin:0; cursor:pointer;" onclick="openModal('staff-account-type')">${st.type} Account ▾</h3>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span class="btn btn-outline btn-sm" onclick="closeLoStaffAccount()" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
+          <h3 style="color:var(--navy); margin:0;">Staff account</h3>
+        </div>
+        <small class="hint">EMPLOYEE BANKING WORKSPACE</small>
       </div>
 
-      <div style="background:#3E77A8; color:#fff; border-radius:12px; padding:16px; margin-bottom:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-          <div style="display:flex; align-items:baseline; gap:6px;">
-            <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
-            <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.balance:0)}</span>
-          </div>
-          <button class="btn btn-sm btn-green" onclick="openStaffDepositModal()" style="flex-shrink:0;">⊕ Deposit</button>
+      <div class="pill-row" style="margin-bottom:14px;">
+        ${CLIENT_ACCOUNT_TYPES.map(t=>`<button class="btn btn-sm ${st.type===t?'btn-primary':'btn-outline'}" onclick="session.loStaffAccountState.type='${t}'; renderApp();">${t}</button>`).join("")}
+      </div>
+
+      <div class="kpi" style="background:var(--dot-bg), #E7F3EC; margin-bottom:10px;">
+        <div class="kpi-label" style="color:var(--green); display:flex; justify-content:space-between; align-items:center;">
+          <span>${(st.type||'').toUpperCase()} ACCOUNT</span><span class="badge green">Active</span>
         </div>
-        <div class="hint" style="color:#DCEBFA; margin-top:2px;">Available Balance</div>
-        <div style="border-top:1px solid rgba(255,255,255,0.3); margin-top:12px; padding-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
-          <span style="font-size:12px; color:#BEE0FF;">AccNo: ${account?escapeHtml(account.account_number):''}</span>
-          <button class="btn btn-sm btn-green" onclick="toast('Coming soon')" style="flex-shrink:0;">⇄ Transfer</button>
+        <div style="font-weight:800; color:var(--navy); margin-top:6px;">${escapeHtml(session.userName)}</div>
+        <div class="hint">Account number <strong>${account?escapeHtml(account.account_number):''}</strong></div>
+        <div class="hint" style="margin-top:8px;">Current balance</div>
+        <div class="kpi-value" style="color:var(--green);">KES ${fmtNum(account?account.balance:0)}</div>
+        <div class="hint">Available cash balance KES ${fmtNum(account?account.balance:0)}</div>
+        <button class="btn btn-sm btn-green" style="margin-top:8px;" onclick="openStaffDepositModal()">⊕ Deposit</button>
+      </div>
+      <div class="kpi-grid" style="margin-bottom:18px;">
+        <div class="kpi" style="background:var(--dot-bg), #fff; border:1px solid var(--line);">
+          <div class="kpi-label" style="color:var(--green);">⬇ Deposits - 6 Months</div>
+          <div class="kpi-value" style="color:var(--green); font-size:18px;">+ KES ${fmtNum(summary?summary.deposits:0)}</div>
+          <div class="hint">Current selected account</div>
+        </div>
+        <div class="kpi" style="background:var(--dot-bg), #fff; border:1px solid var(--line);">
+          <div class="kpi-label" style="color:var(--red);">⬆ Withdrawals - 6 Months</div>
+          <div class="kpi-value" style="color:var(--red); font-size:18px;">- KES ${fmtNum(summary?summary.withdrawals:0)}</div>
+          <div class="hint">Current selected account</div>
+        </div>
+        <div class="kpi" style="background:var(--dot-bg), #fff; border:1px solid var(--line);">
+          <div class="kpi-label" style="color:var(--navy);">🛡 Held funds</div>
+          <div class="kpi-value" style="color:var(--navy); font-size:18px;">KES ${fmtNum(summary?summary.held:0)}</div>
+          <div class="hint">Pending processes</div>
         </div>
       </div>
 
-      <div style="background:#2C5F4F; color:#fff; border-radius:12px; padding:16px; margin-bottom:18px;">
-        <div style="display:flex; align-items:baseline; gap:6px;">
-          <span style="font-size:11px; font-weight:700; opacity:0.85;">KES</span>
-          <span style="font-size:28px; font-weight:800;">${fmtNum(account?account.withdrawals_total:0)}</span>
-        </div>
-        <div class="hint" style="color:#CFE5DC; margin-top:2px;">Withdrawals</div>
-      </div>
-
-      <h3 style="color:var(--navy); margin-bottom:10px;">Transaction List</h3>
+      <div class="card-title">Account activity</div>
+      <div class="hint" style="margin-bottom:10px;">Review deposits, withdrawals and the running balance.</div>
       <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
-        <input type="date" value="${st.from}" onchange="session.loStaffAccountState.from=this.value; renderApp();" style="flex-shrink:0;">
-        <span class="hint" style="flex-shrink:0;">~</span>
-        <input type="date" value="${st.to}" onchange="session.loStaffAccountState.to=this.value; renderApp();" style="flex-shrink:0;">
+        <div class="field" style="margin:0;"><label>From</label><input type="date" value="${st.from}" onchange="session.loStaffAccountState.from=this.value; renderApp();" style="flex-shrink:0;"></div>
+        <div class="field" style="margin:0;"><label>To</label><input type="date" value="${st.to}" onchange="session.loStaffAccountState.to=this.value; renderApp();" style="flex-shrink:0;"></div>
+        <span class="hint" style="flex-shrink:0; align-self:flex-end; margin-bottom:8px;">Showing activity for the selected period</span>
       </div>
       <div class="table-wrap"><table>
         <tr>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Transaction ID</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Date</th>
-          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">TID</th>
-          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Details</th>
-          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Approval</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Description</th>
           <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Amount</th>
-          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Bal After</th>
+          <th style="background:var(--blue-bg); color:var(--navy); text-transform:none;">Balance after</th>
         </tr>
-        ${txns===null ? `<tr><td colspan="6" class="empty">${loadingDotsHtml()}</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+        ${txns===null ? `<tr><td colspan="5" class="empty">${loadingDotsHtml()}</td></tr>` : (txns.length ? txns.map(t=>`<tr>
+          <td>${escapeHtml(t.tid||t.id.slice(-8).toUpperCase())}</td>
           <td>${new Date(t.created_at).toLocaleDateString()}</td>
-          <td>${escapeHtml(t.tid||'—')}</td>
           <td>${escapeHtml(t.details||t.type)}</td>
-          <td>${escapeHtml(t.approval_status)}</td>
           <td>${fmtNum(t.amount)}</td>
           <td>${fmtNum(t.balance_after)}</td>
-        </tr>`).join("") : `<tr><td colspan="6" class="empty">No Transactions Found</td></tr>`)}
+        </tr>`).join("") : `<tr><td colspan="5" class="empty">No transactions in this period.</td></tr>`)}
       </table></div>
-    </div>
-  `;
-}
-function renderStaffAccountTypeModal(){
-  const st = session.loStaffAccountState || defaultLoStaffAccountState();
-  return `
-    <div style="position:relative;">
-      <span onclick="closeModal()" style="position:absolute; top:-4px; right:-4px; color:var(--rust); font-size:24px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 20px;">Select Account</h3>
-      ${CLIENT_ACCOUNT_TYPES.map(t=>`
-        <label style="display:flex; align-items:center; gap:10px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;">
-          <input type="radio" name="staff-acc-type" value="${t}" ${st.type===t?'checked':''} onchange="session.loStaffAccountState.type='${t}'; closeModal();">
-          <span>${t} Account</span>
-        </label>
-      `).join("")}
     </div>
   `;
 }
@@ -17363,6 +17606,22 @@ async function loadMyAvatarDataUri(){
     for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
     DB.myAvatarDataUri = `data:${contentType};base64,${btoa(binary)}`;
   }catch(e){ DB.myAvatarDataUri = null; }
+}
+// Same auth-required-GET-for-an-<img> problem as the avatar above, for
+// the reusable signature shown in the Update Login modal's "My
+// Signature" section.
+async function loadMySignatureDataUri(){
+  const path = DB.me && DB.me.signature_path;
+  if(!path){ DB.mySignatureDataUri = null; return; }
+  try{
+    const res = await fetch(API_BASE + path, { headers: authToken ? { Authorization: 'Bearer ' + authToken } : {} });
+    if(!res.ok){ DB.mySignatureDataUri = null; return; }
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let binary = '';
+    for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+    DB.mySignatureDataUri = `data:${contentType};base64,${btoa(binary)}`;
+  }catch(e){ DB.mySignatureDataUri = null; }
 }
 // ==================== Real client photo / ID photo / staff avatar
 // rendering, everywhere else this same GET /uploads/:name-requires-auth
@@ -18620,8 +18879,8 @@ function renderModal(){
   else if(modal.type === "loan-action-options") body = renderLoanActionOptionsModal();
   else if(modal.type === "loan-payment-request") body = renderLoanPaymentRequestModal();
   else if(modal.type === "tag-loan") body = renderTagLoanModal();
-  else if(modal.type === "staff-actions") body = renderStaffActionsModal();
-  else if(modal.type === "staff-account-type") body = renderStaffAccountTypeModal();
+  else if(modal.type === "update-login") body = renderUpdateLoginModal();
+  else if(modal.type === "draw-signature") body = renderDrawSignatureModal();
   else if(modal.type === "staff-deposit-wallet") body = renderStaffDepositModal();
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
@@ -18633,7 +18892,7 @@ function renderModal(){
   else if(modal.type === "create-role") body = renderCreateRoleModal();
   else if(modal.type === "role-created") body = renderRoleCreatedModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement','create-role'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement','create-role','draw-signature'];
   const blockingTypes = ['session-expired','password-updated'];
   return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }

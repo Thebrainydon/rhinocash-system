@@ -1391,6 +1391,21 @@ async function initSchema() {
   // the `email` column's own UNIQUE constraint already gives that check.
   await ensureColumn('users', 'date_of_birth TEXT');
   await rawRun(`CREATE UNIQUE INDEX IF NOT EXISTS users_national_id_unique ON users (national_id) WHERE national_id IS NOT NULL`);
+  // Payroll statutory identifiers (My Account > View Details > Payroll tab)
+  // — HR-managed reference numbers, never edited by the employee
+  // themselves (no self-service endpoint writes these), shown as "Not
+  // provided" on the frontend while NULL. tax_relief genuinely drives
+  // computePaye()'s personal relief below, rather than sitting decorative.
+  await ensureColumn('users', 'kra_pin TEXT');
+  await ensureColumn('users', 'nssf_no TEXT');
+  await ensureColumn('users', 'sha_no TEXT');
+  await ensureColumn('users', 'tax_relief INTEGER NOT NULL DEFAULT 1');
+  // A reusable signature image for loan forms/approval documents (My
+  // Account > View Details > Update Login > My Signature) — same
+  // upload-then-link pattern as avatar_path: the real bytes go through
+  // the existing generic POST /api/uploads, and this column just stores
+  // the resulting path.
+  await ensureColumn('users', 'signature_path TEXT');
   // Real password-age policy: every genuine password-set event (self-
   // service change, Admin reset, forgot-password) stamps this; the login
   // route compares it against a 15-day threshold to force a change, the

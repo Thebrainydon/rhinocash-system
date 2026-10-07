@@ -2377,43 +2377,56 @@ apiRequest = async function(method, path, body){
       __assert(DB.acctPages.promises.promises.find(p=>p.id===newPromise.id), "real evaluatePromise() through the actual UI function re-fetches the real promise state");
     }
 
-    // My Account -> View Details (Loan Officer's chrome-free profile page):
-    // real ACC BALANCES tile into the new staff wallet subsystem
-    // (staffWallet.js), and the real 2026 Performance table backed by the
-    // new GET /api/users/me/performance endpoint (targets.js) — nothing
-    // here is fabricated client-side.
-    DB.staffAccounts = null; DB.staffAccountTransactions = null; DB.loPerformance = null;
+    // My Account -> View Details (chrome-free staff profile page, shared
+    // by every role): the real Nyaticash-reference layout — a profile
+    // header, a Wholesome Ledger Balance tile into the real staff wallet
+    // subsystem (staffWallet.js), 3 real stat tiles, and Overview/Loans/
+    // Leaves/Payroll/Performance/Interactions tabs — nothing fabricated
+    // client-side.
+    DB.staffAccounts = null; DB.staffAccountTransactions = null; DB.staffAccount6mo = null;
+    DB.loPerformance = null; DB.loSalaryAdvances = null; DB.myLeaveRequests = null; DB.staffPayroll = null;
     session.loStaffAccountOpen = false; session.loStaffAccountState = null;
     goTo('account','View Details');
     await new Promise(r=>setTimeout(r,80)); renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Loan Officer View Details page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
-    __assert(html.includes('ACC Balances') && html.includes('Options') && html.includes('Contact') && html.includes('Idno') && html.includes('Gender') && html.includes('Jobno') && html.includes('Roles') && html.includes('Position') && html.includes('Entry date') && html.includes('Leaves'), "the real View Details page genuinely renders with the requested ACC BALANCES tile, Options button, and full profile field set");
-    __assert(html.includes('>Profile<') && html.includes('👤'), "the real View Details page genuinely renders a Profile photo section between the ACC Balances tile and the detail fields, matching the reference design — falling back to a real placeholder silhouette since no real photo is uploaded yet at this point in the test");
-    __assert(html.includes('<div class="detail-inline">'), "the real View Details detail fields genuinely use the scoped detail-inline layout, putting each label and its value on the same line, matching the reference design");
-    __assert(__rawIndexHtml.includes('.detail-inline .detail-label{ display:inline-block;') && __rawIndexHtml.includes('.detail-inline .detail-value{ display:inline-block;'), "the real scoped detail-inline CSS genuinely exists, kept separate from the base .detail-label/.detail-value rules still used elsewhere with much longer label text");
-    __assert(html.includes('Performance') && html.includes('New Loans') && html.includes('Repeat Loans') && html.includes('Performing') && html.includes('Arrears') && html.includes('Revenue'), "the real Performance table genuinely renders with all 5 requested metric columns");
-    __assert(Array.isArray(DB.loPerformance && DB.loPerformance.months) && DB.loPerformance.months.length===12, "the real performance data genuinely loaded from the real backend, not fabricated client-side");
+    __assert(html.includes('Wholesome Ledger Balance') && html.includes('Open wallet account') && html.includes('Update Login') && html.includes('Leave Balance') && html.includes('Loan Balance') && html.includes('Latest Net Pay'), "the real View Details page genuinely renders the requested Wholesome Ledger Balance tile, Update Login button, and the 3 Leave/Loan/Net Pay stat tiles");
+    __assert(html.includes('👤'), "the real View Details page genuinely falls back to a real placeholder silhouette avatar since no real photo is uploaded yet at this point in the test");
+    __assert(html.includes('Staff Information') && html.includes('Contact') && html.includes('Idno') && html.includes('Gender') && html.includes('Jobno') && html.includes('Roles') && html.includes('Position') && html.includes('Access Level') && html.includes('Entry Date') && html.includes('Leaves'), "the real Overview tab's Staff Information section genuinely renders the requested full profile field set");
+    __assert(vdTabsForRole().every(t=>html.includes(t)), "the real View Details tab bar genuinely offers every requested tab for this role — Loan Officer gets all 6 (Overview/Loans/Leaves/Payroll/Performance/Interactions)");
+    __assert(session.loViewDetailsState.tab === 'Overview', "the real default tab is genuinely Overview");
     __assert(Array.isArray(DB.staffAccounts) && DB.staffAccounts.length===3, "the real staff wallet accounts genuinely auto-provisioned and loaded");
 
-    openStaffActionsModal();
+    session.loViewDetailsState.tab = 'Performance';
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Performance') && html.includes('New Loans') && html.includes('Repeat Loans') && html.includes('Performing') && html.includes('Arrears') && html.includes('Revenue'), "the real Performance tab genuinely renders with all 5 requested metric columns");
+    __assert(Array.isArray(DB.loPerformance && DB.loPerformance.months) && DB.loPerformance.months.length===12, "the real performance data genuinely loaded from the real backend, not fabricated client-side");
+    session.loViewDetailsState.tab = 'Overview';
+
+    openUpdateLoginModal();
     renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(modal && modal.type === 'staff-actions' && html.includes('Staff Actions'), "the real Options button genuinely opens the real, empty Staff Actions modal");
+    __assert(modal && modal.type === 'update-login' && html.includes('E-mail') && html.includes('Contact') && html.includes('My Signature') && html.includes('Draw Signature'), "the real Update Login button genuinely opens the real Update Login modal, with its own My Signature section");
     closeModal();
 
     openLoStaffAccount();
-    await new Promise(r=>setTimeout(r,80)); renderApp();
+    await new Promise(r=>setTimeout(r,120)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(session.loStaffAccountOpen === true, "the real View button at ACC Balances genuinely opens the real Transactional wallet page");
-    __assert(html.includes('Transactional Account') && html.includes('AccNo') && html.includes('Deposit') && html.includes('Transfer') && html.includes('Withdrawals') && html.includes('Transaction List'), "the real Transactional Account wallet page genuinely renders with the requested balance/AccNo/Deposit/Transfer/Withdrawals/Transaction List elements");
-    __assert(DB.staffAccountTransactions && DB.staffAccountTransactions.type === 'Transactional' && Array.isArray(DB.staffAccountTransactions.transactions), "the real Transaction List genuinely loaded from the real backend for the real Transactional account");
+    __assert(session.loStaffAccountOpen === true, "the real Open wallet account button genuinely opens the real Employee Banking Workspace page");
+    __assert(html.includes('EMPLOYEE BANKING WORKSPACE') && html.includes('TRANSACTIONAL ACCOUNT') && html.includes('Deposit') && html.includes('Deposits - 6 Months') && html.includes('Withdrawals - 6 Months') && html.includes('Held funds') && html.includes('Account activity'), "the real Transactional wallet page genuinely renders with the requested balance/Deposit/6-month summary/Held funds/Account activity elements");
+    __assert(DB.staffAccountTransactions && DB.staffAccountTransactions.type === 'Transactional' && Array.isArray(DB.staffAccountTransactions.transactions), "the real Account activity table genuinely loaded from the real backend for the real Transactional account");
+    __assert(DB.staffAccount6mo && DB.staffAccount6mo.type === 'Transactional', "the real rolling 6-month Deposits/Withdrawals/Held-funds summary genuinely loaded from the real backend, not fabricated client-side");
 
-    openModal('staff-account-type');
+    session.loStaffAccountState.type = 'Investment';
+    DB.staffAccount6mo = null;
     renderApp();
+    await new Promise(r=>setTimeout(r,120)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(modal && modal.type === 'staff-account-type' && html.includes('Investment Account') && html.includes('Savings Account'), "the real account-type switcher modal genuinely renders all 3 real account types");
-    closeModal();
+    __assert(html.includes('INVESTMENT ACCOUNT'), "the real account-type pill row genuinely switches to the real Investment account, in place of the old separate switcher modal");
+    session.loStaffAccountState.type = 'Transactional';
+    renderApp();
 
     openStaffDepositModal();
     renderApp();
@@ -2428,24 +2441,20 @@ apiRequest = async function(method, path, body){
     closeLoStaffAccount();
     __assert(session.loStaffAccountOpen === false, "the real back arrow genuinely returns from the wallet page to View Details");
 
-    // View Details' real filter panel (Performance/Interactions/Staff
-    // Loans/Leaves & Payroll) plus the real "Create Interaction" flow and
-    // the real, statutory-formula payslip print page.
+    // View Details' real tabs (Loans/Leaves/Interactions) plus the real
+    // "Create Interaction" flow and the real, statutory-formula payslip
+    // print page.
     const officerUserId = DB.me.id;
     session.loViewDetailsState = null;
     goTo('account','View Details');
     await new Promise(r=>setTimeout(r,80)); renderApp();
-    html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Performance') && html.includes('Interactions') && html.includes('Staff Loans') && html.includes('Leaves & Payroll'), "the real View Details filter row genuinely offers all 4 requested panels");
-    __assert(html.includes('Notes'), "the real Notes button genuinely renders in the View Details filter row");
-    __assert(session.loViewDetailsState.panel === 'Performance', "the real default panel is genuinely Performance");
 
-    session.loViewDetailsState.panel = 'Interactions';
+    session.loViewDetailsState.tab = 'Interactions';
     DB.staffInteractions = null;
     renderApp();
     await new Promise(r=>setTimeout(r,80)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Staff Interactions'), "the real Interactions panel genuinely renders with the requested title");
+    __assert(html.includes('Staff Interactions') && html.includes('Notes'), "the real Interactions tab genuinely renders with the requested title and Notes button");
     __assert(DB.staffInteractions && Array.isArray(DB.staffInteractions.interactions), "the real interactions list genuinely loaded from the real backend, not fabricated client-side");
 
     openStaffCreateInteractionModal();
@@ -2462,13 +2471,21 @@ apiRequest = async function(method, path, body){
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Client promised full payment by Friday') && html.includes('PTP'), "the real, just-posted interaction genuinely appears in the real Interactions table");
 
-    session.loViewDetailsState.panel = 'Staff Loans';
-    DB.loStaffLoans = null;
+    session.loViewDetailsState.tab = 'Loans';
+    DB.loSalaryAdvances = null;
     renderApp();
     await new Promise(r=>setTimeout(r,80)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Staff Loans') && html.includes('Loan ID') && html.includes('Principal') && html.includes('Balance') && html.includes('DPD'), "the real Staff Loans panel genuinely renders with the requested title and column set");
-    __assert(Array.isArray(DB.loStaffLoans), "the real Staff Loans data genuinely loaded from the real, existing GET /api/loans/view endpoint, not fabricated client-side");
+    __assert(html.includes('Disbursement Date') && html.includes('Product') && html.includes('Loan Amount') && html.includes('Balance') && html.includes('Salary Advance'), "the real Loans tab genuinely renders with the requested column set, reusing the real Salary Advance records as the employee's own real loan balance — never fabricated");
+    __assert(Array.isArray(DB.loSalaryAdvances) && DB.loSalaryAdvances.some(a=>a.reason==='Emergency'), "the real Loans tab data genuinely loaded from the real, existing GET /api/salary-advances endpoint, including the real 'Emergency' request made earlier in this suite");
+
+    session.loViewDetailsState.tab = 'Leaves';
+    DB.myLeaveRequests = null;
+    renderApp();
+    await new Promise(r=>setTimeout(r,80)); renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Annual Leave') && html.includes(String(daysBetween('2026-12-01','2026-12-03')+1)), "the real Leaves tab genuinely shows the real Annual leave request applied earlier in this suite, with a real computed Days count, not fabricated");
+    __assert(Array.isArray(DB.myLeaveRequests), "the real Leaves tab data genuinely loaded from the real GET /api/leave-requests?mine=1 endpoint");
 
     // Real Basic Salary + real Kenyan statutory payroll (Admin sets it, officer sees it).
     let adminForm4 = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
@@ -2483,15 +2500,15 @@ apiRequest = async function(method, path, body){
     session.loViewDetailsState = null;
     goTo('account','View Details');
     await new Promise(r=>setTimeout(r,80)); renderApp();
-    session.loViewDetailsState.panel = 'Leaves & Payroll';
-    DB.staffPayroll = null; DB.myLeaveRequests = null;
+    session.loViewDetailsState.tab = 'Payroll';
+    DB.staffPayroll = null;
     renderApp();
     await new Promise(r=>setTimeout(r,120)); renderApp();
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Leaves') && html.includes('Payslips'), "the real Leaves & Payroll panel genuinely renders with the requested title");
+    __assert(html.includes('Basic Salary') && html.includes('KRA PIN') && html.includes('Tax Relief') && html.includes('SHA No') && html.includes('NSSF No') && html.includes('P9 Tax Deduction Form') && html.includes('Download P9 Excel'), "the real Payroll tab genuinely renders the requested statutory fields and the P9 download control");
     __assert(DB.staffPayroll && DB.staffPayroll.months.length > 0, "once a real Basic Salary exists, a real current-month payslip genuinely appears — computed from the real Kenyan NSSF/SHIF/PAYE statutory formulas, never fabricated");
     const thisMonthPayslip = DB.staffPayroll.months[0];
-    __assert(html.includes('KES ' + fmtNum(thisMonthPayslip.netPay)), "the real computed Net Pay genuinely renders in the Leaves & Payroll table");
+    __assert(html.includes(fmtNum(thisMonthPayslip.netPay)), "the real computed Net Pay genuinely renders in the Payroll tab's payslip table");
 
     printLoanOfficerPayslip(thisMonthPayslip.period);
     await new Promise(r=>setTimeout(r,500)); renderApp();
@@ -2509,6 +2526,30 @@ apiRequest = async function(method, path, body){
     __assert(resolveRoute('Promise to Pay').subtab === 'Promises to Pay', "Manager's real sidebar \"Promise to Pay\" label routes to the same real Promises to Pay page");
     const mgrSheetCheck = await api.get('/api/collections/sheet?limit=200');
     __assert(!mgrSheetCheck.sheet.some(r=>r.branchId && r.branchId!=='br_kisumu'), "the Kisumu Manager's real Collection Sheet data, via the same real shared backend endpoint, is genuinely scoped to only their own branch");
+
+    // View Details' Performance/Interactions tabs are role-gated — real
+    // portfolio-collections metrics/notes, only genuinely meaningful for
+    // Loan Officer and Manager (same basis Manager already shares the
+    // Loan Officer's own Work Plan page on); every other role gets the
+    // 4 universal tabs only, never an all-zero Performance table.
+    session.loViewDetailsState = null;
+    goTo('account','View Details');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Performance') && html.includes('Interactions'), "a Manager (same basis as Loan Officer) genuinely still gets the real Performance/Interactions tabs on View Details");
+
+    let acctForVdTabs = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return acctForVdTabs; } };
+    await doLogin({ preventDefault(){}, target:{} });
+    session.loViewDetailsState = null;
+    goTo('account','View Details');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Overview') && html.includes('Loans') && html.includes('Leaves') && html.includes('Payroll'), "an Accountant's real View Details genuinely still gets the 4 universal tabs");
+    // Checked against the exact tab-bar onclick target, not a bare word
+    // search — Accountant's own sidebar genuinely has unrelated "Financial
+    // Performance" and "Interactions" (Clients) menu items elsewhere on
+    // this same full page, which a bare html.includes('Performance') would
+    // false-positive on.
+    __assert(!html.includes(`session.loViewDetailsState.tab='Performance'`) && !html.includes(`session.loViewDetailsState.tab='Interactions'`), "an Accountant's real View Details genuinely has no Performance/Interactions tab in its own tab bar — those loan-portfolio metrics don't apply to this role, and it would otherwise show an honest-but-pointless all-zero table");
 
     // Investor: real restricted dashboard card, real isolation.
     let invForm6 = new Map([['username','sara.investor@example.com'],['password', process.env.SEEDED_INVESTOR_PASSWORD]]);
@@ -2715,7 +2756,7 @@ apiRequest = async function(method, path, body){
 
     goTo('account','View Details');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes(DB.myAvatarDataUri) && html.includes('>Profile<'), "the real, just-uploaded photo genuinely renders in the real Profile section on View Details too, matching the reference design, not just Update Details/Dashboard/topbar");
+    __assert(html.includes(DB.myAvatarDataUri), "the real, just-uploaded photo genuinely renders in the real profile header on View Details too, matching the reference design, not just Update Details/Dashboard/topbar");
 
     // Update Details now carries the Password field inline, alongside
     // E-mail and Contact, in the SAME single-card form/Update button —
