@@ -5123,10 +5123,43 @@ function renderDashboardForTemplate(templateId){
 // content from another role's dashboard (the lending-ops figures in
 // renderAdvancedDashboard() — the `default` case above — have nothing to
 // do with HR and would be actively misleading here).
+// HR holds real, company-wide VIEW access to the staff directory (the
+// 'staff' module — see seed.js's role_modules — same as every other role
+// with that module) but, per the real seeded permission matrix, HOLDS NO
+// action permissions at all (seed.js: `hr: {}`) — not even manage_users.
+// That means HR cannot decide on another employee's leave/salary-advance
+// request today (canDecideOn() in misc.js only allows that role's own
+// direct reports or a manage_users holder) — a real, pre-existing RBAC
+// gap, not something a dashboard redesign should paper over by adding a
+// decide-action card that would 403 for almost every real request. So
+// this dashboard sticks to what HR's real module access genuinely
+// supports: real, company-wide workforce counts/breakdowns from the same
+// DB.staff/DB.departments every other role's dashboard already reads —
+// never attendance/payroll/recruitment figures, since those have no real
+// backend yet (the sidebar's own items for them honestly land on a "not
+// built" placeholder rather than a fabricated page).
 function renderHRDashboard(){
   const meRaw = DB.me;
   if(!meRaw) return `<div class="empty">No HR profile found.</div>`;
   const me = { name: meRaw.name, leaveDays: meRaw.leave_days_balance ?? 0 };
+  const staff = DB.staff || [];
+  const totalEmployees = staff.length;
+  const activeEmployees = staff.filter(s=>s.status==="Active").length;
+  const suspendedEmployees = staff.filter(s=>s.status==="Suspended").length;
+  const deactivatedEmployees = staff.filter(s=>s.status==="Deactivated").length;
+  const departments = DB.departments || [];
+  const newHiresMTD = staff.filter(s=>s.createdAt && isThisMonth(s.createdAt)).length;
+
+  const byDepartment = {};
+  staff.forEach(s=>{
+    const label = (departments.find(d=>d.id===s.department)||{}).name || "Unassigned";
+    byDepartment[label] = (byDepartment[label]||0) + 1;
+  });
+  const byBranch = {};
+  staff.forEach(s=>{ const label = branchName(s.branch) || "Unassigned"; byBranch[label] = (byBranch[label]||0) + 1; });
+
+  const recentHires = staff.slice().filter(s=>s.createdAt).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,8);
+
   return `
     <div class="card">
       <div style="display:flex; gap:14px; align-items:flex-start;">
@@ -5143,11 +5176,37 @@ function renderHRDashboard(){
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
         </div>
       </div>
-      <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">View Employees</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi c-blue"><div class="kpi-label">Total Employees</div><div class="kpi-value">${totalEmployees}</div></div>
+      <div class="kpi c-green"><div class="kpi-label">Active Employees</div><div class="kpi-value">${activeEmployees}</div></div>
+      <div class="kpi ${suspendedEmployees>0?'c-amber':'c-green'}"><div class="kpi-label">Suspended</div><div class="kpi-value">${suspendedEmployees}</div></div>
+      <div class="kpi ${deactivatedEmployees>0?'c-red':'c-green'}"><div class="kpi-label">Deactivated</div><div class="kpi-value">${deactivatedEmployees}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">Departments</div><div class="kpi-value">${departments.length}</div></div>
+      <div class="kpi c-blue"><div class="kpi-label">New Hires (MTD)</div><div class="kpi-value">${newHiresMTD}</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title">Employees by Department</div>
+        ${Object.keys(byDepartment).length ? `<table><tr><th>Department</th><th style="text-align:right;">Employees</th></tr>${Object.entries(byDepartment).sort((a,b)=>b[1]-a[1]).map(([label,count])=>`<tr><td>${escapeHtml(label)}</td><td style="text-align:right;">${count}</td></tr>`).join("")}</table>` : `<div class="empty">No employees recorded yet.</div>`}
+      </div>
+      <div class="card">
+        <div class="card-title">Employees by Branch</div>
+        ${Object.keys(byBranch).length ? `<table><tr><th>Branch</th><th style="text-align:right;">Employees</th></tr>${Object.entries(byBranch).sort((a,b)=>b[1]-a[1]).map(([label,count])=>`<tr><td>${escapeHtml(label)}</td><td style="text-align:right;">${count}</td></tr>`).join("")}</table>` : `<div class="empty">No employees recorded yet.</div>`}
       </div>
     </div>
-    <div class="section-note">HR analytics (headcount, turnover, attendance, leave and payroll trends) are not built yet — they'll be added section by section. The sidebar reflects the full intended structure; items with no page yet land on an honest "not built" screen rather than showing fabricated figures.</div>
+
+    <div class="card">
+      <div class="card-title">Recent New Hires <small>most recently created accounts, company-wide</small></div>
+      <div class="table-wrap"><table><tr><th>Name</th><th>Role</th><th>Branch</th><th>Status</th><th>Joined</th></tr>
+      ${recentHires.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.role)}</td><td>${branchName(s.branch)}</td>
+        <td><span class="badge ${s.status==='Active'?'green':s.status==='Suspended'?'amber':'red'}">${s.status}</span></td>
+        <td class="hint">${new Date(s.createdAt).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No employees recorded yet.</td></tr>`}</table></div>
+    </div>
+
+    <div class="section-note">Deeper HR analytics (attendance, recruitment, payroll and performance trends) aren't built yet — they'll be added section by section as their real pages and data are implemented. The sidebar reflects the full intended structure; items with no page yet land on an honest "not built" screen rather than showing fabricated figures.</div>
   `;
 }
 
@@ -5431,10 +5490,6 @@ function renderAdvancedDashboard(){
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
         </div>
       </div>
-      <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('loanbook','Loan Applications')">Review Loans</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">Branch Management</button>
-      </div>
     </div>` : ""}
     <div class="section-note">Organization-wide operational overview — ${session.role} access level. Figures aggregate all branches and loan officers in real time.</div>
     ${kpiTiles(st)}
@@ -5492,6 +5547,22 @@ function renderRegionalManagerDashboard(){
   const expensesMTD = 0; // expenses aren't tracked per-branch in this prototype
 
   return `
+    <div class="card">
+      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+        <div style="flex:1; min-width:220px;">
+          <div style="font-size:19px; font-weight:800; color:var(--navy);">${escapeHtml(me.name)}</div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px; font-size:13px; color:var(--ink-soft);">
+            <div>💼 Regional Manager</div>
+            <div>🌍 ${escapeHtml(me.regionName || "Your Region")}</div>
+            <div>🏖️ ${me.leaveDays} Leave Days</div>
+            <div>👁️ Regional Management Access</div>
+          </div>
+          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
+          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
+        </div>
+      </div>
+    </div>
     <div class="section-note">Regional view — <strong>${escapeHtml(me.regionName || "Your Region")}</strong> (${branchNames}). All figures below are scoped to your assigned branches only, not the whole organization.</div>
     ${kpiTiles(st)}
     ${statGrid(st)}
@@ -5541,15 +5612,18 @@ function renderRegionalManagerDashboard(){
 // shared card's own embedded table, which this page no longer uses).
 // Every list that used to be a raw <table> (Approvals & Pending Work,
 // Recent Activity, System Configuration Status, Users by Role, Active
-// Loans by Product, Payment Status Distribution, Login Activity) is now
-// either a Chart.js chart or a non-table stat-row list; the standalone
-// Users & Staff / Branch Management / Loan Products tables and their
-// embedded create-forms were removed outright — Quick Actions and the
-// Organization Overview card link to the real, already-built pages for
-// that instead of duplicating them here. Quick Actions only ever link to
-// pages that genuinely exist; a sidebar item with no page yet (Employee
-// Account Requests, Access Requests, Permission Matrix, ...) has no card
-// or button pretending otherwise anywhere on this dashboard. ----
+// Loans by Product, Payment Status Distribution) is now either a Chart.js
+// chart or a non-table stat-row list; the standalone Users & Staff /
+// Branch Management / Loan Products tables and their embedded
+// create-forms were removed outright — the Organization Overview card's
+// own "View Employees →"/"Manage Branches →" links go to the real,
+// already-built pages for that instead of duplicating them here. The
+// dedicated Login Activity KPIs/chart (successful/failed logins) were
+// removed too — this is a monitoring dashboard, not a security/audit
+// page; that real data still lives in Admin's own Security/Audit &
+// Activity submenu pages. No card or button here pretends a sidebar item
+// with no real page yet (Employee Account Requests, Access Requests,
+// Permission Matrix, ...) already has one. ----
 // Chart.js color palette reused as-is from every other page's charts in
 // this file (Business Analytics, Branches Loan Summary, etc.) — kept
 // consistent app-wide rather than inventing a separate palette here.
@@ -5647,15 +5721,6 @@ function renderAdminDashboard(){
         </div>
         <div class="hint" style="text-align:right; white-space:nowrap;">${now.toLocaleDateString(undefined,{weekday:'long', year:'numeric', month:'long', day:'numeric'})}<br>${now.toLocaleTimeString()}</div>
       </div>
-      <div class="card-title" style="margin-top:18px;">Quick Actions</div>
-      <div class="pill-row" style="flex-wrap:wrap;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff','Create User')">+ Create User</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff','Create Role')">+ Create Role</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff','Roles')">Roles</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff','Role Permissions')">Role Permissions</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">View Employees</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('audit')">Audit Log</button>
-      </div>
     </div>
 
     <div class="section-note">System &amp; organization control center. This view intentionally does not lead with profitability — that's the CEO/Director/Accountant dashboards' job.</div>
@@ -5747,20 +5812,13 @@ function renderAdminDashboard(){
         </div>`).join("") : `<div class="empty">No activity recorded yet.</div>`}
     </div>
 
-    <div class="card-title" style="color:var(--navy); font-weight:800;">Security &amp; System Health</div>
+    <div class="card-title" style="color:var(--navy); font-weight:800;">System Health</div>
     ${health ? `
     <div class="kpi-grid">
       <div class="kpi ${health.database.ok?'c-green':'c-red'}"><div class="kpi-label">Database</div><div class="kpi-value">${health.database.ok?'Healthy':'Issue'}</div><div class="hint">${health.database.latencyMs}ms</div></div>
       <div class="kpi c-blue"><div class="kpi-label">Active Users</div><div class="kpi-value">${health.users.active}</div></div>
-      <div class="kpi c-green"><div class="kpi-label">Successful Logins (24h)</div><div class="kpi-value">${health.security.successfulLogins24h}</div></div>
-      <div class="kpi ${health.security.failedLogins24h>0?'c-amber':'c-green'}"><div class="kpi-label">Failed Logins (24h)</div><div class="kpi-value">${health.security.failedLogins24h}</div></div>
       <div class="kpi ${health.security.lockedOutAccounts>0?'c-red':'c-green'}"><div class="kpi-label">Locked Accounts</div><div class="kpi-value">${health.security.lockedOutAccounts}</div></div>
     </div>
-    ${(health.security.successfulLogins24h+health.security.failedLogins24h)>0 ? `<div class="card"><div class="card-title" style="font-size:14px;">Login Activity (24h)</div>${registerChart('chart-admin-loginactivity', {
-      type:'bar',
-      data:{ labels:['Successful','Failed'], datasets:[{ label:'Logins', data:[health.security.successfulLogins24h, health.security.failedLogins24h], backgroundColor:['#4c956c','#c1121f'] }] },
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
-    })}</div>` : ""}
     ` : `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`}
 
     <div class="grid2">
@@ -6000,12 +6058,6 @@ function renderAccountantDashboard(){
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
         </div>
       </div>
-      <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('payments','Unposted Payments')">Validate Payments</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('loanbook','Loan Applications')">Review Loan Approvals</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('payments','Unposted Payments')">Reconcile</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('accounting','Trial Balance')">Financial Reports</button>
-      </div>
     </div>
 
     <div class="card">
@@ -6230,11 +6282,6 @@ function renderCEODashboard(){
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
         </div>
       </div>
-      <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('reports')">Executive Reports</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">Staff Management</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('accounting')">Financial Overview</button>
-      </div>
     </div>
 
     ${(pendingLeave.length + pendingAdvances.length) > 0 ? `
@@ -6408,11 +6455,6 @@ function renderDirectorDashboard(){
           <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
           <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
         </div>
-      </div>
-      <div class="pill-row" style="margin-top:16px;">
-        <button class="btn btn-outline btn-sm" onclick="goTo('reports')">Strategic Reports</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('audit')">Audit &amp; Compliance</button>
-        <button class="btn btn-outline btn-sm" onclick="goTo('staff')">Staff Oversight</button>
       </div>
     </div>
 
