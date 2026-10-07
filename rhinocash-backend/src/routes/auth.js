@@ -67,7 +67,7 @@ function register(router) {
     if (user.account_status !== 'Active') {
       await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, `account ${user.account_status}`, ip]);
       await logAction({ user }, { action: 'Blocked login — account not active', module: 'auth', recordType: 'User', recordId: user.id, newValue: user.account_status });
-      return next({ status: 403, message: `This account is ${user.account_status.toLowerCase()}. Contact your Admin.` });
+      return next({ status: 403, message: `This account is ${user.account_status.toLowerCase()}. Contact your Admin.`, code: 'ACCOUNT_NOT_ACTIVE' });
     }
     // Real maintenance-mode gate — Admin can always still log in (they're
     // the only role that can turn it back off); everyone else is blocked

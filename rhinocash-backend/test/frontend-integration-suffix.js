@@ -162,21 +162,18 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('Account Login'), "the user is returned to the login screen after session expiry");
   }
 
-  // ---- 9. Logout clears everything properly (real confirm-then-revoke flow — see section 49 below for the full confirmation-dialog UX test) ----
+  // ---- 9. Logout clears everything properly (real native confirm()-gated flow — see section 49 below for the full confirm/alert dialog UX test) ----
   {
     const form = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return form; } };
     await doLogin({ preventDefault(){}, target:{} });
     __assert(session.loggedIn === true, "logged back in for the logout test");
-    doLogout();
-    __assert(modal && modal.type === 'confirm-logout' && session.loggedIn === true, "doLogout() now opens the real confirmation modal first — logout is a deliberate security action, not an immediate one-click effect");
-    await confirmLogout();
+    await doLogout();
     __assert(session.loggedIn === false, "confirmLogout() clears the logged-in flag");
     __assert(authToken === null, "confirmLogout() clears the in-memory token");
     __assert(DB === null, "confirmLogout() clears the cached data (no stale data lingers after logout)");
     const html = document.getElementById('root').innerHTML;
     __assert(html.includes('Account Login'), "logout returns to the login screen");
-    modal = null; // reset for later sections
   }
 
   // ---- 10a. Sanity reset before continuing (previous section leaves a logged-out state, matching real logout) ----
@@ -3545,42 +3542,29 @@ apiRequest = async function(method, path, body){
     __assert(managerBlocked, "a Manager's real API call to organization settings is genuinely rejected (403) — no legitimate System Administration authority");
   }
 
-  // ---- 49. LOGOUT & SESSION SECURITY: real confirmation modal, real session revocation, real investor path, real session-expired modal ----
+  // ---- 49. LOGOUT & SESSION SECURITY: real native confirm()-gated logout, real session revocation, real investor path, real session-expired modal ----
   {
     let of14 = new Map([['username','officer@rhinocash.co.ke'],['password', process.env.SEEDED_OFFICER_PASSWORD]]);
     global.FormData = class { constructor(){ return of14; } };
     await doLogin({ preventDefault(){}, target:{} });
 
-    // Clicking Logout opens the real confirmation modal — does NOT log out immediately.
-    promptLogout();
-    __assert(modal && modal.type === 'confirm-logout', "clicking Logout opens the real confirmation modal, not an immediate logout");
-    __assert(session.loggedIn === true, "the user remains genuinely logged in while the confirmation modal is open — no premature session termination");
-    let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Are you sure you want to log out'), "the real confirmation modal shows the expected explanatory text");
+    // Cancelling the real native confirm() dialog ("Sure to Logout?") keeps
+    // the user logged in — no premature session termination. The harness
+    // stubs global.confirm to true by default (see frontend-harness-prefix.js);
+    // overriding it to false here is the real, direct way to exercise Cancel.
+    const realConfirm = global.confirm;
+    global.confirm = () => false;
+    await promptLogout();
+    __assert(session.loggedIn === true && authToken !== null, "Cancel on the real native confirm() dialog genuinely keeps the user logged in — no premature session termination");
+    global.confirm = realConfirm;
 
-    // Cancel keeps the user logged in.
-    closeModal();
-    __assert(!modal && session.loggedIn === true, "Cancel (closeModal) genuinely keeps the user logged in — modal closes, session untouched");
-
-    // Confirm Logout performs the real end-to-end flow.
+    // Confirming performs the real end-to-end flow.
     const tokenBeforeLogout = authToken;
-    promptLogout();
-    await confirmLogout();
+    await promptLogout();
     __assert(session.loggedIn === false && authToken === null, "confirmLogout() genuinely clears the real client-side auth state");
     __assert(session.justLoggedOut === true, "the real success-message flag is set after logout");
-    html = document.getElementById('root').innerHTML;
+    let html = document.getElementById('root').innerHTML;
     __assert(html.includes('You have been securely logged out'), "the real success message renders on the login page after logout");
-
-    // A real, deliberate, blocking second step — never drops straight to
-    // the login screen. All the real logout work above (session already
-    // revoked server-side, DB already cleared) is genuinely done by this
-    // point; this is purely a professional acknowledgement step.
-    __assert(modal && modal.type === 'logged-out', "the real end of the logout flow genuinely opens a blocking acknowledgement modal, not an immediate drop to the login screen");
-    __assert(html.includes("You've Been Logged Out") || html.includes('Your session has been securely ended'), "the real acknowledgement modal genuinely renders with the requested wording");
-    closeModal();
-    __assert(modal === null, "clicking 'Sign In Again' on the real acknowledgement modal genuinely closes it, finally revealing the plain login screen");
-    html = document.getElementById('root').innerHTML;
-    __assert(html.includes('You have been securely logged out'), "the login screen underneath is still the real, correct login screen after the acknowledgement modal closes");
 
     // The real revoked session genuinely cannot authenticate again — verified directly against the backend, not assumed.
     let revokedCheck = false;
@@ -5854,20 +5838,28 @@ apiRequest = async function(method, path, body){
     const idleToken = authToken;
     __assert(session.loggedIn === true && !!idleToken, "sanity: a real officer session is established before testing the real idle timeout");
 
+    // The real alert() text is what distinguishes an idle-triggered logout
+    // from a manual one (never worded as if the user clicked Logout
+    // themselves) — captured directly by temporarily overriding the
+    // harness's global.alert stub, the same real way section 49 overrides
+    // global.confirm to exercise Cancel.
+    const realAlert = global.alert;
+    let idleAlertMessage = null;
+    global.alert = (msg) => { idleAlertMessage = msg; };
     IDLE_LOGOUT_MS = 40;
     resetIdleLogoutTimer();
     await new Promise(r=>setTimeout(r, 150));
+    global.alert = realAlert;
     __assert(session.loggedIn === false && session.authenticated === false, "5 (shortened, real) minutes with genuinely no activity forces the exact real logout confirmLogout() performs, not a fabricated client-only redirect");
-    __assert(modal && modal.type === 'idle-logged-out', "the real, distinct 'Signed Out Due to Inactivity' modal opens — never worded as if the user clicked Logout themselves");
+    __assert(idleAlertMessage && /inactivity/i.test(idleAlertMessage), "the real idle-timeout alert genuinely shows the requested honest wording — never worded as if the user clicked Logout themselves");
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Signed Out Due to Inactivity'), "the real modal shows the requested honest wording");
+    __assert(html.includes('You have been securely logged out'), "the login screen genuinely renders underneath once the real idle-timeout alert has been dismissed");
     // api.get() doesn't take a custom-headers override in this app — check the
     // stale token's server-side revocation via a raw fetch with the real
     // Authorization header instead, matching how backend session revocation
     // is verified elsewhere in this suite.
     const rawCheck = await fetch((window.RHINOCASH_API_BASE)+'/api/auth/me', { headers: { Authorization: `Bearer ${idleToken}` } });
     __assert(rawCheck.status === 401, "the idle-triggered logout genuinely revoked the real session server-side (POST /api/auth/logout was really called) — the old token is rejected, not just forgotten client-side");
-    closeModal();
 
     // Genuine activity (any real interaction — a click, a keypress, a
     // scroll) resets the clock rather than a fixed deadline from login.

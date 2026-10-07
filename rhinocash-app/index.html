@@ -8,6 +8,7 @@
 <style>
 :root{
   --navy:#1F3864; --navy-deep:#152647; --navy-soft:#2E4A7D;
+  --login-hero-dark:#12150a; --login-hero-mid:#2c3414; --login-hero-light:#8ea024;
   --rust:#B5651D; --rust-soft:#D98B4A; --claude:#D97757;
   --bg:#FFFFFF; --card:#FFFFFF; --line:#E4E1DA;
   --ink:#1C1C1E; --ink-soft:#5B5952; --ink-faint:#8B897F;
@@ -415,7 +416,7 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 }
 .login-hero{
   position:relative; overflow:hidden; color:#fff; padding:26px 22px 24px;
-  background:linear-gradient(150deg, var(--navy) 0%, var(--navy-deep) 100%);
+  background:linear-gradient(135deg, var(--login-hero-dark) 0%, var(--login-hero-mid) 45%, var(--login-hero-light) 100%);
   border-radius:0 0 26px 26px;
 }
 @media (min-width:860px){
@@ -428,7 +429,7 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .login-hero-logo img{ width:100%; height:100%; object-fit:contain; padding:5px; }
 .login-hero-name{ font-weight:800; font-size:16px; line-height:1.2; }
 .login-hero-tagline{ font-size:11px; opacity:0.75; margin-top:2px; }
-.login-hero-badge{ margin-top:18px; display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800; letter-spacing:0.7px; text-transform:uppercase; opacity:0.9; position:relative; }
+.login-hero-badge{ margin-top:38px; display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:800; letter-spacing:0.7px; text-transform:uppercase; opacity:0.9; position:relative; }
 .login-hero-desktop{ display:none; }
 @media (min-width:860px){
   .login-hero-desktop{ display:block; margin-top:36px; position:relative; }
@@ -460,7 +461,7 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .login-field .eye-toggle{ position:absolute; right:14px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--ink-faint); display:flex; background:none; border:none; padding:2px; }
 .login-field .eye-toggle:hover{ color:var(--navy); }
 .login-btn{
-  width:100%; background:linear-gradient(135deg, var(--navy-deep), var(--navy)); color:#fff; border:none; border-radius:10px;
+  width:100%; background:linear-gradient(135deg, var(--login-hero-dark), var(--login-hero-light)); color:#fff; border:none; border-radius:10px;
   padding:14px; font-size:14.5px; font-weight:800; cursor:pointer; margin-top:4px; letter-spacing:0.2px;
 }
 .login-btn:hover{ opacity:0.93; }
@@ -2947,12 +2948,16 @@ async function doLogin(ev){
     try{
       result = await apiRequest('POST', '/api/auth/login', { email: f.username, password: f.password });
     }catch(staffErr){
-      // A real lockout or a real "already logged in elsewhere" block must
-      // never be masked by silently falling through to try the investor
-      // path next — that fallback exists only to cover a genuinely
-      // different principal type using the same login form, not to retry
-      // past a real, specific rejection of this exact staff account.
-      if(staffErr.status === 429 || staffErr.code === 'ALREADY_LOGGED_IN'){ throw staffErr; }
+      // A real lockout, or any other specifically-identified rejection of
+      // this exact staff account (already logged in elsewhere, account
+      // suspended/deactivated, maintenance mode, …), must never be masked
+      // by silently falling through to try the investor path next — that
+      // fallback exists only to cover a genuinely different principal type
+      // using the same login form, not to retry past a real, specific
+      // rejection. A plain "Invalid credentials" (no code at all) is the
+      // one case that genuinely might just be an investor's email, so that
+      // one case alone still falls through.
+      if(staffErr.status === 429 || staffErr.code){ throw staffErr; }
       result = await apiRequest('POST', '/api/investor-auth/login', { email: f.username, password: f.password });
       isInvestor = true;
     }
@@ -3030,18 +3035,31 @@ async function doLogin(ev){
     session.loggingIn = false;
     session.authenticated = false;
     session.loginPhase = null;
+    // A suspended/deactivated account is its own distinct failure, not a
+    // bad-credentials one — it gets its own blocking alert rather than the
+    // usual inline banner, so it reads as a deliberate account-status stop
+    // rather than "try again".
+    if(e && e.code === 'ACCOUNT_NOT_ACTIVE'){
+      loginError = "";
+      renderApp();
+      alert(e.message || "This account is not active. Contact your Admin.");
+      return false;
+    }
     loginError = (e && e.message) || "Invalid credentials.";
     renderApp();
   }
   return false;
 }
 
-// Logout is a security action: never fire immediately on click. Opens a
-// real confirmation modal; the actual session-ending work happens in
-// confirmLogout() below, only once the user explicitly confirms.
-function promptLogout(){ openModal('confirm-logout'); }
+// Logout is a security action: never fire immediately on click. A real
+// native confirm() dialog gates it (matching the reference app's own
+// behavior) — the actual session-ending work only runs once the user
+// explicitly confirms. An idle timeout skips the confirm (nobody is there
+// to answer it) and goes straight to ending the session.
+function promptLogout(){ return confirmLogout(); }
 async function confirmLogout(opts){
   const idle = !!(opts && opts.reason === 'idle');
+  if(!idle && !confirm('Sure to Logout?')) return;
   session.loggingOut = true; renderApp();
   const isInvestor = session.role === 'Investor';
   try{
@@ -3069,18 +3087,21 @@ async function confirmLogout(opts){
   session.role = "Admin"; session.userName = ""; session.section = "dashboard"; session.subtab = null;
   DB = null;
   inFlight.clear();
-  // A deliberate, blocking second step (matching the requested design)
-  // instead of dropping straight back to the login screen — the real
-  // logout work above is already fully done by this point; this modal is
-  // purely a professional acknowledgement, not something the user waits on.
-  // Honestly worded per the real cause: an idle timeout never claims the
-  // user themselves clicked Logout, and a manual logout never claims idle.
-  modal = { type: idle ? 'idle-logged-out' : 'logged-out' };
+  // Any app modal left open from before the logout (e.g. a payments
+  // browser) must never still be "open" once DB is cleared — its own
+  // render function reads straight from DB with no null guard, since a
+  // modal is never expected to still be showing once logged out.
+  modal = null;
+  // A real, blocking native alert() as the second phase (matching the
+  // reference app) — the real logout work above is already fully done by
+  // this point; the alert is purely an acknowledgement, and only once it's
+  // dismissed does the app actually drop back to the login screen.
+  alert(idle ? 'You were signed out due to inactivity. Login again.' : 'Your session has expired, login again.');
   session.justLoggedOut = true;
   renderApp();
   setTimeout(()=>{ session.justLoggedOut = false; renderApp(); }, 4000);
 }
-function doLogout(){ promptLogout(); }
+function doLogout(){ return promptLogout(); }
 function goTo(section, subtab){
   if(!isSectionAllowed(section)){
     toast("Access denied — you don't have permission to view this section.");
@@ -18510,7 +18531,6 @@ function renderModal(){
   let body = "";
   if(modal.type === "apply-leave") body = renderApplyLeaveModal();
   else if(modal.type === "request-advance") body = renderRequestAdvanceModal();
-  else if(modal.type === "confirm-logout") body = renderConfirmLogoutModal();
   else if(modal.type === "session-expired") body = renderSessionExpiredModal();
   else if(modal.type === "session-expiry-warning") body = renderSessionExpiryWarningModal();
   else if(modal.type === "loan-status") body = renderLoanStatusModal();
@@ -18541,8 +18561,6 @@ function renderModal(){
   else if(modal.type === "staff-create-interaction") body = renderStaffCreateInteractionModal();
   else if(modal.type === "lo-workplan-setup") body = renderLoWorkPlanSetupModal();
   else if(modal.type === "create-support-ticket") body = renderCreateSupportTicketModal();
-  else if(modal.type === "logged-out") body = renderLoggedOutModal();
-  else if(modal.type === "idle-logged-out") body = renderIdleLoggedOutModal();
   else if(modal.type === "password-updated") body = renderPasswordUpdatedModal();
   else if(modal.type === "set-target") body = renderSetTargetModal();
   else if(modal.type === "arrears-bucket-loans") body = renderArrearsBucketLoansModal();
@@ -18551,18 +18569,8 @@ function renderModal(){
   else if(modal.type === "role-created") body = renderRoleCreatedModal();
   else return "";
   const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement','create-role'];
-  const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];
+  const blockingTypes = ['session-expired','password-updated'];
   return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
-}
-function renderConfirmLogoutModal(){
-  return `
-    <div class="modal-head"><h3>Log Out</h3>${!session.loggingOut?`<span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span>`:``}</div>
-    <div class="hint" style="margin-bottom:16px;">Are you sure you want to log out? Your current session will be securely ended and you will need to sign in again to access Rhinocash.</div>
-    <div class="pill-row">
-      <button class="btn btn-red btn-sm" onclick="confirmLogout()" ${session.loggingOut?'disabled':''}>${session.loggingOut?'Logging out…':'Log Out'}</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal()" ${session.loggingOut?'disabled':''}>Cancel</button>
-    </div>
-  `;
 }
 // Session expiration is already detected for real by apiRequest() (a
 // genuine 401 from the real backend, not a fabricated frontend timer) —
@@ -18574,36 +18582,6 @@ function renderSessionExpiredModal(){
     <div class="hint" style="margin-bottom:16px;">Your security session has expired. Please sign in again to continue.</div>
     <div class="pill-row">
       <button class="btn btn-primary btn-sm" onclick="closeModal()">Sign In Again</button>
-    </div>
-  `;
-}
-// A deliberate, real second step after a genuine logout completes — the
-// requested design (confirm -> a blocking acknowledgement -> only then
-// the login screen). Deliberately worded as a real completed logout, not
-// "expired" (that stays reserved for a genuine timeout, see
-// renderSessionExpiredModal above) — never claim an event that didn't
-// happen just to match a reference screenshot's wording.
-function renderLoggedOutModal(){
-  return `
-    <div style="text-align:center;">
-      <div style="width:56px; height:56px; border-radius:50%; background:#EAF7EF; color:#1BAF7A; display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">✓</div>
-      <h3 style="color:var(--navy); margin:0 0 8px;">You've Been Logged Out</h3>
-      <div class="hint" style="margin-bottom:20px;">Your session has been securely ended. Sign in again to continue.</div>
-      <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
-    </div>
-  `;
-}
-// A real, distinct cause from a manual logout — never worded as if the
-// user clicked Logout themselves, matching the same honesty standard as
-// renderLoggedOutModal()'s own comment ("never claim an event that
-// didn't happen").
-function renderIdleLoggedOutModal(){
-  return `
-    <div style="text-align:center;">
-      <div style="width:56px; height:56px; border-radius:50%; background:var(--amber-bg); color:var(--amber); display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 14px;">⏱</div>
-      <h3 style="color:var(--navy); margin:0 0 8px;">Signed Out Due to Inactivity</h3>
-      <div class="hint" style="margin-bottom:20px;">For your security, you were automatically signed out after 5 minutes without any activity. Sign in again to continue.</div>
-      <button class="btn btn-primary btn-sm" onclick="closeModal()" style="width:100%;">Sign In Again</button>
     </div>
   `;
 }
