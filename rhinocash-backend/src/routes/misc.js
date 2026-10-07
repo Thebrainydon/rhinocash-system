@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run } = require('./../db');
-const { requireAuth, requireModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requirePermission, requireMenuFeature, requireAnyMenuFeature } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, hasPermission, assertRecordInScope } = require('./../rbac');
 const { tokenHash } = require('./../crypto');
@@ -108,7 +108,7 @@ function register(router) {
   });
 
   // ---- Support tickets ----
-  router.get('/api/support-tickets', requireAuth, requireModule('support'), async (req, res) => {
+  router.get('/api/support-tickets', requireAuth, requireModule('support'), requireMenuFeature('menu-raised-ticket'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let rows = (await all('SELECT * FROM support_tickets ORDER BY created_at DESC')).filter(t => ticketVisibleTo(req.user, t, scope));
     if (req.query.status) rows = rows.filter(t => t.status === req.query.status);
@@ -192,7 +192,7 @@ function register(router) {
 
   // Real, org-wide directory of who a new ticket can genuinely be
   // addressed to (Create a Ticket -> "Send To") — organizational-
-  router.post('/api/support-tickets', requireAuth, requireModule('support'), async (req, res, next) => {
+  router.post('/api/support-tickets', requireAuth, requireModule('support'), requireMenuFeature('menu-create-a-ticket'), async (req, res, next) => {
     const b = req.body;
     if (!b.subject) return next({ status: 400, message: 'subject is required' });
     if (!['Low', 'Medium', 'High', 'Critical'].includes(b.priority || 'Medium')) return next({ status: 400, message: 'invalid priority' });
@@ -466,7 +466,7 @@ function register(router) {
   });
 
   // ---- Salary advance ----
-  router.get('/api/salary-advances', requireAuth, async (req, res) => {
+  router.get('/api/salary-advances', requireAuth, requireMenuFeature('menu-salary-advance'), async (req, res) => {
     const mine = req.query.mine === '1';
     if (mine) return res.json({ salaryAdvances: await all('SELECT * FROM salary_advance_requests WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]) });
     const rows = (await hasPermission(req.user, 'manage_users'))
@@ -474,7 +474,7 @@ function register(router) {
       : await all('SELECT * FROM salary_advance_requests WHERE user_id IN (SELECT id FROM users WHERE reporting_manager_id = ?) ORDER BY created_at DESC', [req.user.id]);
     res.json({ salaryAdvances: rows });
   });
-  router.post('/api/salary-advances', requireAuth, async (req, res, next) => {
+  router.post('/api/salary-advances', requireAuth, requireMenuFeature('menu-salary-advance'), async (req, res, next) => {
     const b = req.body;
     if (!b.amount || b.amount <= 0) return next({ status: 400, message: 'amount must be positive' });
     const id = 'sa_' + crypto.randomUUID();

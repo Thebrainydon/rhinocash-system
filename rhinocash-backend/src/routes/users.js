@@ -5,7 +5,7 @@ const { requireAuth, requireModule, requirePermission } = require('./../middlewa
 const { logAction, notify } = require('./../audit');
 const email = require('./../integrations/email');
 const sms = require('./../integrations/sms');
-const { computeFinalAccess, effectiveModules, canActOnStaffRecord, ADMIN_ONLY_ROLES, branchIdsInScope, hasPermission } = require('./../rbac');
+const { computeFinalAccess, effectiveModules, effectiveMenuFeatures, canActOnStaffRecord, ADMIN_ONLY_ROLES, branchIdsInScope, hasPermission } = require('./../rbac');
 const { publicUser } = require('./auth');
 const crypto = require('node:crypto');
 
@@ -934,6 +934,74 @@ function register(router) {
     });
 
     res.json({ ok: true, moduleIds: requested.slice().sort(), added, removed });
+  });
+
+  // ---- Menu/submenu access — same real admin-manageable shape as the
+  // Intelligence feature catalog/grants (GET /api/intelligence/catalog,
+  // GET/PUT /api/roles/:id/intelligence), just for SIDEBAR_MENUS submenu
+  // items instead of Intelligence submenu items. Rolled out role by role
+  // (see rbac.js/middleware.js); the Admin Role Permissions page can grant
+  // any not-yet-reviewed role into this system simply by PUTting its
+  // desired featureIds here — the very first PUT for a role is what
+  // "migrates" it onto requireMenuFeature's real server-side enforcement.
+  router.get('/api/menus/catalog', requireAuth, async (req, res) => {
+    const categories = await all('SELECT * FROM menu_categories ORDER BY sort_order');
+    const features = await all('SELECT * FROM menu_features ORDER BY category_id, sort_order');
+    res.json({ categories, features });
+  });
+  router.get('/api/roles/:id/menus', requireAuth, requirePermission('manage_users'), requireAdminOnly("view a role's menu access"), async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    const rows = await all('SELECT feature_id FROM role_menu_access WHERE role_id = ?', [req.params.id]);
+    res.json({ featureIds: rows.map(r => r.feature_id) });
+  });
+  router.put('/api/roles/:id/menus', requireAuth, requirePermission('manage_users'), requireAdminOnly("edit a role's menu access"), async (req, res, next) => {
+    const role = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+
+    const requested = Array.isArray(req.body.featureIds) ? [...new Set(req.body.featureIds)] : null;
+    if (!requested) return next({ status: 400, message: 'featureIds must be an array' });
+
+    const allFeatures = await all('SELECT id FROM menu_features');
+    const validIds = new Set(allFeatures.map(f => f.id));
+    const invalidIds = requested.filter(f => !validIds.has(f));
+    if (invalidIds.length) return next({ status: 400, message: `Unknown menu feature id(s): ${invalidIds.join(', ')}` });
+
+    const before = (await all('SELECT feature_id FROM role_menu_access WHERE role_id = ?', [role.id])).map(r => r.feature_id);
+    const beforeSet = new Set(before);
+    const added = requested.filter(f => !beforeSet.has(f)).sort();
+    const removed = before.filter(f => !requested.includes(f)).sort();
+
+    await transaction(async () => {
+      await run('DELETE FROM role_menu_access WHERE role_id = ?', [role.id]);
+      for (const f of requested) {
+        await run('INSERT INTO role_menu_access (role_id, feature_id) VALUES (?,?)', [role.id, f]);
+      }
+      if (added.length || removed.length) {
+        await logAction(req, {
+          action: 'Changed role menu access', module: 'menu', recordType: 'Role', recordId: role.id,
+          previousValue: before.slice().sort(), newValue: requested.slice().sort(),
+          reason: req.body.reason,
+        });
+      }
+    });
+
+    res.json({ ok: true, featureIds: requested.slice().sort(), added, removed });
+  });
+  // Per-user override — empty array clears it (defers entirely back to the
+  // role baseline), same semantics as PUT /api/users/:id/intelligence-access.
+  router.put('/api/users/:id/menu-access', requireAuth, requirePermission('manage_users'), requireAdminOnly("set a user's menu access"), async (req, res, next) => {
+    const target = await get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (!target) return next({ status: 404, message: 'User not found' });
+    const featureIds = Array.isArray(req.body.featureIds) ? req.body.featureIds : [];
+    const before = await effectiveMenuFeatures(target);
+    await run('DELETE FROM user_menu_access WHERE user_id = ?', [target.id]);
+    for (const id of featureIds) {
+      await run('INSERT INTO user_menu_access (user_id, feature_id) VALUES (?,?) ON CONFLICT DO NOTHING', [target.id, id]);
+    }
+    const after = await effectiveMenuFeatures(target);
+    await logAction(req, { action: 'Set user menu access', module: 'menu', recordType: 'User', recordId: target.id, previousValue: before, newValue: after, reason: req.body.reason });
+    res.json({ ok: true, featureIds: after });
   });
 }
 

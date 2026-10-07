@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run } = require('./../db');
-const { requireAuth, requireModule } = require('./../middleware');
+const { requireAuth, requireModule, requireMenuFeature } = require('./../middleware');
 const { requireInvestorAuth } = require('./investors');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, assertRecordInScope, branchIdsInScope } = require('./../rbac');
@@ -241,7 +241,7 @@ function register(router) {
   });
 
   // ==================== Collection Report — period-selectable, branch/officer/product breakdown, real daily trend, real period-over-period comparison ====================
-  router.get('/api/collections/report', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/collections/report', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-collection-report'), async (req, res) => {
     const { clause, params: scopeParams } = await loanScopeClause(req);
     let productClause = clause; const productParams = [...scopeParams];
     if (req.query.product_id) { productClause += ' AND product_id = ?'; productParams.push(req.query.product_id); }
@@ -743,7 +743,7 @@ function register(router) {
     res.json({ date, kpis, byOfficer, byBranch, byStatus, exceptions, rows });
   });
 
-  router.get('/api/collections/sheet', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/collections/sheet', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-collection-sheet'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);
     const loans = await all(`SELECT * FROM loans WHERE ${clause} AND status IN ('Active','Disbursed','Completed')`, params);
     const from = req.query.date_from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -897,7 +897,7 @@ function register(router) {
   });
 
   // ==================== Collection MTD ====================
-  router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/collections/mtd', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-collection-mtd'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);
     const loanIds = (await all(`SELECT id FROM loans WHERE ${clause} AND status IN ('Active','Disbursed')`, params)).map(l => l.id);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -921,7 +921,7 @@ function register(router) {
   });
 
   // ==================== Collection Rate — real, period-configurable, aggregate not averaged ====================
-  router.get('/api/collections/rate', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/collections/rate', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-collection-rates'), async (req, res) => {
     const { clause, params } = await loanScopeClause(req);
     const loanIds = (await all(`SELECT id FROM loans WHERE ${clause}`, params)).map(l => l.id);
     const period = req.query.period || 'monthly'; // daily | weekly | monthly

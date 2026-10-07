@@ -437,6 +437,76 @@ async function seedIntelligence() {
   }
 }
 
+// Menu/submenu access — same real data-driven shape as seedIntelligence()
+// above, at SIDEBAR_MENUS submenu-item granularity. Rolled out role by
+// role as each role's real menus are actually reviewed (see rbac.js's
+// requireMenuFeature "not yet migrated" bypass) — today that's just Loan
+// Officer, whose full current SIDEBAR_MENUS/LABEL_ROUTES item list below
+// is granted in full (a lossless baseline matching its existing real
+// access exactly, not a new restriction). Feature ids are named generically
+// (not loan-officer-prefixed) so a shared label (e.g. "Add Client",
+// "View Client") can be reused as-is once another role's menus are
+// reviewed, instead of being duplicated under a second id.
+async function seedMenuAccess() {
+  const categories = [
+    ['menu-cat-accounting', 'Accounting', '📊', 1],
+    ['menu-cat-clients', 'Clients', '👥', 2],
+    ['menu-cat-loanbook', 'LoanBook', '📖', 3],
+    ['menu-cat-payments', 'Payments', '💳', 4],
+    ['menu-cat-myaccount', 'My Account', '🪪', 5],
+    ['menu-cat-systemhelp', 'System & Help', '🔧', 6],
+  ];
+  for (const [id, label, icon, sort] of categories) {
+    await run('INSERT INTO menu_categories (id, label, icon, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, label, icon, sort]);
+  }
+
+  const features = [
+    ['menu-requisitions', 'menu-cat-accounting', 'Requisitions', 1],
+    ['menu-utility-payments', 'menu-cat-accounting', 'Utility Payments', 2],
+    ['menu-cashflow', 'menu-cat-accounting', 'Cashflow', 3],
+    ['menu-add-client', 'menu-cat-clients', 'Add Client', 1],
+    ['menu-create-a-lead', 'menu-cat-clients', 'Create a Lead', 2],
+    ['menu-interactions', 'menu-cat-clients', 'Interactions', 3],
+    ['menu-client-leads', 'menu-cat-clients', 'Client Leads', 4],
+    ['menu-view-client', 'menu-cat-clients', 'View Client', 5],
+    ['menu-create-loan-application', 'menu-cat-loanbook', 'Create Loan Application', 1],
+    ['menu-loan-application', 'menu-cat-loanbook', 'Loan Application', 2],
+    ['menu-collection-mtd', 'menu-cat-loanbook', 'Collection MTD', 3],
+    ['menu-disbursements', 'menu-cat-loanbook', 'Disbursements', 4],
+    ['menu-collection-sheet', 'menu-cat-loanbook', 'Collection Sheet', 5],
+    ['menu-collection-report', 'menu-cat-loanbook', 'Collection Report', 6],
+    ['menu-collection-rates', 'menu-cat-loanbook', 'Collection Rates', 7],
+    ['menu-loan-arrears', 'menu-cat-loanbook', 'Loan Arrears', 8],
+    ['menu-view-loans', 'menu-cat-loanbook', 'View Loans', 9],
+    ['menu-unposted-payments', 'menu-cat-payments', 'Unposted Payments', 1],
+    ['menu-processed-payments', 'menu-cat-payments', 'Processed Payments', 2],
+    ['menu-prepayments', 'menu-cat-payments', 'Prepayments', 3],
+    ['menu-overpayments', 'menu-cat-payments', 'Overpayments', 4],
+    ['menu-receipts', 'menu-cat-payments', 'Receipts', 5],
+    ['menu-payin-summary', 'menu-cat-payments', 'Payi Summary', 6],
+    ['menu-payments-report', 'menu-cat-payments', 'Payments Report', 7],
+    ['menu-validate-payments', 'menu-cat-payments', 'Validate Payments', 8],
+    ['menu-view-details', 'menu-cat-myaccount', 'View Details', 1],
+    ['menu-my-work-plan', 'menu-cat-myaccount', 'My Work Plan', 2],
+    ['menu-salary-advance', 'menu-cat-myaccount', 'Salary Advance', 3],
+    ['menu-update-details', 'menu-cat-myaccount', 'Update Details', 4],
+    ['menu-create-a-ticket', 'menu-cat-systemhelp', 'Create a Ticket', 1],
+    ['menu-raised-ticket', 'menu-cat-systemhelp', 'Raised Ticket', 2],
+  ];
+  for (const [id, cat, label, sort] of features) {
+    await run('INSERT INTO menu_features (id, category_id, label, sort_order) VALUES (?,?,?,?) ON CONFLICT DO NOTHING', [id, cat, label, sort]);
+  }
+
+  const roleGrants = {
+    loan_officer: features.map(f => f[0]),
+  };
+  for (const [role, feats] of Object.entries(roleGrants)) {
+    for (const f of feats) {
+      await run('INSERT INTO role_menu_access (role_id, feature_id) VALUES (?,?) ON CONFLICT DO NOTHING', [role, f]);
+    }
+  }
+}
+
 async function seedWorkflow() {
   // The exact sequential workflow from the spec, stored as data.
   const steps = [
@@ -764,6 +834,7 @@ async function seedDemoData() {
   await seedModules();
   await seedPermissions();
   await seedIntelligence();
+  await seedMenuAccess();
   await seedWorkflow();
   await seedChartOfAccounts();
   await seedRegionsAndDepartments();

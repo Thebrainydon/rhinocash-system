@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
-const { requireAuth, requireModule, requireAnyModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requireAnyModule, requirePermission, requireMenuFeature } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId, isBranchAllowed } = require('./../rbac');
 const crypto = require('node:crypto');
@@ -24,7 +24,7 @@ function register(router) {
   // Real server-side search/filter/pagination — was previously a single
   // unfiltered SELECT * with no scope-safe search, no way to page through
   // a large portfolio, and no total count.
-  router.get('/api/clients', requireAuth, requireModule('clients'), async (req, res) => {
+  router.get('/api/clients', requireAuth, requireModule('clients'), requireMenuFeature('menu-view-client'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     const clauses = [scope.clause]; const params = [...scope.params];
     if (req.query.branch_id) {
@@ -62,7 +62,7 @@ function register(router) {
 
   // Registered before /api/clients/:id so "interactions" is never
   // swallowed as a client id by that route's :id param.
-  router.get('/api/clients/interactions', requireAuth, requireModule('clients'), async (req, res) => {
+  router.get('/api/clients/interactions', requireAuth, requireModule('clients'), requireMenuFeature('menu-interactions'), async (req, res) => {
     const scope = await branchScopeSQL(req.user, 'c.branch_id');
     const clauses = [scope.clause]; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clauses.push('c.officer_id = ?'); params.push(req.user.id); }
@@ -93,7 +93,7 @@ function register(router) {
     res.json({ interactions: rows, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
   });
 
-  router.get('/api/clients/:id', requireAuth, requireModule('clients'), async (req, res, next) => {
+  router.get('/api/clients/:id', requireAuth, requireModule('clients'), requireMenuFeature('menu-view-client'), async (req, res, next) => {
     const c = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
     if (!c) return next({ status: 404, message: 'Client not found' });
     try { await assertRecordInScope(req.user, c.branch_id, 'client'); } catch (e) { return next(e); } // object-level check, not just module-level
@@ -110,7 +110,7 @@ function register(router) {
     res.json({ client: c, interactions, documents, loans, payments });
   });
 
-  router.post('/api/clients', requireAuth, requireModule('clients'), async (req, res, next) => {
+  router.post('/api/clients', requireAuth, requireModule('clients'), requireMenuFeature('menu-add-client'), async (req, res, next) => {
     const b = req.body;
     if (!b.name || !b.phone) return next({ status: 400, message: 'name and phone are required' });
     // Exact-phone duplicate rejection — a real, documented business rule
@@ -257,7 +257,7 @@ function register(router) {
     res.json({ client: await get('SELECT * FROM clients WHERE id = ?', [client.id]) });
   });
 
-  router.post('/api/clients/:id/interactions', requireAuth, requireModule('clients'), async (req, res, next) => {
+  router.post('/api/clients/:id/interactions', requireAuth, requireModule('clients'), requireMenuFeature('menu-interactions'), async (req, res, next) => {
     const client = await get('SELECT * FROM clients WHERE id = ?', [req.params.id]);
     if (!client) return next({ status: 404, message: 'Client not found' });
     try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
@@ -359,7 +359,7 @@ function register(router) {
   });
 
   // Leads
-  router.get('/api/leads', requireAuth, requireModule('clients'), async (req, res) => {
+  router.get('/api/leads', requireAuth, requireModule('clients'), requireMenuFeature('menu-client-leads'), async (req, res) => {
     // Real branch/region scoping — a Loan Officer sees only their own
     // real branch's leads, a Regional Manager their real region, CEO/
     // Admin the real company-wide set. Previously this had no scoping
@@ -395,7 +395,7 @@ function register(router) {
     );
     res.json({ leads: rows });
   });
-  router.post('/api/leads', requireAuth, requireModule('clients'), async (req, res, next) => {
+  router.post('/api/leads', requireAuth, requireModule('clients'), requireMenuFeature('menu-create-a-lead'), async (req, res, next) => {
     const actor = req.user;
     const b = req.body;
     if (!b.name) return next({ status: 400, message: 'name is required' });

@@ -74,7 +74,7 @@ SUITES="integration v2 branchExpansion mpesaConfig notifications targets
 paymentsPagination accounting accountingControl staffManagement
 branchesRegions clients collections myAccount investorManagement
 mpesaIntegration mpesaC2b mpesaB2c systemHealth support reports
-systemAdmin logout atomicity uploads cors loanStatusBrowser forgotPassword viewLoans employeesExtras passwordPolicy concurrentLogin employeeUserSplit"
+systemAdmin logout atomicity uploads cors loanStatusBrowser forgotPassword viewLoans employeesExtras passwordPolicy concurrentLogin employeeUserSplit menuAccess"
 
 FAILED=""
 SERVER_PID=""

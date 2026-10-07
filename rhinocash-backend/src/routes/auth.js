@@ -1,7 +1,7 @@
 'use strict';
 const { get, run } = require('./../db');
 const { hashPassword, verifyPassword, generateTempPassword, signToken, tokenHash } = require('./../crypto');
-const { requireAuth, requirePermission } = require('./../middleware');
+const { requireAuth, requirePermission, requireMenuFeature } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { computeFinalAccess } = require('./../rbac');
 const email = require('./../integrations/email');
@@ -189,7 +189,7 @@ function register(router) {
   // account's own live session token; every other change-password path
   // (the Security page, the forced first-login reset) still goes through
   // POST /api/auth/change-password below and still requires it.
-  router.patch('/api/auth/me', requireAuth, async (req, res, next) => {
+  router.patch('/api/auth/me', requireAuth, requireMenuFeature('menu-update-details'), async (req, res, next) => {
     const allowed = ['phone', 'email'];
     const sets = []; const params = [];
     allowed.forEach(f => { if (req.body[f] !== undefined) { sets.push(`${f} = ?`); params.push(req.body[f]); } });

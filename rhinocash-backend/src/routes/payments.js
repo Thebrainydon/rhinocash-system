@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
-const { requireAuth, requireModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requirePermission, requireAnyMenuFeature, requireMenuFeature } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { assertRecordInScope, branchIdsInScope } = require('./../rbac');
 const crypto = require('node:crypto');
@@ -243,7 +243,7 @@ async function buildPaymentQuery(req) {
 
 function register(router) {
   const { assertPeriodOpen } = require('./accounting');
-  router.get('/api/payments', requireAuth, requireModule('payments'), async (req, res) => {
+  router.get('/api/payments', requireAuth, requireModule('payments'), requireAnyMenuFeature('menu-unposted-payments', 'menu-processed-payments', 'menu-prepayments', 'menu-overpayments', 'menu-receipts', 'menu-payin-summary', 'menu-payments-report'), async (req, res) => {
     const { from, where, params, orderBy } = await buildPaymentQuery(req);
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     // The 100-row ceiling is for user-FACING pagination (25/50/100 page
@@ -273,7 +273,7 @@ function register(router) {
   // Full filtered result set for CSV export — same filters, same scope, no
   // page cap beyond a sane safety ceiling. Never a second filter
   // implementation: this calls the exact same buildPaymentQuery().
-  router.get('/api/payments/export', requireAuth, requireModule('payments'), async (req, res) => {
+  router.get('/api/payments/export', requireAuth, requireModule('payments'), requireMenuFeature('menu-payments-report'), async (req, res) => {
     const { from, where, params, orderBy } = await buildPaymentQuery(req);
     const rows = await all(`SELECT p.* ${from} ${where} ${orderBy} LIMIT 5000`, params);
     const enriched = await Promise.all(rows.map(async p => ({ ...p, classification: await classifyPayment(p.id) })));
@@ -361,7 +361,7 @@ function register(router) {
     res.status(201).json({ payment: await get('SELECT * FROM payments WHERE id = ?', [id]) });
   });
 
-  router.post('/api/payments/:id/post', requireAuth, requirePermission('record_payments'), async (req, res, next) => {
+  router.post('/api/payments/:id/post', requireAuth, requirePermission('record_payments'), requireMenuFeature('menu-validate-payments'), async (req, res, next) => {
     const payment = await get('SELECT * FROM payments WHERE id = ?', [req.params.id]);
     if (!payment) return next({ status: 404, message: 'Payment not found' });
     const loan = await get('SELECT * FROM loans WHERE id = ?', [payment.loan_id]);

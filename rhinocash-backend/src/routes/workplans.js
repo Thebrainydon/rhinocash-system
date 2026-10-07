@@ -9,7 +9,7 @@
 // has no real tracked activity anywhere in this app yet, so it always
 // honestly reports 0/None rather than fabricating one.
 'use strict';
-const { requireAuth } = require('./../middleware');
+const { requireAuth, requireMenuFeature } = require('./../middleware');
 const { all, get, run } = require('./../db');
 const { hasPermission } = require('./../rbac');
 const crypto = require('node:crypto');
@@ -46,7 +46,7 @@ function shapePlan(row) {
 }
 
 function register(router) {
-  router.get('/api/workplans/me', requireAuth, async (req, res, next) => {
+  router.get('/api/workplans/me', requireAuth, requireMenuFeature('menu-my-work-plan'), async (req, res, next) => {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return next({ status: 400, message: 'date must look like "2026-09-23"' });
     const row = await get('SELECT * FROM daily_workplans WHERE user_id = ? AND plan_date = ?', [req.user.id, date]);
@@ -61,7 +61,7 @@ function register(router) {
     });
   });
 
-  router.post('/api/workplans/me', requireAuth, async (req, res, next) => {
+  router.post('/api/workplans/me', requireAuth, requireMenuFeature('menu-my-work-plan'), async (req, res, next) => {
     const b = req.body;
     const date = b.date || new Date().toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return next({ status: 400, message: 'date must look like "2026-09-23"' });

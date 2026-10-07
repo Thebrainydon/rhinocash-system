@@ -73,6 +73,33 @@ function hasInvestorIntelligenceAccess(featureId) {
   return INVESTOR_INTELLIGENCE_FEATURES.includes(featureId);
 }
 
+// ---- Menu/submenu feature access — the exact same real data-driven shape
+// as the Intelligence feature model above (role_menu_access/
+// user_menu_access mirror role_intelligence_access/user_intelligence_access
+// exactly), just gating individual SIDEBAR_MENUS submenu items instead of
+// Intelligence submenu items. Rolled out role-by-role: a role is only
+// "migrated" onto this system once it holds at least one row in
+// role_menu_access (seed.js seeds roles as they're actually reviewed) —
+// see requireMenuFeature()/requireAnyMenuFeature() in middleware.js for the
+// real, explicit "not yet migrated → skip this check" bypass that keeps
+// every not-yet-reviewed role's existing access completely unaffected.
+async function roleMenuFeatures(roleId) {
+  const rows = await all('SELECT feature_id FROM role_menu_access WHERE role_id = ?', [roleId]);
+  return rows.map(r => r.feature_id);
+}
+
+async function effectiveMenuFeatures(user) {
+  const base = await roleMenuFeatures(user.role_id);
+  const overrideRows = await all('SELECT feature_id FROM user_menu_access WHERE user_id = ?', [user.id]);
+  if (overrideRows.length === 0) return base;
+  const overrideSet = new Set(overrideRows.map(r => r.feature_id));
+  return base.filter(f => overrideSet.has(f));
+}
+
+async function hasMenuAccess(user, featureId) {
+  return (await effectiveMenuFeatures(user)).includes(featureId);
+}
+
 // Effective action permission = personal override wins, else role default.
 async function hasPermission(user, permissionId) {
   const override = await get(
@@ -170,6 +197,7 @@ async function computeFinalAccess(user) {
     region: region ? region.name : null,
     modules: await effectiveModules(user),
     intelligence: await effectiveIntelligenceFeatures(user),
+    menus: await effectiveMenuFeatures(user),
     finalLine: `${role ? role.name : user.role_id} — ${user.access_level}`,
     // Which real sidebar tree / dashboard layout this user's role reuses
     // (see STRUCTURAL_TEMPLATE_IDS in routes/users.js) — every real
@@ -205,6 +233,7 @@ module.exports = {
   roleModules, rolePermissions, effectiveModules, hasModuleAccess, hasPermission,
   roleIntelligenceFeatures, effectiveIntelligenceFeatures, hasIntelligenceAccess,
   INVESTOR_INTELLIGENCE_FEATURES, hasInvestorIntelligenceAccess,
+  roleMenuFeatures, effectiveMenuFeatures, hasMenuAccess,
   branchScopeSQL, branchIdsInScope, isBranchAllowed, assertRecordInScope, resolveWriteBranchId,
   computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES,
 };

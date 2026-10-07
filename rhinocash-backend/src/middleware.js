@@ -5,7 +5,7 @@
 'use strict';
 const { get, run } = require('./db');
 const { verifyToken, tokenHash } = require('./crypto');
-const { hasModuleAccess, hasPermission, hasIntelligenceAccess, hasInvestorIntelligenceAccess } = require('./rbac');
+const { hasModuleAccess, hasPermission, hasIntelligenceAccess, hasInvestorIntelligenceAccess, roleMenuFeatures, hasMenuAccess } = require('./rbac');
 
 function extractToken(req) {
   const h = req.headers.authorization || '';
@@ -100,6 +100,51 @@ function requireInvestorIntelligenceFeature(featureId) {
   };
 }
 
+// Real, server-side protection for an individual SIDEBAR_MENUS submenu
+// item — the same real chokepoint requireModule()/requireIntelligenceFeature()
+// already are, just at per-menu-item granularity, rolled out role by role.
+// A role is only "migrated" onto this system once seed.js has actually
+// given it at least one role_menu_access row (reviewed and confirmed, same
+// as the Loan Officer audit this was built for) — a role with ZERO rows
+// anywhere in role_menu_access falls straight through unaffected, so every
+// not-yet-reviewed role keeps its exact pre-existing access via whatever
+// requireModule/requirePermission checks already guard this same route.
+// This is what makes it safe to gate a route several roles share (e.g.
+// GET /api/collections/mtd, used by both Manager and Loan Officer) before
+// every one of those roles has been individually reviewed.
+function requireMenuFeature(featureId) {
+  return async (req, res, next) => {
+    const migrated = (await roleMenuFeatures(req.user.role_id)).length > 0;
+    if (!migrated) return next();
+    if (!(await hasMenuAccess(req.user, featureId))) {
+      const { logAction } = require('./audit');
+      await logAction(req, { action: 'Blocked unauthorized menu access', module: 'menu', recordType: 'MenuFeature', recordId: featureId });
+      return next({ status: 403, message: `You do not have access to the "${featureId}" menu item` });
+    }
+    next();
+  };
+}
+
+// Union form of requireMenuFeature — for a route that genuinely serves
+// several distinct menu items at once (e.g. GET /api/payments backs
+// Unposted/Processed/Prepayments/Overpayments/Receipts/Pay-in Summary all
+// as client-side status filters over the one real list, not six separate
+// endpoints). Passes if the user holds ANY one of the listed features;
+// same "not yet migrated" bypass as requireMenuFeature above.
+function requireAnyMenuFeature(...featureIds) {
+  return async (req, res, next) => {
+    const migrated = (await roleMenuFeatures(req.user.role_id)).length > 0;
+    if (!migrated) return next();
+    const checks = await Promise.all(featureIds.map(f => hasMenuAccess(req.user, f)));
+    if (!checks.some(Boolean)) {
+      const { logAction } = require('./audit');
+      await logAction(req, { action: 'Blocked unauthorized menu access', module: 'menu', recordType: 'MenuFeature', recordId: featureIds.join('|') });
+      return next({ status: 403, message: `You do not have access to any of: ${featureIds.join(', ')}` });
+    }
+    next();
+  };
+}
+
 function requirePermission(permissionId) {
   return async (req, res, next) => {
     if (!(await hasPermission(req.user, permissionId))) {
@@ -111,4 +156,4 @@ function requirePermission(permissionId) {
   };
 }
 
-module.exports = { requireAuth, requireModule, requireAnyModule, requirePermission, requireIntelligenceFeature, requireInvestorIntelligenceFeature, extractToken };
+module.exports = { requireAuth, requireModule, requireAnyModule, requirePermission, requireIntelligenceFeature, requireInvestorIntelligenceFeature, requireMenuFeature, requireAnyMenuFeature, extractToken };

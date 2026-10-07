@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
-const { requireAuth, requireModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requirePermission, requireMenuFeature } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchIdsInScope, assertRecordInScope, isBranchAllowed } = require('./../rbac');
 const { tokenHash } = require('./../crypto');
@@ -174,7 +174,7 @@ function register(router) {
   });
 
   // ==================== Requisitions — Submit -> Manager approval -> Accountant pays ====================
-  router.get('/api/requisitions', requireAuth, requireModule('accounting'), async (req, res) => {
+  router.get('/api/requisitions', requireAuth, requireModule('accounting'), requireMenuFeature('menu-requisitions'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) {
@@ -220,7 +220,7 @@ function register(router) {
     });
   });
 
-  router.post('/api/requisitions', requireAuth, requireModule('accounting'), async (req, res, next) => {
+  router.post('/api/requisitions', requireAuth, requireModule('accounting'), requireMenuFeature('menu-requisitions'), async (req, res, next) => {
     const b = req.body;
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) return next({ status: 400, message: 'At least one item is required' });
@@ -319,7 +319,7 @@ function register(router) {
   // cost before approving, and that adjusted value — not the original
   // request — is what the next stage (and the final posted amount) uses.
   // ====================
-  router.get('/api/utility-payments', requireAuth, requireModule('accounting'), async (req, res) => {
+  router.get('/api/utility-payments', requireAuth, requireModule('accounting'), requireMenuFeature('menu-utility-payments'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
     const clauses = ['1=1']; const params = [];
     if (scope !== null) {
@@ -367,7 +367,7 @@ function register(router) {
   // real request no longer posts anything; only the Accountant's final
   // decision does, so anyone with accounting access (same as Requisitions)
   // can genuinely submit one.
-  router.post('/api/utility-payments', requireAuth, requireModule('accounting'), async (req, res, next) => {
+  router.post('/api/utility-payments', requireAuth, requireModule('accounting'), requireMenuFeature('menu-utility-payments'), async (req, res, next) => {
     const b = req.body;
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) return next({ status: 400, message: 'At least one item is required' });
@@ -841,7 +841,7 @@ function register(router) {
   });
 
   // ==================== Cashflow — opening/closing balance + inflows/outflows over a real date range ====================
-  router.get('/api/accounting/cashflow', requireAuth, requireModule('accounting'), async (req, res) => {
+  router.get('/api/accounting/cashflow', requireAuth, requireModule('accounting'), requireMenuFeature('menu-cashflow'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
     const cashAccounts = ['cash', 'bank', 'mpesa'];
     const from = req.query.date_from || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);

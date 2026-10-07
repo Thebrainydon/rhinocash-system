@@ -1,6 +1,6 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
-const { requireAuth, requireModule, requirePermission } = require('./../middleware');
+const { requireAuth, requireModule, requirePermission, requireMenuFeature } = require('./../middleware');
 const { logAction, notify } = require('./../audit');
 const { branchScopeSQL, assertRecordInScope, resolveWriteBranchId } = require('./../rbac');
 const crypto = require('node:crypto');
@@ -1067,7 +1067,7 @@ function register(router) {
   });
 
   // ==================== View Loans — Current/Completed/All categories, real risk status, real PAR, branch/officer breakdown ====================
-  router.get('/api/loans/view', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans/view', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-view-loans'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.branch_id) { clause += ' AND branch_id = ?'; params.push(req.query.branch_id); }
@@ -1378,7 +1378,7 @@ function register(router) {
   });
 
   // ==================== Disbursements — pipeline, pending aging, branch/officer/product/method analysis, real trend ====================
-  router.get('/api/loans/disbursements-overview', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans/disbursements-overview', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-disbursements'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -1491,7 +1491,7 @@ function register(router) {
   // branch-wide viewer (Manager and above) genuinely sees every real
   // officer who disbursed that day, matching the requested reference
   // design's own per-officer daily breakdown.
-  router.get('/api/loans/daily-disbursements', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans/daily-disbursements', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-disbursements'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -1716,7 +1716,7 @@ function register(router) {
   });
 
   // ---- Applications ----
-  router.get('/api/loans', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-loan-application'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
@@ -1766,7 +1766,7 @@ function register(router) {
   // Real ageing buckets, computed once here and reused by every role's
   // view — the frontend previously recomputed a *different*, unscoped
   // version of this client-side instead of calling this real endpoint.
-  router.get('/api/loans/arrears', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans/arrears', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-loan-arrears'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -1828,7 +1828,7 @@ function register(router) {
   // number), not this loan's own installment count. This is a new
   // reference design with no visible backend of its own — these are
   // inferred, real, computable definitions, not fabricated placeholders.
-  router.get('/api/loans/arrears-sheet', requireAuth, requireModule('loanbook'), async (req, res) => {
+  router.get('/api/loans/arrears-sheet', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-loan-arrears'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -2157,7 +2157,7 @@ function register(router) {
     res.json({ fee });
   });
 
-  router.post('/api/loans', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+  router.post('/api/loans', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-create-loan-application'), async (req, res, next) => {
     const b = req.body;
     if (!b.client_id || !b.product_id || !b.principal) {
       return next({ status: 400, message: 'client_id, product_id and principal are required' });

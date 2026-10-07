@@ -1268,6 +1268,40 @@ CREATE TABLE IF NOT EXISTS user_intelligence_access (
   PRIMARY KEY (user_id, feature_id)
 );
 
+-- ===================== Menu/submenu access model =====================
+-- Exact same real data-driven shape as the Intelligence model directly
+-- above, just at SIDEBAR_MENUS submenu-item granularity (e.g. grant
+-- "LoanBook > Loan Arrears" alone) instead of Intelligence-feature
+-- granularity. Rolled out role by role as each role's real menus/
+-- submenus are reviewed (see rbac.js/middleware.js comments on
+-- requireMenuFeature's "not yet migrated" bypass) — a role with zero
+-- rows here is completely unaffected by this system.
+CREATE TABLE IF NOT EXISTS menu_categories (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL UNIQUE,
+  icon TEXT NOT NULL DEFAULT '📄',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS menu_features (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL REFERENCES menu_categories(id),
+  label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS role_menu_access (
+  role_id TEXT NOT NULL REFERENCES roles(id),
+  feature_id TEXT NOT NULL REFERENCES menu_features(id),
+  PRIMARY KEY (role_id, feature_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_menu_access (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  feature_id TEXT NOT NULL REFERENCES menu_features(id),
+  PRIMARY KEY (user_id, feature_id)
+);
+
 -- Personalizable Workspaces: a real, per-user saved dashboard layout
 -- (which cards/widgets show and in what order), distinct from the
 -- existing report_filter_presets (extended below with a scope column
