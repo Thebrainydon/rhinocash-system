@@ -20,6 +20,15 @@
   font-size:16px;
 }
 *{box-sizing:border-box; margin:0; padding:0;}
+html, body{
+  /* Disables the mobile browser's own native pull-to-refresh/rubber-band
+     reload gesture — without this, dragging down on a phone reloads the
+     whole page from scratch, wiping the in-memory session token and
+     landing back on the login screen. The app's own custom pull-to-refresh
+     (see initPullToRefresh()) replaces it with a real, in-app data reload
+     that keeps the session intact. */
+  overscroll-behavior-y: contain;
+}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
@@ -400,6 +409,14 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 .section-note{background:var(--blue-bg); color:var(--navy); border-radius:9px; padding:11px 14px; font-size:12.5px; margin-bottom:16px;}
 .loading-screen{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:10px; color:var(--blue); font-size:16px; font-weight:700;}
 .loading-screen-spinner{display:inline-block; width:18px; height:18px; vertical-align:-3px; margin-left:5px; animation:loginSpin 0.8s linear infinite;}
+/* ---- Pull-to-refresh indicator (see initPullToRefresh()) ---- */
+.ptr-indicator{
+  position:fixed; top:0; left:0; right:0; z-index:500; display:flex; align-items:center; justify-content:center;
+  height:56px; margin-top:-56px; background:var(--bg); color:var(--navy); font-size:13px; font-weight:700;
+  transition:margin-top 0.15s ease-out; pointer-events:none;
+}
+.ptr-indicator svg{ transition:transform 0.1s linear; }
+.ptr-indicator.spinning svg{ animation:loginSpin 0.8s linear infinite; }
 
 /* ---- Login screen — split hero/form card, Rhinocash's own navy/rust
    brand (never a one-off separate palette): full-bleed stacked hero-over-
@@ -3024,6 +3041,10 @@ async function doLogin(ev){
       session.subtab = defaultLanding.subtab || null;
     }
     session.loggedIn = true;
+    // The real baseline history entry this real session's back button
+    // walks back through — replaceState, not pushState: this is the
+    // landing page, not a step away from one.
+    if(typeof history !== 'undefined' && history.replaceState) history.replaceState({ section: session.section, subtab: session.subtab }, '');
     resetIdleLogoutTimer();
     renderApp();
   }catch(e){
@@ -3109,6 +3130,10 @@ function goTo(section, subtab){
     session.sidebarOpen = false; renderApp(); return;
   }
   session.section=section; session.subtab=subtab||null; session.sidebarOpen=false;
+  // Records this real navigation in the browser's own history so the
+  // phone's back button walks back through it, instead of falling through
+  // to the browser's default (a reload that wipes the in-memory session).
+  if(session.loggedIn) pushAppHistory(section, subtab);
   // A specific opened receipt must never stay "stuck" open when navigating
   // anywhere else — a real, pre-existing gap: goTo() alone never cleared
   // this, so returning to the Receipts tab via the sidebar (rather than its
@@ -19808,6 +19833,102 @@ function renderLoanOfficerValidatePayments(){
     </div>
   `;
 }
+
+// ==================== Android/mobile back button: real in-app history,
+// not a reload back to login ====================
+// A plain SPA like this one never pushes any browser history entries on
+// its own, so the phone's back button (and the browser's own back
+// gesture) had nothing of ours to step back through — it fell through to
+// the browser's default behavior, which is to navigate/reload the page,
+// wiping the in-memory authToken and landing back on the login screen.
+// pushAppHistory() records {section, subtab} on every real navigation;
+// popstate below restores it directly (session fields + renderApp()) with
+// no further history write, so back/forward genuinely walk the real
+// in-app navigation trail instead of reloading anything.
+function pushAppHistory(section, subtab){
+  // The headless frontend test harness has no real `history` at all (its
+  // minimal fake DOM never needed one) — this is a real-browser-only
+  // feature, so it quietly no-ops rather than throwing there.
+  if(typeof history === 'undefined' || !history.pushState) return;
+  const state = { section, subtab: subtab || null };
+  const cur = history.state;
+  if(cur && cur.section === state.section && cur.subtab === state.subtab) return; // no-op nav — nothing new to record
+  history.pushState(state, '', '#' + section + (subtab ? '/' + encodeURIComponent(subtab) : ''));
+}
+if(typeof window !== 'undefined' && window.addEventListener) window.addEventListener('popstate', (ev) => {
+  // Not logged in (or the real forced-password-reset gate is up) — there is
+  // genuinely no in-app page to go back to; renderApp() itself already
+  // shows the correct real screen for that state.
+  if(!session.loggedIn || session.mustChangePassword){ renderApp(); return; }
+  const state = ev.state || { section: 'dashboard', subtab: null };
+  session.section = state.section || 'dashboard';
+  session.subtab = state.subtab || null;
+  session.sidebarOpen = false;
+  renderApp();
+});
+
+// ==================== Android/mobile pull-to-refresh: refreshes the
+// real in-app data, not a reload back to login ====================
+// overscroll-behavior-y:contain (see the global html/body rule) already
+// stops the browser's own native pull-to-refresh from reloading the whole
+// page; this is the real replacement gesture — same visual affordance,
+// but it calls the existing real refreshMyData() (re-fetches DB fresh
+// from the backend) instead of reloading the document and losing the
+// in-memory session.
+function initPullToRefresh(){
+  // Same reasoning as pushAppHistory() above — the headless test harness's
+  // fake `document` has no addEventListener at all, so this real-browser-
+  // only gesture quietly does nothing there instead of throwing.
+  if(typeof document === 'undefined' || !document.addEventListener) return;
+  const THRESHOLD = 70;
+  let startY = null, pulling = false, refreshing = false;
+  let indicator = null;
+  function ensureIndicator(){
+    if(indicator && document.body.contains(indicator)) return indicator;
+    indicator = document.createElement('div');
+    indicator.className = 'ptr-indicator';
+    indicator.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>&nbsp;Pull to refresh`;
+    document.body.appendChild(indicator);
+    return indicator;
+  }
+  document.addEventListener('touchstart', (ev) => {
+    if(!session.loggedIn || refreshing) { startY = null; return; }
+    // Only the real top-of-page overscroll counts as a pull — starting a
+    // drag anywhere already scrolled down must stay a normal scroll.
+    if(window.scrollY > 0){ startY = null; return; }
+    startY = ev.touches[0].clientY;
+    pulling = true;
+  }, { passive: true });
+  document.addEventListener('touchmove', (ev) => {
+    if(!pulling || startY === null || refreshing) return;
+    const dy = ev.touches[0].clientY - startY;
+    if(dy <= 0){ return; }
+    const el = ensureIndicator();
+    const pull = Math.min(dy * 0.5, THRESHOLD + 30);
+    el.style.marginTop = (pull - 56) + 'px';
+    el.textContent = '';
+    el.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="transform:rotate(${Math.min(pull/THRESHOLD,1)*180}deg)"><path d="M12 5v14M5 12l7 7 7-7"/></svg>&nbsp;${pull >= THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}`;
+  }, { passive: true });
+  document.addEventListener('touchend', async () => {
+    if(!pulling) return;
+    pulling = false;
+    const el = indicator;
+    if(!el) return;
+    const curMargin = parseFloat(el.style.marginTop || '-56');
+    const pulledPast = curMargin + 56 >= THRESHOLD;
+    if(!pulledPast){ el.style.marginTop = '-56px'; return; }
+    refreshing = true;
+    el.classList.add('spinning');
+    el.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>&nbsp;Refreshing…`;
+    el.style.marginTop = '0px';
+    try{ await refreshMyData(); } finally {
+      refreshing = false;
+      el.classList.remove('spinning');
+      el.style.marginTop = '-56px';
+    }
+  }, { passive: true });
+}
+initPullToRefresh();
 
 /* ---------------- Init ---------------- */
 renderApp(); // shows the login screen immediately; real data loads only after a real login
