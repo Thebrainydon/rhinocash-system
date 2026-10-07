@@ -248,7 +248,7 @@ async function get_role(id, token) {
     assert(del.status === 401 || del.status === 404, 'AA: there is no unauthenticated way to even reach a role-delete action');
     const delAuthed = await api('DELETE', '/api/roles/loan_officer', { token: adminToken });
     assert(delAuthed.status === 404, 'AA: even as Admin, there is genuinely no real endpoint to delete a system role — the architecture protects them structurally, not just via a permission check');
-    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Loan Officer 2', code: 'loan_officer', access_level: 'Portfolio Access', permissions: [] } });
+    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Loan Officer 2', code: 'loan_officer', access_level: 'Portfolio Access', description: 'Duplicate attempt.', permissions: [] } });
     assert(dupCode.status === 409, 'AA: creating a role with an existing system role\'s real code is genuinely rejected, never silently overwriting it');
     const untouched = await get_role('loan_officer', adminToken);
     assert(untouched.name === 'Loan Officer' && untouched.is_system === 1, 'AA: the real system role itself is genuinely unchanged after that rejected attempt');
@@ -283,7 +283,7 @@ async function get_role(id, token) {
     assert(badCode.status === 400, 'CC: a Role Code with spaces/uppercase/punctuation is genuinely rejected, not silently normalized');
     const badLevel = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Level Role', code: 'bad_level_role', access_level: 'Not A Real Access Level', permissions: [] } });
     assert(badLevel.status === 400, 'CC: an access level that doesn\'t match any real existing role\'s access level is genuinely rejected — never a second, free-form access-level system');
-    const badPerm = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Perm Role', code: 'bad_perm_role', access_level: 'Portfolio Access', permissions: ['not_a_real_permission'] } });
+    const badPerm = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Perm Role', code: 'bad_perm_role', access_level: 'Portfolio Access', description: 'Has a bad permission id.', permissions: ['not_a_real_permission'] } });
     assert(badPerm.status === 400, 'CC: an unknown permission id is genuinely rejected, never silently ignored');
     const stillAbsent = await get_role('bad_perm_role', adminToken);
     assert(stillAbsent === null, 'CC: a request rejected for an invalid permission id genuinely leaves no partially-created role behind');
@@ -325,9 +325,9 @@ async function get_role(id, token) {
 
   // EE. Duplicate name/code are rejected — the same real role can't be created twice.
   {
-    const dupName = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Branch Operations Supervisor', code: 'a_different_code_ee', access_level: 'Portfolio Access', permissions: [] } });
+    const dupName = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Branch Operations Supervisor', code: 'a_different_code_ee', access_level: 'Portfolio Access', description: 'Duplicate name attempt.', permissions: [] } });
     assert(dupName.status === 409, 'EE: a duplicate Role Name is genuinely rejected, even under a different code');
-    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'A Different Name', code: createdRoleCode, access_level: 'Portfolio Access', permissions: [] } });
+    const dupCode = await api('POST', '/api/roles', { token: adminToken, body: { name: 'A Different Name', code: createdRoleCode, access_level: 'Portfolio Access', description: 'Duplicate code attempt.', permissions: [] } });
     assert(dupCode.status === 409, 'EE: a duplicate Role Code is genuinely rejected, even under a different name');
   }
 
@@ -529,6 +529,115 @@ async function get_role(id, token) {
     assert(create.json.notifications.sms === 'NOT_CONFIGURED', 'QQ: the real SMS integration honestly reports NOT_CONFIGURED too, since a real phone number was given');
     const create2 = await api('POST', '/api/users', { token: adminToken, body: { name: 'Notify Test User 2', email: 'notifytest2.newuser@rhinocash.co.ke', role_id: 'loan_officer' } });
     assert(create2.json.notifications.sms === 'NOT_ATTEMPTED_NO_PHONE', 'QQ: SMS delivery is honestly reported as not attempted at all when no real phone number was given, never a fabricated attempt' );
+  }
+
+  // ==================== Admin > Roles & Access Control > Create Role — Structural/Dashboard Templates ====================
+  // Real coverage for the structural_template/dashboard_template columns
+  // and the custom-role propagation they exist to support: a template
+  // choice only picks which real sidebar/dashboard shape a role reuses —
+  // it must never itself grant a permission or module, and a role with
+  // no entry in the frontend's hardcoded SIDEBAR_MENUS must still be able
+  // to log in, be assigned real module access, and have that access
+  // reflected in its own real finalAccess.
+
+  // RR. Defaults, validation and real persistence of the template fields.
+  let templateRoleCode;
+  {
+    const noTemplate = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Senior Collections Officer', code: 'senior_collections_officer_rr', access_level: 'Portfolio Access', description: 'Responsible for collections, arrears monitoring and collection-related client activities.', permissions: [] } });
+    assert(noTemplate.status === 201, 'RR: a role can be created with no structural_template/dashboard_template given at all');
+    assert(noTemplate.json.role.structural_template === 'loan_officer' && noTemplate.json.role.dashboard_template === 'loan_officer', 'RR: omitting the template fields defaults both to Loan Officer, per spec');
+    templateRoleCode = noTemplate.json.role.id;
+
+    const badTemplate = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Template Role', code: 'bad_template_role_rr', access_level: 'Portfolio Access', description: 'x', structural_template: 'not_a_real_template', permissions: [] } });
+    assert(badTemplate.status === 400, 'RR: an unknown structural_template id is genuinely rejected');
+    const badDashTemplate = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Bad Dash Template Role', code: 'bad_dash_template_role_rr', access_level: 'Portfolio Access', description: 'x', dashboard_template: 'not_a_real_template', permissions: [] } });
+    assert(badDashTemplate.status === 400, 'RR: an unknown dashboard_template id is genuinely rejected');
+
+    const withTemplate = await api('POST', '/api/roles', { token: adminToken, body: { name: 'Credit Analyst', code: 'credit_analyst_rr', access_level: 'Portfolio Access', description: 'Analyzes credit applications.', structural_template: 'manager', dashboard_template: 'accountant', permissions: [] } });
+    assert(withTemplate.status === 201 && withTemplate.json.role.structural_template === 'manager' && withTemplate.json.role.dashboard_template === 'accountant', 'RR: explicitly chosen templates are persisted exactly as submitted, independent of each other');
+
+    const permsAfterTemplate = await api('GET', `/api/roles/${templateRoleCode}/permissions`, { token: adminToken });
+    assert(permsAfterTemplate.json.permissions.every(p => p.allowed === 0), 'RR: selecting a template (here, the Loan Officer default) never auto-grants a single one of Loan Officer\'s own real permissions');
+    const modsAfterTemplate = await api('GET', `/api/roles/${templateRoleCode}/modules`, { token: adminToken });
+    assert(modsAfterTemplate.json.moduleIds.length === 0, 'RR: selecting a template never auto-grants a single real module either — a brand-new custom role starts with zero module access');
+  }
+
+  // SS. Description is genuinely required server-side, and Role Name duplicate rejection is case/whitespace-insensitive.
+  {
+    const noDescription = await api('POST', '/api/roles', { token: adminToken, body: { name: 'No Description Role', code: 'no_description_role_ss', access_level: 'Portfolio Access', permissions: [] } });
+    assert(noDescription.status === 400, 'SS: a missing Description is genuinely rejected');
+
+    const caseDup = await api('POST', '/api/roles', { token: adminToken, body: { name: 'senior   collections   officer', code: 'senior_collections_officer_ss2', access_level: 'Portfolio Access', description: 'A different-cased duplicate attempt.', permissions: [] } });
+    assert(caseDup.status === 409, 'SS: a Role Name differing only by case/extra whitespace from an existing role is genuinely treated as the same name and rejected, never creating a second role');
+  }
+
+  // TT. PUT /api/roles/:id — editing a role's own metadata/template never touches its permissions or modules.
+  {
+    const anon = await api('PUT', `/api/roles/${templateRoleCode}`, { body: { description: 'hijacked' } });
+    assert(anon.status === 401, 'TT: PUT /api/roles/:id requires real authentication');
+    const managerAttempt = await api('PUT', `/api/roles/${templateRoleCode}`, { token: managerToken, body: { description: 'hijacked' } });
+    assert(managerAttempt.status === 403, 'TT: a non-Admin (Manager) genuinely cannot edit a role');
+
+    // Grant a real permission + module first, so the edit below can prove they survive untouched.
+    await api('PUT', `/api/roles/${templateRoleCode}/permissions`, { token: adminToken, body: { permissions: ['record_payments'] } });
+    await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: ['clients', 'loanbook'] } });
+
+    const edit = await api('PUT', `/api/roles/${templateRoleCode}`, { token: adminToken, body: { description: 'Updated description.', structural_template: 'accountant', dashboard_template: 'ceo' } });
+    assert(edit.status === 200 && edit.json.role.description === 'Updated description.' && edit.json.role.structural_template === 'accountant' && edit.json.role.dashboard_template === 'ceo', 'TT: Admin genuinely can edit a role\'s own metadata and templates');
+    assert(edit.json.role.name === 'Senior Collections Officer', 'TT: a field left out of the PUT body is genuinely left unchanged');
+
+    const permsAfterEdit = await api('GET', `/api/roles/${templateRoleCode}/permissions`, { token: adminToken });
+    assert(permsAfterEdit.json.permissions.find(p => p.permission_id === 'record_payments').allowed === 1, 'TT: changing a role\'s structural/dashboard template genuinely never removes a previously-assigned real permission');
+    const modsAfterEdit = await api('GET', `/api/roles/${templateRoleCode}/modules`, { token: adminToken });
+    assert(JSON.stringify(modsAfterEdit.json.moduleIds.sort()) === JSON.stringify(['clients', 'loanbook']), 'TT: changing a role\'s structural/dashboard template genuinely never removes previously-granted real module access');
+
+    const notFound = await api('PUT', '/api/roles/not_a_real_role', { token: adminToken, body: { description: 'x' } });
+    assert(notFound.status === 404, 'TT: editing a non-existent role id genuinely 404s');
+    const badTemplateEdit = await api('PUT', `/api/roles/${templateRoleCode}`, { token: adminToken, body: { structural_template: 'not_a_real_template' } });
+    assert(badTemplateEdit.status === 400, 'TT: an unknown structural_template id is genuinely rejected on edit too');
+  }
+
+  // UU. PUT /api/roles/:id/modules — the real write path role_modules never had before; this is what makes a custom role's sidebar able to show anything at all.
+  {
+    const anon = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { body: { moduleIds: ['clients'] } });
+    assert(anon.status === 401, 'UU: PUT /api/roles/:id/modules requires real authentication');
+    const managerAttempt = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: managerToken, body: { moduleIds: ['clients'] } });
+    assert(managerAttempt.status === 403, 'UU: a non-Admin (Manager) genuinely cannot edit a role\'s module access');
+    const ceoAttempt = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: ceoToken, body: { moduleIds: ['clients'] } });
+    assert(ceoAttempt.status === 403, 'UU: even the CEO cannot edit a role\'s module access — this stays Admin-exclusive, same as role_permissions');
+
+    const badModule = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: ['not_a_real_module'] } });
+    assert(badModule.status === 400, 'UU: an unknown module id is genuinely rejected');
+    const noArray = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: 'not-an-array' } });
+    assert(noArray.status === 400, 'UU: moduleIds must genuinely be an array');
+
+    const save = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: ['clients', 'loanbook', 'payments'] } });
+    assert(save.status === 200 && JSON.stringify(save.json.moduleIds.sort()) === JSON.stringify(['clients', 'loanbook', 'payments']), 'UU: the real role_modules set is genuinely replaced with exactly what was requested');
+    assert(JSON.stringify(save.json.added.sort()) === JSON.stringify(['payments']), 'UU: the real added/removed diff is computed server-side, never trusted from the client');
+    assert(JSON.stringify(save.json.removed.sort()) === JSON.stringify([]), 'UU: nothing already-granted was removed by this particular change');
+
+    const removeOne = await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: ['clients'] } });
+    assert(JSON.stringify(removeOne.json.removed.sort()) === JSON.stringify(['loanbook', 'payments']), 'UU: removing modules from the requested set genuinely revokes them server-side');
+
+    const audit = await api('GET', `/api/audit-logs?entity=Role&record_id=${templateRoleCode}`, { token: adminToken });
+    assert(audit.json.auditLogs.some(a => a.action === 'Changed role module access'), 'UU: a real audit entry records the module-access change, using the existing audit system');
+
+    // Restore to the two real modules TT's survival check above relied on, for test isolation going forward.
+    await api('PUT', `/api/roles/${templateRoleCode}/modules`, { token: adminToken, body: { moduleIds: ['clients', 'loanbook'] } });
+  }
+
+  // VV. End-to-end custom-role propagation: a user assigned a brand-new custom role genuinely authenticates, and GET /api/auth/me reflects its real template + real granted modules — the data the frontend's dynamic sidebar is built from.
+  {
+    const createUser = await api('POST', '/api/users', { token: adminToken, body: { name: 'Custom Role Test User', email: 'customroletest.user@rhinocash.co.ke', role_id: templateRoleCode, phone: '0733445566' } });
+    assert(createUser.status === 201, 'VV: a real user can genuinely be created against a brand-new custom role id — no hardcoded role allowlist blocks it');
+    const firstLogin = await api('POST', '/api/auth/login', { body: { email: 'customroletest.user@rhinocash.co.ke', password: createUser.json.tempPassword } });
+    assert(firstLogin.status === 200 && firstLogin.json.mustChangePassword === true, 'VV: the new custom-role user can genuinely log in with their real temp password, through the real, existing first-login flow');
+    const customUserToken = firstLogin.json.token;
+    const changePw = await api('POST', '/api/auth/change-password', { token: customUserToken, body: { newPassword: 'NewPass123!@#' } });
+    assert(changePw.status === 200, 'VV: the forced first-login password change genuinely succeeds for a custom-role account too');
+    const me = await api('GET', '/api/auth/me', { token: customUserToken });
+    assert(me.json.user.finalAccess.structuralTemplate === 'accountant' && me.json.user.finalAccess.dashboardTemplate === 'ceo', 'VV: the real finalAccess exposes this user\'s role\'s actual structural/dashboard template — what the frontend\'s dynamic sidebar/dashboard fallback reads for any role it has no hardcoded entry for');
+    assert(JSON.stringify((me.json.user.finalAccess.modules || []).sort()) === JSON.stringify(['clients', 'loanbook']), 'VV: the real finalAccess.modules reflects exactly the role_modules this custom role was actually granted — the same data hasModuleAccess() enforces server-side');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

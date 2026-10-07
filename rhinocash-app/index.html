@@ -535,7 +535,8 @@ const CAN_MANAGE_SETTINGS = r => hasPermission(r, "Manage System Settings");
    governed purely by role. */
 function isSectionAllowed(section){
   if(section==="placeholder") return true;
-  const base = NAV_PERMISSIONS[session.role] || [];
+  const navEntry = NAV_PERMISSIONS[session.role];
+  const base = navEntry || [];
   // "intelligence" is deliberately exempt from the NAV_PERMISSIONS gate —
   // that map is a hardcoded object keyed by the 9 structural roles' exact
   // display names (plus Investor), so a custom role created through
@@ -548,7 +549,13 @@ function isSectionAllowed(section){
   // (buildIntelligenceSections()), and every data request is re-checked
   // server-side per individual feature (requireIntelligenceFeature/
   // hasIntelligenceAccess) regardless of this client-side section gate.
-  if(section!=="intelligence" && !base.includes(section)) return false;
+  // A custom role has no entry in NAV_PERMISSIONS at all (navEntry is
+  // undefined) — rather than let an empty base[] deny it literally every
+  // section unconditionally, its real gate is deferred entirely to its
+  // own DB-backed module grants below (DB.me.finalAccess.modules), the
+  // exact same data the backend's hasModuleAccess() enforces, instead of
+  // a hardcoded per-role list it was never given an entry in.
+  if(navEntry && section!=="intelligence" && !base.includes(section)) return false;
   if(session.role==="Investor") return true;
   // "notifications" is deliberately not a real backend module (see
   // seed.js's `modules` list and misc.js's /api/notifications route, which
@@ -585,6 +592,13 @@ function isSectionAllowed(section){
     if(section==="business-analytics") return modules.includes("reports");
     return modules.includes(section);
   }
+  // A structural role (navEntry truthy) with no finalAccess.modules yet
+  // loaded (a brief moment right after login) falls back to "allowed" —
+  // the base-list check above already gated it correctly; this is just a
+  // UI hint layered on top. A custom role has no such first gate, so an
+  // empty/not-yet-loaded modules list here must be read as "no module
+  // access granted (yet)", never as "allow everything".
+  if(!navEntry) return !!(modules && modules.includes(section));
   return true;
 }
 
@@ -1470,6 +1484,24 @@ const ROLE_ID_TO_DISPLAY = {
 };
 const ROLE_DISPLAY_TO_ID = Object.fromEntries(Object.entries(ROLE_ID_TO_DISPLAY).map(([k,v])=>[v,k]));
 
+// ---- Structural/Dashboard Templates — the fixed set of 10 real
+// structural role shapes (the same STRUCTURAL_TEMPLATE_IDS the backend
+// validates POST/PUT /api/roles against), each of which already has a
+// real SIDEBAR_MENUS tree and renderDashboard() layout. A role's own
+// structural_template/dashboard_template (default 'loan_officer' for a
+// custom role) say which of THESE 10 real shapes it reuses — this is the
+// single authoritative map every consumer (Create Role's dropdowns + live
+// preview, and the custom-role sidebar/dashboard fallback below) reads,
+// rather than each hand-typing its own copy of this list. "investor" has
+// no backend role_id of its own (Investor logs in through a separate
+// investors table, never a `roles` row — see adaptClient-style comments
+// elsewhere), but it's still one of the 10 selectable template shapes a
+// *staff* custom role can structurally borrow, so it's added here only
+// for that purpose, never implying a custom role becomes an Investor. ----
+const STRUCTURAL_TEMPLATE_IDS = ["loan_officer","manager","regional_manager","operational_manager","accountant","ceo","director","investor","hr","admin"];
+const STRUCTURAL_TEMPLATE_TO_DISPLAY = { ...ROLE_ID_TO_DISPLAY, investor:"Investor" };
+function templateMenu(templateId){ return SIDEBAR_MENUS[STRUCTURAL_TEMPLATE_TO_DISPLAY[templateId]] || SIDEBAR_MENUS["Loan Officer"]; }
+
 // ---- Adapters: backend snake_case rows -> the shape this frontend's
 // existing rendering code already expects. This is what let ~150 existing
 // render functions keep working unchanged while now showing real data —
@@ -2340,6 +2372,43 @@ function buildIntelligenceSections(){
     .filter(c => featuresByCategory[c.id] && featuresByCategory[c.id].length)
     .map(c => ({ section: c.label, icon: c.icon, items: featuresByCategory[c.id].map(f=>f.label) }));
 }
+// A custom role created via POST /api/roles has no entry of its own in
+// SIDEBAR_MENUS (that table only covers the 9 real structural roles +
+// Investor) — rather than show it an empty sidebar regardless of what
+// Admin actually granted it, this reuses its real structural_template's
+// menu tree (templateMenu() — the exact same SIDEBAR_MENUS a structural
+// role with that template would see) and keeps only what the role's own
+// real module grants (DB.me.finalAccess.modules, the same data
+// hasModuleAccess() enforces server-side) actually unlock: a section is
+// kept only if at least one of its items resolves into a granted module
+// (hiding an entirely-unauthorized parent menu, per spec), and within a
+// kept section, an individual item with its own resolvable route is
+// dropped if ITS module isn't granted (a quick-action item with no real
+// route, e.g. "Create a Lead", rides along with its section instead,
+// since there's no module of its own to check). "My Account" and
+// "System & Help" are the two universal sections every real structural
+// role already gets unconditionally (never gated by NAV_PERMISSIONS
+// either) — kept for a custom role the same way, so a brand-new role
+// with zero permissions still has somewhere real to land besides the
+// bare Dashboard, matching every structural role's own baseline.
+function moduleIdForTemplateItem(item){
+  const route = LABEL_ROUTES[item];
+  if(!route) return null;
+  if(route.section==="staff-leaves" || route.section==="staff-portfolios" || route.section==="staff-workplans") return "staff";
+  if(route.section==="business-analytics") return "reports";
+  return route.section;
+}
+function buildCustomRoleSidebarMenu(){
+  const templateId = (DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.structuralTemplate) || "loan_officer";
+  const modules = new Set((DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules) || []);
+  return templateMenu(templateId)
+    .filter(sec => sec.section==="My Account" || sec.section==="System & Help"
+      || sec.items.some(item => { const m = moduleIdForTemplateItem(item); return m && modules.has(m); }))
+    .map(sec => {
+      if(sec.section==="My Account" || sec.section==="System & Help") return sec;
+      return { ...sec, items: sec.items.filter(item => { const m = moduleIdForTemplateItem(item); return !m || modules.has(m); }) };
+    });
+}
 
 function renderApp(){
   const root = document.getElementById('root');
@@ -2351,7 +2420,7 @@ function renderApp(){
   // POST /api/auth/change-password every other "change my password" form
   // in this app already uses.
   if(session.mustChangePassword){ root.innerHTML = renderForcedPasswordReset() + (modal ? renderModal() : ""); return; }
-  const baseMenu = SIDEBAR_MENUS[session.role] || [];
+  const baseMenu = SIDEBAR_MENUS[session.role] || buildCustomRoleSidebarMenu();
   // Intelligence sits immediately before My Account for every role, per
   // spec — spliced in dynamically (never a static per-role array) right
   // before whichever entry is this role's own "My Account" section.
@@ -2726,7 +2795,15 @@ async function doLogin(ev){
       session.userId = null;
       session.mustChangePassword = !!result.investor.mustChangePassword;
     } else {
-      session.role = ROLE_ID_TO_DISPLAY[result.user.role_id] || result.user.role_id;
+      // A custom role (created via POST /api/roles) has no entry in
+      // ROLE_ID_TO_DISPLAY at all (that table only covers the 9 real
+      // structural roles) — result.user.finalAccess.role is the real
+      // role name from the roles table either way (computeFinalAccess()
+      // resolves it server-side), so it's the correct fallback instead of
+      // the raw, unreadable role_id. The 9 structural roles are
+      // unaffected: ROLE_ID_TO_DISPLAY already matches their real name
+      // exactly, so it's tried first and always wins for them.
+      session.role = ROLE_ID_TO_DISPLAY[result.user.role_id] || (result.user.finalAccess && result.user.finalAccess.role) || result.user.role_id;
       session.userName = result.user.name;
       session.userId = result.user.id;
       session.investorId = null;
@@ -5012,7 +5089,30 @@ function renderDashboard(){
     case "Regional Manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
     case "Manager": return renderManagerDashboard();
     case "HR": return renderHRDashboard();
-    default: return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard(); // Operational Manager — company-wide operational oversight
+    case "Operational Manager": return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard();
+    // A custom role created via POST /api/roles has no case of its own
+    // above (those are the 9 real structural roles' own dashboards) — its
+    // dashboard_template (chosen at Create Role, defaulting to Loan
+    // Officer) says which of THOSE same real dashboards to structurally
+    // reuse. Every figure on it is still computed from the real, already
+    // scope-limited DB.me/DB data these functions already read — picking
+    // which layout to show never grants a permission or widens any data
+    // scope by itself.
+    default: return renderDashboardForTemplate((DB.me && DB.me.finalAccess && DB.me.finalAccess.dashboardTemplate) || "loan_officer");
+  }
+}
+function renderDashboardForTemplate(templateId){
+  switch(templateId){
+    case "admin": return renderAdminDashboard();
+    case "accountant": return renderPostedUnpostedCollectionsCard() + renderAccountantDashboard();
+    case "ceo": return renderCEODashboard();
+    case "director": return renderPortfolioRiskCard() + renderDirectorDashboard();
+    case "investor": return renderInvestorDashboard();
+    case "regional_manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
+    case "manager": return renderManagerDashboard();
+    case "hr": return renderHRDashboard();
+    case "operational_manager": return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard();
+    case "loan_officer": default: return renderOfficerDashboard();
   }
 }
 
@@ -14325,8 +14425,8 @@ function renderRolesPage(){
       <td class="hint">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
       <td onclick="event.stopPropagation();" class="pill-row" style="gap:6px;">
         <button class="btn btn-sm btn-outline" onclick="openRoleDetail('${r.id}')">View</button>
-        <button class="btn btn-sm btn-outline" onclick="goTo('staff','Create Role')">Edit</button>
-        <button class="btn btn-sm btn-outline" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, dirty:false}; goTo('staff','Role Permissions');">Permissions</button>
+        <button class="btn btn-sm btn-outline" onclick="openModal('create-role', {editRoleId:'${r.id}'})">Edit</button>
+        <button class="btn btn-sm btn-outline" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false}; goTo('staff','Role Permissions');">Permissions</button>
       </td>
     </tr>`).join("");
   return `
@@ -14336,7 +14436,7 @@ function renderRolesPage(){
           <h3 style="color:var(--navy); margin:0;">Roles</h3>
           <div class="hint" style="margin-top:4px; max-width:640px;">Manage system and custom user roles and their access-control definitions. Investor is a separate, portal-only principal type and isn't a staff role, so it isn't listed here.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="goTo('staff','Create Role')">+ Create Role</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('create-role')">+ Create Role</button>
       </div>
       ${renderRolesSummary(state.roles)}
       <div class="pill-row" style="flex-wrap:wrap; gap:8px; margin:14px 0;">
@@ -14395,8 +14495,8 @@ function renderRoleDetailPanel(id){
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
         <h3 style="color:var(--navy); margin:0;">${escapeHtml(role.name)}</h3>
         <div class="pill-row" style="gap:8px;">
-          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Create Role')">Edit Role</button>
-          <button class="btn btn-outline btn-sm" onclick="session.rolePermissionsState={roleId:'${role.id}', q:'', selection:null, dirty:false}; goTo('staff','Role Permissions');">Manage Permissions</button>
+          <button class="btn btn-outline btn-sm" onclick="openModal('create-role', {editRoleId:'${role.id}'})">Edit Role</button>
+          <button class="btn btn-outline btn-sm" onclick="session.rolePermissionsState={roleId:'${role.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false}; goTo('staff','Role Permissions');">Manage Permissions</button>
           <span class="btn btn-outline btn-sm" onclick="closeRoleDetail()" style="border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; padding:0;">✕</span>
         </div>
       </div>
@@ -14440,88 +14540,137 @@ function renderRoleDetailPanel(id){
   `;
 }
 // ---- Admin > Roles & Access Control > Create Role — a real role
-// DEFINITION creator: POST /api/roles atomically inserts the real roles
-// row and its real role_permissions matrix (see users.js), exactly the
-// same list+detail data source and withRequest/loadX() pattern as the
-// Roles page above. What this deliberately does NOT do: the 8 real
-// structural roles (Manager, Loan Officer, etc.) are the only ones
-// SIDEBAR_MENUS/NAV_PERMISSIONS/ROLE_ID_TO_DISPLAY on this very frontend
-// recognize by exact name — a user assigned to a role created here would
-// have a real account with no matching sidebar yet, since wiring a new
-// role into every role-keyed frontend table is a separate, out-of-scope
-// redesign. The banner below says so plainly rather than hiding it. ----
-function renderCreateRolePage(){
+// DEFINITION creator/editor, as a modal (opened via openModal('create-role',
+// {editRoleId}) — see the Roles page's own "+ Create Role"/"Edit"
+// buttons). POST /api/roles (create) / PUT /api/roles/:id (edit, metadata
+// only) atomically persist the real roles row — including its
+// structural_template/dashboard_template (which real SIDEBAR_MENUS tree
+// and dashboard layout it reuses) — and, on create, its real
+// role_permissions matrix (see users.js). Picking a template NEVER grants
+// a permission or module by itself: a brand-new role starts with zero of
+// both regardless of template, exactly like the Permissions checklist
+// below (nothing checked = nothing granted); editing an existing role
+// here only ever touches its own metadata/template, never its
+// role_permissions or role_modules, so real assigned access survives a
+// template change untouched, per spec. ----
+function renderCreateRoleModal(){
   const state = DB.acctPages.roles;
-  if(!state){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!state) { loadRolesPage(); return `<div class="modal-head"><h3>Create Role</h3></div><div class="empty">${loadingDotsHtml()}</div>`; }
+  const editRole = modal.editRoleId ? state.roles.find(r=>r.id===modal.editRoleId) : null;
   const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level))].sort();
   const allPerms = state.allPermissions || [];
   const categorized = {};
   allPerms.forEach(p=>{ const cat = PERMISSION_CATEGORIES[p.id] || 'Other'; (categorized[cat] = categorized[cat] || []).push(p); });
+  const structuralDefault = (editRole && editRole.structural_template) || 'loan_officer';
+  const dashboardDefault = (editRole && editRole.dashboard_template) || 'loan_officer';
   return `
-    <div class="card">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-        <span class="btn btn-outline btn-sm" onclick="goTo('staff','Roles')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-        <div>
-          <h3 style="color:var(--navy); margin:0;">Create Role</h3>
-          <div class="hint" style="margin-top:2px;">Roles &amp; Access Control → Roles → Create Role. Defines a new role and its own real permission matrix.</div>
+    <div class="modal-head"><h3>${editRole ? `Edit Role — ${escapeHtml(editRole.name)}` : 'Create Role'}</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="hint" style="margin:-6px 0 16px;">Roles &amp; Access Control → Roles → ${editRole ? 'Edit Role' : 'Create Role'}. ${editRole ? "Updates this role's own definition — its assigned permissions and modules are never touched here; use Manage Permissions for those." : "Defines a new role and (optionally) its starting real permission matrix."}</div>
+    <form onsubmit="return submitCreateRole(event, ${editRole ? `'${editRole.id}'` : 'null'})">
+      <div class="card-title">Role Information</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Role Name</label>
+          <input name="name" required minlength="3" maxlength="60" placeholder="e.g. Senior Collections Officer" value="${editRole?escapeHtml(editRole.name):''}"
+            ${editRole ? '' : `oninput="if(!this.form.code.dataset.touched) this.form.code.value = this.value.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50);"`}>
+        </div>
+        <div class="field">
+          <label>Role Code</label>
+          ${editRole
+            ? `<input value="${escapeHtml(editRole.id)}" disabled title="A role's code is permanent once created">`
+            : `<input name="code" required minlength="3" maxlength="50" pattern="[a-z][a-z0-9_]{2,49}"
+                placeholder="e.g. senior_collections_officer" title="Lowercase letters, numbers and underscores only, starting with a letter"
+                oninput="this.dataset.touched='1';">`}
+        </div>
+        <div class="field">
+          <label>Role Type</label>
+          <input value="${editRole ? (editRole.is_system ? 'System Role' : 'Custom Role') : 'Custom Role'}" disabled title="Every role created here is a Custom Role — existing System Roles can never be duplicated or recreated through this form">
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select name="status">
+            <option value="Active" ${(!editRole || editRole.status==='Active')?'selected':''}>Active</option>
+            <option value="Inactive" ${(editRole && editRole.status==='Inactive')?'selected':''}>Inactive</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label>Description</label>
+          <textarea name="description" required rows="3" maxlength="500" placeholder="What this role is for, and who should hold it">${editRole?escapeHtml(editRole.description||''):''}</textarea>
         </div>
       </div>
-      <div class="hint" style="background:#FBF6E9; border:1px solid #E9DDB0; border-radius:8px; padding:10px 12px; margin:12px 0 18px;">
-        A newly created role isn't yet wired into this app's own sidebar menus — those are built for the ${ROLES.filter(r=>r!=='Investor').length} real structural roles (Manager, Loan Officer, etc.) by exact name. This form creates the real role definition and permission matrix in the database; giving a staff member assigned to it a working sidebar is a separate step this version doesn't yet support.
+
+      <div class="card-title" style="margin-top:18px;">Access &amp; Authority</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Access Level</label>
+          <select name="access_level" required>
+            <option value="">— Select —</option>
+            ${accessLevels.map(a=>`<option value="${escapeHtml(a)}" ${editRole && editRole.default_access_level===a?'selected':''}>${escapeHtml(a)}</option>`).join("")}
+          </select>
+        </div>
       </div>
-      <form onsubmit="return submitCreateRole(event)">
-        <div class="form-grid">
-          <div class="field">
-            <label>Role Name</label>
-            <input name="name" required minlength="3" maxlength="60" placeholder="e.g. Branch Operations Supervisor"
-              oninput="if(!this.form.code.dataset.touched) this.form.code.value = this.value.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50);">
-          </div>
-          <div class="field">
-            <label>Role Code</label>
-            <input name="code" required minlength="3" maxlength="50" pattern="[a-z][a-z0-9_]{2,49}"
-              placeholder="e.g. branch_operations_supervisor" title="Lowercase letters, numbers and underscores only, starting with a letter"
-              oninput="this.dataset.touched='1';">
-          </div>
-          <div class="field">
-            <label>Access Level</label>
-            <select name="access_level" required>
-              <option value="">— Select —</option>
-              ${accessLevels.map(a=>`<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Status</label>
-            <select name="status">
-              <option value="Active" selected>Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-          <div class="field full">
-            <label>Description</label>
-            <textarea name="description" rows="3" maxlength="500" placeholder="What this role is for and who should hold it"></textarea>
-          </div>
-        </div>
 
-        <div class="card-title" style="margin-top:18px;">Permissions</div>
-        <div class="hint" style="margin-bottom:10px;">Access Level describes this role's organizational scope — it never grants a permission by itself. Select exactly which real actions this role may perform.</div>
-        ${Object.keys(categorized).length ? Object.entries(categorized).map(([cat, perms]) => `
-          <div style="margin-bottom:12px;">
-            <div style="font-weight:700; color:var(--navy); font-size:12.5px; margin-bottom:6px;">${escapeHtml(cat)}</div>
-            <div class="pill-row" style="flex-wrap:wrap; gap:8px;">
-              ${perms.map(p=>`<label style="display:flex; align-items:center; gap:6px; font-size:12.5px; background:#F2F0EA; padding:5px 10px; border-radius:20px; cursor:pointer;">
-                <input type="checkbox" name="perm_${p.id}" style="width:14px; height:14px;">${escapeHtml(p.label)}</label>`).join("")}
-            </div>
-          </div>`).join("") : `<div class="empty">No permissions are defined in the system yet.</div>`}
-
-        <div class="pill-row" style="margin-top:16px;">
-          <button class="btn btn-primary btn-sm" type="submit">Create Role</button>
-          <button class="btn btn-outline btn-sm" type="button" onclick="goTo('staff','Roles')">Cancel</button>
+      <div class="card-title" style="margin-top:18px;">Structural &amp; Dashboard Design</div>
+      <div class="hint" style="margin-bottom:10px;">These choose which existing role's sidebar shape and dashboard layout this role structurally reuses — they are never a permission and never grant one. Custom roles default to Loan Officer, the full operational microfinance structure.</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Structural Template</label>
+          <select name="structural_template" onchange="updateCreateRoleTemplatePreview(this.form)">
+            ${STRUCTURAL_TEMPLATE_IDS.map(id=>`<option value="${id}" ${structuralDefault===id?'selected':''}>${escapeHtml(STRUCTURAL_TEMPLATE_TO_DISPLAY[id])}</option>`).join("")}
+          </select>
         </div>
-      </form>
-    </div>
+        <div class="field">
+          <label>Dashboard Template</label>
+          <select name="dashboard_template" onchange="updateCreateRoleTemplatePreview(this.form)">
+            ${STRUCTURAL_TEMPLATE_IDS.map(id=>`<option value="${id}" ${dashboardDefault===id?'selected':''}>${escapeHtml(STRUCTURAL_TEMPLATE_TO_DISPLAY[id])}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+
+      <div class="card-title" style="margin-top:18px;">Template Preview <small>read-only — not a permission assignment</small></div>
+      <div id="createRoleTemplatePreview">${renderCreateRoleTemplatePreview(structuralDefault, dashboardDefault)}</div>
+
+      <div class="hint" style="background:#F2F0EA; border-radius:8px; padding:10px 12px; margin:14px 0;">
+        Templates define the structural and dashboard framework. Permissions determine what this role can access and perform. No business permissions are automatically granted by selecting a template.
+      </div>
+
+      ${editRole ? `
+      <div class="hint" style="background:#FBF6E9; border:1px solid #E9DDB0; border-radius:8px; padding:10px 12px;">This role's assigned permissions (${editRole.permissionCount} of ${state.permissionsTotal}) and modules (${editRole.moduleCount} of ${state.modulesTotal}) are unaffected by this edit — use Manage Permissions to change them.</div>
+      ` : `
+      <div class="card-title" style="margin-top:18px;">Permissions <small>optional — nothing is granted unless explicitly checked</small></div>
+      <div class="hint" style="margin-bottom:10px;">A newly created role holds zero business permissions by default. Checking any of these now is the same explicit grant Admin could make afterward via Role Permissions — most Admins leave all of these unchecked and assign real access later.</div>
+      ${Object.keys(categorized).length ? Object.entries(categorized).map(([cat, perms]) => `
+        <div style="margin-bottom:12px;">
+          <div style="font-weight:700; color:var(--navy); font-size:12.5px; margin-bottom:6px;">${escapeHtml(cat)}</div>
+          <div class="pill-row" style="flex-wrap:wrap; gap:8px;">
+            ${perms.map(p=>`<label style="display:flex; align-items:center; gap:6px; font-size:12.5px; background:#F2F0EA; padding:5px 10px; border-radius:20px; cursor:pointer;">
+              <input type="checkbox" name="perm_${p.id}" style="width:14px; height:14px;">${escapeHtml(p.label)}</label>`).join("")}
+          </div>
+        </div>`).join("") : `<div class="empty">No permissions are defined in the system yet.</div>`}
+      `}
+
+      <div class="pill-row" style="margin-top:16px;">
+        <button class="btn btn-primary btn-sm" type="submit" ${session.creatingRole?'disabled':''}>${session.creatingRole ? (editRole?'Saving…':'Creating…') : (editRole ? 'Save Changes' : 'Create Role')}</button>
+        <button class="btn btn-outline btn-sm" type="button" onclick="closeModal()">Cancel</button>
+      </div>
+    </form>
   `;
 }
-function submitCreateRole(ev){
+function renderCreateRoleTemplatePreview(structuralId, dashboardId){
+  const menu = templateMenu(structuralId);
+  return `
+    <div class="hint" style="margin-bottom:8px;">Sidebar shape reused from <strong>${escapeHtml(STRUCTURAL_TEMPLATE_TO_DISPLAY[structuralId]||structuralId)}</strong>:</div>
+    <div class="pill-row" style="flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+      ${menu.map(sec=>`<span class="badge blue" title="${escapeHtml(sec.items.join(', '))}">${sec.icon} ${escapeHtml(sec.section)}</span>`).join("")}
+    </div>
+    <div class="hint">Dashboard layout reused from <strong>${escapeHtml(STRUCTURAL_TEMPLATE_TO_DISPLAY[dashboardId]||dashboardId)}</strong>. A user assigned this role will only ever see the sections/widgets their own real permissions and module grants unlock — never the whole template just because it was selected.</div>
+  `;
+}
+function updateCreateRoleTemplatePreview(form){
+  const el = document.getElementById('createRoleTemplatePreview');
+  if(el) el.innerHTML = renderCreateRoleTemplatePreview(form.structural_template.value, form.dashboard_template.value);
+}
+function submitCreateRole(ev, editRoleId){
   ev.preventDefault();
   const form = ev.target;
   const fd = Object.fromEntries(new FormData(form));
@@ -14529,16 +14678,52 @@ function submitCreateRole(ev){
   const allPerms = (state && state.allPermissions) || [];
   const permissions = allPerms.filter(p=>fd['perm_'+p.id]).map(p=>p.id);
   return withRequest('create-role', async ()=>{
-    const res = await api.post('/api/roles', {
-      name: fd.name, code: fd.code, access_level: fd.access_level, status: fd.status || 'Active',
-      description: fd.description || null, permissions,
-    });
-    session.selectedRoleId = res.role.id;
-    goTo('staff','Roles');
-    DB.acctPages.roles = null; // real, fresh reload — the new role must come from the server, never spliced in client-side
+    session.creatingRole = true;
+    let res, created;
+    try{
+      if(editRoleId){
+        res = await api.put(`/api/roles/${editRoleId}`, {
+          name: fd.name, access_level: fd.access_level, status: fd.status || 'Active',
+          description: fd.description, structural_template: fd.structural_template, dashboard_template: fd.dashboard_template,
+        });
+      } else {
+        res = await api.post('/api/roles', {
+          name: fd.name, code: fd.code, access_level: fd.access_level, status: fd.status || 'Active',
+          description: fd.description, structural_template: fd.structural_template, dashboard_template: fd.dashboard_template,
+          permissions,
+        });
+      }
+      created = res.role;
+    } finally { session.creatingRole = false; }
+    DB.acctPages.roles = null; // real, fresh reload — the created/edited role must come from the server, never spliced in client-side
+    DB.acctPages.roleDetail = null;
     await loadRolesPage();
-    toast(`Role "${res.role.name}" created`);
+    session.selectedRoleId = created.id;
+    if(editRoleId){
+      closeModal();
+      toast(`Role "${created.name}" updated`);
+    } else {
+      openModal('role-created', { roleId: created.id, roleName: created.name });
+    }
   });
+}
+// A professional success state with real, immediately-usable next
+// actions — per spec, rather than a bare toast. "Manage Permissions"
+// jumps straight into Role Permissions pre-selected to the new role
+// (zero permissions/modules yet, exactly as created); "Create Another
+// Role" re-opens a blank Create Role modal without first closing this one
+// and losing the "it worked" context.
+function renderRoleCreatedModal(){
+  return `
+    <div class="modal-head"><h3>✅ Role Created</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="hint" style="margin-bottom:16px;">Role "${escapeHtml(modal.roleName)}" was created successfully. It now appears everywhere roles are selected — Create User, Role Permissions, Permission Matrix — automatically. It currently holds no business permissions or module access; use Manage Permissions to assign them.</div>
+    <div class="pill-row" style="flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="closeModal(); goTo('staff','Roles'); openRoleDetail('${modal.roleId}');">View Role</button>
+      <button class="btn btn-sm btn-outline" onclick="const id='${modal.roleId}'; closeModal(); session.rolePermissionsState={roleId:id, q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false}; goTo('staff','Role Permissions');">Manage Permissions</button>
+      <button class="btn btn-sm btn-outline" onclick="openModal('create-role')">Create Another Role</button>
+      <button class="btn btn-sm btn-outline" onclick="closeModal(); goTo('staff','Roles');">Return to Roles</button>
+    </div>
+  `;
 }
 // ---- Admin > Roles & Access Control > Role Permissions — select a
 // role, grant/revoke from its real permission matrix, save. Reuses
@@ -14550,7 +14735,7 @@ function submitCreateRole(ev){
 // until "Save Changes" calls the real bulk PUT /api/roles/:id/permissions,
 // exactly like every other create/edit form in this app never writes to
 // the server on a mere checkbox click. ----
-function defaultRolePermissionsState(){ return { roleId:null, q:'', selection:null, dirty:false }; }
+function defaultRolePermissionsState(){ return { roleId:null, q:'', selection:null, dirty:false, moduleSelection:null, moduleDirty:false }; }
 function renderRolePermissionsPage(){
   const rolesState = DB.acctPages.roles;
   if(!rolesState){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
@@ -14565,6 +14750,11 @@ function renderRolePermissionsPage(){
     st.selection = {};
     detail.permissions.forEach(p=>{ st.selection[p.permission_id] = !!p.allowed; });
     st.dirty = false;
+  }
+  if(detail && !st.moduleSelection){
+    st.moduleSelection = {};
+    detail.moduleIds.forEach(id=>{ st.moduleSelection[id] = true; });
+    st.moduleDirty = false;
   }
   const allPerms = rolesState.allPermissions || [];
   const q = st.q.trim().toLowerCase();
@@ -14634,13 +14824,30 @@ function renderRolePermissionsPage(){
         <button class="btn btn-primary btn-sm" onclick="saveRolePermissions()" ${!st.dirty?'disabled':''}>Save Changes</button>
         <button class="btn btn-outline btn-sm" onclick="discardRolePermissionChanges()" ${!st.dirty?'disabled':''}>Discard Changes</button>
       </div>
+
+      <div class="card-title" style="margin-top:28px; border-top:1px solid var(--line); padding-top:18px;">Module Access <small>${st.moduleSelection ? Object.values(st.moduleSelection).filter(Boolean).length : role.moduleCount} of ${rolesState.modulesTotal} granted${st.moduleDirty ? ' <span class="hint">(unsaved changes)</span>' : ''}</small></div>
+      <div class="hint" style="margin-bottom:10px;">Which real top-level sections (sidebar/API access) this role may reach at all — coarser than the action permissions above, and what actually makes a section appear in a user's sidebar. Granting a module here does not by itself grant any action permission.</div>
+      ${!detail ? `<div class="empty">${loadingDotsHtml()}</div>` : `
+      <div class="pill-row" style="flex-wrap:wrap; gap:8px;">
+        ${(rolesState.allModules||[]).map(m=>{
+          const checked = !!st.moduleSelection[m.id];
+          return `<label style="display:flex; align-items:center; gap:6px; font-size:12.5px; background:${checked?'#E8F3ED':'#F2F0EA'}; padding:5px 10px; border-radius:20px; cursor:pointer;">
+            <input type="checkbox" ${checked?'checked':''} onchange="toggleRoleModuleSelection('${m.id}', this.checked)" style="width:14px; height:14px;">${escapeHtml(m.label)}</label>`;
+        }).join("")}
+      </div>
+      <div class="pill-row" style="margin-top:10px;">
+        <button class="btn btn-sm btn-outline" type="button" onclick="setAllRoleModules(true)">Select All</button>
+        <button class="btn btn-sm btn-outline" type="button" onclick="setAllRoleModules(false)">Clear All</button>
+        <button class="btn btn-primary btn-sm" onclick="saveRoleModules()" ${!st.moduleDirty?'disabled':''}>Save Module Access</button>
+        <button class="btn btn-outline btn-sm" onclick="discardRoleModuleChanges()" ${!st.moduleDirty?'disabled':''}>Discard Changes</button>
+      </div>`}
     </div>
   `;
 }
 function selectRolePermissionsRole(id){
   const st = session.rolePermissionsState;
-  if(st.dirty && !confirm('You have unsaved permission changes for this role. Switch roles and discard them?')) { renderApp(); return; }
-  session.rolePermissionsState = { roleId:id, q: st.q, selection:null, dirty:false };
+  if((st.dirty || st.moduleDirty) && !confirm('You have unsaved changes for this role. Switch roles and discard them?')) { renderApp(); return; }
+  session.rolePermissionsState = { roleId:id, q: st.q, selection:null, dirty:false, moduleSelection:null, moduleDirty:false };
   renderApp();
 }
 function toggleRolePermissionSelection(permId, checked){
@@ -14693,6 +14900,46 @@ function saveRolePermissions(){
     if(res.added.length) parts.push(`${res.added.length} granted`);
     if(res.removed.length) parts.push(`${res.removed.length} revoked`);
     toast(parts.length ? `Permissions updated — ${parts.join(', ')}` : 'No changes to save');
+  });
+}
+function toggleRoleModuleSelection(moduleId, checked){
+  const st = session.rolePermissionsState;
+  st.moduleSelection[moduleId] = checked;
+  st.moduleDirty = true;
+  renderApp();
+}
+function setAllRoleModules(value){
+  const st = session.rolePermissionsState;
+  const rolesState = DB.acctPages.roles;
+  (rolesState.allModules||[]).forEach(m=>{ st.moduleSelection[m.id] = value; });
+  st.moduleDirty = true;
+  renderApp();
+}
+function discardRoleModuleChanges(){
+  const st = session.rolePermissionsState;
+  const detail = DB.acctPages.roleDetail;
+  if(detail && detail.roleId===st.roleId){
+    st.moduleSelection = {};
+    detail.moduleIds.forEach(id=>{ st.moduleSelection[id] = true; });
+  }
+  st.moduleDirty = false;
+  renderApp();
+}
+function saveRoleModules(){
+  const st = session.rolePermissionsState;
+  const moduleIds = Object.entries(st.moduleSelection).filter(([,v])=>v).map(([id])=>id);
+  return withRequest('save-role-modules', async ()=>{
+    const res = await api.put(`/api/roles/${st.roleId}/modules`, { moduleIds });
+    DB.acctPages.roleDetail = null;
+    DB.acctPages.roles = null; // the Roles list's own counts must reflect this too — a fresh, real reload, never spliced in client-side
+    await Promise.all([loadRoleDetail(st.roleId), loadRolesPage()]);
+    st.moduleSelection = {};
+    (DB.acctPages.roleDetail.moduleIds||[]).forEach(id=>{ st.moduleSelection[id] = true; });
+    st.moduleDirty = false;
+    const parts = [];
+    if(res.added.length) parts.push(`${res.added.length} granted`);
+    if(res.removed.length) parts.push(`${res.removed.length} revoked`);
+    toast(parts.length ? `Module access updated — ${parts.join(', ')}` : 'No changes to save');
   });
 }
 // ---- Admin > User Management > Create User — a full employee-onboarding
@@ -14862,7 +15109,12 @@ function submitCreateUserForm(ev){
 function renderStaff(){
   if(session.subtab === "Company Employees") return renderCompanyEmployeesPage();
   if(session.subtab === "Roles") return renderRolesPage();
-  if(session.subtab === "Create Role") return renderCreateRolePage();
+  // Per spec, "Create Role" is no longer a separate full-page form — the
+  // real creation form now lives in a modal (openModal('create-role'),
+  // triggered by the "+ Create Role" button renderRolesPage() itself
+  // renders), and this submenu shows the same large, spacious Roles
+  // register table every other Roles & Access Control entry point does.
+  if(session.subtab === "Create Role") return renderRolesPage();
   if(session.subtab === "Role Permissions") return renderRolePermissionsPage();
   if(session.subtab === "Create User") return renderCreateUserPage();
   const state = DB.acctPages.staffdir;
@@ -17275,8 +17527,10 @@ function renderModal(){
   else if(modal.type === "set-target") body = renderSetTargetModal();
   else if(modal.type === "arrears-bucket-loans") body = renderArrearsBucketLoansModal();
   else if(modal.type === "select-clients") body = renderSelectClientsModal();
+  else if(modal.type === "create-role") body = renderCreateRoleModal();
+  else if(modal.type === "role-created") body = renderRoleCreatedModal();
   else return "";
-  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement'];
+  const wideTypes = ['loan-status','pending-payments','tickets','c2b-payments','bulk-upload-utility','import-clients','installments','loan-account-statement','loan-ledger-statement','create-role'];
   const blockingTypes = ['session-expired','logged-out','idle-logged-out','password-updated'];
   return `<div class="modal-overlay" onclick="if(event.target===this${blockingTypes.includes(modal.type)?'':' && !session.loggingOut'}) closeModal()"><div class="modal${wideTypes.includes(modal.type)?' modal-wide':''}">${body}</div></div>`;
 }

@@ -1369,6 +1369,24 @@ async function initSchema() {
   await ensureColumn('roles', "status TEXT NOT NULL DEFAULT 'Active'");
   await ensureColumn('roles', 'is_system INTEGER NOT NULL DEFAULT 1');
   await ensureColumn('roles', 'created_at TEXT NOT NULL DEFAULT iso_now()');
+  // Structural/Dashboard Template — which of the 9 real structural roles'
+  // sidebar tree (frontend SIDEBAR_MENUS) and dashboard layout a role
+  // reuses. Separate from default_access_level (org scope) and from
+  // role_permissions/role_modules (what it may actually do/see) — see
+  // the frontend's STRUCTURAL_TEMPLATE_TO_DISPLAY/templateMenu(). Every
+  // real structural role is its own template (backfilled below); a
+  // custom role created through POST /api/roles defaults to
+  // 'loan_officer', the one template with the full operational
+  // microfinance menu shape, without that selection granting it a single
+  // real permission or module — those stay separately, explicitly
+  // assigned via Role Permissions, exactly like every other role.
+  await ensureColumn('roles', "structural_template TEXT NOT NULL DEFAULT 'loan_officer'");
+  await ensureColumn('roles', "dashboard_template TEXT NOT NULL DEFAULT 'loan_officer'");
+  // Backfill only — every real structural role template's own dashboard
+  // and sidebar; never touches a role that already has a non-default
+  // value (a prior custom-role creation, or an explicit later edit).
+  await rawRun(`UPDATE roles SET structural_template = id, dashboard_template = id
+             WHERE is_system = 1 AND structural_template = 'loan_officer' AND dashboard_template = 'loan_officer' AND id != 'loan_officer'`);
   // Vendor/Utility Payments: a real 2-stage approval workflow (submit ->
   // CEO decides -> Accountant decides & pays), replacing the old
   // immediate-Paid-on-creation model. submitted_by is the real requester

@@ -14,6 +14,28 @@ async function nextStaffCode() {
   return 'RC-' + String(n).padStart(4, '0');
 }
 
+// Structural/Dashboard Template — the fixed set of 9 real structural
+// roles (loan_officer..director) plus 'investor', each of which already
+// has its own real sidebar tree (frontend SIDEBAR_MENUS) and dashboard
+// layout. A role's structural_template/dashboard_template say which of
+// THOSE 10 real menu/dashboard shapes it reuses — never a permission, and
+// never auto-granting the template role's own real permissions/modules
+// (see POST /api/roles below). New templates can be added here later
+// without any RBAC rewrite — every consumer (POST/PUT /api/roles, the
+// frontend's own STRUCTURAL_TEMPLATE_TO_DISPLAY) reads this one list.
+const STRUCTURAL_TEMPLATE_IDS = [
+  'loan_officer', 'manager', 'regional_manager', 'operational_manager', 'accountant',
+  'ceo', 'director', 'investor', 'hr', 'admin',
+];
+
+// Case/whitespace-insensitive duplicate check — "Senior Collections
+// Officer" and "senior   collections officer" are the same real role
+// name to a human Admin, so both must collide here, not just an exact
+// byte-for-byte match.
+function normalizeRoleName(name) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 // The hard line between "can manage staff" (Admin, and CEO/Director in a
 // restricted way) and "is the Master System Administrator" (Admin only).
 // Used on every sub-action the spec calls out as Admin-exclusive.
@@ -342,17 +364,17 @@ function register(router) {
     res.json({ loginHistory: rows });
   });
 
-  // Admin > Roles & Access Control > Create Role. The 8 real roles this
-  // app ships with are structural — SIDEBAR_MENUS/NAV_PERMISSIONS/
-  // ROLE_ID_TO_DISPLAY on the frontend dispatch navigation and module
-  // access by exact role name, not by anything this endpoint could set —
-  // so a role created here is a genuine, persisted role DEFINITION (real
-  // row in `roles`, real role_permissions matrix, is_system=0), but a
-  // user assigned to it would have no matching sidebar/module access
-  // until the frontend is separately extended to recognize it. That's a
-  // real, reported limitation (see the Create Role page's own note), not
-  // something this endpoint pretends to solve — it does exactly what the
-  // current architecture can safely support: define the role.
+  // Admin > Roles & Access Control > Create Role. A real, persisted role
+  // DEFINITION: a real row in `roles` (structural_template/
+  // dashboard_template included — see db.js), a real role_permissions
+  // matrix, is_system=0. Selecting a structural_template/dashboard_template
+  // (default 'loan_officer' for every custom role, per spec) ONLY picks
+  // which existing real sidebar tree/dashboard layout this role reuses —
+  // it never seeds role_permissions or role_modules; a newly created role
+  // starts with zero business permissions and zero module access
+  // regardless of which template it uses, exactly like the explicit
+  // `permissions` list below (nothing requested = nothing granted). Admin
+  // must separately use Role Permissions to grant real access afterward.
   router.post('/api/roles', requireAuth, requirePermission('manage_users'), requireAdminOnly('create a new role'), async (req, res, next) => {
     const b = req.body;
     const name = String(b.name || '').trim();
@@ -374,7 +396,18 @@ function register(router) {
     const status = b.status || 'Active';
     if (!['Active', 'Inactive'].includes(status)) return next({ status: 400, message: 'Status must be Active or Inactive' });
 
-    const description = b.description != null ? String(b.description).trim().slice(0, 500) : null;
+    const structuralTemplate = b.structural_template || 'loan_officer';
+    if (!STRUCTURAL_TEMPLATE_IDS.includes(structuralTemplate)) {
+      return next({ status: 400, message: `structural_template must be one of: ${STRUCTURAL_TEMPLATE_IDS.join(', ')}` });
+    }
+    const dashboardTemplate = b.dashboard_template || 'loan_officer';
+    if (!STRUCTURAL_TEMPLATE_IDS.includes(dashboardTemplate)) {
+      return next({ status: 400, message: `dashboard_template must be one of: ${STRUCTURAL_TEMPLATE_IDS.join(', ')}` });
+    }
+
+    const description = b.description != null ? String(b.description).trim().slice(0, 500) : '';
+    if (!description) return next({ status: 400, message: 'Description is required' });
+    if (description.length > 500) return next({ status: 400, message: 'Description must be 500 characters or fewer' });
 
     const requestedPermissionIds = Array.isArray(b.permissions) ? [...new Set(b.permissions)] : [];
     const allPermissions = await all('SELECT id FROM permissions');
@@ -388,23 +421,94 @@ function register(router) {
     if (existingById) return next({ status: 409, message: `A role with code "${code}" already exists` });
     const existingByName = await get('SELECT id FROM roles WHERE name = ?', [name]);
     if (existingByName) return next({ status: 409, message: `A role named "${name}" already exists` });
+    const normalizedName = normalizeRoleName(name);
+    const allRoleNames = await all('SELECT name FROM roles');
+    if (allRoleNames.some(r => normalizeRoleName(r.name) === normalizedName)) {
+      return next({ status: 409, message: `A role named "${name}" already exists` });
+    }
 
+    let created;
     await transaction(async () => {
       await run(
-        'INSERT INTO roles (id, name, default_access_level, description, status, is_system, created_at) VALUES (?,?,?,?,?,0,iso_now())',
-        [code, name, accessLevel, description, status]
+        `INSERT INTO roles (id, name, default_access_level, description, status, is_system, structural_template, dashboard_template, created_at)
+         VALUES (?,?,?,?,?,0,?,?,iso_now())`,
+        [code, name, accessLevel, description, status, structuralTemplate, dashboardTemplate]
       );
       for (const p of allPermissions) {
         await run('INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES (?,?,?)', [code, p.id, requestedPermissionIds.includes(p.id) ? 1 : 0]);
       }
       await logAction(req, {
         action: 'Created role', module: 'roles', recordType: 'Role', recordId: code,
-        newValue: { name, code, accessLevel, status, description, permissions: requestedPermissionIds },
+        newValue: {
+          name, code, accessLevel, status, description,
+          roleType: 'Custom', structuralTemplate, dashboardTemplate,
+          permissions: requestedPermissionIds,
+        },
       });
+      created = await get('SELECT * FROM roles WHERE id = ?', [code]);
     });
 
-    const created = await get('SELECT * FROM roles WHERE id = ?', [code]);
     res.status(201).json({ role: created });
+  });
+
+  // Edit an existing role's own metadata — never its permissions/modules
+  // (those stay Role Permissions' job, via the endpoints below/above).
+  // Changing structural_template/dashboard_template only changes which
+  // real sidebar tree/dashboard layout the role reuses; it never touches
+  // role_permissions or role_modules, so a role's actually-assigned
+  // access is preserved exactly across a template change, per spec.
+  router.put('/api/roles/:id', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit a role'), async (req, res, next) => {
+    const before = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    if (!before) return next({ status: 404, message: 'Role not found' });
+    const b = req.body;
+
+    const name = b.name !== undefined ? String(b.name).trim() : before.name;
+    if (name.length < 3 || name.length > 60) return next({ status: 400, message: 'Role Name must be between 3 and 60 characters' });
+
+    const accessLevel = b.access_level !== undefined ? String(b.access_level).trim() : before.default_access_level;
+    if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
+    const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+    if (!knownLevels.includes(accessLevel)) {
+      return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+    }
+
+    const status = b.status !== undefined ? b.status : before.status;
+    if (!['Active', 'Inactive'].includes(status)) return next({ status: 400, message: 'Status must be Active or Inactive' });
+
+    const structuralTemplate = b.structural_template !== undefined ? b.structural_template : before.structural_template;
+    if (!STRUCTURAL_TEMPLATE_IDS.includes(structuralTemplate)) {
+      return next({ status: 400, message: `structural_template must be one of: ${STRUCTURAL_TEMPLATE_IDS.join(', ')}` });
+    }
+    const dashboardTemplate = b.dashboard_template !== undefined ? b.dashboard_template : before.dashboard_template;
+    if (!STRUCTURAL_TEMPLATE_IDS.includes(dashboardTemplate)) {
+      return next({ status: 400, message: `dashboard_template must be one of: ${STRUCTURAL_TEMPLATE_IDS.join(', ')}` });
+    }
+
+    let description = before.description;
+    if (b.description !== undefined) {
+      description = String(b.description || '').trim().slice(0, 500);
+      if (!description) return next({ status: 400, message: 'Description is required' });
+    }
+
+    if (name !== before.name) {
+      const normalizedName = normalizeRoleName(name);
+      const others = await all('SELECT id, name FROM roles WHERE id != ?', [before.id]);
+      if (others.some(r => normalizeRoleName(r.name) === normalizedName)) {
+        return next({ status: 409, message: `A role named "${name}" already exists` });
+      }
+    }
+
+    await run(
+      `UPDATE roles SET name = ?, default_access_level = ?, description = ?, status = ?, structural_template = ?, dashboard_template = ? WHERE id = ?`,
+      [name, accessLevel, description, status, structuralTemplate, dashboardTemplate, before.id]
+    );
+    const after = await get('SELECT * FROM roles WHERE id = ?', [before.id]);
+    await logAction(req, {
+      action: 'Updated role', module: 'roles', recordType: 'Role', recordId: before.id,
+      previousValue: { name: before.name, accessLevel: before.default_access_level, description: before.description, status: before.status, structuralTemplate: before.structural_template, dashboardTemplate: before.dashboard_template },
+      newValue: { name, accessLevel, description, status, structuralTemplate, dashboardTemplate },
+    });
+    res.json({ role: after });
   });
 
   router.get('/api/roles', requireAuth, async (req, res) => {
@@ -522,6 +626,52 @@ function register(router) {
 
     const after = await all('SELECT permission_id, allowed FROM role_permissions WHERE role_id = ?', [role.id]);
     res.json({ ok: true, permissions: after, added, removed });
+  });
+
+  // Admin > Roles & Access Control > Role Permissions — bulk-set a role's
+  // real granted MODULE list (role_modules), the same coarser-grained,
+  // section-level access layer requireModule()/hasModuleAccess() already
+  // enforce server-side on every gated endpoint and effectiveModules()
+  // computes (see rbac.js) — mirrors the permissions bulk PUT above
+  // exactly, just for role_modules (no `allowed` column there: a grant is
+  // row-presence, so this recomputes the whole set under one transaction
+  // rather than toggling one flag per id). This is the one real write
+  // path role_modules has ever had outside initial seeding — previously
+  // only readable (GET /api/roles/:id/modules), never settable through
+  // any API, which is exactly why no custom role could ever get a
+  // working module/sidebar access before this endpoint existed.
+  router.put('/api/roles/:id/modules', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit a role\'s module access'), async (req, res, next) => {
+    const role = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+
+    const requested = Array.isArray(req.body.moduleIds) ? [...new Set(req.body.moduleIds)] : null;
+    if (!requested) return next({ status: 400, message: 'moduleIds must be an array of module ids' });
+
+    const allModules = await all('SELECT id FROM modules');
+    const validIds = new Set(allModules.map(m => m.id));
+    const invalidIds = requested.filter(m => !validIds.has(m));
+    if (invalidIds.length) return next({ status: 400, message: `Unknown module id(s): ${invalidIds.join(', ')}` });
+
+    const before = await all('SELECT module_id FROM role_modules WHERE role_id = ?', [role.id]);
+    const beforeSet = new Set(before.map(m => m.module_id));
+    const added = requested.filter(m => !beforeSet.has(m)).sort();
+    const removed = [...beforeSet].filter(m => !requested.includes(m)).sort();
+
+    await transaction(async () => {
+      await run('DELETE FROM role_modules WHERE role_id = ?', [role.id]);
+      for (const m of requested) {
+        await run('INSERT INTO role_modules (role_id, module_id) VALUES (?,?)', [role.id, m]);
+      }
+      if (added.length || removed.length) {
+        await logAction(req, {
+          action: 'Changed role module access', module: 'roles', recordType: 'Role', recordId: role.id,
+          previousValue: [...beforeSet].sort(), newValue: requested.slice().sort(),
+          reason: req.body.reason,
+        });
+      }
+    });
+
+    res.json({ ok: true, moduleIds: requested.slice().sort(), added, removed });
   });
 }
 

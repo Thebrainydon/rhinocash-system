@@ -171,6 +171,15 @@ async function computeFinalAccess(user) {
     modules: await effectiveModules(user),
     intelligence: await effectiveIntelligenceFeatures(user),
     finalLine: `${role ? role.name : user.role_id} — ${user.access_level}`,
+    // Which real sidebar tree / dashboard layout this user's role reuses
+    // (see STRUCTURAL_TEMPLATE_IDS in routes/users.js) — every real
+    // structural role is its own template (an Admin's structural_template
+    // is 'admin'), so the frontend's existing per-role dispatch for those
+    // 9 roles is completely unaffected; only a custom role (no entry in
+    // the frontend's hardcoded SIDEBAR_MENUS/dashboard switch) ever
+    // actually falls back to reading these.
+    structuralTemplate: role ? role.structural_template : null,
+    dashboardTemplate: role ? role.dashboard_template : null,
   };
 }
 
