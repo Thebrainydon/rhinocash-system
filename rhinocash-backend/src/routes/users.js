@@ -416,23 +416,37 @@ function register(router) {
     // the same denominator for every role (the one real permissions table),
     // so it's returned once rather than duplicated onto every row.
     const permissionsTotal = (await get('SELECT COUNT(*) as c FROM permissions')).c;
+    const modulesTotal = (await get('SELECT COUNT(*) as c FROM modules')).c;
     const withCounts = await Promise.all(roles.map(async (role) => {
       const userCount = (await get('SELECT COUNT(*) as c FROM users WHERE role_id = ?', [role.id])).c;
       const activeUserCount = (await get('SELECT COUNT(*) as c FROM users WHERE role_id = ? AND status = ?', [role.id, 'Active'])).c;
       const permissionCount = (await get('SELECT COUNT(*) as c FROM role_permissions WHERE role_id = ? AND allowed = 1', [role.id])).c;
+      const moduleCount = (await get('SELECT COUNT(*) as c FROM role_modules WHERE role_id = ?', [role.id])).c;
       const lastAudit = await get(
         `SELECT created_at FROM audit_logs WHERE record_type = 'Role' AND record_id = ? ORDER BY created_at DESC LIMIT 1`,
         [role.id]
       );
-      return { ...role, userCount, activeUserCount, permissionCount, lastModifiedAt: lastAudit ? lastAudit.created_at : null };
+      return { ...role, userCount, activeUserCount, permissionCount, moduleCount, lastModifiedAt: lastAudit ? lastAudit.created_at : null };
     }));
-    res.json({ roles: withCounts, permissionsTotal });
+    res.json({ roles: withCounts, permissionsTotal, modulesTotal });
   });
   router.get('/api/modules', requireAuth, async (req, res) => {
     res.json({ modules: await all('SELECT * FROM modules') });
   });
   router.get('/api/permissions', requireAuth, async (req, res) => {
     res.json({ permissions: await all('SELECT * FROM permissions') });
+  });
+  // Admin > Roles & Access Control > Roles — a role's real granted module
+  // list (role_modules), the exact same real data requireModule()/
+  // hasModuleAccess() enforce server-side on every gated endpoint — mirrors
+  // GET /api/roles/:id/permissions exactly, just for the separate,
+  // coarser-grained Module access layer (not the same thing as an action
+  // permission).
+  router.get('/api/roles/:id/modules', requireAuth, async (req, res, next) => {
+    const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    const rows = await all('SELECT module_id FROM role_modules WHERE role_id = ?', [req.params.id]);
+    res.json({ moduleIds: rows.map(r => r.module_id) });
   });
   router.get('/api/roles/:id/permissions', requireAuth, async (req, res, next) => {
     const role = await get('SELECT id FROM roles WHERE id = ?', [req.params.id]);

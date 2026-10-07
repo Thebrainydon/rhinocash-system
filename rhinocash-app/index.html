@@ -14266,25 +14266,39 @@ function renderCompanyEmployeesPage(){
     ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
   `;
 }
-// ---- Admin > Roles & Access Control > Roles — the real system roles
-// from GET /api/roles (?with_counts=1 for the real, server-computed
-// userCount/permissionCount/lastModifiedAt — never a client-side/
-// hardcoded count), following the exact same loadX()/DB.acctPages.<key>/
-// withRequest cache pattern as loadStaffDirectory() above and
-// loadCompanyBranches() (Branches & Regions > View Branches). Only the
-// "Roles" submenu gets a real page for now — Create Role/Role
-// Permissions/Permission Matrix/Access Policies/Access Requests/Access
-// Approvals/Access Audit fall through to the app's existing generic
-// placeholder, same as every other not-yet-built Admin item. ----
-function defaultRolesFilters(){ return { q:'', accessLevel:'' }; }
+// ---- Admin > Roles & Access Control > Roles — the master Role Register.
+// The real system roles from GET /api/roles (?with_counts=1 for the
+// real, server-computed userCount/permissionCount/moduleCount/
+// lastModifiedAt — never a client-side/hardcoded count), following the
+// exact same loadX()/DB.acctPages.<key>/withRequest cache pattern as
+// loadStaffDirectory() above and loadCompanyBranches() (Branches &
+// Regions > View Branches). Only the "Roles" submenu is rebuilt here —
+// Create Role and Role Permissions already have their own real pages
+// (below) and are reused as-is (Manage Permissions/Edit Role navigate to
+// them); Permission Matrix/Access Policies/Access Requests/Access
+// Approvals/Access Audit remain out of this task's scope and fall
+// through to the app's existing generic placeholder. ----
+function defaultRolesFilters(){ return { q:'', accessLevel:'', status:'', roleType:'' }; }
 async function loadRolesPage(){
   return withRequest('load-roles', async ()=>{
-    const [rolesRes, permsRes] = await Promise.all([
+    const [rolesRes, permsRes, modsRes] = await Promise.all([
       api.get('/api/roles?with_counts=1'),
       api.get('/api/permissions'),
+      api.get('/api/modules'),
     ]);
-    DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, allPermissions: permsRes.permissions };
+    DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, modulesTotal: modsRes.modules.length, allPermissions: permsRes.permissions, allModules: modsRes.modules };
   });
+}
+function renderRolesSummary(roles){
+  const total = roles.length;
+  const active = roles.filter(r=>r.status==='Active').length;
+  const inactive = total - active;
+  const system = roles.filter(r=>r.is_system).length;
+  const custom = total - system;
+  const tile = (label, value) => `<div class="kpi"><div class="kpi-value" style="font-size:22px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`;
+  return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
+    ${tile('Total Roles', total)}${tile('Active Roles', active)}${tile('Inactive Roles', inactive)}${tile('System Roles', system)}${tile('Custom Roles', custom)}
+  </div>`;
 }
 function renderRolesPage(){
   const state = DB.acctPages.roles;
@@ -14293,39 +14307,58 @@ function renderRolesPage(){
   let rows = state.roles;
   if(f.q){
     const q = f.q.toLowerCase();
-    rows = rows.filter(r => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || (ROLE_DESCRIPTIONS[r.name]||'').toLowerCase().includes(q));
+    rows = rows.filter(r => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || (r.description || ROLE_DESCRIPTIONS[r.name] || '').toLowerCase().includes(q));
   }
   if(f.accessLevel) rows = rows.filter(r => r.default_access_level === f.accessLevel);
+  if(f.status) rows = rows.filter(r => (r.status||'Active') === f.status);
+  if(f.roleType) rows = rows.filter(r => (r.is_system ? 'System' : 'Custom') === f.roleType);
   const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level))].sort();
   const trs = rows.map(r => `<tr class="clickable" onclick="openRoleDetail('${r.id}')">
       <td><strong>${escapeHtml(r.name)}</strong><br><span class="hint">${escapeHtml(r.id)}</span></td>
-      <td>${escapeHtml(r.default_access_level)}</td>
       <td class="hint">${escapeHtml(r.description || ROLE_DESCRIPTIONS[r.name] || '—')}</td>
+      <td>${escapeHtml(r.default_access_level)}</td>
       <td>${r.userCount} <span class="hint">(${r.activeUserCount} active)</span></td>
       <td>${r.permissionCount} of ${state.permissionsTotal}</td>
-      <td><span class="badge ${r.status==='Active'?'green':'grey'}">${escapeHtml(r.status||'Active')}</span> <span class="badge blue" style="margin-left:4px;">${r.is_system ? 'System' : 'Custom'}</span></td>
-      <td class="hint">${r.lastModifiedAt ? timeAgo(r.lastModifiedAt) : 'Never modified'}</td>
-      <td onclick="event.stopPropagation();"><button class="btn btn-sm btn-outline" onclick="openRoleDetail('${r.id}')">View</button></td>
+      <td>${r.moduleCount} of ${state.modulesTotal}</td>
+      <td><span class="badge blue">${r.is_system ? 'System' : 'Custom'}</span></td>
+      <td><span class="badge ${r.status==='Active'?'green':'grey'}">${escapeHtml(r.status||'Active')}</span></td>
+      <td class="hint">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+      <td onclick="event.stopPropagation();" class="pill-row" style="gap:6px;">
+        <button class="btn btn-sm btn-outline" onclick="openRoleDetail('${r.id}')">View</button>
+        <button class="btn btn-sm btn-outline" onclick="goTo('staff','Create Role')">Edit</button>
+        <button class="btn btn-sm btn-outline" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, dirty:false}; goTo('staff','Role Permissions');">Permissions</button>
+      </td>
     </tr>`).join("");
   return `
     <div class="card">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:6px;">
         <div>
           <h3 style="color:var(--navy); margin:0;">Roles</h3>
-          <div class="hint" style="margin-top:4px; max-width:640px;">The real system roles Rhinocash uses to control sidebar navigation, module access and approval authority across the whole application. Investor is a separate, portal-only principal type and isn't a staff role, so it isn't listed here.</div>
+          <div class="hint" style="margin-top:4px; max-width:640px;">Manage system and custom user roles and their access-control definitions. Investor is a separate, portal-only principal type and isn't a staff role, so it isn't listed here.</div>
         </div>
         <button class="btn btn-primary btn-sm" onclick="goTo('staff','Create Role')">+ Create Role</button>
       </div>
+      ${renderRolesSummary(state.roles)}
       <div class="pill-row" style="flex-wrap:wrap; gap:8px; margin:14px 0;">
         <input placeholder="🔍 Search role or description" value="${escapeHtml(f.q)}" oninput="session.rolesFilters.q=this.value; renderApp();" class="btn btn-sm btn-outline" style="min-width:220px; flex-shrink:0;">
+        <select onchange="session.rolesFilters.status=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">All statuses</option>
+          <option value="Active" ${f.status==='Active'?'selected':''}>Active</option>
+          <option value="Inactive" ${f.status==='Inactive'?'selected':''}>Inactive</option>
+        </select>
+        <select onchange="session.rolesFilters.roleType=this.value; renderApp();" class="btn btn-sm btn-outline">
+          <option value="">All role types</option>
+          <option value="System" ${f.roleType==='System'?'selected':''}>System</option>
+          <option value="Custom" ${f.roleType==='Custom'?'selected':''}>Custom</option>
+        </select>
         <select onchange="session.rolesFilters.accessLevel=this.value; renderApp();" class="btn btn-sm btn-outline">
           <option value="">All access levels</option>
           ${accessLevels.map(a=>`<option value="${escapeHtml(a)}" ${f.accessLevel===a?'selected':''}>${escapeHtml(a)}</option>`).join("")}
         </select>
       </div>
       <div class="table-wrap"><table>
-        <tr><th>Role</th><th>Access Level</th><th>Description</th><th>Assigned Users</th><th>Permissions</th><th>Status</th><th>Last Updated</th><th></th></tr>
-        ${trs || `<tr><td colspan="8" class="empty">No roles match these filters.</td></tr>`}
+        <tr><th>Role Name</th><th>Description</th><th>Default Access Level</th><th>Users</th><th>Permissions</th><th>Modules</th><th>Role Type</th><th>Status</th><th>Created Date</th><th>Actions</th></tr>
+        ${trs || `<tr><td colspan="10" class="empty">No roles match these filters.</td></tr>`}
       </table></div>
     </div>
     ${session.selectedRoleId ? renderRoleDetailPanel(session.selectedRoleId) : ""}
@@ -14335,11 +14368,12 @@ function openRoleDetail(id){ session.selectedRoleId = id; loadRoleDetail(id); re
 function closeRoleDetail(){ session.selectedRoleId = null; renderApp(); }
 async function loadRoleDetail(id){
   return withRequest('load-role-detail', async ()=>{
-    const [permsRes, auditRes] = await Promise.all([
+    const [permsRes, modsRes, auditRes] = await Promise.all([
       api.get(`/api/roles/${id}/permissions`),
+      api.get(`/api/roles/${id}/modules`),
       api.get(`/api/audit-logs?entity=Role&record_id=${id}&limit=10`),
     ]);
-    DB.acctPages.roleDetail = { roleId: id, permissions: permsRes.permissions, auditLog: auditRes.auditLogs };
+    DB.acctPages.roleDetail = { roleId: id, permissions: permsRes.permissions, moduleIds: modsRes.moduleIds, auditLog: auditRes.auditLogs };
   });
 }
 function renderRoleDetailPanel(id){
@@ -14354,11 +14388,14 @@ function renderRoleDetailPanel(id){
   const allPerms = state.allPermissions || [];
   const categorized = {};
   allPerms.forEach(p=>{ const cat = PERMISSION_CATEGORIES[p.id] || 'Other'; (categorized[cat] = categorized[cat] || []).push(p); });
+  const moduleSet = new Set(detail ? detail.moduleIds : []);
+  const allModules = state.allModules || [];
   return `
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; flex-wrap:wrap;">
         <h3 style="color:var(--navy); margin:0;">${escapeHtml(role.name)}</h3>
         <div class="pill-row" style="gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Create Role')">Edit Role</button>
           <button class="btn btn-outline btn-sm" onclick="session.rolePermissionsState={roleId:'${role.id}', q:'', selection:null, dirty:false}; goTo('staff','Role Permissions');">Manage Permissions</button>
           <span class="btn btn-outline btn-sm" onclick="closeRoleDetail()" style="border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; padding:0;">✕</span>
         </div>
@@ -14366,11 +14403,12 @@ function renderRoleDetailPanel(id){
       <div class="grid2">
         <div>
           <div class="detail-label">Role ID</div><div>${escapeHtml(role.id)}</div>
-          <div class="detail-label" style="margin-top:10px;">Access Level</div><div>${escapeHtml(role.default_access_level)}</div>
+          <div class="detail-label" style="margin-top:10px;">Default Access Level</div><div>${escapeHtml(role.default_access_level)}</div>
           <div class="detail-label" style="margin-top:10px;">Description</div><div>${escapeHtml(role.description || ROLE_DESCRIPTIONS[role.name] || '—')}</div>
-          <div class="detail-label" style="margin-top:10px;">Status</div><div><span class="badge ${role.status==='Active'?'green':'grey'}">${escapeHtml(role.status||'Active')}</span> <span class="badge blue" style="margin-left:4px;">${role.is_system ? 'System role' : 'Custom role'}</span></div>
-          <div class="detail-label" style="margin-top:10px;">Created</div><div class="hint">${role.is_system ? "Built into Rhinocash — system roles ship with the platform, they aren't user-created records" : (role.created_at ? new Date(role.created_at).toLocaleString() : '—')}</div>
-          <div class="detail-label" style="margin-top:10px;">Last Updated</div><div class="hint">${role.lastModifiedAt ? new Date(role.lastModifiedAt).toLocaleString() : 'No permission changes recorded yet'}</div>
+          <div class="detail-label" style="margin-top:10px;">Status</div><div><span class="badge ${role.status==='Active'?'green':'grey'}">${escapeHtml(role.status||'Active')}</span></div>
+          <div class="detail-label" style="margin-top:10px;">Role Type</div><div><span class="badge blue">${role.is_system ? 'System Role' : 'Custom Role'}</span></div>
+          <div class="detail-label" style="margin-top:10px;">Created Date</div><div class="hint">${role.created_at ? new Date(role.created_at).toLocaleString() : '—'}${role.is_system ? ' (built into Rhinocash — system roles ship with the platform)' : ''}</div>
+          <div class="detail-label" style="margin-top:10px;">Updated Date</div><div class="hint">${role.lastModifiedAt ? new Date(role.lastModifiedAt).toLocaleString() : 'No changes recorded yet'}</div>
         </div>
         <div>
           <div class="detail-label">Assigned Users (${assignedUsers.length})</div>
@@ -14388,6 +14426,11 @@ function renderRoleDetailPanel(id){
             ${perms.map(p=>`<span class="badge ${permLookup[p.id]?'green':'grey'}">${permLookup[p.id]?'✓':'✕'} ${escapeHtml(p.label)}</span>`).join("")}
           </div>
         </div>`).join("")}
+
+      <div class="card-title" style="margin-top:18px;">Modules ${detail ? `<small>${role.moduleCount} of ${state.modulesTotal} granted</small>` : ''}</div>
+      ${!detail ? `<div class="empty">${loadingDotsHtml()}</div>` : `<div class="pill-row" style="flex-wrap:wrap; gap:6px;">
+        ${allModules.map(m=>`<span class="badge ${moduleSet.has(m.id)?'green':'grey'}">${moduleSet.has(m.id)?'✓':'✕'} ${escapeHtml(m.label)}</span>`).join("")}
+      </div>`}
 
       <div class="card-title" style="margin-top:18px;">Recent Role Activity <small>from the real audit log</small></div>
       ${!detail ? "" : (detail.auditLog.length ? `<div class="table-wrap"><table><tr><th>When</th><th>Actor</th><th>Action</th></tr>
