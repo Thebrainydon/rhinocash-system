@@ -5475,8 +5475,22 @@ apiRequest = async function(method, path, body){
     __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
     __assert(__srcForBanCheck.includes('<span>Loading Dashboard... <svg class="loading-screen-spinner"') && __srcForBanCheck.includes('class="loading-screen"'), "the real one-time, full-page loading screen shown right after login genuinely reads 'Loading Dashboard...' with a real spinning-arrows icon, not the old generic 'Loading your Rhinocash data…' text");
     __assert(__rawIndexHtml.includes('.loading-screen-spinner{') && __rawIndexHtml.includes('animation:loginSpin'), "the real Loading Dashboard icon genuinely spins, reusing the exact same real loginSpin animation the login button's own spinner already uses");
-    __assert(!__srcForBanCheck.includes('loginSuccess') && !__srcForBanCheck.includes('Login successful'), "the real login button's own separate 'Login successful… redirecting' state is genuinely gone — session.loggedIn now flips true right away, so the real app shell (and its own 'Loading Dashboard...' screen) takes over the exact same real wait that message used to cover, instead of the two overlapping");
-    __assert(typeof session.loginSuccess === 'undefined', "the real session object genuinely no longer carries a loginSuccess field at all");
+  }
+
+  // ---- 16d-ii. Real two-phase login status banner: a light-green bar
+  // above the login button genuinely reads "Processing… please wait"
+  // while the real credentials check is in flight, then "Login
+  // successful… redirecting" once it has genuinely succeeded — both
+  // phases sharing the same real spinning clockwise-arrows icon — before
+  // the app moves into the real "Loading Dashboard..." screen. A later,
+  // explicit requirement restored this two-phase flow after an earlier
+  // pass had removed it. ----
+  {
+    __assert(typeof loginStatusBanner === 'function', "the real loginStatusBanner() function genuinely exists");
+    __assert(__rawIndexHtml.includes('.login-status-banner{') && __rawIndexHtml.includes('background:var(--green-bg)'), "the real login status banner genuinely uses the light-green banner style, not the button's own navy background");
+    __assert(__srcForBanCheck.includes("'Processing… please wait'"), "the real banner genuinely shows 'Processing… please wait' during the real credentials check");
+    __assert(__srcForBanCheck.includes("'Login successful… redirecting'"), "the real banner genuinely shows 'Login successful… redirecting' once the real credentials check has succeeded");
+    __assert(__srcForBanCheck.includes("session.loginPhase = 'success'"), "the real doLogin() genuinely flips session.loginPhase to 'success' right after the real credentials check succeeds, before moving on to loadCoreData()");
   }
 
   // ---- 16e. App-wide: real table column headers, real field labels

@@ -475,6 +475,8 @@ tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:n
 @media (min-width:860px){ .login-page-footer{ color:rgba(255,255,255,0.4); } }
 .login-error{ background:var(--red-bg); border:1px solid rgba(179,38,30,0.3); color:var(--red); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
 .login-success-banner{ background:var(--green-bg); border:1px solid rgba(47,125,92,0.3); color:var(--green); font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
+.login-status-banner{ background:var(--green-bg); border:1px solid rgba(47,125,92,0.3); color:var(--green); font-size:12.5px; font-weight:700; padding:10px 12px; border-radius:8px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.login-status-banner svg{ flex-shrink:0; animation:loginSpin 0.8s linear infinite; }
 .login-recovery-success{ background:var(--green-bg); border:1px solid rgba(47,125,92,0.3); color:var(--green); font-size:12.5px; padding:12px 13px; border-radius:8px; margin-bottom:16px; text-align:center; line-height:1.5; }
 .login-back{ text-align:center; margin-top:16px; }
 .login-back a{ color:var(--navy); font-weight:700; font-size:12.5px; text-decoration:none; cursor:pointer; }
@@ -2688,8 +2690,9 @@ function renderLogin(){
     <div class="login-eyebrow">${fieldIcon(ICON_LOCK, 12)} Staff Portal</div>
     <h2 class="login-title">Account Login</h2>
     <div class="login-subtitle">Enter your details below to continue securely.</div>
-    ${session.justLoggedOut ? `<div class="login-success-banner">You have been securely logged out.</div>` : ""}
+    ${session.justLoggedOut && !session.loggingIn ? `<div class="login-success-banner">You have been securely logged out.</div>` : ""}
     ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ""}
+    ${loginStatusBanner()}
     <form onsubmit="return doLogin(event)">
       <div class="login-field">
         ${fieldIcon(ICON_PERSON)}
@@ -2700,12 +2703,25 @@ function renderLogin(){
         <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
         <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
       </div>
-      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? `<svg class="login-btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>Processing… please wait` : '▸ Login'}</button>
+      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? 'Please wait…' : '▸ Login'}</button>
     </form>
     <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
     <div class="login-security-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Your sign-in is protected with session security and one-time verification where required.</div>
     <div class="hint" style="margin-top:14px; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
   `);
+}
+// The real login status banner — a light-green bar (same visual language
+// as the other login success/logout banners), shown during a real login
+// attempt in two real phases: "Processing… please wait" while the real
+// credentials check is in flight, then "Login successful… redirecting"
+// once that check has genuinely succeeded and the app is moving into the
+// real dashboard (doLogin() sets session.loginPhase accordingly). Both
+// phases share the same spinning clockwise-arrows icon.
+function loginStatusBanner(){
+  if(!session.loggingIn) return "";
+  const spinner = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>`;
+  const text = session.loginPhase === 'success' ? 'Login successful… redirecting' : 'Processing… please wait';
+  return `<div class="login-status-banner">${spinner}${text}</div>`;
 }
 
 function openForgotPassword(){
@@ -2918,6 +2934,7 @@ async function doLogin(ev){
   if(!f.username || !f.password){ loginError = "Please enter your email and password."; renderApp(); return false; }
   loginError = "";
   session.loggingIn = true;
+  session.loginPhase = null;
   // A fresh login attempt must never carry over a stale modal from the
   // previous real session (e.g. the "You've Been Logged Out"
   // acknowledgement left open by confirmLogout() until its own button is
@@ -2966,6 +2983,15 @@ async function doLogin(ev){
     session.sessionExpiresAt = result.expiresAt || null;
     session.sessionWarningMinutes = result.sessionWarningMinutes || 5;
     scheduleSessionExpiryWarning();
+    // A real, brief "Login successful… redirecting" phase — the real
+    // credentials check has genuinely succeeded at this point, shown on
+    // the same still-visible login screen (loggingIn stays true so the
+    // form stays disabled) for a moment before the app actually moves on,
+    // so the user sees a distinct real success state rather than jumping
+    // straight from "Processing" to a blank "Loading Dashboard" screen.
+    session.loginPhase = 'success';
+    renderApp();
+    await new Promise(r=>setTimeout(r, 700));
     // Credentials are verified and the session is real at this point —
     // move into the real app shell immediately rather than lingering on
     // the login screen while loadCoreData() (which can take a few seconds
@@ -3003,6 +3029,7 @@ async function doLogin(ev){
     // screen with nothing to show for it.
     session.loggingIn = false;
     session.authenticated = false;
+    session.loginPhase = null;
     loginError = (e && e.message) || "Invalid credentials.";
     renderApp();
   }
