@@ -2876,18 +2876,21 @@ apiRequest = async function(method, path, body){
     await submitSalaryAdvanceRequest({ preventDefault(){}, target:{} });
     __assert(DB.mySalaryAdvances.some(s=>s.reason==='Frontend test advance'), "a real salary advance request was submitted via the actual form handler");
 
-    // Manager's My Account is now a short, real tab set (View Details, My
-    // Work Plan, Salary Advance, Update Details) — Branch Responsibilities/
-    // Leave & Attendance/My Targets & Performance/Security & Login were
-    // dropped per the reference sidebar redesign; "My Work Plan" now
-    // reuses the exact same real per-day workplan page Loan Officer's own
-    // My Account already has (see renderAccount()'s own shared check).
+    // Manager's My Account now has the exact same short, real item set as
+    // Loan Officer (View Details, My Work Plan, Salary Advance, Update
+    // Details) — Branch Responsibilities/Leave & Attendance/My Targets &
+    // Performance/Security & Login were dropped per the reference sidebar
+    // redesign — so it's chrome-free too: no tab bar above a page with
+    // nothing else to switch between, matching Loan Officer's own pages.
+    // "My Work Plan" reuses the exact same real per-day workplan page Loan
+    // Officer's own My Account already has (see renderAccount()'s own shared check).
     let mk11 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mk11; } };
     await doLogin({ preventDefault(){}, target:{} });
     goTo('account');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Work Plan') && !html.includes('Branch Responsibilities'), "Manager's My Account tab bar now shows the real, reduced tab set (My Work Plan), not the old Branch Responsibilities tab");
+    __assert(!html.includes('class="subtabs"'), "Manager's My Account genuinely has no tab bar above it anymore, matching Loan Officer's own chrome-free pages, since it has nothing else to switch between");
+    __assert(!html.includes('Branch Responsibilities'), "the old Branch Responsibilities tab is genuinely gone from Manager's My Account");
     goTo('account','My Work Plan');
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('My Work Plan'), "Manager's own My Work Plan tab genuinely renders the real, shared workplan page");
@@ -2974,7 +2977,7 @@ apiRequest = async function(method, path, body){
     await doLogin({ preventDefault(){}, target:{} });
     goTo('account');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Governance Responsibilities'), "Admin's My Account now has a real Governance Responsibilities tab, matching their real backend decide/record authority — previously that authority had no frontend entry point at all");
+    __assert(resolveRoute('Governance Responsibilities').subtab === 'Governance Responsibilities', "Admin's My Account now has a real Governance Responsibilities sidebar item, matching their real backend decide/record authority — previously that authority had no frontend entry point at all");
     const htmlNoLogo17 = html.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/g, '');
     __assert(!htmlNoLogo17.includes('undefined') && !htmlNoLogo17.includes('NaN'), "Admin's My Account page has no undefined/NaN leakage");
   }
