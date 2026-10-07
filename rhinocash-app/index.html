@@ -13255,20 +13255,31 @@ function pettyCashbookTableHtml(d){
     </table></div>
   `;
 }
+// The on-screen page deliberately mirrors renderPettyCashbookPrintPage()'s
+// own real header (logo, bordered box, "{Branch} branch Petty Cashbook",
+// "From X to Y") — the live and printed views of the same real data
+// should look like the same document, not two different designs. Only
+// the live-only interactive controls (month/week selects, the Print
+// button, the back arrow) and the print-only "Printed on … by …"
+// attribution/page-footer lines differ between the two. Both functions
+// read the exact same DB.acctPages.petty.data (loadPettyCashbook()) —
+// never a second data source — so this is one real page per role, not a
+// per-role copy: every role whose sidebar has "Petty Cashbook" (Manager,
+// Operational Manager, Regional Manager, Accountant, CEO, Director, …)
+// already reaches this same function through the shared renderAccounting()
+// dispatcher and automatically gets this exact look for their own real
+// branch/scope data.
 function renderPettyCashbookPage(){
   const state = DB.acctPages.petty;
   const defaultMonth = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
   if(!state || !state.data){ loadPettyCashbook(state?state.month:defaultMonth, state?state.weekIndex:null); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
-  const [y,m] = state.month.split('-').map(Number);
-  const monthEnd = new Date(y, m, 0);
+  const d = state.data;
   return `
     <div class="card">
-      <div style="text-align:center; margin-bottom:10px; position:relative;">
+      <div style="position:relative; margin-bottom:12px;">
         <span class="btn btn-outline btn-sm page-back-btn" style="position:absolute; left:0; top:0;" onclick="goTo('dashboard')">←</span>
-        <h3 style="margin:0; text-decoration:underline; color:var(--navy);">Petty Cashbook</h3>
-        <div style="color:var(--navy); font-weight:700; margin-top:4px;">For ${PETTY_CASHBOOK_MONTH_NAMES[m-1]} ${y} Ending ${ddmmyyyy(isoDate(monthEnd))}</div>
       </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin:14px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
           <select onchange="changePettyCashbookMonth(this.value)">
             ${pettyCashbookMonthOptions().map(o=>`<option value="${o.value}" ${o.value===state.month?'selected':''}>${o.label}</option>`).join("")}
@@ -13279,7 +13290,14 @@ function renderPettyCashbookPage(){
         </span>
         <span class="btn btn-sm" style="background:var(--red); color:#fff;" onclick="printPettyCashbook()">🖨 Print</span>
       </div>
-      ${pettyCashbookTableHtml(state.data)}
+      <div style="border:1px solid #999; padding:20px;">
+        <div style="text-align:center;">
+          <img src="${LOGO_DATA_URI}" alt="Rhinocash" style="width:60px; height:60px; object-fit:contain;">
+          <div style="font-weight:800; color:var(--navy); font-size:16px; text-decoration:underline; margin-top:6px;">${escapeHtml(d.branchName||'—')} branch Petty Cashbook</div>
+          <div class="hint" style="margin-top:4px;">From ${ddmmyyyy(d.from)} to ${ddmmyyyy(d.to)}</div>
+        </div>
+        <div style="margin-top:14px;">${pettyCashbookTableHtml(d)}</div>
+      </div>
     </div>
   `;
 }
