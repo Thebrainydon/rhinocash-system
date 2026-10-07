@@ -5030,6 +5030,46 @@ function branchStaffCounts(branchIds){
     <div class="kpi"><div style="display:flex; justify-content:space-between; align-items:center;"><div><div class="kpi-value" style="font-size:22px;">${activeOfficers}</div><div class="kpi-label" style="margin-top:2px;">Active Loan Officers</div></div><div style="font-size:22px;">🧑‍💼</div></div></div>
   </div>`;
 }
+// Shared hero profile card — the same olive-gradient photo-left/name-right
+// identity summary across every dashboard (Manager's own was the design
+// reference). metaLines are pre-formatted "icon label" strings; actions are
+// {label, onclick} pairs rendered as the two quick-action buttons below.
+function dashHeroProfile(me, metaLines, actions){
+  return `
+    <div class="dash-hero-profile">
+      <div class="dash-hero-profile-top">
+        <div class="dash-hero-photo">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}">`:(me.name||"?").split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+        <div style="flex:1; min-width:0;">
+          <div class="dash-hero-welcome">WELCOME BACK</div>
+          <div class="dash-hero-name">Welcome, ${escapeHtml(me.name||"")}</div>
+          <div class="dash-hero-meta">${metaLines.map(l=>`<span>${l}</span>`).join("")}</div>
+        </div>
+      </div>
+      ${actions && actions.length ? `<div class="dash-hero-actions">${actions.map(a=>`<a onclick="${a.onclick}">${a.label}</a>`).join("")}</div>` : ""}
+    </div>
+  `;
+}
+// Shared notifications preview — same real DB.notifications data every
+// role's bell icon already reads, just surfaced inline on the dashboard
+// (Manager's redesign introduced this pattern). Not used by Investor,
+// whose notifications come from a separate, already-isolated real source
+// (investorNotifications()) via its own dashboard.
+function dashNotificationsPreview(){
+  const unread = (DB.notifications||[]).filter(n=>!n.read);
+  const recent = (DB.notifications||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
+  return `
+    <div class="section-head">
+      <div><div class="section-head-label">Updates</div><div class="section-head-title">Notifications${unread.length?` (${unread.length} new)`:''}</div></div>
+      <button class="btn-pill" onclick="openNotificationsPanel()">View all</button>
+    </div>
+    ${recent.length ? recent.map(n=>`
+      <div class="attention-card" onclick="openNotificationsPanel()">
+        <div class="attention-icon">${n.read?'🔔':'🔴'}</div>
+        <div style="flex:1; min-width:0;"><div class="attention-label">${escapeHtml(n.message||n.title||'')}</div></div>
+      </div>
+    `).join("") : `<div class="hint">No notifications yet.</div>`}
+  `;
+}
 function staffPerformanceTable(highlightId, branchIds, scopeLabel){
   if(isDashboardWidgetHidden('staffPerformanceTable')) return '';
   const ranked = rankedOfficerScores(branchIds);
@@ -5346,32 +5386,45 @@ function renderHRDashboard(){
   const recentHires = staff.slice().filter(s=>s.createdAt).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,8);
 
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:14px; align-items:flex-start;">
-        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0; overflow:hidden;">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft);">
-            <div class="profile-info-row">💼 Human Resources</div>
-            <div class="profile-info-row">🌍 Company-wide</div>
-            <div class="profile-info-row">🏖️ ${me.leaveDays} Leave Days</div>
-            <div class="profile-info-row" style="border-bottom:none;">👁️ HR & People Management Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, ['💼 Human Resources', '🌍 Company-wide', `🏖️ ${me.leaveDays} Leave Days`, '👁️ HR & People Management Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('staff','View Employees')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">Total Employees</div>
+        <div class="hero-stat-value">${totalEmployees}</div>
+        <div class="hero-stat-sub">${departments.length} department(s)</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('staff','View Employees')">
+        <div class="hero-stat-icon">✅</div>
+        <div class="hero-stat-label">Active Employees</div>
+        <div class="hero-stat-value">${activeEmployees}</div>
+        <div class="hero-stat-sub">of ${totalEmployees} total</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('staff','View Employees')">
+        <div class="hero-stat-icon">⛔</div>
+        <div class="hero-stat-label">Suspended</div>
+        <div class="hero-stat-value">${suspendedEmployees}</div>
+        <div class="hero-stat-sub">${deactivatedEmployees} deactivated</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goTo('staff','Add Employee')">
+        <div class="hero-stat-icon">🆕</div>
+        <div class="hero-stat-label">New Hires (MTD)</div>
+        <div class="hero-stat-value">${newHiresMTD}</div>
+        <div class="hero-stat-sub">this month</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    <div class="kpi-grid">
-      <div class="kpi c-blue"><div class="kpi-label">Total Employees</div><div class="kpi-value">${totalEmployees}</div></div>
-      <div class="kpi c-green"><div class="kpi-label">Active Employees</div><div class="kpi-value">${activeEmployees}</div></div>
-      <div class="kpi ${suspendedEmployees>0?'c-amber':'c-green'}"><div class="kpi-label">Suspended</div><div class="kpi-value">${suspendedEmployees}</div></div>
-      <div class="kpi ${deactivatedEmployees>0?'c-red':'c-green'}"><div class="kpi-label">Deactivated</div><div class="kpi-value">${deactivatedEmployees}</div></div>
-      <div class="kpi c-blue"><div class="kpi-label">Departments</div><div class="kpi-value">${departments.length}</div></div>
-      <div class="kpi c-blue"><div class="kpi-label">New Hires (MTD)</div><div class="kpi-value">${newHiresMTD}</div></div>
-    </div>
+    ${dashNotificationsPreview()}
 
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Workforce Composition</div></div></div>
     <div class="grid2">
       <div class="card">
         <div class="card-title">Employees by Department</div>
@@ -5383,12 +5436,22 @@ function renderHRDashboard(){
       </div>
     </div>
 
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Recent New Hires</div></div></div>
     <div class="card">
-      <div class="card-title">Recent New Hires <small>most recently created accounts, company-wide</small></div>
       <div class="table-wrap"><table><tr><th>Name</th><th>Role</th><th>Branch</th><th>Status</th><th>Joined</th></tr>
       ${recentHires.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.role)}</td><td>${branchName(s.branch)}</td>
         <td><span class="badge ${s.status==='Active'?'green':s.status==='Suspended'?'amber':'red'}">${s.status}</span></td>
         <td class="hint">${new Date(s.createdAt).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No employees recorded yet.</td></tr>`}</table></div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
+    <div class="attention-card" onclick="goTo('staff','View Employees')">
+      <div class="attention-icon">⛔</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Suspended Accounts to Review</div><div class="attention-value">${suspendedEmployees}</div></div>
+    </div>
+    <div class="attention-card" onclick="goTo('staff','Add Employee')">
+      <div class="attention-icon">🆕</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Add a New Employee</div><div class="attention-value">+</div></div>
     </div>
 
     <div class="section-note">Deeper HR analytics (attendance, recruitment, payroll and performance trends) aren't built yet — they'll be added section by section as their real pages and data are implemented. The sidebar reflects the full intended structure; items with no page yet land on an honest "not built" screen rather than showing fabricated figures.</div>
@@ -5400,49 +5463,120 @@ function renderOfficerDashboard(){
   if(!meRaw) return `<div class="empty">No loan officer profile found.</div>`;
   const me = { id: meRaw.id, name: meRaw.name, role: session.role, branch: meRaw.branch_id, leaveDays: meRaw.leave_days_balance ?? 0 };
   const st = computeStats(me.id);
+  const bName = branchName(me.branch);
+  const arrearsLoansCount = st.activeScope.filter(l=>loanArrearsDays(l)>0).length;
+
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:14px; align-items:flex-start;">
-        <div style="width:72px; height:72px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; flex-shrink:0; overflow:hidden;">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; font-size:13px; color:var(--ink-soft);">
-            <div class="profile-info-row">💼 ${me.role}</div>
-            <div class="profile-info-row">🏢 ${branchName(me.branch)}</div>
-            <div class="profile-info-row">🏖️ ${me.leaveDays} Leave Days</div>
-            <div class="profile-info-row" style="border-bottom:none;">👁️ Portfolio Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, [`💼 ${me.role}`, `🏢 ${bName}`, `🏖️ ${me.leaveDays} Leave Days`, '👁️ Portfolio Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('clients','View Client')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">My Clients</div>
+        <div class="hero-stat-value">${st.totalClients}</div>
+        <div class="hero-stat-sub">${st.activeClients} active · ${st.dormantClients} dormant</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">📒</div>
+        <div class="hero-stat-label">Running Loans</div>
+        <div class="hero-stat-value">${st.activeScope.length}</div>
+        <div class="hero-stat-sub">${fmt(st.portfolioOutstanding)} outstanding</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Loan Arrears</div>
+        <div class="hero-stat-value">${fmt(st.arrearsAmt)}</div>
+        <div class="hero-stat-sub">${st.par.toFixed(2)}% PAR</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goToUndisbursedLoans()">
+        <div class="hero-stat-icon">💰</div>
+        <div class="hero-stat-label">Pending Disbursement</div>
+        <div class="hero-stat-value">${st.undisbursedCount}</div>
+        <div class="hero-stat-sub">${fmt(st.undisbursedAmt)}</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).split('/').join('-')} Collections</div>
-      ${progressBar(st.todayPct)}
-      <div class="hint" style="margin-top:6px;">${st.todayPct.toFixed(0)}% collected of ${fmt(st.dueToday)} due today</div>
+    ${dashNotificationsPreview()}
+
+    <div class="section-head">
+      <div><div class="section-head-label">My Portfolio</div><div class="section-head-title">Credit Performance</div></div>
+      <span class="badge-live">LIVE</span>
+    </div>
+    <div class="stat-row-card" onclick="goToUndisbursedLoans()">
+      <div class="stat-row-icon">📤</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed MTD</div><div class="stat-row-value">${fmt(st.disbursedMTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card" onclick="goTo('loanbook','View Loans')">
+      <div class="stat-row-icon">📊</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed YTD</div><div class="stat-row-value">${fmt(st.disbursedYTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card" onclick="goToUndisbursedLoans()">
+      <div class="stat-row-icon">🕑</div>
+      <div class="stat-row-body"><div class="stat-row-label">Undisbursed Loans</div><div class="stat-row-value">${st.undisbursedCount}</div></div>
+      <div class="stat-row-arrow">›</div>
     </div>
 
-    ${kpiTiles(st)}
-    ${statGrid(st)}
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">My Portfolio</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBanner(st)}
-    ${orgCounts()}
 
-    <div class="grid2">
-      ${pieCard("Client Loans Analysis","by loan size", clientBracketPie(st.loansScope))}
-      ${pieCard("My Clients' Loan Cycles","repeat-borrowing depth", loanCyclePie(st.clientsScope))}
+    <div class="section-head"><div><div class="section-head-label">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})}</div><div class="section-head-title">Disbursement Trend</div></div></div>
+    <div class="card">${lineChart(disbursementTrendPoints(st.loansScope))}</div>
+
+    <div class="section-head">
+      <div><div class="section-head-label">My Portfolio</div><div class="section-head-title">Loan Products Distribution</div></div>
+      <button class="btn-pill" onclick="goTo('loanbook','View Loans')">Portfolio report</button>
     </div>
-    <div class="grid2">
-      ${pieCard("My Loan Products Distribution","by outstanding balance", productPieData(st.loansScope))}
-      ${pieCard("OLB Distribution — All Officers","peer comparison, org-wide", olbByOfficerPieData())}
-    </div>
-    <div class="card">
-      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>my daily disbursed amount</small></div>
-      ${lineChart(disbursementTrendPoints(st.loansScope))}
+    ${pieCard("", "by outstanding balance", productPieData(st.loansScope))}
+
+    <div class="mini-stat-grid">
+      <div class="mini-stat-card">
+        <div class="mini-stat-icon">✅</div>
+        <div class="mini-stat-label">Collection Score</div>
+        <div class="mini-stat-value">${st.todayPct.toFixed(0)}%</div>
+      </div>
+      <div class="mini-stat-card">
+        <div class="mini-stat-icon">⚖️</div>
+        <div class="mini-stat-label">Performing Loans</div>
+        <div class="mini-stat-value">${st.performingLoans}</div>
+      </div>
+      <div class="mini-stat-card">
+        <div class="mini-stat-icon">👤</div>
+        <div class="mini-stat-label">Unfunded Clients</div>
+        <div class="mini-stat-value">${st.unfundedClients}</div>
+      </div>
     </div>
 
-    ${staffPerformanceTable(me.id)}
+    <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
+    <div class="attention-card" onclick="goTo('loanbook','Loan Arrears')">
+      <div class="attention-icon">⚠️</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Follow Up Overdue Loans</div><div class="attention-value">${arrearsLoansCount}</div></div>
+    </div>
+    <div class="attention-card" onclick="goToUndisbursedLoans()">
+      <div class="attention-icon">💰</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Loans Pending Disbursement</div><div class="attention-value">${st.undisbursedCount}</div></div>
+    </div>
+    <div class="attention-card" onclick="goTo('clients','View Client')">
+      <div class="attention-icon">🧑‍💼</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Unfunded Clients to Re-engage</div><div class="attention-value">${st.unfundedClients}</div></div>
+    </div>
+
     ${performanceIndicatorsTable(me.id)}
   `;
 }
@@ -5601,24 +5735,10 @@ function renderManagerDashboard(){
   const topStaff = rankedOfficerScores(myBranchIds).slice().sort((a,b)=>b.stats.disbursedMTD-a.stats.disbursedMTD).slice(0,5);
 
   return `
-    <div class="dash-hero-profile">
-      <div class="dash-hero-profile-top">
-        <div class="dash-hero-photo">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}">`:me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div class="dash-hero-welcome">WELCOME BACK</div>
-          <div class="dash-hero-name">${escapeHtml(me.name)}</div>
-          <div class="dash-hero-meta">
-            <span>💼 Manager</span>
-            <span>🏢 ${bName}</span>
-            <span>🏖️ ${me.leaveDays} Leave Days</span>
-          </div>
-        </div>
-      </div>
-      <div class="dash-hero-actions">
-        <a onclick="openModal('apply-leave')">🗓️ Apply Leave</a>
-        <a onclick="openModal('request-advance')">💵 Request Advance</a>
-      </div>
-    </div>
+    ${dashHeroProfile(me, ['💼 Manager', `🏢 ${bName}`, `🏖️ ${me.leaveDays} Leave Days`, '👁️ Branch Management Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
 
     <div class="hero-stat-grid">
       <div class="hero-stat-card c-navy" onclick="goTo('clients','View Client')">
@@ -5767,31 +5887,86 @@ function renderAdvancedDashboard(){
   const expensesMTD = DB.expenses.filter(e=>isThisMonth(e.date)).reduce((s,e)=>s+e.amount,0);
   const cashPosition = (DB.cashPosition ? (DB.cashPosition.cash||0)+(DB.cashPosition.bank||0)+(DB.cashPosition.mpesa||0) : 0); // real, from the authoritative backend endpoint — see loadCoreData()
   const waitingQueue = DB.loans.filter(l=>l.status==="Waiting for Operational Manager");
+  const unpostedOrgWide = DB.payments.filter(p=>p.status==="Unposted").length;
+  const activeBranchesCount = DB.branches.filter(b=>b.status==='Active').length;
+  const topStaff = rankedOfficerScores(null).slice().sort((a,b)=>b.stats.disbursedMTD-a.stats.disbursedMTD).slice(0,5);
 
   return `
-    ${me ? `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Operational Manager</div>
-            <div>🌍 Organization-wide Operations</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Operations &amp; Branch Expansion Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${me ? dashHeroProfile(me, ['💼 Operational Manager', '🌍 Organization-wide Operations', `🏖️ ${me.leaveDays} Leave Days`, '👁️ Operations & Branch Expansion Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ]) : ""}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('clients','View Client')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">Clients</div>
+        <div class="hero-stat-value">${st.totalClients}</div>
+        <div class="hero-stat-sub">${st.activeClients} active · ${st.dormantClients} dormant</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
-    </div>` : ""}
-    ${collectionsBarCard(st, "Company-wide Collections")}
+      <div class="hero-stat-card c-teal" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">📒</div>
+        <div class="hero-stat-label">Running Loans</div>
+        <div class="hero-stat-value">${st.activeScope.length}</div>
+        <div class="hero-stat-sub">${fmt(st.portfolioOutstanding)} outstanding</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Loan Arrears</div>
+        <div class="hero-stat-value">${fmt(st.arrearsAmt)}</div>
+        <div class="hero-stat-sub">${st.par.toFixed(2)}% PAR</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goToUndisbursedLoans()">
+        <div class="hero-stat-icon">💰</div>
+        <div class="hero-stat-label">Pending Disbursement</div>
+        <div class="hero-stat-value">${st.undisbursedCount}</div>
+        <div class="hero-stat-sub">${fmt(st.undisbursedAmt)}</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+    </div>
+
+    ${dashNotificationsPreview()}
+
+    <div class="section-head">
+      <div><div class="section-head-label">Org-wide</div><div class="section-head-title">Credit Performance</div></div>
+      <span class="badge-live">LIVE</span>
+    </div>
+    <div class="stat-row-card" onclick="goToUndisbursedLoans()">
+      <div class="stat-row-icon">📤</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed MTD</div><div class="stat-row-value">${fmt(st.disbursedMTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card" onclick="goTo('loanbook','View Loans')">
+      <div class="stat-row-icon">📊</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed YTD</div><div class="stat-row-value">${fmt(st.disbursedYTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card" onclick="goTo('loanbook','Loan Applications')">
+      <div class="stat-row-icon">🕑</div>
+      <div class="stat-row-body"><div class="stat-row-label">Pending Approvals</div><div class="stat-row-value">${waitingQueue.length} loan${waitingQueue.length===1?'':'s'}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">Org-wide</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBanner(st)}
-    <div class="section-note">Organization-wide operational overview — ${session.role} access level. Figures aggregate all branches and loan officers in real time.</div>
-    ${kpiTiles(st)}
-    ${statGrid(st)}
-    ${orgCounts()}
+
+    <div class="section-head"><div><div class="section-head-label">Org-wide</div><div class="section-head-title">Finance Snapshot</div></div></div>
+    <div class="mini-stat-grid">
+      <div class="mini-stat-card"><div class="mini-stat-icon">💵</div><div class="mini-stat-label">Interest Income (MTD)</div><div class="mini-stat-value">${fmt(interestIncomeMTD)}</div></div>
+      <div class="mini-stat-card"><div class="mini-stat-icon">🧾</div><div class="mini-stat-label">Expenses (MTD)</div><div class="mini-stat-value">${fmt(expensesMTD)}</div></div>
+      <div class="mini-stat-card"><div class="mini-stat-icon">🏦</div><div class="mini-stat-label">Cash + Bank + M-Pesa</div><div class="mini-stat-value">${fmt(Math.abs(cashPosition))}</div></div>
+    </div>
 
     <div class="card">
       <div class="card-title">Loans Waiting for Operational Manager Approval <small>${waitingQueue.length} org-wide</small></div>
@@ -5800,25 +5975,47 @@ function renderAdvancedDashboard(){
         <td><button class="btn btn-sm btn-outline" onclick="openLoan('${l.id}')">Review</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">Nothing waiting for Operational Manager approval right now.</td></tr>`}</table></div>
     </div>
 
-    <div class="grid3" style="margin-bottom:16px;">
-      <div class="kpi"><div class="kpi-label">Interest Income (MTD)</div><div class="kpi-value">${fmt(interestIncomeMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Expenses (MTD)</div><div class="kpi-value">${fmt(expensesMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Cash + Bank + M-Pesa</div><div class="kpi-value">${fmt(Math.abs(cashPosition))}</div></div>
-    </div>
-
     ${branchPerformanceBars()}
 
-    <div class="grid2">
-      ${pieCard("Client Loans Analysis","org-wide, by loan size", clientBracketPie(st.loansScope))}
-      ${pieCard("Active Clients' Loan Cycles","org-wide repeat-borrowing depth", loanCyclePie(st.clientsScope))}
+    <div class="section-head"><div><div class="section-head-label">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})}</div><div class="section-head-title">Disbursement Trend</div></div></div>
+    <div class="card">${lineChart(disbursementTrendPoints(st.loansScope))}</div>
+
+    <div class="section-head">
+      <div><div class="section-head-label">Org-wide</div><div class="section-head-title">Loan Products Distribution</div></div>
+      <button class="btn-pill" onclick="goTo('loanbook','View Loans')">Portfolio report</button>
     </div>
-    <div class="grid2">
-      ${pieCard("Loan Products Distribution","org-wide, by outstanding balance", productPieData(st.loansScope))}
-      ${pieCard("OLB Distribution by Officer","org-wide portfolio share", olbByOfficerPieData())}
+    ${pieCard("", "by outstanding balance", productPieData(st.loansScope))}
+
+    <div class="mini-stat-grid">
+      <div class="mini-stat-card"><div class="mini-stat-icon">✅</div><div class="mini-stat-label">Collection Score</div><div class="mini-stat-value">${st.todayPct.toFixed(0)}%</div></div>
+      <div class="mini-stat-card"><div class="mini-stat-icon">⚖️</div><div class="mini-stat-label">Performing Loans</div><div class="mini-stat-value">${st.performingLoans}</div></div>
+      <div class="mini-stat-card"><div class="mini-stat-icon">🏢</div><div class="mini-stat-label">Active Branches</div><div class="mini-stat-value">${activeBranchesCount}</div></div>
     </div>
-    <div class="card">
-      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>org-wide daily disbursed amount</small></div>
-      ${lineChart(disbursementTrendPoints(st.loansScope))}
+
+    <div class="section-head"><div><div class="section-head-label">Org-wide</div><div class="section-head-title">Top Performing Staff</div></div></div>
+    ${topStaff.length ? topStaff.map((r,i)=>`
+      <div class="rank-row">
+        <div class="rank-badge">${i+1}</div>
+        <div class="rank-body">
+          <div class="rank-name">${escapeHtml(r.officer.name)}</div>
+          <div class="rank-meta">${r.stats.activeScope.length} active loans · ${branchName(r.officer.branch)}</div>
+        </div>
+        <div class="rank-value">${fmt(r.stats.disbursedMTD)}</div>
+      </div>
+    `).join("") : `<div class="hint">No officer activity yet this month.</div>`}
+
+    <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
+    <div class="attention-card" onclick="goTo('payments','Unposted Payments')">
+      <div class="attention-icon">💵</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Post Incoming Repayments</div><div class="attention-value">${unpostedOrgWide}</div></div>
+    </div>
+    <div class="attention-card" onclick="goToUndisbursedLoans()">
+      <div class="attention-icon">🏦</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Release Approved Loans</div><div class="attention-value">${st.undisbursedCount}</div></div>
+    </div>
+    <div class="attention-card" onclick="goTo('loanbook','Loan Applications')">
+      <div class="attention-icon">📝</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Review Pending Loan Applications</div><div class="attention-value">${waitingQueue.length}</div></div>
     </div>
 
     ${staffPerformanceTable(null)}
@@ -5838,56 +6035,125 @@ function renderRegionalManagerDashboard(){
   // could only ever under/over-render, never grant real access).
   const myBranches = DB.branches.filter(b=>b.region===meRaw.region_id).map(b=>b.id);
   const st = computeStats(null, myBranches.length ? myBranches : [me.branch]);
-  const branchNames = myBranches.map(id=>branchName(id)).join(", ");
+  const regionLabel = escapeHtml(me.regionName || "Your Region");
   const interestIncomeMTD = st.interestIncomeMTD;
-  const expensesMTD = 0; // expenses aren't tracked per-branch in this prototype
+  const officersInRegion = DB.staff.filter(s=>s.role==="Loan Officer" && myBranches.includes(s.branch)).length;
+  const topStaff = rankedOfficerScores(myBranches).slice().sort((a,b)=>b.stats.disbursedMTD-a.stats.disbursedMTD).slice(0,5);
+  const unpostedRegion = DB.payments.filter(p=>p.status==="Unposted" && myBranches.includes((DB.loans.find(l=>l.id===p.loanId)||{}).branchId)).length;
 
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Regional Manager</div>
-            <div>🌍 ${escapeHtml(me.regionName || "Your Region")}</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Regional Management Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, ['💼 Regional Manager', `🌍 ${regionLabel}`, `🏖️ ${me.leaveDays} Leave Days`, '👁️ Regional Management Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('clients','View Client')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">Clients</div>
+        <div class="hero-stat-value">${st.totalClients}</div>
+        <div class="hero-stat-sub">${st.activeClients} active · ${st.dormantClients} dormant</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">📒</div>
+        <div class="hero-stat-label">Running Loans</div>
+        <div class="hero-stat-value">${st.activeScope.length}</div>
+        <div class="hero-stat-sub">${fmt(st.portfolioOutstanding)} outstanding</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Loan Arrears</div>
+        <div class="hero-stat-value">${fmt(st.arrearsAmt)}</div>
+        <div class="hero-stat-sub">${st.par.toFixed(2)}% PAR</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goToUndisbursedLoans()">
+        <div class="hero-stat-icon">💰</div>
+        <div class="hero-stat-label">Pending Disbursement</div>
+        <div class="hero-stat-value">${st.undisbursedCount}</div>
+        <div class="hero-stat-sub">${fmt(st.undisbursedAmt)}</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
-    ${collectionsBarCard(st, "Regional Collections")}
-    ${arrearsBanner(st)}
-    <div class="section-note">Regional view — <strong>${escapeHtml(me.regionName || "Your Region")}</strong> (${branchNames}). All figures below are scoped to your assigned branches only, not the whole organization.</div>
-    ${kpiTiles(st)}
-    ${statGrid(st)}
 
-    <div class="grid3" style="margin-bottom:16px;">
-      <div class="kpi"><div class="kpi-label">Regional Interest Income (MTD)</div><div class="kpi-value">${fmt(interestIncomeMTD)}</div></div>
-      <div class="kpi"><div class="kpi-label">Branches in Region</div><div class="kpi-value">${myBranches.length}</div></div>
-      <div class="kpi"><div class="kpi-label">Loan Officers in Region</div><div class="kpi-value">${DB.staff.filter(s=>s.role==="Loan Officer" && myBranches.includes(s.branch)).length}</div></div>
+    ${dashNotificationsPreview()}
+
+    <div class="section-head">
+      <div><div class="section-head-label">${regionLabel}</div><div class="section-head-title">Credit Performance</div></div>
+      <span class="badge-live">LIVE</span>
+    </div>
+    <div class="stat-row-card" onclick="goToUndisbursedLoans()">
+      <div class="stat-row-icon">📤</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed MTD</div><div class="stat-row-value">${fmt(st.disbursedMTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card" onclick="goTo('loanbook','View Loans')">
+      <div class="stat-row-icon">📊</div>
+      <div class="stat-row-body"><div class="stat-row-label">Disbursed YTD</div><div class="stat-row-value">${fmt(st.disbursedYTD)}</div></div>
+      <div class="stat-row-arrow">›</div>
+    </div>
+    <div class="stat-row-card">
+      <div class="stat-row-icon">💵</div>
+      <div class="stat-row-body"><div class="stat-row-label">Regional Interest Income (MTD)</div><div class="stat-row-value">${fmt(interestIncomeMTD)}</div></div>
+    </div>
+
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">${regionLabel}</div><div class="section-head-title">Portfolio Risk</div></div></div>
+    ${arrearsBanner(st)}
+
+    <div class="mini-stat-grid">
+      <div class="mini-stat-card"><div class="mini-stat-icon">🏢</div><div class="mini-stat-label">Branches in Region</div><div class="mini-stat-value">${myBranches.length}</div></div>
+      <div class="mini-stat-card"><div class="mini-stat-icon">🧑‍💼</div><div class="mini-stat-label">Loan Officers in Region</div><div class="mini-stat-value">${officersInRegion}</div></div>
     </div>
 
     ${branchPerformanceBars(myBranches)}
 
     <div class="card">
-      <div class="card-title">Branches in ${escapeHtml(me.regionName || "Your Region")} <small>real organizational data — click through to Branch Details for portfolio/PAR/profitability</small></div>
+      <div class="card-title">Branches in ${regionLabel} <small>real organizational data — click through to Branch Details for portfolio/PAR/profitability</small></div>
       <div class="table-wrap"><table><tr><th>Branch</th><th>Code</th><th>Manager</th><th>Status</th><th></th></tr>
       ${myBranches.map(id=>{ const b=DB.branches.find(x=>x.id===id); if(!b) return ""; return `<tr><td>${escapeHtml(b.name)}</td><td>${escapeHtml(b.code||'—')}</td><td>${b.managerId?staffName(b.managerId):'Unassigned'}</td>
         <td><span class="badge ${b.status==='Active'?'green':'red'}">${b.status}</span></td>
         <td><button class="btn btn-sm btn-outline" onclick="goTo('branches','Branch Directory'); openBranchDetails('${id}')">View</button></td></tr>`; }).join("") || `<tr><td colspan="5" class="empty">No branches in your assigned region yet.</td></tr>`}</table></div>
     </div>
 
-    <div class="grid2">
-      ${pieCard("Client Loans Analysis","your region, by loan size", clientBracketPie(st.loansScope))}
-      ${pieCard("Loan Products Distribution","your region, by outstanding balance", productPieData(st.loansScope))}
+    <div class="section-head"><div><div class="section-head-label">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})}</div><div class="section-head-title">Disbursement Trend</div></div></div>
+    <div class="card">${lineChart(disbursementTrendPoints(st.loansScope))}</div>
+
+    <div class="section-head">
+      <div><div class="section-head-label">${regionLabel}</div><div class="section-head-title">Loan Products Distribution</div></div>
+      <button class="btn-pill" onclick="goTo('loanbook','View Loans')">Portfolio report</button>
     </div>
-    <div class="card">
-      <div class="card-title">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})} Disbursements <small>your region, daily disbursed amount</small></div>
-      ${lineChart(disbursementTrendPoints(st.loansScope))}
+    ${pieCard("", "by outstanding balance", productPieData(st.loansScope))}
+
+    <div class="section-head"><div><div class="section-head-label">${regionLabel}</div><div class="section-head-title">Top Performing Staff</div></div></div>
+    ${topStaff.length ? topStaff.map((r,i)=>`
+      <div class="rank-row">
+        <div class="rank-badge">${i+1}</div>
+        <div class="rank-body">
+          <div class="rank-name">${escapeHtml(r.officer.name)}</div>
+          <div class="rank-meta">${r.stats.activeScope.length} active loans · ${branchName(r.officer.branch)}</div>
+        </div>
+        <div class="rank-value">${fmt(r.stats.disbursedMTD)}</div>
+      </div>
+    `).join("") : `<div class="hint">No officer activity yet this month.</div>`}
+
+    <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
+    <div class="attention-card" onclick="goTo('payments','Unposted Payments')">
+      <div class="attention-icon">💵</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Post Incoming Repayments</div><div class="attention-value">${unpostedRegion}</div></div>
+    </div>
+    <div class="attention-card" onclick="goToUndisbursedLoans()">
+      <div class="attention-icon">🏦</div>
+      <div style="flex:1; min-width:0;"><div class="attention-label">Release Approved Loans</div><div class="attention-value">${st.undisbursedCount}</div></div>
     </div>
 
     ${staffPerformanceTable(null, myBranches)}
@@ -5999,28 +6265,54 @@ function renderAdminDashboard(){
 
   const now = new Date();
 
+  const pendingWorkTotal = pendingLoans + unpostedPayments.length + overpayments.length;
+
   return `
-    <div class="card">
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-        <div class="card-title" style="margin:0;">Welcome, ${escapeHtml(me.name)}</div>
-        <div class="hint" style="text-align:right; white-space:nowrap;">${now.toLocaleDateString(undefined,{weekday:'long', year:'numeric', month:'long', day:'numeric'})}<br>${now.toLocaleTimeString()}</div>
+    ${dashHeroProfile(me, ['💼 System Administrator', '🌍 System-wide Administration Scope', `🏖️ ${me.leaveDays} Leave Days`, '👁️ Master System Administration Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('staff')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">Total Users</div>
+        <div class="hero-stat-value">${totalUsers}</div>
+        <div class="hero-stat-sub">${activeUsers} active</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="margin-top:4px;">
-            <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">💼 System Administrator</div>
-            <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">🌍 System-wide Administration Scope</div>
-            <div style="padding:7px 0; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink-soft);">🏖️ ${me.leaveDays} Leave Days</div>
-            <div style="padding:7px 0; font-size:14px; color:var(--ink-soft);">👁️ Master System Administration Access</div>
-          </div>
-          <div style="margin-top:12px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:13px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:13px; cursor:pointer;">Request Advance</a></div>
-        </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('branches')">
+        <div class="hero-stat-icon">🏢</div>
+        <div class="hero-stat-label">Total Branches</div>
+        <div class="hero-stat-value">${DB.branches.length}</div>
+        <div class="hero-stat-sub">${departments.length} department(s)</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red">
+        <div class="hero-stat-icon">🔒</div>
+        <div class="hero-stat-label">Locked Accounts</div>
+        <div class="hero-stat-value">${health ? health.security.lockedOutAccounts : '—'}</div>
+        <div class="hero-stat-sub">security</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goTo('payments')">
+        <div class="hero-stat-icon">🕑</div>
+        <div class="hero-stat-label">Pending Work</div>
+        <div class="hero-stat-value">${pendingWorkTotal}</div>
+        <div class="hero-stat-sub">approvals + payments</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    ${collectionsBarCard(st, "Company-wide Collections")}
+    ${dashNotificationsPreview()}
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
 
     <div class="section-note">System &amp; organization control center. This view intentionally does not lead with profitability — that's the CEO/Director/Accountant dashboards' job.</div>
 
@@ -6351,30 +6643,63 @@ function renderAccountantDashboard(){
   const overpaymentList = DB.payments.filter(p=>p.status==='Overpayment');
 
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Accountant</div>
-            <div>🌍 Organization-wide Financial Scope</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Accounting &amp; Financial Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, ['💼 Accountant', '🌍 Organization-wide Financial Scope', `🏖️ ${me.leaveDays} Leave Days`, '👁️ Accounting & Financial Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('accounting','General Ledger')">
+        <div class="hero-stat-icon">🏦</div>
+        <div class="hero-stat-label">Total Liquid Funds</div>
+        <div class="hero-stat-value">${fmt(totalLiquid)}</div>
+        <div class="hero-stat-sub">Cash + Bank + M-Pesa</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">📒</div>
+        <div class="hero-stat-label">Loan Receivables</div>
+        <div class="hero-stat-value">${fmt(st.portfolioOutstanding)}</div>
+        <div class="hero-stat-sub">outstanding portfolio</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Loan Arrears</div>
+        <div class="hero-stat-value">${fmt(st.arrearsAmt)}</div>
+        <div class="hero-stat-sub">${st.par.toFixed(2)}% PAR</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goTo('loanbook','Loan Applications')">
+        <div class="hero-stat-icon">🕑</div>
+        <div class="hero-stat-label">Pending Approvals</div>
+        <div class="hero-stat-value">${waitingQueue.length}</div>
+        <div class="hero-stat-sub">final financial sign-off</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    ${collectionsBarCard(st, "Company-wide Collections")}
+    ${dashNotificationsPreview()}
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBanner(st)}
 
-    <div class="card">
-      <div class="card-title">Today's Payment Processing</div>
-      ${progressBar(processingRate)}
-      <div class="hint" style="margin-top:6px;">${fmt(todaysProcessed)} processed of ${fmt(todaysTotal)} recorded today (${todaysPending>0?`${fmt(todaysPending)} still unposted`:'nothing pending'})</div>
+    <div class="section-head"><div><div class="section-head-label">Today</div><div class="section-head-title">Today's Payment Processing</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">🧾</div>
+      <div class="recovery-pct">${processingRate.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Processed Today</div>
+      <div class="recovery-title">${fmt(todaysProcessed)} of ${fmt(todaysTotal)} recorded${todaysPending>0?` · ${fmt(todaysPending)} unposted`:''}</div>
+      <div style="margin-top:10px;">${progressBar(processingRate)}</div>
     </div>
 
     <div class="kpi-grid">
@@ -6578,24 +6903,54 @@ function renderCEODashboard(){
   const pendingAdvances = (DB.salaryAdvances||[]).filter(a=>a.status==="Pending");
 
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 CEO</div>
-            <div>🌍 Organization-wide Executive Scope</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Executive Management Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, ['💼 CEO', '🌍 Organization-wide Executive Scope', `🏖️ ${me.leaveDays} Leave Days`, '👁️ Executive Management Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">📒</div>
+        <div class="hero-stat-label">Total Loan Book (OLB)</div>
+        <div class="hero-stat-value">${fmt(st.portfolioOutstanding)}</div>
+        <div class="hero-stat-sub">${st.activeScope.length} active loans</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('clients','View Client')">
+        <div class="hero-stat-icon">👥</div>
+        <div class="hero-stat-label">Active Clients</div>
+        <div class="hero-stat-value">${st.activeClients}</div>
+        <div class="hero-stat-sub">company-wide</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Portfolio at Risk</div>
+        <div class="hero-stat-value">${st.par.toFixed(1)}%</div>
+        <div class="hero-stat-sub">${fmt(st.arrearsAmt)} in arrears</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goTo('accounting','General Ledger')">
+        <div class="hero-stat-icon">🏦</div>
+        <div class="hero-stat-label">Cash Position</div>
+        <div class="hero-stat-value">${fmt(Math.abs(cashPosition))}</div>
+        <div class="hero-stat-sub">liquid funds</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    ${collectionsBarCard(st, "Company-wide Collections")}
+    ${dashNotificationsPreview()}
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBanner(st)}
 
     ${(pendingLeave.length + pendingAdvances.length) > 0 ? `
@@ -6755,24 +7110,54 @@ function renderDirectorDashboard(){
   const pendingAdvances = (DB.salaryAdvances||[]).filter(a=>a.status==="Pending");
 
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(me.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${me.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Director</div>
-            <div>🌍 Organization-wide Governance Scope</div>
-            <div>🏖️ ${me.leaveDays} Leave Days</div>
-            <div>👁️ Strategic &amp; Governance Access</div>
-          </div>
-          <div style="margin-top:10px;"><a onclick="openModal('apply-leave')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Apply Leave</a> &nbsp;|&nbsp;
-          <a onclick="openModal('request-advance')" style="color:var(--navy); font-weight:700; font-size:12.5px; cursor:pointer;">Request Advance</a></div>
-        </div>
+    ${dashHeroProfile(me, ['💼 Director', '🌍 Organization-wide Governance Scope', `🏖️ ${me.leaveDays} Leave Days`, '👁️ Strategic & Governance Access'], [
+      {label:'🗓️ Apply Leave', onclick:"openModal('apply-leave')"},
+      {label:'💵 Request Advance', onclick:"openModal('request-advance')"},
+    ])}
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy" onclick="goTo('accounting','Profit & Loss')">
+        <div class="hero-stat-icon">🏛️</div>
+        <div class="hero-stat-label">Company Net Worth</div>
+        <div class="hero-stat-value">${fmt(netWorth)}</div>
+        <div class="hero-stat-sub">share capital + retained earnings</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-teal" onclick="goTo('loanbook','View Loans')">
+        <div class="hero-stat-icon">💼</div>
+        <div class="hero-stat-label">Total Capital Employed</div>
+        <div class="hero-stat-value">${fmt(totalCapitalEmployed)}</div>
+        <div class="hero-stat-sub">${fmt(st.portfolioOutstanding)} deployed</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-red" onclick="goTo('loanbook','Loan Arrears')">
+        <div class="hero-stat-icon">⚠️</div>
+        <div class="hero-stat-label">Portfolio Risk (PAR)</div>
+        <div class="hero-stat-value">${st.par.toFixed(1)}%</div>
+        <div class="hero-stat-sub">governance threshold 10%</div>
+        <div class="hero-stat-arrow">↗</div>
+      </div>
+      <div class="hero-stat-card c-green" onclick="goTo('accounting','General Ledger')">
+        <div class="hero-stat-icon">🏦</div>
+        <div class="hero-stat-label">Liquidity Position</div>
+        <div class="hero-stat-value">${fmt(Math.abs(cashPosition))}</div>
+        <div class="hero-stat-sub">liquid funds</div>
+        <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
 
-    ${collectionsBarCard(st, "Company-wide Collections")}
+    ${dashNotificationsPreview()}
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Today's Recovery</div>
+      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
+      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
+    </div>
+
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBanner(st)}
 
     ${(pendingLeave.length + pendingAdvances.length) > 0 ? `
@@ -6945,38 +7330,68 @@ function renderInvestorDashboard(){
 
   const cis = DB.investorCollectionsSummary;
 
+  const investorNotifs = investorNotifications(inv.id).slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
+  const investorUnread = investorNotifications(inv.id).filter(n=>!n.read);
+
   return `
-    <div class="card">
-      <div class="card-title">Welcome, ${escapeHtml(inv.name)}</div>
-      <div style="display:flex; gap:20px; align-items:flex-start;">
-        <div style="width:96px; height:96px; border-radius:10px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:800; flex-shrink:0;">${(inv.name||"?").split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--ink-soft);">
-            <div>💼 Investor</div>
-            <div>📈 ${inv.status} — Profit-Sharing Investment</div>
-            <div>👁️ Own Investment Access Only</div>
-          </div>
-        </div>
+    ${dashHeroProfile(inv, ['💼 Investor', `📈 ${inv.status} — Profit-Sharing Investment`, '👁️ Own Investment Access Only'])}
+    <div class="section-note" style="margin-top:-6px;">This is a restricted view — you only see your own investment. No client names, staff information, other investors, or internal accounting records are shown here.</div>
+
+    <div class="hero-stat-grid">
+      <div class="hero-stat-card c-navy">
+        <div class="hero-stat-icon">💼</div>
+        <div class="hero-stat-label">Original Investment</div>
+        <div class="hero-stat-value">${fmt(inv.amount)}</div>
+        <div class="hero-stat-sub">${inv.status}</div>
       </div>
-      <div class="section-note" style="margin-top:14px;">This is a restricted view — you only see your own investment. No client names, staff information, other investors, or internal accounting records are shown here.</div>
+      <div class="hero-stat-card c-teal">
+        <div class="hero-stat-icon">📈</div>
+        <div class="hero-stat-label">Profit Earned</div>
+        <div class="hero-stat-value">${fmt(profitEarned)}</div>
+        <div class="hero-stat-sub">${fmt(profitPaid)} paid</div>
+      </div>
+      <div class="hero-stat-card c-red">
+        <div class="hero-stat-icon">🕑</div>
+        <div class="hero-stat-label">Pending Profit</div>
+        <div class="hero-stat-value">${fmt(profitPending)}</div>
+        <div class="hero-stat-sub">not yet paid out</div>
+      </div>
+      <div class="hero-stat-card c-green">
+        <div class="hero-stat-icon">🏁</div>
+        <div class="hero-stat-label">Capital Due</div>
+        <div class="hero-stat-value">${fmt(inv.amount-capitalReturned)}</div>
+        <div class="hero-stat-sub">matures ${maturity}</div>
+      </div>
     </div>
 
-    ${cis ? `
-    <div class="card">
-      <div class="card-title">${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).split('/').join('-')} Company-wide Collections</div>
-      ${progressBar(cis.monthToDate.rate)}
-      <div class="hint" style="margin-top:6px;">${cis.monthToDate.rate.toFixed(0)}% collected of ${fmt(cis.monthToDate.expected)} expected this month</div>
+    <div class="section-head">
+      <div><div class="section-head-label">Updates</div><div class="section-head-title">Notifications${investorUnread.length?` (${investorUnread.length} new)`:''}</div></div>
+      <button class="btn-pill" onclick="openNotificationsPanel()">View all</button>
     </div>
+    ${investorNotifs.length ? investorNotifs.map(n=>`
+      <div class="attention-card" onclick="openNotificationsPanel()">
+        <div class="attention-icon">${n.read?'🔔':'🔴'}</div>
+        <div style="flex:1; min-width:0;"><div class="attention-label">${escapeHtml(n.message||n.title||'')}</div></div>
+      </div>
+    `).join("") : `<div class="hint">No notifications yet.</div>`}
+
+    ${cis ? `
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
+    <div class="recovery-card">
+      <div class="recovery-icon-badge">📈</div>
+      <div class="recovery-pct">${cis.monthToDate.rate.toFixed(0)}%</div>
+      <div class="recovery-eyebrow">Month-to-Date Collections</div>
+      <div class="recovery-title">of ${fmt(cis.monthToDate.expected)} expected this month</div>
+      <div style="margin-top:10px;">${progressBar(cis.monthToDate.rate)}</div>
+    </div>
+    <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Portfolio Risk</div></div></div>
     ${arrearsBannerFromAmounts(cis.portfolioAtRisk.amount, (DB.investorCompanyPerformance||{}).outstandingPortfolio||0)}
     ` : ''}
 
+    <div class="section-head"><div><div class="section-head-label">Your Investment</div><div class="section-head-title">Details</div></div></div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Original Investment</div><div class="kpi-value">${fmt(inv.amount)}</div></div>
       <div class="kpi"><div class="kpi-label">Status</div><div class="kpi-value" style="font-size:18px;">${inv.status}</div></div>
-      <div class="kpi"><div class="kpi-label">Profit Earned</div><div class="kpi-value">${fmt(profitEarned)}</div></div>
       <div class="kpi"><div class="kpi-label">Profit Paid</div><div class="kpi-value">${fmt(profitPaid)}</div></div>
-      <div class="kpi"><div class="kpi-label">Pending Profit</div><div class="kpi-value">${fmt(profitPending)}</div></div>
-      <div class="kpi"><div class="kpi-label">Capital Due</div><div class="kpi-value">${fmt(inv.amount-capitalReturned)}</div></div>
       <div class="kpi"><div class="kpi-label">Start Date</div><div class="kpi-value" style="font-size:16px;">${inv.startDate}</div></div>
       <div class="kpi"><div class="kpi-label">Maturity Date</div><div class="kpi-value" style="font-size:16px;">${maturity}</div></div>
     </div>
