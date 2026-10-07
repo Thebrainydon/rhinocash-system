@@ -16718,13 +16718,6 @@ function renderAccount(){
   if((session.role === "Loan Officer" || session.role === "Manager") && session.subtab==="My Work Plan") return renderLoanOfficerWorkPlan();
   if(session.role === "Loan Officer" && session.subtab==="Salary Advance") return renderLoanOfficerSalaryAdvance();
   if(session.role === "Loan Officer" && session.subtab==="Update Details") return renderLoanOfficerUpdateDetails();
-  // Any other subtab — including "View Details" itself, no subtab at all,
-  // or a stale/removed one (e.g. a leftover "Leave & Attendance" from
-  // before that menu item existed for this role) — genuinely falls back
-  // to this role's own View Details, never the generic renderViewDetails()
-  // below, which is a different page missing this role's own ACC BALANCES
-  // tile and Options button.
-  if(session.role === "Loan Officer") return renderLoanOfficerViewDetails();
   // Every one of these pages is now its own real sidebar item for whatever
   // role actually has it (see SIDEBAR_MENUS) — there is no longer a tab bar
   // sitting above the page; every role is chrome-free here, matching Loan
@@ -16747,45 +16740,19 @@ function renderAccount(){
   else if(active==="Salary Advance") body = renderSalaryAdvanceTab();
   else if(active==="Update Details") body = renderUpdateDetails();
   else if(active==="Security & Login") body = renderSecurityLogin();
-  else body = renderViewDetails();
+  // "View Details" (no subtab, or a stale/removed one — e.g. a leftover
+  // subtab from before this menu item existed for this role) is the real,
+  // exact same page for every role. renderLoanOfficerViewDetails() has no
+  // Loan-Officer-specific content at all — ACC Balances/Profile photo/
+  // Performance/Interactions/Staff Loans/Leaves & Payroll/Options all key
+  // off GET /api/users/me/* and DB.me (requireAuth only, no role check on
+  // any of those routes), same as renderLoanOfficerWorkPlan() already is
+  // for Manager above.
+  else body = renderLoanOfficerViewDetails();
   return body;
 }
 
-// Same page chassis as renderLoanOfficerViewDetails() (back-button header,
-// centered read-only avatar, .detail-inline label/value rows) — every role
-// without its own bespoke View Details page shares this one structural
-// design, each keeping its own existing field set.
-function renderViewDetails(){
-  const me = DB.me || {};
-  return `<div class="card" style="max-width:640px;">
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
-      <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-      <h3 style="color:var(--navy); margin:0;">${escapeHtml(session.userName)}</h3>
-    </div>
-    <div style="text-align:center; margin-bottom:18px;">
-      <div style="width:110px; height:110px; border-radius:12px; margin:0 auto; background:#EFEFEF; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-        ${DB.myAvatarDataUri ? `<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover;">` : `<span style="font-size:32px; color:#B0B0B0;">👤</span>`}
-      </div>
-      <div class="hint" style="margin-top:6px;">Profile</div>
-    </div>
-    <div class="detail-inline">
-      <div class="detail-label">Jobno</div><div class="detail-value">${escapeHtml(me.staff_code||'—')}</div>
-      <div class="detail-label">Role</div><div class="detail-value">${session.role}</div>
-      <div class="detail-label">Access Level</div><div class="detail-value">${escapeHtml(me.access_level||'—')}</div>
-      <div class="detail-label">Branch</div><div class="detail-value">${me.branch_id? branchName(me.branch_id) : "—"}</div>
-      <div class="detail-label">Region</div><div class="detail-value">${(DB.regions.find(r=>r.id===me.region_id)||{}).name || "—"}</div>
-      <div class="detail-label">Phone</div><div class="detail-value">${escapeHtml(me.phone||"—")}</div>
-      <div class="detail-label">Email</div><div class="detail-value">${escapeHtml(me.email||"—")}</div>
-      <div class="detail-label">Employment Status</div><div class="detail-value">${escapeHtml(me.employment_status||'—')}</div>
-      <div class="detail-label">Account Status</div><div class="detail-value"><span class="badge ${me.systemAccount==='Active'?'green':(me.systemAccount==='Not Created'?'grey':'red')}">${escapeHtml(me.systemAccount||'—')}</span></div>
-      <div class="detail-label">Date Joined</div><div class="detail-value">${me.created_at ? new Date(me.created_at).toLocaleDateString() : "—"}</div>
-      <div class="detail-label">Reporting Manager</div><div class="detail-value">${me.reporting_manager_id ? staffName(me.reporting_manager_id) : "—"}</div>
-      <div class="detail-label">Leave Balance</div><div class="detail-value">${me.leave_days_balance ?? '—'} days</div>
-    </div>
-  </div>`;
-}
-
-// ==================== Loan Officer's chrome-free View Details ====================
+// ==================== Chrome-free View Details, shared by every role ====================
 // Own real profile (DB.me — auth.js's publicUser() spreads every users
 // column with no whitelist, so national_id/gender flow through
 // automatically once set), a real ACC BALANCES tile into the staff wallet
@@ -16827,7 +16794,13 @@ async function loadStaffInteractions(year){
 }
 async function loadLoStaffLoans(){
   return withRequest('load-lo-staff-loans', async ()=>{
-    const res = await api.get('/api/loans/view?category=All Loans&export=true');
+    // GET /api/loans/view already self-filters to officer_id = caller for
+    // a Loan Officer; every other role needs that same self-scoping passed
+    // explicitly (the backend only trusts an officer_id query param from a
+    // non-Loan-Officer caller), so this panel honestly shows nothing
+    // rather than quietly falling back to that role's whole branch/region.
+    const me = DB.me || {};
+    const res = await api.get(`/api/loans/view?category=All Loans&export=true&officer_id=${me.id}`);
     DB.loStaffLoans = res.rows;
   });
 }
@@ -17102,6 +17075,12 @@ function renderLoViewDetailsInteractionsPanel(vd){
   `;
 }
 function renderLoViewDetailsStaffLoansPanel(vd){
+  // A role with no real loanbook access (HR) genuinely has no loans to
+  // show here — never attempted, since GET /api/loans/view would just
+  // 403 and leave this panel stuck "loading" forever.
+  if(!isSectionAllowed('loanbook')){
+    return `<div class="card-title" style="background:var(--blue-bg);">Staff Loans</div><div class="empty">Not applicable for this role.</div>`;
+  }
   if(!DB.loStaffLoans) loadLoStaffLoans();
   const rows = DB.loStaffLoans;
   return `

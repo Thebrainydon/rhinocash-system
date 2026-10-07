@@ -2623,11 +2623,13 @@ apiRequest = async function(method, path, body){
     let html = document.getElementById('root').innerHTML;
     __assert(!html.includes('>Leave & Attendance<') && !html.includes('>Security & Login<'), "the real Loan Officer sidebar genuinely no longer offers Leave & Attendance or Security & Login");
 
-    // Navigating directly to the real, now-removed subtab genuinely falls
-    // back to View Details rather than crashing or showing a stale page.
+    // Navigating directly to a subtab this role's own sidebar doesn't
+    // offer genuinely renders that real, shared page (several other roles
+    // do have it) rather than crashing — the dispatcher is role-agnostic
+    // now, keyed only by subtab, same as every other shared My Account page.
     goTo('account','Leave & Attendance');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Options'), "navigating directly to the real, removed 'Leave & Attendance' subtab genuinely falls back to the real View Details page, not a crash or a stale removed page");
+    __assert(html.includes('Apply for Leave') && html.includes('My Leave History'), "navigating directly to 'Leave & Attendance' genuinely renders the real, shared page, not a crash or a blank fallback");
 
     // My Work Plan (a real, chrome-free Daily Workplan — src/routes/workplans.js).
     session.loWorkPlanState = null; DB.loWorkPlan = null;
