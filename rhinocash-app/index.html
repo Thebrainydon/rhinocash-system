@@ -5082,14 +5082,20 @@ function renderDashboard(){
   switch(session.role){
     case "Loan Officer": return renderOfficerDashboard();
     case "Admin": return renderAdminDashboard();
-    case "Accountant": return renderPostedUnpostedCollectionsCard() + renderAccountantDashboard();
+    // These per-role extra cards (Posted/Unposted Collections,
+    // Portfolio Risk, Branch Comparison) are deliberately appended AFTER
+    // the role's own dashboard function — which always renders its own
+    // Welcome/profile card first — never prepended before it: nothing
+    // may appear above the profile section (see renderOfficerDashboard's
+    // own Welcome card, the structural reference every role must match).
+    case "Accountant": return renderAccountantDashboard() + renderPostedUnpostedCollectionsCard();
     case "CEO": return renderCEODashboard();
-    case "Director": return renderPortfolioRiskCard() + renderDirectorDashboard();
+    case "Director": return renderDirectorDashboard() + renderPortfolioRiskCard();
     case "Investor": return renderInvestorDashboard();
-    case "Regional Manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
+    case "Regional Manager": return renderRegionalManagerDashboard() + renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id);
     case "Manager": return renderManagerDashboard();
     case "HR": return renderHRDashboard();
-    case "Operational Manager": return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard();
+    case "Operational Manager": return renderAdvancedDashboard() + renderBranchComparisonCard("Organization Branch Comparison");
     // A custom role created via POST /api/roles has no case of its own
     // above (those are the 9 real structural roles' own dashboards) — its
     // dashboard_template (chosen at Create Role, defaulting to Loan
@@ -5104,14 +5110,14 @@ function renderDashboard(){
 function renderDashboardForTemplate(templateId){
   switch(templateId){
     case "admin": return renderAdminDashboard();
-    case "accountant": return renderPostedUnpostedCollectionsCard() + renderAccountantDashboard();
+    case "accountant": return renderAccountantDashboard() + renderPostedUnpostedCollectionsCard();
     case "ceo": return renderCEODashboard();
-    case "director": return renderPortfolioRiskCard() + renderDirectorDashboard();
+    case "director": return renderDirectorDashboard() + renderPortfolioRiskCard();
     case "investor": return renderInvestorDashboard();
-    case "regional_manager": return renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id) + renderRegionalManagerDashboard();
+    case "regional_manager": return renderRegionalManagerDashboard() + renderBranchComparisonCard("Regional Branch Comparison", DB.me&&DB.me.region_id);
     case "manager": return renderManagerDashboard();
     case "hr": return renderHRDashboard();
-    case "operational_manager": return renderBranchComparisonCard("Organization Branch Comparison") + renderAdvancedDashboard();
+    case "operational_manager": return renderAdvancedDashboard() + renderBranchComparisonCard("Organization Branch Comparison");
     case "loan_officer": default: return renderOfficerDashboard();
   }
 }
