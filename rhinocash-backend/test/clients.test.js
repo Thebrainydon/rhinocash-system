@@ -36,6 +36,16 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     clientId = r.json.client.id;
   }
 
+  // A Loan Officer can't register a client under someone else — any
+  // officer_id they send is ignored, not trusted.
+  {
+    const adminMe = (await api('GET', '/api/auth/me', { token: adminToken })).json.user;
+    const r = await api('POST', '/api/clients', { token: officerToken, body: {
+      name: 'Officer Override Attempt', phone: '07' + Math.floor(Math.random() * 90000000 + 10000000), officer_id: adminMe.id,
+    } });
+    assert(r.status === 201 && r.json.client.officer_id === officerMe.id, 'a Loan Officer sending another user\'s officer_id still gets the client assigned to themselves');
+  }
+
   // C/D. Duplicate phone rejection.
   {
     const dup = await api('POST', '/api/clients', { token: officerToken, body: { name: 'Duplicate Phone Client', phone: clientPhone } });

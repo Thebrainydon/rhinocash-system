@@ -124,15 +124,17 @@ function register(router) {
     try { branchId = await resolveWriteBranchId(req.user, b.branch_id); } catch (e) { return next(e); } // never trusts b.branch_id blindly for restricted roles
 
     let officerId = null;
-    if (b.officer_id) {
+    if (req.user.role_id === 'loan_officer') {
+      // A Loan Officer only ever registers their own clients — any
+      // officer_id in the body is ignored rather than trusted.
+      officerId = req.user.id;
+    } else if (b.officer_id) {
       const officer = await get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
       if (!officer) return next({ status: 400, message: 'officer_id does not refer to a real user' });
       if (officer.role_id !== 'loan_officer') return next({ status: 400, message: 'Only a user with the Loan Officer role can be assigned to a client' });
       if (!(await isOfficerActive(officer))) return next({ status: 409, message: 'Cannot assign an inactive Loan Officer to a client' });
       if (officer.branch_id && officer.branch_id !== branchId) return next({ status: 409, message: 'This Loan Officer belongs to a different branch than the client is being registered under' });
       officerId = officer.id;
-    } else if (req.user.role_id === 'loan_officer') {
-      officerId = req.user.id; // an officer registering their own client defaults to themselves
     }
 
     const id = 'cl_' + crypto.randomUUID();

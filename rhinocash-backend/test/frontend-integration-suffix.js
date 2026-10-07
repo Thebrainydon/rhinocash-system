@@ -204,6 +204,15 @@ apiRequest = async function(method, path, body){
     await doLogin({ preventDefault(){}, target:{} });
     __assert(session.loggedIn && session.role === "Manager", "Kisumu manager logs in for the clients test");
 
+    // Client Registry > Add Client: the 3-tab Client Registration page.
+    __assert(document.getElementById('root').innerHTML.includes('Client Registry'), "the real sidebar section is genuinely named 'Client Registry'");
+    goTo('clients','Add Client');
+    let addClientHtml = document.getElementById('root').innerHTML;
+    __assert(addClientHtml.includes('Client Registration') && addClientHtml.includes('Add New Client') && addClientHtml.includes('Basic Information') && addClientHtml.includes('Documents') && addClientHtml.includes('Guarantors') && addClientHtml.includes('Save Client'), "the real Add Client page genuinely renders the Client Registration header, all 3 tabs, and Save Client");
+    __assert(addClientHtml.includes('Residence') && addClientHtml.includes('Kin Contact') && addClientHtml.includes('Next Of Kin') && addClientHtml.includes('Id Photo Front') && addClientHtml.includes('Client Signature'), "the real Add Client tabs genuinely carry the requested fields");
+    const mgrOfficerOpts = addClientOfficerOptions();
+    __assert(mgrOfficerOpts.length > 0 && mgrOfficerOpts.every(o=>o.branch===DB.me.branch_id), "a Manager's real Loan Officer dropdown genuinely offers only their own branch's active Loan Officers");
+
     // Real create via the actual UI submit handler (not calling the API directly this time).
     const clientForm = new Map([['name','Alice Wanjiru'],['phone','0722555222'],['idNumber','30998877'],['email',''],['gender','Female'],['type','Individual'],['branch',''],['address','Kisumu Town']]);
     global.FormData = class { constructor(){ return clientForm; } };
@@ -2889,13 +2898,13 @@ apiRequest = async function(method, path, body){
     // Both sections start genuinely expanded, matching how a real user
     // would actually reach a LoanBook item without first closing Clients
     // (a collapsed section's own items aren't clickable at all).
-    session.sidebarExpanded['Clients'] = true;
+    session.sidebarExpanded['Client Registry'] = true;
     session.sidebarExpanded['LoanBook'] = true;
     renderApp();
-    __assert(session.sidebarExpanded['Clients'] === true, "sanity: the real Clients section starts genuinely expanded for this test");
+    __assert(session.sidebarExpanded['Client Registry'] === true, "sanity: the real Client Registry section starts genuinely expanded for this test");
     sidebarNavigate('Loan Application');
     await new Promise(r=>setTimeout(r,80)); renderApp();
-    __assert(session.sidebarExpanded['Clients'] === false, "clicking a real item in a genuinely different sidebar section ('LoanBook') auto-collapses the previously-open 'Clients' section, with no manual close click needed");
+    __assert(session.sidebarExpanded['Client Registry'] === false, "clicking a real item in a genuinely different sidebar section ('LoanBook') auto-collapses the previously-open 'Client Registry' section, with no manual close click needed");
     __assert(session.sidebarExpanded['LoanBook'] === true, "the real section the just-clicked item actually belongs to ('LoanBook') is genuinely left open, since that's how the real user reached it");
 
     // Real self-update: role/branch cannot change even if injected. (Only
