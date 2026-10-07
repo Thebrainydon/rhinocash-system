@@ -2635,7 +2635,7 @@ apiRequest = async function(method, path, body){
     await new Promise(r=>setTimeout(r,80)); renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real My Work Plan page genuinely has no subtab bar above it, like every other real chrome-free Loan Officer page");
-    __assert(html.includes('My Workplan') && html.includes('Re-Appraisal Clients') && html.includes('Collection Clients') && html.includes('Onboarding Clients') && html.includes('Prospect Clients') && html.includes('Comments') && html.includes('No Comments'), "the real My Work Plan page genuinely renders with the requested title, all 4 visitation categories, and the honest empty Comments section");
+    __assert(html.includes('My Work Plan') && html.includes('Re-Appraisal Clients') && html.includes('Collection Clients') && html.includes('Onboarding Clients') && html.includes('Prospect Clients') && html.includes('Comments') && html.includes('No Comments'), "the real My Work Plan page genuinely renders with the requested title, all 4 visitation categories, and the honest empty Comments section");
     __assert(DB.loWorkPlan && DB.loWorkPlan.reAppraisal.achieved === 0, "Re-Appraisal Clients genuinely has no real tracked activity signal, so Achieved honestly shows 0, never fabricated");
 
     openLoWorkPlanSetupModal();
@@ -2890,7 +2890,7 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('My Work Plan') && !html.includes('Branch Responsibilities'), "Manager's My Account tab bar now shows the real, reduced tab set (My Work Plan), not the old Branch Responsibilities tab");
     goTo('account','My Work Plan');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes('My Workplan'), "Manager's own My Work Plan tab genuinely renders the real, shared workplan page");
+    __assert(html.includes('My Work Plan'), "Manager's own My Work Plan tab genuinely renders the real, shared workplan page");
 
     // Real "Leave Application": Manager's sidebar item is now a quick-action
     // modal (openModal('apply-leave')), same as every dashboard's own
