@@ -9,6 +9,17 @@ function generateClientCode() {
   return 'CL' + Math.floor(Math.random() * 900000 + 100000);
 }
 
+// "Active" for assignment purposes means a genuinely currently-operating
+// Loan Officer — both their own Employee status AND, if they have a
+// System Account at all, that account not being Suspended/Deactivated
+// (see the Employee <-> User Account split in users.js/db.js). An
+// employee with no account yet is still a real, assignable officer.
+async function isOfficerActive(officer) {
+  if (officer.status !== 'Active') return false;
+  const account = await get('SELECT status FROM user_accounts WHERE employee_id = ?', [officer.id]);
+  return !account || account.status === 'Active';
+}
+
 function register(router) {
   // Real server-side search/filter/pagination — was previously a single
   // unfiltered SELECT * with no scope-safe search, no way to page through
@@ -117,7 +128,7 @@ function register(router) {
       const officer = await get('SELECT * FROM users WHERE id = ?', [b.officer_id]);
       if (!officer) return next({ status: 400, message: 'officer_id does not refer to a real user' });
       if (officer.role_id !== 'loan_officer') return next({ status: 400, message: 'Only a user with the Loan Officer role can be assigned to a client' });
-      if (officer.status !== 'Active') return next({ status: 409, message: 'Cannot assign an inactive Loan Officer to a client' });
+      if (!(await isOfficerActive(officer))) return next({ status: 409, message: 'Cannot assign an inactive Loan Officer to a client' });
       if (officer.branch_id && officer.branch_id !== branchId) return next({ status: 409, message: 'This Loan Officer belongs to a different branch than the client is being registered under' });
       officerId = officer.id;
     } else if (req.user.role_id === 'loan_officer') {
@@ -171,7 +182,7 @@ function register(router) {
         if (r.loan_officer) {
           const officer = await get(`SELECT * FROM users WHERE staff_code = ? AND role_id = 'loan_officer'`, [r.loan_officer]);
           if (!officer) { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" was not found` }); continue; }
-          if (officer.status !== 'Active') { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" is not an active staff member` }); continue; }
+          if (!(await isOfficerActive(officer))) { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" is not an active staff member` }); continue; }
           if (officer.branch_id && officer.branch_id !== branchId) { errors.push({ row: rowNum, error: `Loan officer ID "${r.loan_officer}" belongs to a different branch than this import is registering clients under` }); continue; }
           officerId = officer.id;
         } else if (req.user.role_id === 'loan_officer') {
@@ -219,7 +230,7 @@ function register(router) {
         const officer = await get('SELECT * FROM users WHERE id = ?', [req.body.officer_id]);
         if (!officer) return next({ status: 400, message: 'officer_id does not refer to a real user' });
         if (officer.role_id !== 'loan_officer') return next({ status: 400, message: 'Only a user with the Loan Officer role can be assigned to a client' });
-        if (officer.status !== 'Active') return next({ status: 409, message: 'Cannot assign an inactive Loan Officer to a client' });
+        if (!(await isOfficerActive(officer))) return next({ status: 409, message: 'Cannot assign an inactive Loan Officer to a client' });
         sets.push('officer_id = ?'); params.push(officer.id);
       }
     }

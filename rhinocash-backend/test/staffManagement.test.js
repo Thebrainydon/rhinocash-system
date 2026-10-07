@@ -194,7 +194,7 @@ async function get_role(id, token) {
     assert(officerRowAfter.activeUserCount >= 1, 'W: activeUserCount reflects real Active-status users of the role');
 
     const adminRow = after.json.roles.find(x => x.id === 'admin');
-    assert(adminRow.permissionCount === 10, "W: the real Admin role genuinely has all 10 real permissions allowed, per the real seeded role_permissions matrix");
+    assert(adminRow.permissionCount === 11, "W: the real Admin role genuinely has all 11 real permissions allowed, per the real seeded role_permissions matrix");
     const loRow = after.json.roles.find(x => x.id === 'loan_officer');
     assert(loRow.permissionCount === 1, "W: the real Loan Officer role genuinely has exactly 1 permission allowed (record_payments), per the real seeded matrix — not fabricated");
   }
@@ -202,7 +202,7 @@ async function get_role(id, token) {
   // X. Per-role permission detail — real allowed/denied pairs, matching the real seeded matrix exactly.
   {
     const perms = await api('GET', '/api/permissions', { token: adminToken });
-    assert(perms.status === 200 && perms.json.permissions.length === 10, 'X: the real permissions table holds the 10 real seeded permissions');
+    assert(perms.status === 200 && perms.json.permissions.length === 11, 'X: the real permissions table holds the 11 real seeded permissions');
 
     const adminPerms = await api('GET', '/api/roles/admin/permissions', { token: adminToken });
     assert(adminPerms.status === 200, 'X: a role\'s real permission matrix can be read');
@@ -312,7 +312,7 @@ async function get_role(id, token) {
     const perms = await api('GET', `/api/roles/${createdRoleCode}/permissions`, { token: adminToken });
     const allowed = perms.json.permissions.filter(p => p.allowed === 1).map(p => p.permission_id).sort();
     assert(JSON.stringify(allowed) === JSON.stringify(['manage_branches', 'record_payments']), 'DD: the real role_permissions relationships are created correctly, and a duplicate permission id in the request never creates a duplicate/conflicting relationship');
-    assert(perms.json.permissions.length === 10, 'DD: every real permission gets an explicit row (allowed 0 or 1), not just the ones granted');
+    assert(perms.json.permissions.length === 11, 'DD: every real permission gets an explicit row (allowed 0 or 1), not just the ones granted');
 
     const after = await api('GET', '/api/roles?with_counts=1', { token: adminToken });
     assert(after.json.roles.length === rolesBefore + 1, 'DD: the new role genuinely appears in the real Roles listing — not spliced in client-side, a fresh GET actually returns one more real row');
@@ -387,7 +387,7 @@ async function get_role(id, token) {
     const after = await api('GET', '/api/roles/accountant/permissions', { token: adminToken });
     assert(after.json.permissions.find(p => p.permission_id === 'manage_branches').allowed === 1, 'II: manage_branches is genuinely granted after save');
     assert(after.json.permissions.find(p => p.permission_id === 'approve_loans').allowed === 0, 'II: approve_loans is genuinely revoked after save');
-    assert(after.json.permissions.length === 10, 'II: sending the same permission id twice in one request never creates a duplicate role_permissions relationship — still exactly one row per real permission');
+    assert(after.json.permissions.length === 11, 'II: sending the same permission id twice in one request never creates a duplicate role_permissions relationship — still exactly one row per real permission');
 
     const audit = await api('GET', '/api/audit-logs?entity=Role&record_id=accountant', { token: adminToken });
     const latest = audit.json.auditLogs.find(a => a.action === 'Changed role permission matrix');

@@ -291,6 +291,33 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at TEXT
 );
 
+-- Employee <-> User Account split: the users table above is (and stays)
+-- the real Employee record — every HR/organizational field (name,
+-- national_id, gender, job_title, branch/region/department,
+-- employment_status, basic_salary, leave_days_balance, created_at as
+-- "Entry Date") plus role_id/access_level (the person's business
+-- job-function/scope, used throughout loans/targets/approvals routing —
+-- NOT re-derived here) keep living there exactly as before, so every
+-- existing FROM users business-logic query in loans.js/collections.js/
+-- targets.js/branches.js/etc. (none of which touch password/login
+-- fields) needs zero changes. This table is the genuinely NEW, separate
+-- thing: whether that employee can actually log in at all. One row means
+-- one real login; no row means "Employee exists, no System Account" (the
+-- spec's core requirement), checked by auth.js/middleware.js alongside
+-- (not instead of) the employee's own status.
+-- password_hash/salt/must_change_password/password_changed_at
+-- deliberately stay on the users table (unchanged) rather than
+-- duplicated here — there is exactly one place those secrets are
+-- read/written, avoiding any possibility of the two tables' credentials
+-- drifting apart.
+CREATE TABLE IF NOT EXISTS user_accounts (
+  employee_id TEXT PRIMARY KEY REFERENCES users(id),
+  login_email TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'Active',
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  last_login_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS user_module_access (
   user_id TEXT NOT NULL REFERENCES users(id),
   module_id TEXT NOT NULL REFERENCES modules(id),
@@ -1472,6 +1499,21 @@ async function initSchema() {
   // Existing rows (all genuinely Reports presets) default to 'reports'
   // so nothing already saved changes meaning.
   await ensureColumn('report_filter_presets', "scope TEXT NOT NULL DEFAULT 'reports'");
+
+  // Employee ↔ User Account backfill — one real user_accounts row per
+  // EXISTING users row, so every account that already works today keeps
+  // working identically after this migration: same login_email (today's
+  // email), same account status (mirrors today's users.status at the
+  // moment this runs — a currently-Suspended user's new account starts
+  // Suspended too, never silently reactivated). Idempotent (NOT EXISTS),
+  // safe to run against an already-migrated database on every restart —
+  // a user created AFTER this point already gets its user_accounts row
+  // from POST /api/users itself, never from here.
+  await rawRun(`
+    INSERT INTO user_accounts (employee_id, login_email, status, created_at, last_login_at)
+    SELECT id, email, status, created_at, last_login_at FROM users
+    WHERE NOT EXISTS (SELECT 1 FROM user_accounts WHERE employee_id = users.id)
+  `);
 }
 
 // Explicit startup self-test: prove the database can actually be written

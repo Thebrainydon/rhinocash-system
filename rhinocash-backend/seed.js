@@ -120,6 +120,17 @@ async function seedPermissions() {
     ['reverse_payment', 'Reverse Payment'], ['post_accounting_entries', 'Post Accounting Entries'],
     ['manage_users', 'Manage Users'], ['manage_branches', 'Manage Branches'], ['open_new_branch', 'Open New Branch'],
     ['write_off_loans', 'Write Off Loans'], ['manage_system_settings', 'Manage System Settings'],
+    // Deliberately separate from manage_users — this is the real HR-level
+    // authority the Employee ↔ User Account split needs: create/edit an
+    // Employee record's own HR fields (name, contacts, position, branch,
+    // department, employment status, leave balance, salary), but never
+    // touch role_id/access_level or create/suspend a System Account —
+    // those actions stay gated on manage_users, exactly as before.
+    // Admin/CEO/Director already hold manage_users, which supersedes this
+    // everywhere it's checked (see POST/PATCH /api/employees below), so
+    // granting this to HR adds a real new capability without touching any
+    // existing role's access.
+    ['manage_employees', 'Manage Employees'],
   ];
   for (const [id, label] of perms) {
     await run('INSERT INTO permissions (id, label) VALUES (?,?) ON CONFLICT DO NOTHING', [id, label]);
@@ -127,7 +138,7 @@ async function seedPermissions() {
 
   // role_id -> { permission_id: allowed }
   const matrix = {
-    admin: { approve_loans: 1, disburse_loans: 1, record_payments: 1, reverse_payment: 1, post_accounting_entries: 1, manage_users: 1, manage_branches: 1, open_new_branch: 1, write_off_loans: 1, manage_system_settings: 1 },
+    admin: { approve_loans: 1, disburse_loans: 1, record_payments: 1, reverse_payment: 1, post_accounting_entries: 1, manage_users: 1, manage_branches: 1, open_new_branch: 1, write_off_loans: 1, manage_system_settings: 1, manage_employees: 1 },
     manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1 },
     operational_manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1, manage_branches: 1, open_new_branch: 1 },
     regional_manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1 },
@@ -151,9 +162,12 @@ async function seedPermissions() {
     // so granting it now would only have the side effect of silently
     // handing HR company-wide leave/salary-advance decide authority
     // (misc.js's canDecideOn()) before that's actually been asked for.
-    // Revisit when HR's own Leave Management / User & Access Management
-    // submenus are built out.
-    hr: {},
+    // HR now genuinely holds manage_employees (Employees > Add Employee /
+    // View Employees > edit) — its own real HR-level authority, distinct
+    // from manage_users (System Account creation/suspension/role changes,
+    // still Admin/CEO/Director only). Revisit manage_users itself when
+    // HR's own User & Access Management submenu is built out.
+    hr: { manage_employees: 1 },
   };
   for (const [role, perms2] of Object.entries(matrix)) {
     for (const [pid] of perms) {
@@ -526,6 +540,10 @@ async function seedInitialAdmin() {
     [id, 'RC-0001', 'System Administrator', email, hash, salt,
       'admin', 'Master System Administration Access', 'System Administrator', 'it_systems', 'Full-time', 'Active']
   );
+  // The one genuinely required System Account instruction #4 asks for —
+  // without it, the Master System Administrator this whole seed exists to
+  // create couldn't even log in under the new Employee ↔ User Account split.
+  await run('INSERT INTO user_accounts (employee_id, login_email, status) VALUES (?,?,?)', [id, email, 'Active']);
   console.log('\n================================================================');
   console.log('  INITIAL ADMINISTRATOR ACCOUNT CREATED');
   console.log('================================================================');
@@ -691,6 +709,7 @@ async function seedDemoData() {
         role, role_row.default_access_level, role_row.name, branch, region,
         role === 'loan_officer' ? 800000 : 0, role === 'loan_officer' ? 10 : 0, 10]
     );
+    await run('INSERT INTO user_accounts (employee_id, login_email, status) VALUES (?,?,?)', [id, email, 'Active']);
     console.log(`  ${role.padEnd(20)} ${email.padEnd(30)} ${password}`);
   }
   // Second pass: wire up reporting lines now that every row exists (the

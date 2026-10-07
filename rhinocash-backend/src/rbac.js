@@ -188,9 +188,14 @@ async function computeFinalAccess(user) {
 const ADMIN_ONLY_ROLES = ['admin', 'ceo', 'director'];
 function canActOnStaffRecord(actor, targetRoleId) {
   if (actor.role_id === 'admin') return true;
-  if (['ceo', 'director'].includes(actor.role_id)) {
-    // CEO/Director can manage operational staff, never Admin/CEO/Director accounts
-    // (including each other) and can never grant those roles either.
+  // CEO/Director/HR can manage operational staff — HR's own real, new
+  // manage_employees authority (Employee ↔ User Account split) is scoped
+  // by this exact same rule as CEO/Director's existing manage_users
+  // authority: never an Admin/CEO/Director account (including each
+  // other), and HR specifically can still never touch System Account/
+  // role/access-level fields regardless — those stay manage_users-gated,
+  // checked separately wherever an endpoint does that.
+  if (['ceo', 'director', 'hr'].includes(actor.role_id)) {
     return !ADMIN_ONLY_ROLES.includes(targetRoleId);
   }
   return false;

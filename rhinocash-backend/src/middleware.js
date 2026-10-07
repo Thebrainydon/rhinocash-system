@@ -21,9 +21,20 @@ async function requireAuth(req, res, next) {
   const session = await get('SELECT * FROM sessions WHERE token_hash = ?', [tokenHash(token)]);
   if (!session || session.revoked_at) return next({ status: 401, message: 'Session has been revoked' });
   if (new Date(session.expires_at).getTime() < Date.now()) return next({ status: 401, message: 'Session expired' });
-  const user = await get('SELECT * FROM users WHERE id = ?', [payload.sub]);
+  // One real row, merged from Employee (users) + System Account
+  // (user_accounts) — every existing req.user.X consumer across the rest
+  // of the app keeps reading the exact same flat field names it always
+  // has; account.status (not users.status) is the real login/session
+  // gate now — an Employee's own employment status is a separate,
+  // independent concept (see users.js / Employee ↔ User Account split).
+  const user = await get(
+    `SELECT u.*, ua.status AS account_status, ua.login_email, ua.last_login_at AS account_last_login_at
+     FROM users u LEFT JOIN user_accounts ua ON ua.employee_id = u.id WHERE u.id = ?`,
+    [payload.sub]
+  );
   if (!user) return next({ status: 401, message: 'User no longer exists' });
-  if (user.status !== 'Active') return next({ status: 403, message: `Account is ${user.status.toLowerCase()}` });
+  if (!user.account_status) return next({ status: 403, message: 'This employee has no System Account' });
+  if (user.account_status !== 'Active') return next({ status: 403, message: `Account is ${user.account_status.toLowerCase()}` });
   req.user = user;
   req.sessionTokenHash = session.token_hash;
   // Backs the single-active-session login block (routes/auth.js) — a

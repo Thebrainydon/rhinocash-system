@@ -813,11 +813,14 @@ apiRequest = async function(method, path, body){
     const reloadUsers = await api.get('/api/users');
     __assert(reloadUsers.users.some(u=>u.email==='frontendstafftest@rhinocash.co.ke'), "the created user genuinely exists server-side, confirmed via a fresh fetch");
 
-    // Real status change.
+    // Real status change — this is the real System Account status now
+    // (Employee <-> User Account split: see auth.js's accountInfoFor()),
+    // genuinely independent of the employee's own employment status,
+    // which setStaffStatus()/POST /api/users/:id/status never touches.
     await setStaffStatus(newStaff.id, 'Suspended', 'test suspension');
-    __assert(DB.staff.find(s=>s.id===newStaff.id).status === 'Suspended', "real setStaffStatus() call reflects the refreshed status");
+    __assert(DB.staff.find(s=>s.id===newStaff.id).systemAccount === 'Suspended', "real setStaffStatus() call reflects the refreshed System Account status");
     const suspendedReload = await api.get(`/api/users/${newStaff.id}`);
-    __assert(suspendedReload.user.status === 'Suspended', "the suspension genuinely persisted server-side");
+    __assert(suspendedReload.user.systemAccount === 'Suspended', "the suspension genuinely persisted server-side, as the real System Account status");
 
     // Real module-access restriction.
     await setStaffModuleAccess(newStaff.id, ['dashboard','clients']);

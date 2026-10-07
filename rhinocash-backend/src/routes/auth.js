@@ -23,10 +23,24 @@ const PASSWORD_MAX_AGE_MS = 15 * 24 * 60 * 60 * 1000;
 // "active" for the single-active-session login block below.
 const SESSION_ACTIVE_WINDOW_SQL = "interval '-5 seconds'";
 
+// Real, always-fresh account info — never trusted from a stale `u` object
+// a caller might have loaded before a since-created/suspended account, so
+// every response (login, /me, the Staff/Employee directory) reports the
+// System Account's actual current state.
+async function accountInfoFor(employeeId) {
+  const acct = await get('SELECT * FROM user_accounts WHERE employee_id = ?', [employeeId]);
+  return {
+    systemAccount: acct ? acct.status : 'Not Created',
+    hasAccount: !!acct,
+    accountCreatedAt: acct ? acct.created_at : null,
+    accountLastLoginAt: acct ? acct.last_login_at : null,
+  };
+}
+
 async function publicUser(u) {
   if (!u) return null;
-  const { password_hash, password_salt, ...rest } = u;
-  return { ...rest, finalAccess: await computeFinalAccess(u) };
+  const { password_hash, password_salt, account_status, login_email, account_last_login_at, ...rest } = u;
+  return { ...rest, ...(await accountInfoFor(u.id)), finalAccess: await computeFinalAccess(u) };
 }
 
 function register(router) {
@@ -35,15 +49,25 @@ function register(router) {
     const ip = req.socket ? req.socket.remoteAddress : null;
     if (!email || !password) return next({ status: 400, message: 'Email and password are required' });
 
-    const user = await get('SELECT * FROM users WHERE email = ?', [String(email).toLowerCase()]);
+    // Real login identifier is the System Account's own login_email — an
+    // Employee with no account at all (or whose account uses a different
+    // login_email than their contact email) correctly finds no row here,
+    // exactly like a genuinely unknown address, never leaking which case
+    // it was. Still merged with the real Employee row for everything else
+    // login already needs (name, employment status, role_id, etc.).
+    const user = await get(
+      `SELECT u.*, ua.status AS account_status, ua.login_email, ua.created_at AS account_created_at
+       FROM user_accounts ua JOIN users u ON u.id = ua.employee_id WHERE ua.login_email = ?`,
+      [String(email).toLowerCase()]
+    );
     if (!user) {
       await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'no such user', ip]);
       return next({ status: 401, message: 'Invalid credentials' });
     }
-    if (user.status !== 'Active') {
-      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, `account ${user.status}`, ip]);
-      await logAction({ user }, { action: 'Blocked login — account not active', module: 'auth', recordType: 'User', recordId: user.id, newValue: user.status });
-      return next({ status: 403, message: `This account is ${user.status.toLowerCase()}. Contact your Admin.` });
+    if (user.account_status !== 'Active') {
+      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, `account ${user.account_status}`, ip]);
+      await logAction({ user }, { action: 'Blocked login — account not active', module: 'auth', recordType: 'User', recordId: user.id, newValue: user.account_status });
+      return next({ status: 403, message: `This account is ${user.account_status.toLowerCase()}. Contact your Admin.` });
     }
     // Real maintenance-mode gate — Admin can always still log in (they're
     // the only role that can turn it back off); everyone else is blocked
@@ -87,6 +111,7 @@ function register(router) {
 
     await run('INSERT INTO login_attempts (email, success, ip) VALUES (?,1,?)', [email, ip]);
     await run("UPDATE users SET last_login_at = iso_now() WHERE id = ?", [user.id]);
+    await run("UPDATE user_accounts SET last_login_at = iso_now() WHERE employee_id = ?", [user.id]);
 
     const token = signToken({ sub: user.id, role: user.role_id, iat: Date.now(), exp: Date.now() + SESSION_TTL_MS });
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
@@ -123,14 +148,18 @@ function register(router) {
     const { email: rawEmail } = req.body;
     if (!rawEmail) return next({ status: 400, message: 'Email is required' });
     const genericMessage = 'If that email is registered, password reset instructions have been sent.';
-    const user = await get('SELECT * FROM users WHERE email = ?', [String(rawEmail).toLowerCase()]);
-    if (user && user.status === 'Active') {
+    const user = await get(
+      `SELECT u.*, ua.status AS account_status, ua.login_email
+       FROM user_accounts ua JOIN users u ON u.id = ua.employee_id WHERE ua.login_email = ?`,
+      [String(rawEmail).toLowerCase()]
+    );
+    if (user && user.account_status === 'Active') {
       const tempPassword = generateTempPassword();
       const { hash, salt } = hashPassword(tempPassword);
       await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now() WHERE id=?', [hash, salt, user.id]);
       await run("UPDATE sessions SET revoked_at = iso_now() WHERE user_id = ?", [user.id]);
       await logAction({ user }, { action: 'Requested password reset', module: 'auth', recordType: 'User', recordId: user.id });
-      await email.send('password_reset', user.email, { name: user.name, tempPassword });
+      await email.send('password_reset', user.login_email, { name: user.name, tempPassword });
     }
     res.json({ ok: true, message: genericMessage });
   });
@@ -175,6 +204,14 @@ function register(router) {
     if (!sets.length) return next({ status: 400, message: 'Nothing to update — only phone, email and password can be changed here' });
     params.push(req.user.id);
     await run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
+    // Keep the System Account's own login_email in step with a
+    // self-service contact-email change — but only while it hasn't
+    // already been deliberately set to something different (e.g. by an
+    // Admin at account creation), so this never silently overwrites a
+    // real intentional divergence between contact and login email.
+    if (req.body.email !== undefined && req.user.login_email === req.user.email) {
+      await run('UPDATE user_accounts SET login_email = ? WHERE employee_id = ?', [req.body.email, req.user.id]);
+    }
     if (passwordChanged) {
       // Same real invalidation change-password already performs — a new
       // password must retire every other active session, not just this one.
@@ -209,6 +246,9 @@ function register(router) {
     if (req.user.role_id !== 'admin') return next({ status: 403, message: 'Only the System Administrator can reset a password' });
     const target = await get('SELECT * FROM users WHERE id = ?', [req.params.id]);
     if (!target) return next({ status: 404, message: 'User not found' });
+    if (!(await get('SELECT 1 FROM user_accounts WHERE employee_id = ?', [target.id]))) {
+      return next({ status: 400, message: 'This employee has no System Account to reset a password for' });
+    }
     const tempPassword = generateTempPassword();
     const { hash, salt } = hashPassword(tempPassword);
     await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now() WHERE id=?', [hash, salt, target.id]);
