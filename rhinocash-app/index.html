@@ -10,7 +10,8 @@
   --navy:#1F3864; --navy-deep:#152647; --navy-soft:#2E4A7D;
   --login-hero-dark:#12150a; --login-hero-mid:#2c3414; --login-hero-light:#8ea024;
   --rust:#B5651D; --rust-soft:#D98B4A; --claude:#D97757;
-  --bg:#FFFFFF; --card:#FFFFFF; --line:#E4E1DA;
+  --bg:#F5F6F8; --card:#FFFFFF; --line:#E4E1DA;
+  --dot-bg: radial-gradient(circle, rgba(31,56,100,0.07) 1px, transparent 1.3px) 0 0/18px 18px;
   --ink:#1C1C1E; --ink-soft:#5B5952; --ink-faint:#8B897F;
   --green:#2F7D5C; --green-bg:#E7F3EC;
   --amber:#B4791F; --amber-bg:#FBF0DD;
@@ -132,7 +133,7 @@ body{
 }
 .bell{position:relative; cursor:pointer; font-size:18px; color:var(--ink-soft);}
 .bell-dot{position:absolute; top:-3px; right:-4px; background:var(--rust); color:#fff; font-size:9px; font-weight:800; border-radius:8px; padding:1px 4px; min-width:14px; text-align:center;}
-.content{padding:24px 26px 60px; flex:1;}
+.content{padding:24px 26px 60px; flex:1; background:var(--dot-bg), var(--bg);}
 /* Every real "Print" button in this app calls window.print() directly —
    this is the one shared rule that makes that print an actual clean
    letterhead page (matching the real reference design) instead of the
@@ -162,7 +163,7 @@ body{
    instead of the old pale tint, via higher CSS specificity (no :not()
    chain needed). */
 .kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:20px;}
-.kpi{background:#fff; border-radius:12px; padding:16px 18px;}
+.kpi{background:var(--dot-bg), #fff; border-radius:12px; padding:16px 18px;}
 .kpi-label{font-size:11.5px; color:var(--navy); font-weight:700; text-transform:uppercase; letter-spacing:0.3px;}
 .kpi-value{font-size:24px; font-weight:800; color:var(--navy); margin-top:6px;}
 .kpi-delta{font-size:11.5px; margin-top:5px; font-weight:600;}
@@ -278,7 +279,7 @@ body{
 .kpi-tile-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
 .profile-info-row{padding:7px 0; border-bottom:1px solid var(--line);}
 
-.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:16px;}
+.card{background:var(--dot-bg), var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:16px;}
 .card-title{font-size:14.5px; font-weight:800; color:var(--navy); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;}
 .card-title small{font-size:11.5px; font-weight:600; color:var(--ink-faint);}
 
