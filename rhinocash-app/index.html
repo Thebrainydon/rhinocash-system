@@ -174,7 +174,7 @@ body{
 .rg-overdue{color:var(--red); font-weight:800;}
 .fp:not(.fp-open) > .fp-body{display:none;}
 .fp-bar{margin-bottom:12px; display:flex; justify-content:flex-start;}
-.fp.fp-open > .fp-bar{justify-content:flex-end; margin-bottom:-6px; position:relative; z-index:1;}
+.fp.fp-open > .fp-bar{margin-bottom:8px;}
 .adm-callout{border-color:var(--blue); background:var(--blue-bg);}
 .ac-eyebrow{font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-soft);}
 .ac-tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
@@ -4794,7 +4794,7 @@ function admChart(id, title, type, labels, datasets, opts){
   if(!labels.length || !datasets.some(d => d.data.some(v => Number(v) > 0))) return '';
   const multi = type === 'doughnut' || type === 'pie';
   const config = { type, data: { labels, datasets: datasets.map((d, i) => Object.assign({ backgroundColor: multi ? labels.map((_, j) => ADM_PALETTE[j % ADM_PALETTE.length]) : ADM_PALETTE[i % ADM_PALETTE.length], borderColor: ADM_PALETTE[i % ADM_PALETTE.length] }, d)) },
-    options: Object.assign({ responsive: true, maintainAspectRatio: false }, multi ? {} : { scales: { y: { beginAtZero: true } } }, opts || {}) };
+    options: Object.assign({ responsive: true, maintainAspectRatio: false }, multi ? {} : { scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { precision: 0 } } } }, opts || {}) };
   return `<div class="card"><div class="card-title">${escapeHtml(title)}</div>${registerChart(id, config)}</div>`;
 }
 // Group rows for a chart: [labels, values] summed by valueFn (default: count).

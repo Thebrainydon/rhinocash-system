@@ -4074,7 +4074,7 @@ apiRequest = async function(method, path, body){
     // PDF Printout / Excel File dropdown, not a single bare CSV-only
     // button — this page's own is one of them.
     __assert(undisbHtml.includes('-- Generate --') && undisbHtml.includes('>PDF Printout<') && undisbHtml.includes('>Excel File<'), "the real Loan Applications page's own 'Generate' control genuinely offers both real PDF Printout and Excel File options, matching the reference design");
-    __assert(undisbHtml.includes("if(this.value==='pdf'){ window.print(); }") && undisbHtml.includes('exportLoanApplicationsCSV()'), "the real dropdown genuinely wires PDF to a real window.print() and Excel to this page's own real CSV export function");
+    __assert(undisbHtml.includes("genQueue(this.value); exportLoanApplicationsCSV();"), "the real dropdown queues the chosen format (PDF report or .xlsx) and runs this page's own export with it");
 
     // Before any real approval exists, the real Approvals column genuinely
     // shows a plain dash (never a fabricated approver), and the real
@@ -5457,8 +5457,8 @@ apiRequest = async function(method, path, body){
   {
     const ddHtml = generateDropdownHtml('someRealPageExportFn()');
     __assert(ddHtml.includes('-- Generate --') && ddHtml.includes('>PDF Printout<') && ddHtml.includes('>Excel File<'), "generateDropdownHtml() genuinely offers both real PDF Printout and Excel File options");
-    __assert(ddHtml.includes("if(this.value==='pdf'){ window.print(); }"), "the real PDF option genuinely triggers a real window.print() — this dependency-free build has no PDF library, matching the same honest pattern used everywhere else");
-    __assert(ddHtml.includes("else if(this.value==='excel'){ someRealPageExportFn(); }"), "the real Excel option genuinely calls the exact real CSV export function the caller passed in — the page's own already-real data, not a fabricated generic export");
+    __assert(ddHtml.includes("genQueue(this.value); someRealPageExportFn();"), "choosing PDF Printout or Excel File queues that format and runs the page's own export function");
+    __assert(ddHtml.includes('value="pdf"') && ddHtml.includes('value="excel"'), "the dropdown's two options are PDF Printout and Excel File");
 
     // Every real page that used to render a bare CSV-only Generate button
     // now genuinely uses the shared dropdown instead — confirmed directly
@@ -7676,7 +7676,7 @@ apiRequest = async function(method, path, body){
       if(RG_PAGES[label].kind || label === 'Regional Alerts') await waitRg('rg:ops');
       if(label === 'Regional Activity Log') await waitRg('rg:activity');
       const h = document.getElementById('root').innerHTML;
-      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || h.includes('NaN')) broken.push(label);
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h)) broken.push(label); // visible text only — the logo's base64 data can contain "NaN"
     }
     __assert(broken.length === 0, "every Regional page renders with its bold blue title and no errors: " + broken.join(', '));
 
