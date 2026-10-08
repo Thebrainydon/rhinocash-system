@@ -1262,6 +1262,36 @@ CREATE TABLE IF NOT EXISTS admin_lookups (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS admin_lookups_name_unique ON admin_lookups (list_key, lower(name));
 
+-- Regional Operations (Regional Manager): action plans, branch requests,
+-- staff/client transfers, operational issues and escalations, each tied
+-- to a region (and usually a branch) so access stays within the region.
+CREATE TABLE IF NOT EXISTS regional_operations (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  region_id TEXT REFERENCES regions(id),
+  branch_id TEXT REFERENCES branches(id),
+  title TEXT NOT NULL,
+  details TEXT,
+  category TEXT,
+  priority TEXT NOT NULL DEFAULT 'Normal',
+  status TEXT NOT NULL,
+  assigned_to TEXT REFERENCES users(id),
+  due_date TEXT,
+  resolution TEXT,
+  subject_type TEXT,
+  subject_id TEXT,
+  from_branch_id TEXT REFERENCES branches(id),
+  to_branch_id TEXT REFERENCES branches(id),
+  to_officer_id TEXT REFERENCES users(id),
+  related_id TEXT,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_regional_ops_region ON regional_operations(region_id, kind);
+
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_loans_officer ON loans(officer_id);
 CREATE INDEX IF NOT EXISTS idx_loans_branch ON loans(branch_id);

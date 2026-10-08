@@ -7591,7 +7591,8 @@ apiRequest = async function(method, path, body){
     if(!session.loggedIn || session.role !== 'Admin') await doLogin({ preventDefault(){}, target:{} });
     const waitAdm = async (key) => { for(let i=0; i<200 && (!DB.adm || DB.adm[key] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp(); };
     const items = SIDEBAR_MENUS.Admin.flatMap(sec => sec.items);
-    const placeholders = items.filter(it => { const r = resolveRoute(it); return !r || r.section === 'placeholder'; });
+    const QUICK_ACTIONS = ['Create a Lead','Leave Application','Create a Ticket']; // open modals, not pages (see sidebarNavigate)
+    const placeholders = items.filter(it => { if(QUICK_ACTIONS.includes(it)) return false; const r = resolveRoute(it); return !r || r.section === 'placeholder'; });
     __assert(placeholders.length === 0, "every Admin sidebar submenu resolves to a real page, none to the placeholder: " + placeholders.join(', '));
     const enginePages = items.filter(it => (resolveRoute(it) || {}).section === 'admin');
     __assert(enginePages.length >= 190, "the Admin setup/monitoring submenus open the shared Admin page engine (" + enginePages.length + " pages)");

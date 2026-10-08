@@ -70,11 +70,11 @@ esac
 PORT="${PORT:-4000}"
 BASE_URL="http://127.0.0.1:$PORT"
 
-SUITES="integration v2 branchExpansion mpesaConfig notifications targets
+SUITES="${SUITES:-integration v2 branchExpansion mpesaConfig notifications targets
 paymentsPagination accounting accountingControl staffManagement
 branchesRegions clients collections myAccount investorManagement
 mpesaIntegration mpesaC2b mpesaB2c systemHealth support reports
-systemAdmin logout atomicity uploads cors loanStatusBrowser forgotPassword viewLoans employeesExtras passwordPolicy concurrentLogin employeeUserSplit menuAccess adminConfig"
+systemAdmin logout atomicity uploads cors loanStatusBrowser forgotPassword viewLoans employeesExtras passwordPolicy concurrentLogin employeeUserSplit menuAccess adminConfig regionalOps}"
 
 FAILED=""
 SERVER_PID=""
