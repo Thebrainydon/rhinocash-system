@@ -7717,6 +7717,27 @@ apiRequest = async function(method, path, body){
     __assert(!__rawIndexHtml.includes('>Export CSV</button>'), "no plain 'Export CSV' button remains — every page uses Generate");
   }
 
+  // ---- Create forms are closed behind a "+ New …" button; pages carry charts ----
+  {
+    goTo('loanbook','Follow-Ups');
+    for(let i=0; i<200 && !DB.acctPages.followups; i++){ await new Promise(r=>setTimeout(r,20)); }
+    renderApp();
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('+ New Follow-Up') && html.includes('<div class="fp ">'), "the Follow-Up form starts closed behind a '+ New Follow-Up' button");
+    __assert(html.includes('name="follow_up_date"'), "the closed form is still part of the page, ready to open");
+    toggleForm('f-submitNewFollowUp');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('fp fp-open') && html.includes('✕ Close'), "clicking the button opens the form, with a Close button");
+    await withRequest('test-close-forms', async ()=>{}, { mutates: true });
+    __assert(!isFormOpen('f-submitNewFollowUp'), "a successful save closes the open form again");
+    __assert(admChart('t-chart', 'T', 'bar', ['a','b'], [{ label:'x', data:[1,2] }]).includes('<canvas id="t-chart"'), "the shared chart helper renders a chart card");
+    __assert(admChart('t-empty', 'T', 'bar', ['a'], [{ label:'x', data:[0] }]) === '', "an all-zero chart is left out rather than drawn empty");
+    sidebarNavigate('Branch Requests');
+    for(let i=0; i<200 && (!DB.adm || DB.adm['rg:ops'] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
+    renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(html.includes('+ New branch request') && html.includes('<div class="fp ">'), "Regional Operations forms are closed behind a button too");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

@@ -172,6 +172,9 @@ body{
 .rg-rec-title{color:var(--blue); font-size:14px;}
 .rg-rec-line{font-size:12.5px; margin-top:6px;}
 .rg-overdue{color:var(--red); font-weight:800;}
+.fp:not(.fp-open) > .fp-body{display:none;}
+.fp-bar{margin-bottom:12px; display:flex; justify-content:flex-start;}
+.fp.fp-open > .fp-bar{justify-content:flex-end; margin-bottom:-6px; position:relative; z-index:1;}
 .adm-callout{border-color:var(--blue); background:var(--blue-bg);}
 .ac-eyebrow{font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-soft);}
 .ac-tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
@@ -1853,6 +1856,14 @@ const api = {
 // exactly like the comment on ensureFileFormProgressOverlay() explains —
 // those keep using that same dedicated-overlay technique instead.
 let inFlight = new Set();
+// Create forms stay closed behind a "+ New …" button until the user opens
+// them; a successful save closes them again (see withRequest below).
+function isFormOpen(key){ return !!(session.openForms && session.openForms[key]); }
+function toggleForm(key, open){ session.openForms = session.openForms || {}; session.openForms[key] = open === undefined ? !session.openForms[key] : !!open; renderApp(); }
+function formToggleBtn(key, label){
+  const open = isFormOpen(key);
+  return `<div class="fp-bar"><button type="button" class="btn btn-sm ${open ? 'btn-outline' : 'btn-primary'}" onclick="toggleForm('${key}')">${open ? '✕ Close' : '+ ' + escapeHtml(label)}</button></div>`;
+}
 async function withRequest(key, fn, opts){
   if(inFlight.has(key)) return; // duplicate-submit guard
   inFlight.add(key);
@@ -1872,6 +1883,7 @@ async function withRequest(key, fn, opts){
     if(processingToast) dismissCenterToast(processingToast);
     inFlight.delete(key);
     renderApp();
+    if(mutates && succeeded && session.openForms){ session.openForms = {}; renderApp(); }
     if(mutates && succeeded){
       // 'success' with NO type arg — this is deliberately the gray/
       // "done" style, not the greenish one 'success' as a TYPE means
@@ -4776,6 +4788,20 @@ function admTable(headers, rows, emptyText){
   return `<div class="table-wrap"><table><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>
     ${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${c==null||c===''?'—':c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">${escapeHtml(emptyText||'Nothing recorded yet.')}</td></tr>`}</table></div>`;
 }
+const ADM_PALETTE = ['#2E5C8A','#2A9D8F','#E9C46A','#F4A261','#E76F51','#7B5EA7','#3D8BD9','#8AB17D','#C1440E','#6C757D'];
+// A chart card for any table that has a natural picture; empty data renders nothing.
+function admChart(id, title, type, labels, datasets, opts){
+  if(!labels.length || !datasets.some(d => d.data.some(v => Number(v) > 0))) return '';
+  const multi = type === 'doughnut' || type === 'pie';
+  const config = { type, data: { labels, datasets: datasets.map((d, i) => Object.assign({ backgroundColor: multi ? labels.map((_, j) => ADM_PALETTE[j % ADM_PALETTE.length]) : ADM_PALETTE[i % ADM_PALETTE.length], borderColor: ADM_PALETTE[i % ADM_PALETTE.length] }, d)) },
+    options: Object.assign({ responsive: true, maintainAspectRatio: false }, multi ? {} : { scales: { y: { beginAtZero: true } } }, opts || {}) };
+  return `<div class="card"><div class="card-title">${escapeHtml(title)}</div>${registerChart(id, config)}</div>`;
+}
+// Group rows for a chart: [labels, values] summed by valueFn (default: count).
+function admGroup(list, keyFn, valueFn){ const m = {}; (list || []).forEach(x => { const k = keyFn(x) || '—'; m[k] = (m[k] || 0) + (valueFn ? Number(valueFn(x)) || 0 : 1); }); const keys = Object.keys(m); return [keys, keys.map(k => Math.round(m[k]))]; }
+function admTwoCharts(a, b){ return a || b ? `<div class="adm-two">${a}${b}</div>` : ''; }
+function admLastDays(n){ const out = []; for(let i = n - 1; i >= 0; i--){ const d = new Date(); d.setDate(d.getDate() - i); out.push(d.toISOString().slice(0, 10)); } return out; }
+const admDayLabel = d => new Date(d + 'T00:00:00').toLocaleDateString('en-KE', { day: '2-digit', month: 'short' });
 function admExportBtn(fn){ return admExports.push(fn), generateDropdownHtml(`admRunExport(${admExports.length-1})`); }
 let admExports = [];
 function admRunExport(i){ const fn = admExports[i]; if(fn) fn(); }
@@ -4908,7 +4934,7 @@ function admListBody(spec, label){
   const exportFn = () => exportCSV(label.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase(), ['Name','Code'].concat(spec.cols.map(c => c.label), ['Description','Status']),
     items.map(it => [it.name, it.code || ''].concat(spec.cols.map(c => Array.isArray(it.attrs[c.k]) ? it.attrs[c.k].join('; ') : (it.attrs[c.k] ?? '')), [it.description || '', it.status])));
   return `
-    ${canEdit ? `<div class="card">
+    ${canEdit ? `<div class="fp ${(editing || isFormOpen('adm-'+spec.key))?'fp-open':''}">${editing ? '' : formToggleBtn('adm-'+spec.key, 'Add ' + sing)}<div class="fp-body"><div class="card">
       <div class="card-title">${editing ? `Edit ${escapeHtml(sing)}: ${escapeHtml(editing.name)}` : `Add ${escapeHtml(sing)}`}</div>
       <form onsubmit="return admSaveItem(event)">
         <div class="form-grid">
@@ -4920,7 +4946,7 @@ function admListBody(spec, label){
         <div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">${editing ? 'Save changes' : `Add ${escapeHtml(sing)}`}</button>
         ${editing ? `<button type="button" class="btn btn-sm btn-outline" onclick="admCancelEdit()">Cancel</button>` : ''}</div>
       </form>
-    </div>` : ''}
+    </div></div></div>` : ''}
     <div class="card">
       <div class="card-title"><span>${escapeHtml(label)} <small>${items.length} total · ${active} active</small></span>${items.length ? admExportBtn(exportFn) : ''}</div>
       ${admTable(['Name','Code'].concat(spec.cols.filter(c => c.type !== 'textarea').map(c => c.label), ['Description','Status'], canEdit ? [''] : []),
@@ -4937,7 +4963,7 @@ function admListBody(spec, label){
 }
 function admListSpec(){ const s = ADMIN_PAGES[session.subtab]; return s && s.type === 'list' ? s : null; }
 function admEditItem(id){ const s = admListSpec(); if(!s) return; session.admEdit = { key: s.key, id }; renderApp(); }
-function admCancelEdit(){ session.admEdit = null; renderApp(); }
+function admCancelEdit(){ session.admEdit = null; if(session.openForms) Object.keys(session.openForms).forEach(k => { if(k.startsWith('adm-')) delete session.openForms[k]; }); renderApp(); }
 async function admSaveItem(ev){
   ev.preventDefault();
   const spec = admListSpec(); if(!spec || !admIsAdmin()) return false;
@@ -5096,7 +5122,7 @@ const ADMIN_VIEWS = {
   },
   loanProducts: () => {
     const products = DB.products || [];
-    return `${admIsAdmin() ? `<div class="card"><div class="card-title">Add Loan Product</div>
+    return `${admIsAdmin() ? `<div class="fp ${isFormOpen('adm-loan-product')?'fp-open':''}">${formToggleBtn('adm-loan-product', 'Add Loan Product')}<div class="fp-body"><div class="card"><div class="card-title">Add Loan Product</div>
       <form onsubmit="return admAddProduct(event)"><div class="form-grid">
         <div class="field"><label>Product name</label><input name="name" maxlength="80"></div>
         <div class="field"><label>Interest rate (%)</label><input name="rate_pct" type="number" step="any" min="0"></div>
@@ -5105,7 +5131,7 @@ const ADMIN_VIEWS = {
         <div class="field"><label>Fixed term (weeks)</label><input name="term_weeks" type="number" min="1" placeholder="Leave blank for monthly terms"></div>
         <div class="field"><label>Processing fee (KES)</label><input name="processing_fee_amount" type="number" min="0"></div>
         <div class="field"><label>Penalty (%)</label><input name="penalty_pct" type="number" step="any" min="0"></div>
-      </div><button class="btn btn-primary btn-sm" type="submit">Add product</button></form></div>` : ''}
+      </div><button class="btn btn-primary btn-sm" type="submit">Add product</button></form></div></div></div>` : ''}
       <div class="card"><div class="card-title">Product Catalogue <small>${products.length} active product(s)</small></div>
       ${admProductsTable([['Rate', p => `${p.rate}%`], ['Amount (KES)', p => `${fmtNum(p.minAmt)} – ${fmtNum(p.maxAmt)}`], ['Term', admTerm], ['Processing fee', p => p.processingFeeAmount != null ? 'KES ' + fmtNum(p.processingFeeAmount) : (p.fee ? p.fee + '%' : '—')], ['Penalty', p => (p.penalty || 0) + '%'], ['Loans', p => (DB.loans || []).filter(l => l.productId === p.id).length]])}</div>`;
   },
@@ -5120,7 +5146,8 @@ const ADMIN_VIEWS = {
       ${admTable(['Code','Account','Type','Status'], list.map(a => [`<code>${escapeHtml(a.code)}</code>`, `<strong>${escapeHtml(a.name)}</strong>`, escapeHtml(a.account_type || ''), admBadge(a.status || 'Active', (a.status || 'Active') === 'Active' ? 'green' : 'grey')]), 'No matching accounts in the chart of accounts yet.')}</div>`;
   },
   users: () => { const list = admFilterUsers(DB.staff || [], 'admUsersFilter');
-    return `<div class="card"><div class="card-title"><span>Users <small>${list.length} of ${(DB.staff || []).length}</small></span>
+    const roles = ADM_STAFF_ROLES.filter(r => (DB.staff || []).some(s => s.role === r));
+    return `${admChart('adm-users-role', 'Users by Role', 'bar', roles, [{ label: 'Users', data: roles.map(r => (DB.staff || []).filter(s => s.role === r).length) }, { label: 'Active logins', data: roles.map(r => (DB.staff || []).filter(s => s.role === r && s.systemAccount === 'Active').length) }])}<div class="card"><div class="card-title"><span>Users <small>${list.length} of ${(DB.staff || []).length}</small></span>
       <span class="pill-row">${admExportBtn(() => exportCSV('users', ['Name','Code','Email','Role','Branch','Account','Last login'], list.map(s => [s.name, s.staffCode || '', s.email || '', s.role, admBranchName(s.branch), s.systemAccount || 'Not Created', s.lastLoginAt || ''])))}
       <button class="btn btn-sm btn-primary" onclick="goTo('staff','Create User')">+ Create User</button></span></div>
       ${admUserFilterBar('admUsersFilter')}
@@ -5138,6 +5165,7 @@ const ADMIN_VIEWS = {
     const counts = ADM_STAFF_ROLES.map(r => [r, staff.filter(s => s.role === r).length]);
     const list = admFilterUsers(staff, 'admRolesFilter');
     return `<div class="card"><div class="card-title">Users per Role</div><div class="adm-tiles">${counts.map(([r, n]) => admTile(r, n)).join('')}</div></div>
+      ${admChart('adm-role-share', 'Share of Users by Role', 'doughnut', counts.filter(c => c[1]).map(c => c[0]), [{ data: counts.filter(c => c[1]).map(c => c[1]) }])}
       <div class="card"><div class="card-title"><span>Assignments <small>${list.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('staff','Roles')">Manage roles →</button></div>
       ${admUserFilterBar('admRolesFilter', { status: false })}
       ${admTable(['User','Role','Access level','Branch'], list.map(s => [admUserCell(s), `<strong>${escapeHtml(s.role)}</strong>`, escapeHtml(s.accessLevel || '—'), escapeHtml(admBranchName(s.branch))]), 'No users match these filters.')}</div>`; },
@@ -5169,7 +5197,8 @@ const ADMIN_VIEWS = {
     if(rows === undefined) return admLoading(); if(rows.__error) return admError(rows.__error);
     const q = (session.admAuditQ || '').toLowerCase();
     const list = q ? rows.filter(a => [a.user_name, a.action, a.module, a.record_type, a.record_id].some(x => (x || '').toLowerCase().includes(q))) : rows;
-    return `<div class="card"><div class="card-title"><span>Audit Entries <small>${list.length}${rows.length >= 200 ? ' (latest 200 per module)' : ''}</small></span>
+    const aDays = admLastDays(14);
+    return `${admChart('adm-audit-days', 'Activity per Day (last 14 days)', 'bar', aDays.map(admDayLabel), [{ label: 'Entries', data: aDays.map(d => list.filter(a => String(a.created_at).slice(0, 10) === d).length) }])}<div class="card"><div class="card-title"><span>Audit Entries <small>${list.length}${rows.length >= 200 ? ' (latest 200 per module)' : ''}</small></span>
       ${admExportBtn(() => exportCSV('audit-' + session.subtab.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase(), ['When','User','Role','Module','Action','Record type','Record'], list.map(a => [a.created_at, a.user_name || '', a.role_id || '', a.module || '', a.action, a.record_type || '', a.record_id || ''])))}</div>
       <div class="pill-row adm-filters"><input placeholder="Search user, action or record" value="${escapeHtml(session.admAuditQ || '')}" onchange="session.admAuditQ=this.value; renderApp();"></div>
       ${admTable(['When','User','Module','Action','Record'], list.slice(0, 300).map(a => [admWhen(a.created_at), `${escapeHtml(a.user_name || 'system')}<div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[a.role_id] || a.role_id || '')}</div>`, escapeHtml(a.module || '—'), `<strong>${escapeHtml(a.action)}</strong>${a.reason ? `<div class="hint">${escapeHtml(a.reason)}</div>` : ''}`, escapeHtml(((a.record_type || '') + ' ' + (a.record_id || '')).trim())]), 'Nothing recorded yet.')}</div>`; },
@@ -5227,6 +5256,7 @@ const ADMIN_VIEWS = {
     const byStatus = {}; rows.forEach(r => { const s = d.status(r) || 'Unknown'; byStatus[s] = (byStatus[s] || 0) + 1; });
     return `<div class="card"><div class="card-title"><span>${d.title} <small>${fmtNum(rows.length)} record(s)</small></span>${admExportBtn(() => admExportDataset(spec.set))}</div>
       <div class="adm-tiles">${Object.entries(byStatus).map(([s, n]) => admTile(s, fmtNum(n))).join('') || admTile('Records', 0)}</div></div>
+      ${admChart('adm-ds-' + spec.set, d.title + ' by Status', 'doughnut', Object.keys(byStatus), [{ data: Object.values(byStatus) }])}
       <div class="card"><div class="card-title">Completeness</div>${admTable(['Field','Missing','Complete'], d.checks.map(([label, fn]) => { const miss = rows.filter(r => !fn(r)).length;
         return [escapeHtml(label), miss ? admBadge(fmtNum(miss), 'amber') : admBadge('0', 'green'), rows.length ? Math.round(100 * (rows.length - miss) / rows.length) + '%' : '—']; }))}</div>`; },
   dataValidation: () => { const checks = [];
@@ -5245,7 +5275,8 @@ const ADMIN_VIEWS = {
     const count = (fn) => { const m = {}; rows.forEach(r => { const k = fn(r) || '—'; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
     const mods = count(r => r.module), users = count(r => r.user_name);
     return `<div class="card"><div class="card-title"><span>Audit Summary <small>latest ${rows.length} entries</small></span>${admExportBtn(() => exportCSV('audit-summary', ['Group','Name','Entries'], mods.map(m => ['Module'].concat(m)).concat(users.map(u => ['User'].concat(u)))))}</div>
-      <div class="adm-two">${admTable(['Module','Entries'], mods.map(([k, n]) => [escapeHtml(k), n]))}${admTable(['User','Entries'], users.slice(0, 20).map(([k, n]) => [escapeHtml(k), n]))}</div></div>`; },
+      <div class="adm-two">${admTable(['Module','Entries'], mods.map(([k, n]) => [escapeHtml(k), n]))}${admTable(['User','Entries'], users.slice(0, 20).map(([k, n]) => [escapeHtml(k), n]))}</div></div>
+      <div class="adm-two">${admChart('adm-audit-mod', 'Entries by Module', 'doughnut', mods.slice(0, 10).map(m => m[0]), [{ data: mods.slice(0, 10).map(m => m[1]) }])}${admChart('adm-audit-user', 'Most Active Users', 'bar', users.slice(0, 10).map(u => u[0]), [{ label: 'Entries', data: users.slice(0, 10).map(u => u[1]) }], { indexAxis: 'y', scales: { x: { beginAtZero: true } } })}</div>`; },
   securityOverview: () => { const locked = admData('locked', '/api/system/locked-accounts', r => r.lockedAccounts); const d = admSysAdmin(); const users = admUsersWithAccounts();
     return `<div class="card"><div class="card-title">Security Posture</div><div class="adm-tiles">
       ${admTile('Locked accounts', locked === undefined ? '…' : (locked.__error ? '—' : locked.length))}
@@ -5257,7 +5288,9 @@ const ADMIN_VIEWS = {
     const events = admData('events:' + key, '/api/system/security-events?limit=200' + (spec.outcome ? '&outcome=' + spec.outcome : ''), r => r.events);
     if(events === undefined) return admLoading(); if(events.__error) return admError(events.__error);
     const ok = events.filter(e => e.success).length;
+    const days = admLastDays(14);
     return `<div class="card"><div class="card-title">Summary <small>latest ${events.length} attempts</small></div><div class="adm-tiles">${admTile('Successful', ok)}${admTile('Failed', events.length - ok)}${admTile('Distinct accounts', new Set(events.map(e => e.email)).size)}</div></div>
+      ${admChart('adm-logins-' + key, 'Sign-ins per Day (last 14 days)', 'bar', days.map(admDayLabel), [{ label: 'Successful', data: days.map(d => events.filter(e => e.success && String(e.created_at).slice(0, 10) === d).length), backgroundColor: '#2A9D8F' }, { label: 'Failed', data: days.map(d => events.filter(e => !e.success && String(e.created_at).slice(0, 10) === d).length), backgroundColor: '#E76F51' }])}
       <div class="card"><div class="card-title"><span>Sign-in Attempts</span>${admExportBtn(() => exportCSV('sign-in-attempts', ['When','Email','Outcome','Reason','IP'], events.map(e => [e.created_at, e.email, e.success ? 'Success' : 'Failed', e.reason || '', e.ip || ''])))}</div>
       ${admTable(['When','Email','Outcome','Reason','IP'], events.map(e => [admWhen(e.created_at), escapeHtml(e.email), e.success ? admBadge('Success', 'green') : admBadge('Failed', 'red'), escapeHtml(e.reason || '—'), escapeHtml(e.ip || '—')]), 'No sign-in attempts recorded yet.')}</div>`; },
   passwordPolicy: () => `<div class="card"><div class="card-title">Enforced Rules</div>
@@ -5272,6 +5305,7 @@ const ADMIN_VIEWS = {
   databaseStatus: () => { const st = admStats(); if(st === undefined) return admLoading(); if(st.__error) return admError(st.__error); const db = st.database;
     return `<div class="card"><div class="card-title"><span>Database <small>${admBadge('Online', 'green')}</small></span><button class="btn btn-sm btn-outline" onclick="admForget('stats'); renderApp();">Refresh</button></div><div class="adm-tiles">
       ${admTile('Size', admBytes(db.sizeBytes))}${admTile('Connections', db.connections.total, db.connections.active + ' active')}${admTile('Tables', st.tables.length)}${admTile('Engine', escapeHtml((db.version.match(/^\w+ [\d.]+/) || [db.version])[0]))}</div></div>
+      ${admChart('adm-db-tables', 'Space by Table (KB, top 10)', 'bar', st.tables.slice(0, 10).map(t => t.name), [{ label: 'KB', data: st.tables.slice(0, 10).map(t => Math.round(t.sizeBytes / 1024)) }], { indexAxis: 'y', scales: { x: { beginAtZero: true } } })}
       <div class="card"><div class="card-title">Largest Tables</div>${admTable(['Table','Rows','Space'], st.tables.slice(0, 15).map(t => [`<code>${escapeHtml(t.name)}</code>`, fmtNum(t.rows), admBytes(t.sizeBytes)]))}</div>`; },
   integrationMonitoring: () => { const m = admData('mpesa', '/api/mpesa/status');
     return `${renderSystemHealthCard()}<div class="card"><div class="card-title"><span>M-Pesa</span><button class="btn btn-sm btn-outline" onclick="goTo('account','M-Pesa Configuration')">Configure →</button></div>
@@ -5311,6 +5345,7 @@ const ADMIN_VIEWS = {
   apiUsage: () => { const d = admSysAdmin(); if(!d || !d.sessions) return admLoading('API Usage');
     const s = d.sessions.sessions; const m = {}; s.forEach(x => { const k = ROLE_ID_TO_DISPLAY[x.role_id] || x.role_id || '—'; m[k] = (m[k] || 0) + 1; });
     return `<div class="card"><div class="card-title">Active API Sessions <small>${s.length}</small></div><div class="adm-tiles">${Object.entries(m).map(([k, n]) => admTile(k, n)).join('') || admTile('Sessions', 0)}</div></div>
+      ${admChart('adm-api-roles', 'Sessions by Role', 'doughnut', Object.keys(m), [{ data: Object.values(m) }])}
       <div class="card"><div class="card-title">Clients in Use</div>${admTable(['User','Client / browser','IP','Since'], s.map(x => [escapeHtml(x.name || x.email || '—'), `<span class="hint">${escapeHtml(String(x.user_agent || '—').slice(0, 90))}</span>`, escapeHtml(x.ip || '—'), timeAgo(x.created_at)]), 'Nobody is signed in.')}</div>`; },
   mpesaCallbacks: () => { const tx = admData('mpesatx', '/api/mpesa/transactions', r => r.transactions); if(tx === undefined) return admLoading(); if(tx.__error) return admError(tx.__error);
     return `<div class="card"><div class="card-title">Inbound M-Pesa Callbacks <small>${tx.length}</small></div>
@@ -5558,9 +5593,10 @@ const RG_VIEWS = {
     const data = team.map(t => [who(t), t.branchId ? branchName(t.branchId) : '', label(t), t.period, t.value, t.achieved || 0, pct(t).toFixed(1), t.status]);
     const row = t => [`<strong>${escapeHtml(who(t))}</strong>`, escapeHtml(t.branchId ? branchName(t.branchId) : '—'), escapeHtml(label(t)), escapeHtml(t.period), fmtNum(t.value), fmtNum(t.achieved || 0), rgPctBadge(pct(t), 100, 50), admBadge(t.status, t.status === 'Active' ? 'blue' : 'grey')];
     const avg = team.length ? team.reduce((s, t) => s + pct(t), 0) / team.length : 0;
-    return `<div class="card">${rgCardTitle('Target Summary', '', `<button class="btn btn-sm btn-primary" onclick="goTo('staff','Manage Targets')">+ Set a target</button>`)}<div class="adm-tiles">
+    return `<div class="card">${rgCardTitle('Target Summary', '', `<button class="btn btn-sm btn-primary" onclick="session.openForms = Object.assign(session.openForms || {}, {'f-submitSetTarget': true}); goTo('staff','Manage Targets')">+ Set a target</button>`)}<div class="adm-tiles">
         ${admTile('Targets in region', team.length)}${admTile('Average achievement', avg.toFixed(1) + '%')}${admTile('Met or exceeded', team.filter(t => pct(t) >= 100).length)}${admTile('Below 50%', team.filter(t => pct(t) < 50).length)}</div></div>
       <div class="card">${rgCardTitle('My Regional Targets', mine.length + ' assigned to you')}${admTable(['Metric','Period','Target','Achieved','Remaining','Achievement %'], mine.map(t => [`<strong>${escapeHtml(label(t))}</strong>`, escapeHtml(t.period), fmtNum(t.value), fmtNum(t.achieved || 0), fmtNum(t.remaining || 0), rgPctBadge(pct(t), 100, 50)]), 'No targets have been assigned to you.')}</div>
+      ${admChart('rg-targets', 'Achievement by Target (%)', 'bar', team.slice(0, 15).map(t => `${who(t)} · ${label(t)}`), [{ label: 'Achievement %', data: team.slice(0, 15).map(t => Math.round(pct(t))) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, suggestedMax: 100 } } })}
       <div class="card">${rgCardTitle('Branch & Staff Targets', team.length, rgGen('Regional Targets', headers, data))}${admTable(headers, team.sort((a, b) => pct(a) - pct(b)).map(row), 'No targets set in your region yet. Use “Set a target”.')}</div>`;
   },
   "Regional Collection": () => {
@@ -5667,7 +5703,8 @@ const RG_VIEWS = {
     const q = f.q.toLowerCase();
     const list = act.filter(a => (!f.branch || a.branchId === f.branch) && (!q || [a.user, a.action, a.module, a.recordType].some(x => (x || '').toLowerCase().includes(q))));
     const headers = ['When','User','Role','Branch','Module','Action','Record'];
-    return `<div class="card">${rgCardTitle('Activity', `${list.length} of ${act.length}`, rgGen('Regional Activity Log', headers, list.map(a => [a.at, a.user || '', ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '', a.branchId ? branchName(a.branchId) : '', a.module || '', a.action, ((a.recordType || '') + ' ' + (a.recordId || '')).trim()])))}
+    const rDays = admLastDays(14);
+    return `${admChart('rg-activity-days', 'Activity per Day (last 14 days)', 'bar', rDays.map(admDayLabel), [{ label: 'Actions', data: rDays.map(d => list.filter(a => String(a.at).slice(0, 10) === d).length) }])}<div class="card">${rgCardTitle('Activity', `${list.length} of ${act.length}`, rgGen('Regional Activity Log', headers, list.map(a => [a.at, a.user || '', ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '', a.branchId ? branchName(a.branchId) : '', a.module || '', a.action, ((a.recordType || '') + ' ' + (a.recordId || '')).trim()])))}
       <div class="pill-row adm-filters"><input placeholder="Search user, action or module" value="${escapeHtml(f.q)}" onchange="session.rgActFilter.q=this.value; renderApp();">
         <select onchange="session.rgActFilter.branch=this.value; renderApp();"><option value="">All branches</option>${rgBranches().map(b => `<option value="${b.id}" ${f.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select></div>
       ${admTable(['When','User','Branch','Action','Record'], list.slice(0, 300).map(a => [admWhen(a.at), `${escapeHtml(a.user || '—')}<div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '')}</div>`, escapeHtml(a.branchId ? branchName(a.branchId) : '—'), `<strong>${escapeHtml(a.action)}</strong>${a.module ? `<div class="hint">${escapeHtml(a.module)}</div>` : ''}`, escapeHtml(((a.recordType || '') + ' ' + (a.recordId || '')).trim())]), 'No activity recorded yet.')}</div>`;
@@ -5700,6 +5737,7 @@ function rgOpsPage(label, kind){
   const data = list.map(r => [r.title, r.branchId ? branchName(r.branchId) : 'Whole region', r.priority, r.status, r.dueDate || '', r.assignedToName || '', r.createdByName || '', String(r.createdAt).slice(0, 10)].concat(kind === 'transfer' ? [r.subjectName || '', branchName(r.fromBranchId), branchName(r.toBranchId)] : []));
   return `<div class="card">${rgCardTitle('Overview')}<div class="adm-tiles">${admTile('Open', all.filter(r => r.isOpen).length)}${admTile('Closed', all.filter(r => !r.isOpen).length)}${admTile('Overdue', all.filter(r => r.isOpen && r.dueDate && r.dueDate < today).length)}${admTile('High / critical open', all.filter(r => r.isOpen && ['High','Critical'].includes(r.priority)).length)}</div></div>
     ${rgOpsForm(kind)}
+    <div class="adm-two">${admChart('rg-ops-status-' + kind, 'By Status', 'doughnut', statuses, [{ data: statuses.map(st => all.filter(r => r.status === st).length) }])}${admChart('rg-ops-branch-' + kind, 'By Branch', 'bar', rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => b.name), [{ label: 'Open', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && r.isOpen).length) }, { label: 'Closed', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && !r.isOpen).length) }])}</div>
     <div class="card">${rgCardTitle(label, `${list.length} shown`, rgGen(label, headers, data))}
       <div class="pill-row adm-filters">
         <select onchange="session.rgOpsFilter.status=this.value; renderApp();">${[['open','Open'],['closed','Closed'],['all','All']].map(([v, l]) => `<option value="${v}" ${fl.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -5746,12 +5784,12 @@ function rgOpsForm(kind){
       + (RG_OPS_CATEGORIES[kind] ? sel('category', 'Category', [['', 'Choose…']].concat(RG_OPS_CATEGORIES[kind].map(c => [c, c]))) : '')
       + (isMgr ? '' : sel('assigned_to', 'Assign to', [['', 'Nobody yet']].concat(staff.map(s => [s.id, `${s.name} (${s.role})`]))));
   }
-  return `<div class="card">${rgCardTitle('New ' + RG_KIND_LABEL[kind])}
+  return `<div class="fp ${isFormOpen('rg-'+kind)?'fp-open':''}">${formToggleBtn('rg-'+kind, 'New ' + RG_KIND_LABEL[kind])}<div class="fp-body"><div class="card">${rgCardTitle('New ' + RG_KIND_LABEL[kind])}
     <form onsubmit="return rgCreate(event,'${kind}')"><div class="form-grid">
       ${inp('title', 'Title', 'text', 'maxlength="160"')}${sel('priority', 'Priority', RG_PRIORITIES.map(p => [p, p]))}
       ${specific}${kind === 'transfer' ? '' : inp('due_date', 'Due date', 'date')}
       ${inp('details', kind === 'transfer' ? 'Reason' : 'Details', 'textarea')}
-    </div><button class="btn btn-primary btn-sm" type="submit">Create ${RG_KIND_LABEL[kind]}</button></form></div>`;
+    </div><button class="btn btn-primary btn-sm" type="submit">Create ${RG_KIND_LABEL[kind]}</button></form></div></div></div>`;
 }
 async function rgCreate(ev, kind){
   ev.preventDefault();
@@ -8687,7 +8725,7 @@ function renderAccountantDashboard(){
       ${DB.taxObligations.map(t=>`<tr><td>${escapeHtml(t.name)}</td><td>${t.period}</td><td>${fmt(t.amountDue)}</td><td>${fmt(t.amountPaid)}</td><td>${t.filingDeadline}</td>
         <td><span class="badge ${t.status==='Paid'?'green':t.status==='Pending'?'amber':'red'}">${t.status}</span></td>
         <td>${t.status!=='Paid' ? `<button class="btn btn-sm btn-outline" onclick="updateTaxObligation('${t.id}', ${t.amountDue}, 'Paid')">Mark Paid</button>` : "—"}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No tax obligations configured yet.</td></tr>`}</table></div>
-      <form onsubmit="return submitTaxObligation(event)" style="margin-top:12px;">
+      <div class="fp ${isFormOpen('f-submitTaxObligation')?'fp-open':''}" style="margin-top:12px;">${formToggleBtn('f-submitTaxObligation', 'Add Tax Obligation')}<div class="fp-body"><form onsubmit="return submitTaxObligation(event)" style="margin-top:12px;">
         <div class="form-grid">
           <div class="field"><label>Obligation Name</label><input name="name" placeholder="e.g. VAT, PAYE, Withholding Tax" required></div>
           <div class="field"><label>Period</label><input name="period" placeholder="e.g. Aug 2026" required></div>
@@ -8695,7 +8733,7 @@ function renderAccountantDashboard(){
           <div class="field"><label>Filing Deadline</label><input name="filingDeadline" type="date" required></div>
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Add Obligation</button>
-      </form>
+      </form></div></div>
     </div>
 
     <div class="card">
@@ -9151,13 +9189,13 @@ function renderDirectorDashboard(){
       ${DB.boardMatters.map(b=>`<tr><td>${escapeHtml(b.title)}</td><td>${b.category}</td><td>${escapeHtml(b.raisedBy)}</td><td>${b.date}</td>
         <td><span class="badge ${b.status==='Approved'?'green':b.status==='In Review'?'blue':'amber'}">${b.status}</span></td>
         <td>${b.status!=='Approved' ? `<button class="btn btn-sm btn-outline" onclick="updateBoardMatter('${b.id}','Approved')">Approve</button>` : "—"}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No board matters raised.</td></tr>`}</table></div>
-      <form onsubmit="return submitBoardMatter(event)" style="margin-top:12px;">
+      <div class="fp ${isFormOpen('f-submitBoardMatter')?'fp-open':''}" style="margin-top:12px;">${formToggleBtn('f-submitBoardMatter', 'Raise Board Matter')}<div class="fp-body"><form onsubmit="return submitBoardMatter(event)" style="margin-top:12px;">
         <div class="form-grid">
           <div class="field"><label>Matter</label><input name="title" required></div>
           <div class="field"><label>Category</label><select name="category"><option>Capital Expenditure</option><option>Risk</option><option>Strategic Partnership</option><option>Compliance</option><option>Other</option></select></div>
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Raise Board Matter</button>
-      </form>
+      </form></div></div>
     </div>
 
     <div class="card">
@@ -10920,14 +10958,14 @@ function renderClientDocumentsTab(id, docs){
       ${docs.map(d=>`<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.type)}</td><td>${new Date(d.date).toLocaleDateString()}</td>
         <td>${d.filePath?`<span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="viewClientDocument('${d.filePath.replace(/'/g,"\\'")}')">View</span>`:''}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No documents.</td></tr>`}
     </table></div>
-    <form onsubmit="return submitDocument(event,'${id}')" style="margin-top:12px;">
+    <div class="fp ${isFormOpen('f-submitDocument')?'fp-open':''}" style="margin-top:12px;">${formToggleBtn('f-submitDocument', 'Upload Document')}<div class="fp-body"><form onsubmit="return submitDocument(event,'${id}')" style="margin-top:12px;">
       <div class="form-grid">
         <div class="field"><label>Document Name</label><input name="name" required placeholder="e.g. Business Permit"></div>
         <div class="field"><label>Type</label><select name="type"><option>ID</option><option>Photo</option><option>Permit</option><option>Statement</option><option>Other</option></select></div>
         <div class="field"><label>File</label><input name="file" type="file" required accept="image/png,image/jpeg,image/webp,application/pdf"></div>
       </div>
       <button class="btn btn-outline btn-sm" type="submit">Upload Document</button>
-    </form>
+    </form></div></div>
   `;
 }
 function renderClientDetail(id){
@@ -14367,7 +14405,7 @@ function renderArrears(){
     <div class="card">
       <div class="card-title">Loan Arrears</div>
       <span style="margin-bottom:10px;display:inline-flex;">${generateDropdownHtml('exportArrearsCSV()')}</span>
-      <div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Officer</th><th>Balance</th><th>Days Overdue</th><th>Bucket</th><th></th></tr>
+      ${admTwoCharts(admChart('ch-arr-count','Overdue Loans by Age','bar',state.buckets.map(b=>b.bucket),[{label:'Loans',data:state.buckets.map(b=>b.count)}]), admChart('ch-arr-amt','Amount at Risk by Age (KES)','doughnut',state.buckets.map(b=>b.bucket),[{data:state.buckets.map(b=>Math.round(b.amount))}]))}<div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Officer</th><th>Balance</th><th>Days Overdue</th><th>Bucket</th><th></th></tr>
       ${state.arrears.map(x=>`<tr><td>${x.loanId}</td><td>${clientName(x.clientId)}</td><td>${staffName(x.officerId)}</td>
         <td>${fmt(x.balance)}</td><td>${x.daysOverdue} days</td><td><span class="badge red">${x.bucket}</span></td>
         <td><button class="btn btn-sm btn-outline" onclick="goTo('payments','Record Payment'); prefillPayment('${x.loanId}')">Collect</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No loans in arrears. 🎉</td></tr>`}</table></div>
@@ -14388,7 +14426,7 @@ function renderCollectionActivities(){
   const state = DB.acctPages.activities;
   if(!state){ loadCollectionActivities(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitNewActivity')?'fp-open':''}">${formToggleBtn('f-submitNewActivity', 'Log Collection Activity')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Log Collection Activity</div>
       <form onsubmit="return submitNewActivity(event)">
         <div class="form-grid">
@@ -14400,10 +14438,10 @@ function renderCollectionActivities(){
         <div class="field"><label>Next Follow-up Date (optional)</label><input name="next_follow_up_date" type="date"></div>
         <button class="btn btn-primary btn-sm" type="submit">Log Activity</button>
       </form>
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title">Recent Collection Activities <small>${state.activities.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Client</th><th>Type</th><th>Notes</th><th>Outcome</th><th>By</th><th>Date</th></tr>
+      ${(()=>{ const t = admGroup(state.activities, a=>a.activity_type), o = admGroup(state.activities, a=>a.outcome); return admTwoCharts(admChart('ch-act-type','Activities by Type','bar',t[0],[{label:'Activities',data:t[1]}]), admChart('ch-act-outcome','Outcomes','doughnut',o[0],[{data:o[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Type</th><th>Notes</th><th>Outcome</th><th>By</th><th>Date</th></tr>
       ${state.activities.map(a=>`<tr><td>${clientName(a.client_id)}</td><td>${a.activity_type}</td><td class="hint">${escapeHtml(a.notes||'—')}</td><td class="hint">${escapeHtml(a.outcome||'—')}</td><td>${staffName(a.staff_id)}</td><td>${new Date(a.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No collection activities logged yet.</td></tr>`}</table></div>
     </div>
   `;
@@ -14430,7 +14468,7 @@ function renderFollowUps(){
   const state = DB.acctPages.followups;
   if(!state){ loadFollowUps({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   return `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitNewFollowUp')?'fp-open':''}">${formToggleBtn('f-submitNewFollowUp', 'New Follow-Up')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">New Follow-Up</div>
       <form onsubmit="return submitNewFollowUp(event)">
         <div class="form-grid">
@@ -14440,14 +14478,14 @@ function renderFollowUps(){
         <div class="field"><label>Reason</label><input name="reason"></div>
         <button class="btn btn-primary btn-sm" type="submit">Create Follow-Up</button>
       </form>
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title">Follow-Ups <small>${state.followUps.length}</small></div>
       <form onsubmit="return submitFollowUpFilter(event)" class="pill-row" style="margin-bottom:12px;">
         <select name="status"><option value="">All statuses</option><option>Pending</option><option>Completed</option><option>Cancelled</option></select>
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      <div class="table-wrap"><table><tr><th>Client</th><th>Date</th><th>Reason</th><th>Responsible</th><th>Status</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.followUps, f=>f.status), by = admGroup(state.followUps, f=>String(f.follow_up_date||'').slice(0,10)); return admTwoCharts(admChart('ch-fu-status','Follow-Ups by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-fu-date','Follow-Ups by Date','bar',by[0].sort(),[{label:'Follow-ups',data:by[0].sort().map(k=>state.followUps.filter(f=>String(f.follow_up_date||'').slice(0,10)===k).length)}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Date</th><th>Reason</th><th>Responsible</th><th>Status</th><th></th></tr>
       ${state.followUps.map(f=>`<tr><td>${clientName(f.client_id)}</td><td>${f.follow_up_date}</td><td class="hint">${escapeHtml(f.reason||'—')}</td><td>${staffName(f.responsible_staff_id)}</td>
         <td><span class="badge ${f.effective_status==='Completed'?'green':f.effective_status==='Overdue'?'red':f.effective_status==='Cancelled'?'grey':'amber'}">${f.effective_status}</span></td>
         <td>${f.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="const o=prompt('Outcome:'); withRequest('fu-complete-${f.id}', ()=>decideFollowUp('${f.id}','Completed',o))">Complete</button> <button class="btn btn-sm btn-outline" onclick="withRequest('fu-cancel-${f.id}', ()=>decideFollowUp('${f.id}','Cancelled'))">Cancel</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No follow-ups yet.</td></tr>`}</table></div>
@@ -14483,7 +14521,7 @@ function renderPromisesToPay(){
   if(!state){ loadPromises({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const myClientLoans = DB.loans.filter(l=>["Active","Disbursed"].includes(l.status));
   return `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitNewPromise')?'fp-open':''}">${formToggleBtn('f-submitNewPromise', 'New Promise to Pay')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">New Promise to Pay <small>a promise is not a payment — fulfillment is derived from real posted payments</small></div>
       <form onsubmit="return submitNewPromise(event)">
         <div class="form-grid">
@@ -14495,10 +14533,10 @@ function renderPromisesToPay(){
         <div class="field"><label>Notes</label><input name="notes"></div>
         <button class="btn btn-primary btn-sm" type="submit">Create Promise</button>
       </form>
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title">Promises to Pay <small>${state.promises.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Client</th><th>Loan</th><th>Amount</th><th>Date</th><th>Status</th><th>Fulfilled</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.promises, p=>p.status), amt = admGroup(state.promises, p=>p.status, p=>p.promised_amount); return admTwoCharts(admChart('ch-ptp-status','Promises by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-ptp-amt','Promised Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Loan</th><th>Amount</th><th>Date</th><th>Status</th><th>Fulfilled</th><th></th></tr>
       ${state.promises.map(p=>`<tr><td>${clientName(p.client_id)}</td><td>${p.loan_id}</td><td>${fmt(p.promised_amount)}</td><td>${p.promise_date}</td>
         <td><span class="badge ${p.status==='Fulfilled'?'green':p.status==='Broken'?'red':p.status==='Partially Fulfilled'?'amber':p.status==='Cancelled'?'grey':'blue'}">${p.status}</span></td>
         <td>${fmt(p.fulfilled_amount)}</td>
@@ -14629,7 +14667,7 @@ function renderMpesaTransactions(){
       <select name="status"><option value="">All statuses</option><option>Success</option><option>Failed</option><option>Unprocessed</option></select>
       <button class="btn btn-sm btn-outline" type="submit">Apply</button>
     </form>
-    <div class="table-wrap"><table><tr><th>Checkout Ref</th><th>Receipt</th><th>Phone</th><th>Amount</th><th>Result</th><th>Loan</th><th>Date</th></tr>
+    ${(()=>{ const r = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed'), a = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed', t=>t.amount); return admTwoCharts(admChart('ch-mp-result','Transactions by Result','doughnut',r[0],[{data:r[1]}]), admChart('ch-mp-amt','Amount by Result (KES)','bar',a[0],[{label:'KES',data:a[1]}])); })()}<div class="table-wrap"><table><tr><th>Checkout Ref</th><th>Receipt</th><th>Phone</th><th>Amount</th><th>Result</th><th>Loan</th><th>Date</th></tr>
     ${state.transactions.map(t=>`<tr class="clickable" onclick="openMpesaTxDetail('${t.id}')"><td class="hint">${t.checkout_request_id}</td><td>${t.mpesa_receipt_number||'—'}</td><td>${t.phone||'—'}</td><td>${t.amount?fmt(t.amount):'—'}</td>
       <td><span class="badge ${Number(t.result_code)===0?'green':'red'}">${Number(t.result_code)===0?'Success':'Failed'}</span></td><td>${t.loan_id||'—'}</td><td>${new Date(t.created_at).toLocaleString()}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No M-Pesa transactions recorded yet.</td></tr>`}</table></div>
   </div>`;
@@ -14767,6 +14805,7 @@ function renderPayinSummary(){
   const byChannel = {};
   DB.payments.filter(p=>p.status!=="Unposted").forEach(p=>{ byChannel[p.channel]=(byChannel[p.channel]||{count:0,total:0}); byChannel[p.channel].count++; byChannel[p.channel].total+=p.amount; });
   return `<div class="card"><div class="card-title">Pay-in Summary <small>all posted payments by channel</small></div>
+    ${admTwoCharts(admChart('ch-payin-count','Payments by Channel','doughnut',Object.keys(byChannel),[{data:Object.values(byChannel).map(v=>v.count)}]), admChart('ch-payin-amt','Amount by Channel (KES)','bar',Object.keys(byChannel),[{label:'KES',data:Object.values(byChannel).map(v=>Math.round(v.total))}]))}
     <div class="table-wrap"><table><tr><th>Channel</th><th>No. of Payments</th><th>Total Amount</th></tr>
     ${Object.entries(byChannel).map(([c,v])=>`<tr><td>${c}</td><td>${v.count}</td><td>${fmt(v.total)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No payments yet.</td></tr>`}</table></div></div>`;
 }
@@ -14946,7 +14985,7 @@ function renderMpesa(){
       <table style="margin-top:10px;"><tr><td>Sandbox</td><td>${escapeHtml(st.sandboxStatus)}</td></tr><tr><td>Production</td><td>${escapeHtml(st.productionStatus)}</td></tr></table>
       ${!st.configured ? `<div class="section-note">M-Pesa is not yet configured. An Admin can set this up under My Account → System Responsibilities → M-Pesa Configuration.</div>` : ""}
     </div>` : ""}
-    <div class="card" style="max-width:600px;">
+    <div class="fp ${isFormOpen('f-submitStkPush')?'fp-open':''}">${formToggleBtn('f-submitStkPush', 'Request M-Pesa Payment')}<div class="fp-body"><div class="card" style="max-width:600px;">
       <div class="card-title">Request M-Pesa Payment (STK Push)</div>
       <div class="hint" style="margin-bottom:10px;">This sends a real STK push request to the customer's phone via the real backend. It does NOT record a payment immediately — the payment only appears once the customer completes it on their phone and Safaricom's real callback confirms it.</div>
       <form onsubmit="return submitStkPush(event)">
@@ -14956,7 +14995,7 @@ function renderMpesa(){
         <button class="btn btn-rust" type="submit">Send STK Push</button>
       </form>
       ${session.lastStkResult ? `<div class="section-note" style="margin-top:10px;">Last request: <strong>${session.lastStkResult.status}</strong> — ${escapeHtml(session.lastStkResult.message||'')}</div>` : ""}
-    </div>
+    </div></div></div>
   `;
 }
 function submitStkPush(ev){
@@ -15044,7 +15083,7 @@ function renderExpensesPage(){
   if(!state){ loadExpensesPage({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canDecide = hasPermission(session.role, "Post Accounting Entries");
   return `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitNewExpense')?'fp-open':''}">${formToggleBtn('f-submitNewExpense', 'Submit Expense')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Submit Expense</div>
       <form onsubmit="return submitNewExpense(event)">
         <div class="form-grid">
@@ -15054,11 +15093,11 @@ function renderExpensesPage(){
         <div class="field"><label>Note</label><input name="note"></div>
         <button class="btn btn-primary btn-sm" type="submit">Submit for Approval</button>
       </form>
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title">Expenses <small>${state.totals.count} total, KES ${fmtNum(state.totals.amount)}</small></div>
       ${acctScopeFilterBar('exp', `<select name="status"><option value="">All statuses</option>${["Pending","Approved","Paid","Rejected"].map(s=>`<option ${state.filters.status===s?'selected':''}>${s}</option>`).join("")}</select>`)}
-      <div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Note</th><th>Status</th><th>Date</th><th></th></tr>
+      ${(()=>{ const c = admGroup(state.expenses, e=>e.category, e=>e.amount), st = admGroup(state.expenses, e=>e.status); return admTwoCharts(admChart('ch-exp-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-exp-status','By Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Note</th><th>Status</th><th>Date</th><th></th></tr>
       ${state.expenses.map(e=>`<tr><td>${e.category}</td><td>${fmt(e.amount)}</td><td class="hint">${escapeHtml(e.note||'—')}</td><td>${statusBadge(e.status)}</td><td>${new Date(e.created_at).toLocaleDateString()}</td>
         <td>${canDecide && e.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('exp-approve-${e.id}', ()=>decideExpense('${e.id}','approve'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const r=prompt('Reason:'); if(r!==null) withRequest('exp-reject-${e.id}', ()=>decideExpense('${e.id}','reject',r))">Reject</button>` : ""}
         ${canDecide && e.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('exp-pay-${e.id}', ()=>decideExpense('${e.id}','pay'))">Pay</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No expenses match these filters.</td></tr>`}</table></div>
@@ -15123,7 +15162,7 @@ function renderRequisitionsPage(){
         <input name="month" type="month">
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      <div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
+      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
       ${state.requisitions.map(r=>`<tr><td>${r.category}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(r.description||'—')}</td><td>${branchName(r.branch_id)}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
         <td>${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
         ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
@@ -16081,7 +16120,7 @@ function renderChartOfAccountsPage(){
   const canManage = hasPermission(session.role, "Manage System Settings");
   return `
     ${canManage ? `
-    <div class="card" style="max-width:600px;">
+    <div class="fp ${isFormOpen('f-submitNewAccount')?'fp-open':''}">${formToggleBtn('f-submitNewAccount', 'Create Account')}<div class="fp-body"><div class="card" style="max-width:600px;">
       <div class="card-title">Create Account</div>
       <form onsubmit="return submitNewAccount(event)">
         <div class="form-grid">
@@ -16091,7 +16130,7 @@ function renderChartOfAccountsPage(){
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Create Account</button>
       </form>
-    </div>` : `<div class="section-note">Only roles with Manage System Settings authority can create or edit accounts — Accountant does not automatically get this, matching the real backend RBAC.</div>`}
+    </div></div></div>` : `<div class="section-note">Only roles with Manage System Settings authority can create or edit accounts — Accountant does not automatically get this, matching the real backend RBAC.</div>`}
     <div class="card">
       <div class="card-title">Chart of Accounts <small>${state.accounts.length} accounts</small></div>
       <form onsubmit="return submitAcctFilter(event,'coa')" class="pill-row" style="margin-bottom:12px;">
@@ -16166,7 +16205,7 @@ function renderAdjustmentsPage(){
   const canAct = hasPermission(session.role, "Post Accounting Entries");
   return `
     ${canAct ? `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitNewAdjustment')?'fp-open':''}">${formToggleBtn('f-submitNewAdjustment', 'New Adjustment')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">New Adjustment <small>a formal correction — separate from expenses/requisitions/payments</small></div>
       <form onsubmit="return submitNewAdjustment(event)">
         <div class="form-grid">
@@ -16177,10 +16216,10 @@ function renderAdjustmentsPage(){
         <div class="field"><label>Reason</label><input name="reason" required></div>
         <button class="btn btn-primary btn-sm" type="submit">Save Draft</button>
       </form>
-    </div>` : ""}
+    </div></div></div>` : ""}
     <div class="card">
       <div class="card-title">Adjustments <small>${state.adjustments.length}</small></div>
-      <div class="table-wrap"><table><tr><th>Reason</th><th>Debit</th><th>Credit</th><th>Amount</th><th>Status</th><th>Created By</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.adjustments, a=>a.status), amt = admGroup(state.adjustments, a=>a.status, a=>a.amount); return admTwoCharts(admChart('ch-adj-status','Adjustments by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-adj-amt','Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Reason</th><th>Debit</th><th>Credit</th><th>Amount</th><th>Status</th><th>Created By</th><th></th></tr>
       ${state.adjustments.map(a=>{
         const isOwn = a.created_by===(DB.me&&DB.me.id);
         return `<tr><td>${escapeHtml(a.reason)}</td><td>${a.debit_account}</td><td>${a.credit_account}</td><td>${fmt(a.amount)}</td><td>${statusBadge(a.status)}</td><td>${staffName(a.created_by)}</td>
@@ -16308,7 +16347,7 @@ function renderInvestorDirectoryPage(){
         <td>${fmt(i.amount)}</td><td>${i.profit_share_pct}%</td><td>${i.term_months} mo</td><td><span class="badge ${i.status==='Active'?'green':'grey'}">${i.status}</span></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No investors match these filters.</td></tr>`}</table></div>
       ${renderPaginationControls('investordir','loadInvestorDirectory',state.filters)}
     </div>
-    ${canCreate ? `<div class="card" style="max-width:640px;">
+    ${canCreate ? `<div class="fp ${isFormOpen('f-submitNewInvestor')?'fp-open':''}">${formToggleBtn('f-submitNewInvestor', 'Register Investor')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Register Investor</div>
       <form onsubmit="return submitNewInvestor(event)">
         <div class="form-grid">
@@ -16323,7 +16362,7 @@ function renderInvestorDirectoryPage(){
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Register</button>
       </form>
-    </div>` : ""}
+    </div></div></div>` : ""}
   `;
 }
 function submitNewInvestor(ev){
@@ -16376,10 +16415,10 @@ function renderInvestorProfilePage(id){
       <div class="table-wrap"><table><tr><th>Period</th><th>Net Profit</th><th>Investor Profit</th><th>Status</th><th></th></tr>
       ${state.payouts.map(p=>`<tr><td>${p.period}</td><td>${fmt(p.company_net_profit)}</td><td>${fmt(p.investor_profit)}</td><td>${statusBadge(p.status)}</td>
         <td>${canPay && p.status==='Pending' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('pay-${p.id}', ()=>markPayoutPaid('${p.id}'))">Mark Paid</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No payouts generated yet.</td></tr>`}</table></div>
-      ${canPay ? `<form onsubmit="return submitGeneratePayout(event,'${inv.id}')" class="pill-row" style="margin-top:10px;">
+      ${canPay ? `<div class="fp ${isFormOpen('f-submitGeneratePayout')?'fp-open':''}" style="margin-top:12px;">${formToggleBtn('f-submitGeneratePayout', 'Generate Payout')}<div class="fp-body"><form onsubmit="return submitGeneratePayout(event,'${inv.id}')" class="pill-row" style="margin-top:10px;">
         <input name="period" type="month" required placeholder="Period">
         <button class="btn btn-sm btn-outline" type="submit">Generate Payout for Period</button>
-      </form>` : ""}
+      </form></div></div>` : ""}
     </div>
   `;
 }
@@ -16421,7 +16460,7 @@ function renderInvestorPayoutsPage(){
       <select name="status"><option value="">All statuses</option><option>Pending</option><option>Paid</option></select>
       <button class="btn btn-sm btn-outline" type="submit">Apply</button>
     </form>
-    <div class="table-wrap"><table><tr><th>Investor</th><th>Period</th><th>Investor Profit</th><th>Status</th></tr>
+    ${(()=>{ const per = admGroup(state.payouts, p=>p.period, p=>p.investor_profit), st = admGroup(state.payouts, p=>p.status); const keys = per[0].map((k,i)=>[k,per[1][i]]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))); return admTwoCharts(admChart('ch-pay-period','Investor Profit by Period (KES)','bar',keys.map(k=>k[0]),[{label:'KES',data:keys.map(k=>k[1])}]), admChart('ch-pay-status','Payouts by Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Investor</th><th>Period</th><th>Investor Profit</th><th>Status</th></tr>
     ${state.payouts.map(p=>`<tr class="clickable" onclick="openInvestorProfile('${p.investor_id}')"><td>${p.investor_id}</td><td>${p.period}</td><td>${fmt(p.investor_profit)}</td><td>${statusBadge(p.status)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No payouts yet.</td></tr>`}</table></div>
   </div>`;
 }
@@ -16496,7 +16535,7 @@ function renderBranchDirectoryPage(){
         <td><span class="badge ${b.status==='Active'?'green':b.status==='Closed'?'red':'amber'}">${b.status}</span></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No branches match these filters.</td></tr>`}</table></div>
     </div>
     ${canCreate ? `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitCreateBranch')?'fp-open':''}">${formToggleBtn('f-submitCreateBranch', 'Create Branch')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Create Branch (Admin direct override)</div>
       <div class="hint" style="margin-bottom:10px;">Normal branch openings go through the real proposal workflow (Open New Branch tab). This direct path is for Admin-only administrative setup.</div>
       ${session.role==='Admin' ? `
@@ -16510,7 +16549,7 @@ function renderBranchDirectoryPage(){
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Create Branch</button>
       </form>` : `<div class="section-note">Direct creation is Admin-only.</div>`}
-    </div>` : ""}
+    </div></div></div>` : ""}
   `;
 }
 function exportBranchDirectoryCSV(){
@@ -16627,13 +16666,13 @@ function renderRegionsPage(){
   const canManage = hasPermission(session.role, "Manage Branches");
   return `
     ${canManage ? `
-    <div class="card" style="max-width:480px;">
+    <div class="fp ${isFormOpen('f-submitNewRegion')?'fp-open':''}">${formToggleBtn('f-submitNewRegion', 'Create Region')}<div class="fp-body"><div class="card" style="max-width:480px;">
       <div class="card-title">Create Region</div>
       <form onsubmit="return submitNewRegion(event)">
         <div class="field"><label>Name</label><input name="name" required></div>
         <button class="btn btn-primary btn-sm" type="submit">Create Region</button>
       </form>
-    </div>` : ""}
+    </div></div></div>` : ""}
     <div class="card">
       <div class="card-title">${session.role==='Regional Manager' ? 'My Region' : 'Company Regions'}</div>
       <div class="table-wrap"><table><tr><th></th><th>Name</th><th>Branches</th><th>Staff</th><th>Clients</th>${canManage?'<th>Status</th><th></th>':''}</tr>
@@ -16722,7 +16761,7 @@ function renderOpenNewBranchPage(){
   const managers = DB.staff.filter(s=>s.role==='Manager' && s.status==='Active' && !s.branch);
   return `
     ${canPropose ? `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitBranchProposal')?'fp-open':''}">${formToggleBtn('f-submitBranchProposal', 'Propose New Branch')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Propose New Branch</div>
       <form onsubmit="return submitBranchProposal(event)">
         <div class="form-grid">
@@ -16735,7 +16774,7 @@ function renderOpenNewBranchPage(){
         <div class="field"><label>Proposed Manager (optional — unassigned Managers only)</label><select name="proposed_assigned_manager_id"><option value="">— None —</option>${managers.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join("")}</select></div>
         <button class="btn btn-primary btn-sm" type="submit">Submit Proposal</button>
       </form>
-    </div>` : `<div class="section-note">Your role isn't authorized to propose new branches.</div>`}
+    </div></div></div>` : `<div class="section-note">Your role isn't authorized to propose new branches.</div>`}
     <div class="card">
       <div class="card-title">Branch Proposals <small>${(DB.branchProposals||[]).length}</small></div>
       <div class="table-wrap"><table><tr><th>Name</th><th>Location</th><th>Budget</th><th>Proposed By</th><th>Status</th><th></th></tr>
@@ -18126,7 +18165,7 @@ function renderStaff(){
     </div>
     ${session.selectedStaffId ? renderStaffDetailPanel(session.selectedStaffId) : ""}
     ${CAN_MANAGE_STAFF(session.role) ? `
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitStaff')?'fp-open':''}">${formToggleBtn('f-submitStaff', 'Add Staff Member')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Add Staff Member</div>
       <form onsubmit="return submitStaff(event)">
         <div class="form-grid">
@@ -18138,7 +18177,7 @@ function renderStaff(){
         </div>
         <button class="btn btn-primary" type="submit">Add Staff</button>
       </form>
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title">Role Permissions Matrix</div>
       <div class="table-wrap"><table><tr><th>Role</th><th>Access</th></tr>
@@ -18161,7 +18200,7 @@ function renderTargetManagement(){
   const recipientLabel = (t)=> t.recipientUserId ? staffName(t.recipientUserId) : (t.branchId ? branchName(t.branchId) + ' (branch)' : (t.regionId ? (DB.regions.find(r=>r.id===t.regionId)||{}).name + ' (region)' : '—'));
   const showHistory = session.subtab === "Target History";
   return `
-    <div class="card">
+    <div class="fp ${isFormOpen('f-submitSetTarget')?'fp-open':''}">${formToggleBtn('f-submitSetTarget', 'Set a Target')}<div class="fp-body"><div class="card">
       <div class="card-title">Target Management <small>set real performance targets for your team — visible on their own dashboard the moment you save</small></div>
       ${recipients.length ? `
       <form onsubmit="return submitSetTarget(event)">
@@ -18175,7 +18214,7 @@ function renderTargetManagement(){
         <button class="btn btn-primary btn-sm" type="submit">Set Target</button>
       </form>
       ` : `<div class="empty">No eligible staff in your scope to set targets for right now.</div>`}
-    </div>
+    </div></div></div>
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span>${showHistory?'Target History':'Targets You\'ve Set'} <small>${showHistory ? 'includes cancelled — real historical achievement preserved' : myTargets.length + ' active'}</small></span>
         ${showHistory ? `<button class="btn btn-outline btn-sm" onclick="goTo('staff','Manage Targets')">Show active targets</button>` : `<button class="btn btn-outline btn-sm" onclick="loadTargetHistory()">Show target history</button>`}</div>
@@ -18387,7 +18426,7 @@ function renderTicketsListPage(){
         <td>${slaBadge(t.sla)}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No tickets match these filters.</td></tr>`}</table></div>
       ${renderPaginationControls('tickets','loadSupportTickets',state.filters)}
     </div>
-    <div class="card" style="max-width:640px;">
+    <div class="fp ${isFormOpen('f-submitTicket')?'fp-open':''}">${formToggleBtn('f-submitTicket', 'Raise a Support Request')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Raise a Support Request</div>
       <form onsubmit="return submitTicket(event)">
         <div class="form-grid">
@@ -18398,7 +18437,7 @@ function renderTicketsListPage(){
         <div class="field"><label>Describe the issue</label><textarea name="message" rows="3" required></textarea></div>
         <button class="btn btn-primary" type="submit">Submit Ticket</button>
       </form>
-    </div>
+    </div></div></div>
   `;
 }
 function submitTicket(ev){
@@ -18576,7 +18615,7 @@ function renderFaqPage(){
         ${canManage ? `<button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="if(confirm('Remove this article?')) withRequest('faq-del-${a.id}', ()=>deleteFaqArticle('${a.id}'))">Remove</button>` : ""}
       </div>`).join("") || `<div class="empty">No FAQ articles yet.</div>`}
     </div>
-    ${canManage ? `<div class="card" style="max-width:640px;">
+    ${canManage ? `<div class="fp ${isFormOpen('f-submitNewFaq')?'fp-open':''}">${formToggleBtn('f-submitNewFaq', 'Add FAQ Article')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Add FAQ Article</div>
       <form onsubmit="return submitNewFaq(event)">
         <div class="form-grid">
@@ -18586,7 +18625,7 @@ function renderFaqPage(){
         <div class="field"><label>Answer</label><textarea name="answer" rows="3" required></textarea></div>
         <button class="btn btn-primary btn-sm" type="submit">Add Article</button>
       </form>
-    </div>` : ""}
+    </div></div></div>` : ""}
   `;
 }
 function submitNewFaq(ev){
@@ -18623,14 +18662,14 @@ function renderAnnouncementsPage(){
         <div class="hint" style="margin-top:4px;">${staffName(a.posted_by)} — ${new Date(a.created_at).toLocaleString()}</div>
       </div>`).join("") || `<div class="empty">No announcements yet.</div>`}
     </div>
-    ${canPost ? `<div class="card" style="max-width:640px;">
+    ${canPost ? `<div class="fp ${isFormOpen('f-submitNewAnnouncement')?'fp-open':''}">${formToggleBtn('f-submitNewAnnouncement', 'Post Announcement')}<div class="fp-body"><div class="card" style="max-width:640px;">
       <div class="card-title">Post Announcement</div>
       <form onsubmit="return submitNewAnnouncement(event)">
         <div class="field"><label>Title</label><input name="title" required></div>
         <div class="field"><label>Body</label><textarea name="body" rows="3" required></textarea></div>
         <button class="btn btn-primary btn-sm" type="submit">Post</button>
       </form>
-    </div>` : ""}
+    </div></div></div>` : ""}
   `;
 }
 function submitNewAnnouncement(ev){
