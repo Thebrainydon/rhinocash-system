@@ -35,7 +35,7 @@ function register(router) {
     // Same real 5-fails/15-minutes threshold auth.js itself enforces —
     // reported here, not recalculated with a different number.
     const lockedOutAccounts = await all(
-      `SELECT email, COUNT(*) as fails FROM login_attempts WHERE success = 0 AND created_at > iso_offset(interval '-15 minutes') GROUP BY email HAVING COUNT(*) >= 5`
+      `SELECT email, COUNT(*) as fails FROM login_attempts WHERE success = 0 AND cleared_at IS NULL AND created_at > iso_offset(interval '-15 minutes') GROUP BY email HAVING COUNT(*) >= 5`
     );
 
     const auditEvents24h = (await get(`SELECT COUNT(*) as c FROM audit_logs WHERE created_at > iso_offset(interval '-24 hours')`)).c;
@@ -71,7 +71,7 @@ function register(router) {
   router.get('/api/system/locked-accounts', requireAuth, requireSystemHealthAuth, async (req, res) => {
     const rows = await all(
       `SELECT email, COUNT(*) as fails, MAX(created_at) as last_attempt_at
-       FROM login_attempts WHERE success = 0 AND created_at > iso_offset(interval '-15 minutes')
+       FROM login_attempts WHERE success = 0 AND cleared_at IS NULL AND created_at > iso_offset(interval '-15 minutes')
        GROUP BY email HAVING COUNT(*) >= 5 ORDER BY last_attempt_at DESC`
     );
     res.json({ lockedAccounts: rows });

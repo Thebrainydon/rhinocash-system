@@ -1225,6 +1225,43 @@ CREATE TABLE IF NOT EXISTS client_risk_config (
   updated_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- Admin (System Administrator) configuration store. One generic,
+-- audit-friendly place for every Admin setup page that has no dedicated
+-- table of its own: a keyed settings document per page (admin_settings,
+-- with a full before/after trail in admin_settings_history) and keyed
+-- reference lists (admin_lookups) such as Client Types or Job Grades.
+CREATE TABLE IF NOT EXISTS admin_settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE TABLE IF NOT EXISTS admin_settings_history (
+  id BIGSERIAL PRIMARY KEY,
+  key TEXT NOT NULL,
+  previous_json TEXT,
+  new_json TEXT NOT NULL,
+  changed_by TEXT REFERENCES users(id),
+  changed_by_name TEXT,
+  changed_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_settings_history_key ON admin_settings_history(key);
+CREATE TABLE IF NOT EXISTS admin_lookups (
+  id TEXT PRIMARY KEY,
+  list_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT,
+  description TEXT,
+  attrs_json TEXT,
+  status TEXT NOT NULL DEFAULT 'Active',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS admin_lookups_name_unique ON admin_lookups (list_key, lower(name));
+
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_loans_officer ON loans(officer_id);
 CREATE INDEX IF NOT EXISTS idx_loans_branch ON loans(branch_id);
@@ -1406,6 +1443,10 @@ async function initSchema() {
   // the existing generic POST /api/uploads, and this column just stores
   // the resulting path.
   await ensureColumn('users', 'signature_path TEXT');
+  // Admin > User Management > Account Lock / Unlock: an Admin unlock marks
+  // the recent failed attempts as cleared (kept for the security trail)
+  // instead of deleting them, so the lockout counter restarts.
+  await ensureColumn('login_attempts', 'cleared_at TEXT');
   // Real password-age policy: every genuine password-set event (self-
   // service change, Admin reset, forgot-password) stamps this; the login
   // route compares it against a 15-day threshold to force a change, the

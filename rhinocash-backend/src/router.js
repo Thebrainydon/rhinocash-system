@@ -3,6 +3,7 @@
 // (app.get/post/patch/delete, req.params, req.body, res.json/.status) that
 // the route files below read like ordinary Express routes.
 'use strict';
+const { recordError } = require('./errorLog');
 const zlib = require('node:zlib');
 
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024; // 2MB — plenty for any form this app submits; uploads use their own separate binary path with a 5MB cap.
@@ -115,6 +116,7 @@ class Router {
         // instruction #27: never leak internals in the response.
         if (status >= 500) {
           console.error('[unhandled]', err);
+          recordError(req, err);
           res.status(500).json({ error: 'Internal server error' });
         } else {
           res.status(status).json({ error: err.message || 'Request failed', code: err.code });

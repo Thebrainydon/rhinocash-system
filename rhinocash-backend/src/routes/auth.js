@@ -85,7 +85,7 @@ function register(router) {
     if (!verifyPassword(password, user.password_hash, user.password_salt)) {
       await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'bad password', ip]);
       const recentFailsRow = await get(
-        `SELECT COUNT(*) as n FROM login_attempts WHERE email = ? AND success = 0 AND created_at > iso_offset(interval '-15 minutes')`,
+        `SELECT COUNT(*) as n FROM login_attempts WHERE email = ? AND success = 0 AND cleared_at IS NULL AND created_at > iso_offset(interval '-15 minutes')`,
         [email]
       );
       if (recentFailsRow.n >= 5) return next({ status: 429, message: 'Too many failed attempts. Try again later.' });
