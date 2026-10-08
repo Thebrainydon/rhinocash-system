@@ -7652,6 +7652,71 @@ apiRequest = async function(method, path, body){
     global.FormData = class { constructor(){ return admForm; } };
   }
 
+  // ---- Regional Manager: every menu/submenu is a real, region-scoped page ----
+  {
+    const rmForm = new Map([['username','regional@rhinocash.co.ke'],['password', process.env.SEEDED_REGIONAL_PASSWORD]]);
+    global.FormData = class { constructor(){ return rmForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.role === 'Regional Manager', "setup: signed in as the Regional Manager");
+    const waitRg = async (key) => { for(let i=0; i<200 && (!DB.adm || DB.adm[key] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp(); };
+    const QUICK = ['Create a Lead','Leave Application','Create a Ticket'];
+    const items = SIDEBAR_MENUS['Regional Manager'].flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every Regional Manager submenu opens a real page: " + dead.join(', '));
+    __assert(items.includes('Portfolio Quality') && items.includes('Dormancy Analysis') && !items.includes('Business Performance'), "Business Performance's sections are now their own sidebar items, not a menu inside one page");
+    __assert(resolveRoute('Loan Portfolio Monitoring').subtab === 'Regional Loan Portfolio Quality', "Loan Portfolio Monitoring opens the region-wide portfolio quality page");
+    const myRegion = DB.me.region_id;
+    const regionBranchIds = DB.branches.filter(b => b.region === myRegion).map(b => b.id);
+    __assert(rgBranchIds().length === regionBranchIds.length && rgBranchIds().every(id => regionBranchIds.includes(id)), "Regional pages only cover the branches in the RM's own region");
+    __assert(topbarPillsHtml().includes('Region'), "the top bar shows the region the RM is allocated to");
+
+    const broken = [];
+    for(const label of Object.keys(RG_PAGES)){
+      sidebarNavigate(label);
+      if(RG_PAGES[label].kind || label === 'Regional Alerts') await waitRg('rg:ops');
+      if(label === 'Regional Activity Log') await waitRg('rg:activity');
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || h.includes('NaN')) broken.push(label);
+    }
+    __assert(broken.length === 0, "every Regional page renders with its bold blue title and no errors: " + broken.join(', '));
+
+    sidebarNavigate('Regional Performance');
+    let html = document.getElementById('root').innerHTML;
+    const outside = DB.branches.find(b => b.region !== myRegion);
+    __assert(html.includes('Branch Performance') && !(outside && html.includes('>' + outside.name + '<')), "Regional Performance lists only the region's branches");
+    __assert(html.includes('-- Generate --') && html.includes('>PDF Printout<') && html.includes('>Excel File<'), "Regional pages offer Generate → PDF / Excel");
+
+    // Create an action plan through the page's own form.
+    sidebarNavigate('Regional Action Plans');
+    await waitRg('rg:ops');
+    rgSet('action_plan', 'title', '[TEST] Lift Ukunda collections');
+    rgSet('action_plan', 'branch_id', 'br_kisumu');
+    rgSet('action_plan', 'priority', 'High');
+    await rgCreate({ preventDefault(){} }, 'action_plan');
+    await waitRg('rg:ops');
+    const plan = DB.adm['rg:ops'].find(r => r.title === '[TEST] Lift Ukunda collections');
+    __assert(plan && plan.status === 'Planned' && plan.branchId === 'br_kisumu', "the RM creates a real action plan for a branch in their region");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('[TEST] Lift Ukunda collections') && html.includes('In Progress'), "the plan is listed with its next actions");
+
+    // View Branches / View Regions are limited to the region.
+    sidebarNavigate('View Branches');
+    for(let i=0; i<200 && !DB.acctPages.companyBranches; i++){ await new Promise(r=>setTimeout(r,20)); }
+    renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Branches in') && !(outside && html.includes('<td>' + outside.name + '</td>')), "View Branches shows only the RM's own region");
+
+    // Generate: a real .xlsx workbook and a data-only PDF report.
+    const bytes = buildXlsx('Test', ['Branch','Amount'], [['Ukunda', 1500]]);
+    __assert(bytes[0] === 0x50 && bytes[1] === 0x4B && bytes.length > 1000, "Excel File builds a real .xlsx (ZIP) workbook");
+    const pdfHtml = printReportPdf('Regional Collection', ['Branch','Collected'], [['Ukunda', 100]]);
+    __assert(pdfHtml.includes('Regional Collection') && pdfHtml.includes('Region') && pdfHtml.includes('<td>Ukunda</td>'), "PDF Printout builds a titled, region-labelled report of the page's rows");
+    genQueue('excel');
+    const toastsBeforeX = toasts.length;
+    exportCSV('regional-test', ['A'], [['1']]);
+    __assert(toasts.length > toastsBeforeX && toasts[toasts.length-1].msg.includes('.xlsx'), "choosing Excel File routes a page's export to an .xlsx download");
+    __assert(!__rawIndexHtml.includes('>Export CSV</button>'), "no plain 'Export CSV' button remains — every page uses Generate");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

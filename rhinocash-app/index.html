@@ -165,6 +165,13 @@ body{
 .adm-two{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;}
 .adm-bar{height:8px; background:var(--blue-bg); border-radius:4px; min-width:80px; overflow:hidden;} .adm-bar span{display:block; height:100%; background:var(--blue);}
 .adm-steps{margin:0 0 10px 18px; padding:0; font-size:13px; line-height:1.7;}
+.rg-alert{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:12px; border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:10px; margin-bottom:8px; background:var(--card);}
+.rg-alert-critical{border-left-color:var(--red);} .rg-alert-high{border-left-color:var(--amber);}
+.rg-rec{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; background:var(--card);}
+.rg-rec-head{display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap;}
+.rg-rec-title{color:var(--blue); font-size:14px;}
+.rg-rec-line{font-size:12.5px; margin-top:6px;}
+.rg-overdue{color:var(--red); font-weight:800;}
 .adm-callout{border-color:var(--blue); background:var(--blue-bg);}
 .ac-eyebrow{font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-soft);}
 .ac-tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
@@ -651,12 +658,13 @@ const NAV = [
   {id:"support", num:12, label:"Support Center"},
   {id:"account", num:13, label:"My Account"},
   {id:"admin", num:14, label:"System Administration"},
+  {id:"regional", num:15, label:"Regional Management"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
   "Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
-  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
-  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
+  "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
+  "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
@@ -799,6 +807,9 @@ function isSectionAllowed(section){
   // module either: those pages call Admin-only endpoints, so the section
   // belongs to the Admin role itself, never to a per-user module grant.
   if(section==="admin") return session.role==="Admin";
+  // "regional" (Regional Management pages) is likewise not a backend module;
+  // the regional-ops endpoints scope every record to the viewer's region.
+  if(section==="regional") return ["Regional Manager","Operational Manager"].includes(session.role);
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
   // after any per-user Admin-set restriction. This is a UI hint only;
@@ -868,7 +879,7 @@ const SIDEBAR_MENUS = {
     {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees"]},
     {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow"]},
     {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches","Regional Performance","Branch Comparison","Regional Targets"]},
-    {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance","Regional Collection","Disbursement Analysis","Regional PAR & Risk Analysis"]},
+    {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Portfolio Quality","Efficiency & Productivity","Personnel Productivity","Financial Management","Profitability","Dormancy Analysis","Regional Collection","Disbursement Analysis","Regional PAR & Risk Analysis"]},
     {section:"Regional Operations", icon:"🗺️", items:["Regional Action Plans","Branch Requests","Branch Transfers","Operational Issues","Escalations","Regional Alerts","Regional Activity Log"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
@@ -1568,6 +1579,8 @@ function dismissCenterToast(t){ const idx = centerToasts.indexOf(t); if(idx>-1) 
 // comma, quote, or newline per standard CSV rules, and triggers a real
 // browser download via a Blob + temporary anchor element.
 function exportRowsToCsv(filename, columns, rows){
+  const mode = genTakeMode();
+  if(mode) return genOutput(mode, filename, columns, (rows||[]).map(r => columns.map(c => r[c])));
   const esc = (v) => {
     if(v===null || v===undefined) return '';
     const s = String(v);
@@ -1584,20 +1597,162 @@ function exportRowsToCsv(filename, columns, rows){
   URL.revokeObjectURL(url);
   toast(`Exported ${(rows||[]).length} row(s) to ${filename}`);
 }
-// Shared "-- Generate --" dropdown — PDF Printout (a real window.print(),
-// this dependency-free build has no PDF library) and Excel File (the
-// page's own already-real CSV export function, labeled "Excel File" the
-// same honest way every other export in this build already is — no
-// binary .xlsx writer here either). csvCallJs is the exact real JS call
-// to make for the Excel option (e.g. "exportLoanArrearsSheetCSV()"),
-// inlined as-is since it may need to reference the row's own real data
-// (a bucket key, a client id) that only the caller's own scope has.
+// Shared "-- Generate --" dropdown, used on every page that exports data:
+//   PDF Printout — a clean, data-only report (company header, title, the
+//                  page's own rows) sent to the browser's print dialog,
+//                  where "Save as PDF" produces the PDF file.
+//   Excel File   — a real .xlsx workbook (built in-browser, no library).
+// csvCallJs is the page's own export call (e.g. "exportLoanArrearsSheetCSV()");
+// choosing a format queues it, and the export helpers below (exportCSV /
+// exportRowsToCsv) — which every page export already funnels through,
+// including ones that first fetch the full filtered result set — pick the
+// queued format up instead of writing a plain CSV.
+let pendingGenerate = null;
+function genQueue(mode){ pendingGenerate = { mode, at: Date.now() }; }
+function genTakeMode(){
+  const p = pendingGenerate; pendingGenerate = null;
+  return p && (Date.now() - p.at) < 120000 ? p.mode : null;
+}
 function generateDropdownHtml(csvCallJs){
-  return `<select onchange="if(this.value==='pdf'){ window.print(); } else if(this.value==='excel'){ ${csvCallJs}; } this.value='';" class="btn btn-sm btn-outline" style="flex-shrink:0; min-width:110px;">
+  return `<select onchange="if(this.value){ genQueue(this.value); ${csvCallJs}; } this.value='';" class="btn btn-sm btn-outline" style="flex-shrink:0; min-width:110px;">
     <option value="" selected>-- Generate --</option>
     <option value="pdf">PDF Printout</option>
     <option value="excel">Excel File</option>
   </select>`;
+}
+// Same control for pages that build their rows in a callback rather than a
+// named export function: generateMenuHtml(title, () => ({headers, rows})).
+let genJobSeq = 0;
+const genJobs = new Map();
+let genExplicitTitle = null;
+function generateMenuHtml(title, dataFn){
+  const id = ++genJobSeq;
+  genJobs.set(id, { title, dataFn });
+  if(genJobs.size > 400) genJobs.delete(genJobs.keys().next().value);
+  return generateDropdownHtml(`genRunJob(${id})`);
+}
+function genRunJob(id){
+  const job = genJobs.get(id); if(!job) return;
+  const { headers, rows } = job.dataFn();
+  genExplicitTitle = job.title;
+  try{ exportCSV(genSlug(job.title), headers, rows); } finally { genExplicitTitle = null; }
+}
+function genSlug(name){ return String(name || 'report').replace(/\.(csv|xlsx)$/i, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'report'; }
+// Report title: an explicit one, else the page the user is on, else the file name.
+function genPrettyTitle(name){
+  if(genExplicitTitle) return genExplicitTitle;
+  if(session && session.subtab) return session.subtab;
+  return String(name || 'Report').replace(/\.(csv|xlsx)$/i, '').replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+function genOutput(mode, filename, headers, rows){
+  // Column keys like "npAccounts" / "days_past_due" become readable headings.
+  headers = headers.map(h => /^[a-z][A-Za-z0-9_]*$/.test(String(h)) ? String(h).replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase()) : h);
+  const title = genPrettyTitle(filename);
+  if(mode === 'excel'){
+    const bytes = buildXlsx(title, headers, rows);
+    genDownload(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), genSlug(filename) + '.xlsx');
+    toast(`Exported ${rows.length} row(s) to ${genSlug(filename)}.xlsx`);
+  } else {
+    printReportPdf(title, headers, rows);
+    toast(`Prepared ${rows.length} row(s) for PDF — choose "Save as PDF" in the print dialog`);
+  }
+}
+function genDownload(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  if(URL.revokeObjectURL) setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function printReportPdf(title, headers, rows){
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const who = (session && session.userName) ? `${esc(session.userName)} (${esc(session.role || '')})` : '';
+  const scope = esc(myScopeLabel() || '');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif; color:#1b2433; margin:24px;}
+    .co{font-size:12px; font-weight:800; letter-spacing:1px; color:#555;}
+    h1{font-size:20px; color:#2E5C8A; margin:4px 0 2px;}
+    .meta{font-size:11px; color:#666; margin-bottom:14px;}
+    table{width:100%; border-collapse:collapse; font-size:11px;}
+    th{background:#2E5C8A; color:#fff; text-align:left; padding:6px 7px;}
+    td{padding:5px 7px; border-bottom:1px solid #dde2ea; vertical-align:top;}
+    tr:nth-child(even) td{background:#f5f7fa;}
+    .foot{margin-top:12px; font-size:10px; color:#888;}
+    @page{margin:14mm;}
+  </style></head><body>
+    <div class="co">RHINOCASH LTD</div><h1>${esc(title)}</h1>
+    <div class="meta">Generated ${esc(new Date().toLocaleString('en-KE'))}${who ? ' by ' + who : ''}${scope ? ' · ' + scope : ''} · ${rows.length} row(s)</div>
+    <table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${headers.length}">No records.</td></tr>`}</tbody></table>
+    <div class="foot">Confidential — generated from the Rhinocash system.</div>
+  </body></html>`;
+  if(typeof window === 'undefined' || !document.body) return html;
+  const frame = document.createElement('iframe');
+  if(!frame || !('style' in frame)) return html; // non-browser environment
+  frame.style.position = 'fixed'; frame.style.right = '0'; frame.style.bottom = '0'; frame.style.width = '0'; frame.style.height = '0'; frame.style.border = '0';
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow && frame.contentWindow.document;
+  if(!doc){ document.body.removeChild(frame); return html; }
+  doc.open(); doc.write(html); doc.close();
+  setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); }catch(e){ console.error(e); } setTimeout(()=>{ if(frame.parentNode) frame.parentNode.removeChild(frame); }, 60000); }, 250);
+  return html;
+}
+
+/* ---- minimal, dependency-free .xlsx writer (stored ZIP + SpreadsheetML) ---- */
+const XLSX_CRC_TABLE = (()=>{ const t = new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n]=c>>>0; } return t; })();
+function xlsxCrc32(bytes){ let c = 0xFFFFFFFF; for(let i=0;i<bytes.length;i++) c = XLSX_CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function xlsxZip(files){
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  const d = new Date(); const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2); const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  files.forEach(f => {
+    const name = enc.encode(f.name); const data = enc.encode(f.data); const crc = xlsxCrc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true); local.setUint16(8, 0, true);
+    local.setUint16(10, dosTime, true); local.setUint16(12, dosDate, true); local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true); local.setUint32(22, data.length, true); local.setUint16(26, name.length, true); local.setUint16(28, 0, true);
+    parts.push(new Uint8Array(local.buffer), name, data);
+    const cen = new DataView(new ArrayBuffer(46));
+    cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true); cen.setUint16(10, 0, true);
+    cen.setUint16(12, dosTime, true); cen.setUint16(14, dosDate, true); cen.setUint32(16, crc, true); cen.setUint32(20, data.length, true); cen.setUint32(24, data.length, true);
+    cen.setUint16(28, name.length, true); cen.setUint16(30, 0, true); cen.setUint16(32, 0, true); cen.setUint16(34, 0, true); cen.setUint16(36, 0, true); cen.setUint32(38, 0, true); cen.setUint32(42, offset, true);
+    central.push(new Uint8Array(cen.buffer), name);
+    offset += 30 + name.length + data.length;
+  });
+  const cenSize = central.reduce((n, p) => n + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cenSize, true); end.setUint32(16, offset, true);
+  const all = parts.concat(central, [new Uint8Array(end.buffer)]);
+  const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0)); let pos = 0;
+  all.forEach(p => { out.set(p, pos); pos += p.length; });
+  return out;
+}
+function xlsxCol(i){ let s = ''; i++; while(i > 0){ const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+function xlsxEsc(v){ return String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function buildXlsx(title, headers, rows){
+  const isNum = v => typeof v === 'number' ? Number.isFinite(v) : (typeof v === 'string' && /^-?(0|[1-9]\d*)(\.\d+)?$/.test(v.trim()) && v.trim().length < 16);
+  const cell = (v, r, c, style) => {
+    const ref = xlsxCol(c) + r;
+    if(v === null || v === undefined || v === '') return `<c r="${ref}"${style ? ` s="${style}"` : ''}/>`;
+    if(!style && isNum(v)) return `<c r="${ref}"><v>${Number(v)}</v></c>`;
+    return `<c r="${ref}" t="inlineStr"${style ? ` s="${style}"` : ''}><is><t xml:space="preserve">${xlsxEsc(v)}</t></is></c>`;
+  };
+  const widths = headers.map((h, i) => Math.min(60, Math.max(String(h).length, ...rows.slice(0, 300).map(r => String(r[i] == null ? '' : r[i]).length)) + 2));
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`
+    + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    + `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>`
+    + `<row r="1">${headers.map((h, c) => cell(h, 1, c, 1)).join('')}</row>`
+    + rows.map((r, ri) => `<row r="${ri + 2}">${headers.map((_, c) => cell(r[c], ri + 2, c, 0)).join('')}</row>`).join('')
+    + `</sheetData></worksheet>`;
+  const sheetName = xlsxEsc(String(title || 'Report').replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31) || 'Report');
+  const NS = 'http://schemas.openxmlformats.org';
+  return xlsxZip([
+    { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="${NS}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${NS}/package/2006/relationships"><Relationship Id="rId1" Type="${NS}/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${NS}/spreadsheetml/2006/main" xmlns:r="${NS}/officeDocument/2006/relationships"><sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${NS}/package/2006/relationships"><Relationship Id="rId1" Type="${NS}/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${NS}/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: 'xl/styles.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${NS}/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2E5C8A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet },
+  ]);
 }
 
 // log()/notify() used to write directly into a local, client-side DB.
@@ -2024,9 +2179,16 @@ function branchName(id){ const b=DB.branches.find(x=>x.id===id); return b?b.name
 // The topbar's own branch/access-level pills — shown on every page (the
 // topbar is shared chrome), real data only: no pill at all for whichever
 // one genuinely doesn't apply (e.g. an Investor has no branch_id).
+// Where the signed-in user works: a Regional Manager's region, else their branch.
+function myScopeLabel(){
+  const me = (DB && DB.me) || {};
+  const region = session.role === 'Regional Manager' && me.region_id ? (DB.regions || []).find(r => r.id === me.region_id) : null;
+  return region ? `${region.name} Region` : (me.branch_id ? branchName(me.branch_id) : null);
+}
 function topbarPillsHtml(){
   const me = DB.me || {};
-  const branchLabel = me.branch_id ? branchName(me.branch_id) : null;
+  // A Regional Manager is allocated to a region, not a single branch.
+  const branchLabel = myScopeLabel();
   const accessLabel = me.access_level || ACCESS_LEVEL_BY_ROLE[session.role] || null;
   if(!branchLabel && !accessLabel) return "";
   return `<div class="topbar-pills">
@@ -2470,6 +2632,8 @@ function markInvestorPayoutPaid(id){
   save();
 }
 function exportCSV(filename, headers, rows){
+  const mode = genTakeMode();
+  if(mode) return genOutput(mode, filename, headers, rows||[]);
   const esc = v => { const s=String(v??""); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
   const csv = [headers.map(esc).join(","), ...rows.map(r=>r.map(esc).join(","))].join("\r\n");
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
@@ -3328,6 +3492,7 @@ function renderSection(){
     case "account": return renderAccount();
     case "intelligence": return renderIntelligence();
     case "admin": return renderAdminSection();
+    case "regional": return renderRegionalSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -4611,7 +4776,7 @@ function admTable(headers, rows, emptyText){
   return `<div class="table-wrap"><table><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>
     ${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${c==null||c===''?'—':c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">${escapeHtml(emptyText||'Nothing recorded yet.')}</td></tr>`}</table></div>`;
 }
-function admExportBtn(fn){ return admExports.push(fn), `<button type="button" class="btn btn-sm btn-outline" onclick="admRunExport(${admExports.length-1})">⤓ Export CSV</button>`; }
+function admExportBtn(fn){ return admExports.push(fn), generateDropdownHtml(`admRunExport(${admExports.length-1})`); }
 let admExports = [];
 function admRunExport(i){ const fn = admExports[i]; if(fn) fn(); }
 
@@ -5258,6 +5423,390 @@ async function admReloadCore(){
   await withRequest('adm-reload-core', async ()=>{ await loadCoreData(); session.section = keep.section; session.subtab = keep.subtab; });
 }
 
+/* ================= Regional Manager pages (region-scoped) =================
+   Every page here works on the viewer's own region only: a Regional
+   Manager's data is already limited to their region's branches by the
+   server (branchScopeSQL), and the branch lists below are filtered to the
+   same region. The Operational Manager reaches the same pages company-wide.
+   Each page is its own sidebar item — no in-page sub-menus. */
+const RG_PAGES = {
+  "Regional Performance": { eyebrow:"Branches & Regions", sub:"How your region is performing this month, branch by branch." },
+  "Branch Comparison": { eyebrow:"Branches & Regions", sub:"Rank your branches on any key measure against the regional average." },
+  "Regional Targets": { eyebrow:"Branches & Regions", sub:"Targets set for your region's branches and staff, and how far each has got." },
+  "Regional Collection": { eyebrow:"Business Analytics", sub:"What was due, what was collected, by branch and by loan officer." },
+  "Disbursement Analysis": { eyebrow:"Business Analytics", sub:"Loans disbursed across the region by month, branch and product." },
+  "Regional PAR & Risk Analysis": { eyebrow:"Business Analytics", sub:"Portfolio at risk and arrears ageing across the region." },
+  "Regional Action Plans": { eyebrow:"Regional Operations", sub:"Plans you set for your branches, with owners, deadlines and progress.", kind:"action_plan" },
+  "Branch Requests": { eyebrow:"Regional Operations", sub:"Requests your branches raise for staff, equipment, budget and more.", kind:"branch_request" },
+  "Branch Transfers": { eyebrow:"Regional Operations", sub:"Move staff or clients between branches in your region.", kind:"transfer" },
+  "Operational Issues": { eyebrow:"Regional Operations", sub:"Problems affecting branch operations, tracked to resolution.", kind:"issue" },
+  "Escalations": { eyebrow:"Regional Operations", sub:"Matters raised beyond the region to the Operational Manager.", kind:"escalation" },
+  "Regional Alerts": { eyebrow:"Regional Operations", sub:"Live warnings computed from your region's loans, collections and open work." },
+  "Regional Activity Log": { eyebrow:"Regional Operations", sub:"Everything staff in your region have done in the system." },
+};
+const RG_OPS_CATEGORIES = {
+  branch_request: ["Staff","Equipment","Budget","Stationery","Premises","IT & Systems","Other"],
+  issue: ["Operations","Systems","Staff","Clients","Security","Compliance","Other"],
+  action_plan: ["Collections","Portfolio quality","Growth","Staff performance","Compliance","Other"],
+  escalation: ["Operations","Credit risk","Staff","Systems","Compliance","Other"],
+};
+const RG_PRIORITIES = ["Low","Normal","High","Critical"];
+
+/* ---- scope ---- */
+function rgRegion(){ const id = DB.me && DB.me.region_id; return (DB.regions || []).find(r => r.id === id) || null; }
+function rgIsRegional(){ return session.role === 'Regional Manager'; }
+function rgBranchIds(){ const ids = officerScopeBranchIds(); return ids || (DB.branches || []).map(b => b.id); }
+function rgBranches(){ const ids = rgBranchIds(); return (DB.branches || []).filter(b => ids.includes(b.id)).sort((a, b) => a.name.localeCompare(b.name)); }
+function rgScopeLabel(){ return rgIsRegional() ? `${rgRegion() ? rgRegion().name : 'Your'} Region` : 'All regions'; }
+function rgStaff(){ const ids = rgBranchIds(); return (DB.staff || []).filter(s => ids.includes(s.branch) || (rgIsRegional() && s.regionId === (DB.me && DB.me.region_id))); }
+function rgOfficers(branchId){ return (DB.staff || []).filter(s => s.role === 'Loan Officer' && s.status === 'Active' && (branchId ? s.branch === branchId : rgBranchIds().includes(s.branch))); }
+const rgPct = (n, d) => d > 0 ? n / d * 100 : 0;
+const rgPctBadge = (v, good, warn, invert) => { if(v === null || v === undefined) return '<span class="hint">—</span>'; const ok = invert ? v <= good : v >= good; const mid = invert ? v <= warn : v >= warn; return `<span class="badge ${ok ? 'green' : mid ? 'amber' : 'red'}">${v.toFixed(1)}%</span>`; };
+const rgMonthKey = d => String(d).slice(0, 7);
+function rgLastMonths(n){ const out = []; const d = new Date(); d.setDate(1); for(let i = n - 1; i >= 0; i--){ const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(x.toISOString().slice(0, 7)); } return out; }
+const rgMonthLabel = k => new Date(k + '-01T00:00:00').toLocaleString('en-KE', { month: 'short', year: '2-digit' });
+function rgLoanPaymentsPosted(){ return (DB.payments || []).filter(p => p.status !== 'Unposted' && p.status !== 'Reversed'); }
+function rgLoanById(){ const m = {}; (DB.loans || []).forEach(l => { m[l.id] = l; }); return m; }
+
+/* ---- shared page parts ---- */
+function rgData(key, path, pick){ return admData('rg:' + key, path, pick); }
+function rgForget(key){ admForget('rg:' + key); }
+function renderRegionalSection(){
+  const label = session.subtab;
+  const page = RG_PAGES[label];
+  if(!page) return renderPlaceholder();
+  admExports = [];
+  let body;
+  try{ body = page.kind ? rgOpsPage(label, page.kind) : (RG_VIEWS[label] || (()=>''))(); }
+  catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
+  return `<div class="adm-page">
+    <div class="card adm-head">
+      <div class="ac-eyebrow">${escapeHtml(page.eyebrow)} · ${escapeHtml(rgScopeLabel())}</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2>
+      <div class="adm-sub">${escapeHtml(page.sub)}</div>
+    </div>
+    ${body}
+  </div>`;
+}
+function rgGen(title, headers, rows){ return generateMenuHtml(title, () => ({ headers, rows })); }
+function rgCardTitle(title, small, right){ return `<div class="card-title"><span>${escapeHtml(title)}${small ? ` <small>${small}</small>` : ''}</span>${right || ''}</div>`; }
+
+/* ---- per-branch figures (reusing the same computeStats every dashboard uses) ---- */
+function rgBranchRows(){
+  return rgBranches().map(b => {
+    const st = computeStats(null, [b.id]);
+    const parPrincipal = st.activeScope.reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const par30 = st.activeScope.filter(l => loanArrearsDays(l) > 30).reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const dueMTD = st.activeScope.flatMap(l => l.schedule || []).filter(r => r.dueDate && isThisMonth(r.dueDate)).reduce((s, r) => s + r.totalDue, 0);
+    const mgr = b.managerId ? staffName(b.managerId) : ((DB.staff || []).find(s => s.branch === b.id && s.role === 'Manager' && s.status === 'Active') || {}).name;
+    return { b, st, officers: rgOfficers(b.id).length, manager: mgr && mgr !== '—' ? mgr : 'Not assigned', dueMTD,
+      par30Pct: rgPct(par30, parPrincipal), collRate: dueMTD > 0 ? Math.min(150, st.collectionsMTD / dueMTD * 100) : null };
+  });
+}
+
+const RG_VIEWS = {
+  "Regional Performance": () => {
+    const st = computeStats(null, rgBranchIds());
+    const rows = rgBranchRows();
+    const months = rgLastMonths(6); const posted = rgLoanPaymentsPosted(); const loanMap = rgLoanById(); const ids = rgBranchIds();
+    const disb = months.map(m => st.loansScope.filter(l => l.disbursedAt && rgMonthKey(l.disbursedAt) === m).reduce((s, l) => s + l.principal, 0));
+    const coll = months.map(m => posted.filter(p => rgMonthKey(p.date) === m && loanMap[p.loanId] && ids.includes(loanMap[p.loanId].branchId)).reduce((s, p) => s + p.amount, 0));
+    const regionPar30 = rows.reduce((s, r) => s + r.par30Pct * r.st.activeScope.length, 0) / Math.max(1, rows.reduce((s, r) => s + r.st.activeScope.length, 0));
+    const headers = ['Branch','Manager','Officers','Active clients','Active loans','Portfolio','Disbursed MTD','Collected MTD','Collection rate %','PAR30 %','Arrears'];
+    const data = rows.map(r => [r.b.name, r.manager, r.officers, r.st.activeClients, r.st.activeScope.length, Math.round(r.st.portfolioOutstanding), Math.round(r.st.disbursedMTD), Math.round(r.st.collectionsMTD), r.collRate == null ? '' : r.collRate.toFixed(1), r.par30Pct.toFixed(1), Math.round(r.st.arrearsAmt)]);
+    return `<div class="card">${rgCardTitle('Region at a Glance', 'this month')}<div class="adm-tiles">
+        ${admTile('Portfolio outstanding', fmt(st.portfolioOutstanding))}${admTile('Active loans', fmtNum(st.activeScope.length))}
+        ${admTile('Disbursed this month', fmt(st.disbursedMTD), st.loansMTDCount + ' loan(s)')}${admTile('Collected this month', fmt(st.collectionsMTD))}
+        ${admTile('Collection rate', rows.some(r => r.dueMTD > 0) ? rgPct(rows.reduce((s, r) => s + r.st.collectionsMTD, 0), rows.reduce((s, r) => s + r.dueMTD, 0)).toFixed(1) + '%' : '—', rows.some(r => r.dueMTD > 0) ? '' : 'nothing due yet this month')}${admTile('PAR30', regionPar30.toFixed(1) + '%')}
+        ${admTile('Active clients', fmtNum(st.activeClients), fmtNum(st.totalClients) + ' registered')}${admTile('Branches', rows.length, rows.reduce((s, r) => s + r.officers, 0) + ' loan officers')}</div></div>
+      <div class="card">${rgCardTitle('Disbursed vs Collected', 'last 6 months')}
+        ${registerChart('rg-perf-trend', { type:'bar', data:{ labels: months.map(rgMonthLabel), datasets:[{ label:'Disbursed', data: disb, backgroundColor:'#2E5C8A' }, { label:'Collected', data: coll, backgroundColor:'#2A9D8F' }] }, options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } } })}</div>
+      <div class="card">${rgCardTitle('Branch Performance', rows.length + ' branch(es)', rgGen('Regional Performance', headers, data))}
+        ${admTable(headers, rows.map(r => [`<strong>${escapeHtml(r.b.name)}</strong>`, escapeHtml(r.manager), r.officers, fmtNum(r.st.activeClients), fmtNum(r.st.activeScope.length), fmt(r.st.portfolioOutstanding), fmt(r.st.disbursedMTD), fmt(r.st.collectionsMTD), rgPctBadge(r.collRate, 90, 75), rgPctBadge(r.par30Pct, 5, 10, true), fmt(r.st.arrearsAmt)]), 'No branches in your region yet.')}</div>`;
+  },
+  "Branch Comparison": () => {
+    const metrics = {
+      collRate: { label:'Collection rate', fmt: v => v.toFixed(1) + '%', get: r => r.collRate || 0, higher:true },
+      par30: { label:'PAR30', fmt: v => v.toFixed(1) + '%', get: r => r.par30Pct, higher:false },
+      portfolio: { label:'Portfolio outstanding', fmt: v => fmt(v), get: r => r.st.portfolioOutstanding, higher:true },
+      disbursed: { label:'Disbursed this month', fmt: v => fmt(v), get: r => r.st.disbursedMTD, higher:true },
+      collected: { label:'Collected this month', fmt: v => fmt(v), get: r => r.st.collectionsMTD, higher:true },
+      clients: { label:'Active clients', fmt: v => fmtNum(v), get: r => r.st.activeClients, higher:true },
+      arrears: { label:'Arrears amount', fmt: v => fmt(v), get: r => r.st.arrearsAmt, higher:false },
+      perOfficer: { label:'Portfolio per officer', fmt: v => fmt(v), get: r => r.officers ? r.st.portfolioOutstanding / r.officers : 0, higher:true },
+    };
+    const key = metrics[session.rgCompareMetric] ? session.rgCompareMetric : 'collRate'; const m = metrics[key];
+    const rows = rgBranchRows().map(r => ({ r, v: m.get(r) })).sort((a, b) => m.higher ? b.v - a.v : a.v - b.v);
+    const avg = rows.reduce((s, x) => s + x.v, 0) / Math.max(1, rows.length); const max = Math.max(1e-9, ...rows.map(x => Math.abs(x.v)));
+    const headers = ['Rank','Branch', m.label, 'vs regional average'];
+    const data = rows.map((x, i) => [i + 1, x.r.b.name, m.fmt(x.v), (x.v - avg >= 0 ? '+' : '') + m.fmt(x.v - avg)]);
+    return `<div class="card">${rgCardTitle('Compare Branches On', '', rgGen('Branch Comparison - ' + m.label, headers, data))}
+      <div class="pill-row adm-filters"><select onchange="session.rgCompareMetric=this.value; renderApp();">${Object.entries(metrics).map(([k, x]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${x.label}</option>`).join('')}</select>
+      <span class="hint">Regional average: <strong>${m.fmt(avg)}</strong> · ${m.higher ? 'higher is better' : 'lower is better'}</span></div>
+      ${admTable(['Rank','Branch', m.label, '', 'vs average'], rows.map((x, i) => { const better = m.higher ? x.v >= avg : x.v <= avg;
+        return [`<strong>${i + 1}</strong>`, `<strong>${escapeHtml(x.r.b.name)}</strong>`, m.fmt(x.v), `<div class="adm-bar"><span style="width:${Math.max(2, Math.round(100 * Math.abs(x.v) / max))}%; background:${better ? 'var(--green)' : 'var(--red)'}"></span></div>`, `<span class="badge ${better ? 'green' : 'red'}">${(x.v - avg >= 0 ? '+' : '') + m.fmt(x.v - avg)}</span>`]; }), 'No branches in your region yet.')}</div>
+      ${rows.length ? `<div class="card">${rgCardTitle(m.label + ' by Branch')}${registerChart('rg-compare', { type:'bar', data:{ labels: rows.map(x => x.r.b.name), datasets:[{ label: m.label, data: rows.map(x => Math.round(x.v * 10) / 10), backgroundColor:'#2E5C8A' }] }, options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', scales:{ x:{ beginAtZero:true } } } })}</div>` : ''}`;
+  },
+  "Regional Targets": () => {
+    const ids = rgBranchIds(); const staffIds = new Set(rgStaff().map(s => s.id)); const me = DB.me && DB.me.id;
+    const all = (DB.targets || []).filter(t => t.status !== 'Cancelled' && (ids.includes(t.branchId) || staffIds.has(t.recipientUserId) || t.recipientUserId === me || t.setBy === me));
+    const mine = all.filter(t => t.recipientUserId === me); const team = all.filter(t => t.recipientUserId !== me);
+    const label = t => TARGET_METRIC_LABELS[t.metric] || t.metric;
+    const who = t => t.recipientUserId ? staffName(t.recipientUserId) : (t.branchId ? branchName(t.branchId) : (t.regionId ? 'Region' : '—'));
+    const pct = t => Number(t.achievementPct || 0);
+    const headers = ['Recipient','Branch','Metric','Period','Target','Achieved','Achievement %','Status'];
+    const data = team.map(t => [who(t), t.branchId ? branchName(t.branchId) : '', label(t), t.period, t.value, t.achieved || 0, pct(t).toFixed(1), t.status]);
+    const row = t => [`<strong>${escapeHtml(who(t))}</strong>`, escapeHtml(t.branchId ? branchName(t.branchId) : '—'), escapeHtml(label(t)), escapeHtml(t.period), fmtNum(t.value), fmtNum(t.achieved || 0), rgPctBadge(pct(t), 100, 50), admBadge(t.status, t.status === 'Active' ? 'blue' : 'grey')];
+    const avg = team.length ? team.reduce((s, t) => s + pct(t), 0) / team.length : 0;
+    return `<div class="card">${rgCardTitle('Target Summary', '', `<button class="btn btn-sm btn-primary" onclick="goTo('staff','Manage Targets')">+ Set a target</button>`)}<div class="adm-tiles">
+        ${admTile('Targets in region', team.length)}${admTile('Average achievement', avg.toFixed(1) + '%')}${admTile('Met or exceeded', team.filter(t => pct(t) >= 100).length)}${admTile('Below 50%', team.filter(t => pct(t) < 50).length)}</div></div>
+      <div class="card">${rgCardTitle('My Regional Targets', mine.length + ' assigned to you')}${admTable(['Metric','Period','Target','Achieved','Remaining','Achievement %'], mine.map(t => [`<strong>${escapeHtml(label(t))}</strong>`, escapeHtml(t.period), fmtNum(t.value), fmtNum(t.achieved || 0), fmtNum(t.remaining || 0), rgPctBadge(pct(t), 100, 50)]), 'No targets have been assigned to you.')}</div>
+      <div class="card">${rgCardTitle('Branch & Staff Targets', team.length, rgGen('Regional Targets', headers, data))}${admTable(headers, team.sort((a, b) => pct(a) - pct(b)).map(row), 'No targets set in your region yet. Use “Set a target”.')}</div>`;
+  },
+  "Regional Collection": () => {
+    const rows = rgBranchRows(); const officers = rgOfficers();
+    const posted = rgLoanPaymentsPosted(); const loanMap = rgLoanById(); const ids = rgBranchIds();
+    const now = new Date(); const daysIn = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const days = Array.from({ length: now.getDate() }, (_, i) => i + 1);
+    const daily = days.map(d => posted.filter(p => { const x = new Date(p.date); return isThisMonth(p.date) && x.getDate() === d && loanMap[p.loanId] && ids.includes(loanMap[p.loanId].branchId); }).reduce((s, p) => s + p.amount, 0));
+    const offRows = officers.map(o => { const st = computeStats(o.id, null); const due = st.activeScope.flatMap(l => l.schedule || []).filter(r => r.dueDate && isThisMonth(r.dueDate)).reduce((s, r) => s + r.totalDue, 0);
+      return { o, due, coll: st.collectionsMTD, rate: due > 0 ? Math.min(150, st.collectionsMTD / due * 100) : null, today: st.collectedToday, dueToday: st.dueToday, arrears: st.arrearsAmt }; }).sort((a, b) => (b.rate || 0) - (a.rate || 0));
+    const totDue = rows.reduce((s, r) => s + r.dueMTD, 0), totColl = rows.reduce((s, r) => s + r.st.collectionsMTD, 0);
+    const bHeaders = ['Branch','Due this month','Collected','Collection rate %','Due today','Collected today','Arrears'];
+    const oHeaders = ['Loan officer','Branch','Due this month','Collected','Collection rate %','Collected today','Arrears'];
+    return `<div class="card">${rgCardTitle('Collection This Month', `day ${now.getDate()} of ${daysIn}`)}<div class="adm-tiles">
+        ${admTile('Due', fmt(totDue))}${admTile('Collected', fmt(totColl))}${admTile('Collection rate', totDue > 0 ? rgPct(totColl, totDue).toFixed(1) + '%' : '—')}${admTile('Collected today', fmt(rows.reduce((s, r) => s + r.st.collectedToday, 0)), 'of ' + fmt(rows.reduce((s, r) => s + r.st.dueToday, 0)) + ' due')}</div></div>
+      <div class="card">${rgCardTitle('Daily Collections', 'this month')}${registerChart('rg-coll-daily', { type:'line', data:{ labels: days.map(String), datasets:[{ label:'Collected', data: daily, borderColor:'#2E5C8A', backgroundColor:'rgba(46,92,138,0.12)', fill:true, tension:0.25 }] }, options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } } })}</div>
+      <div class="card">${rgCardTitle('By Branch', rows.length, rgGen('Regional Collection by Branch', bHeaders, rows.map(r => [r.b.name, Math.round(r.dueMTD), Math.round(r.st.collectionsMTD), r.collRate == null ? '' : r.collRate.toFixed(1), Math.round(r.st.dueToday), Math.round(r.st.collectedToday), Math.round(r.st.arrearsAmt)])))}
+        ${admTable(bHeaders, rows.sort((a, b) => (b.collRate || 0) - (a.collRate || 0)).map(r => [`<strong>${escapeHtml(r.b.name)}</strong>`, fmt(r.dueMTD), fmt(r.st.collectionsMTD), rgPctBadge(r.collRate, 90, 75), fmt(r.st.dueToday), fmt(r.st.collectedToday), fmt(r.st.arrearsAmt)]), 'No branches in your region yet.')}</div>
+      <div class="card">${rgCardTitle('By Loan Officer', offRows.length, rgGen('Regional Collection by Officer', oHeaders, offRows.map(x => [x.o.name, branchName(x.o.branch), Math.round(x.due), Math.round(x.coll), x.rate == null ? '' : x.rate.toFixed(1), Math.round(x.today), Math.round(x.arrears)])))}
+        ${admTable(oHeaders, offRows.map(x => [`<strong>${escapeHtml(x.o.name)}</strong>`, escapeHtml(branchName(x.o.branch)), fmt(x.due), fmt(x.coll), rgPctBadge(x.rate, 90, 75), fmt(x.today), fmt(x.arrears)]), 'No active loan officers in your region.')}</div>`;
+  },
+  "Disbursement Analysis": () => {
+    const months = rgLastMonths(6); const ids = rgBranchIds();
+    const loans = (DB.loans || []).filter(l => l.disbursedAt && ids.includes(l.branchId) && months.includes(rgMonthKey(l.disbursedAt)));
+    const firstLoanAt = {}; (DB.loans || []).filter(l => l.disbursedAt).forEach(l => { if(!firstLoanAt[l.clientId] || l.disbursedAt < firstLoanAt[l.clientId]) firstLoanAt[l.clientId] = l.disbursedAt; });
+    const isNew = l => firstLoanAt[l.clientId] === l.disbursedAt;
+    const sum = list => list.reduce((s, l) => s + l.principal, 0);
+    const byMonth = months.map(m => loans.filter(l => rgMonthKey(l.disbursedAt) === m));
+    const byBranch = rgBranches().map(b => { const list = loans.filter(l => l.branchId === b.id); return { b, list, amt: sum(list), n: list.filter(isNew).length }; }).sort((a, b) => b.amt - a.amt);
+    const prods = {}; loans.forEach(l => { const k = l.productName || productName(l.productId); (prods[k] = prods[k] || []).push(l); });
+    const prodRows = Object.entries(prods).map(([k, list]) => ({ k, list, amt: sum(list) })).sort((a, b) => b.amt - a.amt);
+    const bHeaders = ['Branch','Loans','Amount','Average size','New clients','Repeat'];
+    return `<div class="card">${rgCardTitle('Last 6 Months')}<div class="adm-tiles">
+        ${admTile('Loans disbursed', fmtNum(loans.length))}${admTile('Amount', fmt(sum(loans)))}${admTile('Average loan', fmt(loans.length ? sum(loans) / loans.length : 0))}${admTile('First loans', fmtNum(loans.filter(isNew).length), fmtNum(loans.length - loans.filter(isNew).length) + ' repeat')}</div></div>
+      <div class="card">${rgCardTitle('By Month')}${registerChart('rg-disb-month', { type:'bar', data:{ labels: months.map(rgMonthLabel), datasets:[{ label:'Amount', data: byMonth.map(sum), backgroundColor:'#2E5C8A', yAxisID:'y' }, { label:'Loans', data: byMonth.map(l => l.length), type:'line', borderColor:'#E76F51', yAxisID:'y1' }] }, options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true }, y1:{ beginAtZero:true, position:'right', grid:{ drawOnChartArea:false } } } } })}
+        ${admTable(['Month','Loans','Amount','Average size'], months.map((m, i) => [rgMonthLabel(m), byMonth[i].length, fmt(sum(byMonth[i])), fmt(byMonth[i].length ? sum(byMonth[i]) / byMonth[i].length : 0)]))}</div>
+      <div class="card">${rgCardTitle('By Branch', '', rgGen('Disbursement Analysis by Branch', bHeaders, byBranch.map(x => [x.b.name, x.list.length, Math.round(x.amt), Math.round(x.list.length ? x.amt / x.list.length : 0), x.n, x.list.length - x.n])))}
+        ${admTable(bHeaders, byBranch.map(x => [`<strong>${escapeHtml(x.b.name)}</strong>`, x.list.length, fmt(x.amt), fmt(x.list.length ? x.amt / x.list.length : 0), x.n, x.list.length - x.n]), 'No branches in your region yet.')}</div>
+      <div class="card">${rgCardTitle('By Product')}${admTable(['Product','Loans','Amount','Share'], prodRows.map(x => [`<strong>${escapeHtml(x.k)}</strong>`, x.list.length, fmt(x.amt), rgPct(x.amt, sum(loans)).toFixed(1) + '%']), 'No loans disbursed in the last 6 months.')}</div>`;
+  },
+  "Regional PAR & Risk Analysis": () => {
+    const ids = rgBranchIds(); const active = (DB.loans || []).filter(l => ['Active','Disbursed'].includes(l.status) && ids.includes(l.branchId));
+    const buckets = [['Current', 0, 0], ['1–30 days', 1, 30], ['31–60 days', 31, 60], ['61–90 days', 61, 90], ['91–180 days', 91, 180], ['180+ days', 181, Infinity]];
+    const bucketOf = l => { const d = loanArrearsDays(l); return buckets.findIndex(b => d >= b[1] && d <= b[2]); };
+    const total = active.reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const byBucket = buckets.map((b, i) => { const list = active.filter(l => bucketOf(l) === i); return { label: b[0], n: list.length, amt: list.reduce((s, l) => s + loanOutstandingPrincipal(l), 0) }; });
+    const par = days => rgPct(active.filter(l => loanArrearsDays(l) > days).reduce((s, l) => s + loanOutstandingPrincipal(l), 0), total);
+    const branchRows = rgBranches().map(b => { const list = active.filter(l => l.branchId === b.id); const t = list.reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+      const p = d => rgPct(list.filter(l => loanArrearsDays(l) > d).reduce((s, l) => s + loanOutstandingPrincipal(l), 0), t);
+      return { b, n: list.length, t, par1: p(0), par30: p(30), par90: p(90), arrears: list.reduce((s, l) => s + loanArrearsAmount(l), 0) }; }).sort((a, b) => b.par30 - a.par30);
+    const top = active.filter(l => loanArrearsDays(l) > 0).sort((a, b) => loanArrearsAmount(b) - loanArrearsAmount(a)).slice(0, 15);
+    const group = keyFn => { const m = {}; active.forEach(l => { const k = keyFn(l); (m[k] = m[k] || []).push(l); }); return Object.entries(m).map(([k, list]) => { const t = list.reduce((s, l) => s + loanOutstandingPrincipal(l), 0); return { k, n: list.length, t, par30: rgPct(list.filter(l => loanArrearsDays(l) > 30).reduce((s, l) => s + loanOutstandingPrincipal(l), 0), t) }; }).sort((a, b) => b.par30 - a.par30); };
+    const brHeaders = ['Branch','Active loans','Outstanding principal','PAR1 %','PAR30 %','PAR90 %','Arrears'];
+    const topHeaders = ['Client','Branch','Officer','Days past due','Arrears','Outstanding principal'];
+    return `<div class="card">${rgCardTitle('Region Risk')}<div class="adm-tiles">
+        ${admTile('Outstanding principal', fmt(total))}${admTile('PAR1', par(0).toFixed(1) + '%')}${admTile('PAR30', par(30).toFixed(1) + '%')}${admTile('PAR90', par(90).toFixed(1) + '%')}${admTile('Loans in arrears', active.filter(l => loanArrearsDays(l) > 0).length, 'of ' + active.length + ' active')}</div></div>
+      <div class="card">${rgCardTitle('Arrears Ageing')}${admTable(['Bucket','Loans','Outstanding principal','Share'], byBucket.map(x => [`<strong>${x.label}</strong>`, x.n, fmt(x.amt), rgPct(x.amt, total).toFixed(1) + '%']))}
+        ${registerChart('rg-par-buckets', { type:'doughnut', data:{ labels: byBucket.map(x => x.label), datasets:[{ data: byBucket.map(x => Math.round(x.amt)), backgroundColor:['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E','#7A1F0B'] }] }, options:{ responsive:true, maintainAspectRatio:false } })}</div>
+      <div class="card">${rgCardTitle('PAR by Branch', '', rgGen('PAR by Branch', brHeaders, branchRows.map(r => [r.b.name, r.n, Math.round(r.t), r.par1.toFixed(1), r.par30.toFixed(1), r.par90.toFixed(1), Math.round(r.arrears)])))}
+        ${admTable(brHeaders, branchRows.map(r => [`<strong>${escapeHtml(r.b.name)}</strong>`, r.n, fmt(r.t), rgPctBadge(r.par1, 5, 10, true), rgPctBadge(r.par30, 5, 10, true), rgPctBadge(r.par90, 2, 5, true), fmt(r.arrears)]), 'No branches in your region yet.')}</div>
+      <div class="card">${rgCardTitle('Largest Exposures in Arrears', top.length, rgGen('Largest Exposures in Arrears', topHeaders, top.map(l => [clientName(l.clientId), branchName(l.branchId), staffName(l.officerId), loanArrearsDays(l), Math.round(loanArrearsAmount(l)), Math.round(loanOutstandingPrincipal(l))])))}
+        ${admTable(topHeaders, top.map(l => [`<strong>${escapeHtml(clientName(l.clientId))}</strong>`, escapeHtml(branchName(l.branchId)), escapeHtml(staffName(l.officerId)), `<span class="badge ${loanArrearsDays(l) > 90 ? 'red' : loanArrearsDays(l) > 30 ? 'amber' : 'blue'}">${loanArrearsDays(l)}</span>`, fmt(loanArrearsAmount(l)), fmt(loanOutstandingPrincipal(l))]), 'No loans in arrears in your region.')}</div>
+      <div class="adm-two"><div class="card">${rgCardTitle('Risk by Product')}${admTable(['Product','Loans','PAR30 %'], group(l => l.productName || productName(l.productId)).map(x => [escapeHtml(x.k), x.n, rgPctBadge(x.par30, 5, 10, true)]), 'No active loans.')}</div>
+        <div class="card">${rgCardTitle('Risk by Loan Officer')}${admTable(['Officer','Loans','PAR30 %'], group(l => staffName(l.officerId)).map(x => [escapeHtml(x.k), x.n, rgPctBadge(x.par30, 5, 10, true)]), 'No active loans.')}</div></div>`;
+  },
+  "Regional Alerts": () => {
+    const ops = rgData('ops', '/api/regional-ops', r => r.records);
+    const alerts = [];
+    const add = (sev, title, detail, go) => alerts.push({ sev, title, detail, go });
+    rgBranchRows().forEach(r => {
+      if(r.collRate !== null && r.collRate < 75) add(r.collRate < 60 ? 'Critical' : 'High', `${r.b.name}: collection rate ${r.collRate.toFixed(1)}%`, `Collected ${fmt(r.st.collectionsMTD)} of ${fmt(r.dueMTD)} due this month (target 90%).`, "goTo('regional','Regional Collection')");
+      if(r.par30Pct > 5) add(r.par30Pct > 10 ? 'Critical' : 'High', `${r.b.name}: PAR30 at ${r.par30Pct.toFixed(1)}%`, `Portfolio more than 30 days overdue is above the 5% tolerance.`, "goTo('regional','Regional PAR & Risk Analysis')");
+      if(r.st.dueToday > 0 && r.st.collectedToday === 0 && new Date().getHours() >= 14) add('Normal', `${r.b.name}: nothing collected today`, `${fmt(r.st.dueToday)} is due today and no payment has been recorded yet.`, "goTo('loanbook','Collection Sheet')");
+      if(!r.officers && (r.st.totalClients > 0 || r.st.activeScope.length > 0)) add('High', `${r.b.name}: no active loan officer`, 'Clients in this branch have nobody assigned to collect from them.', "goTo('staff','Company Employees')");
+    });
+    const ids = rgBranchIds(); const now = Date.now();
+    const stuck = (DB.loans || []).filter(l => ids.includes(l.branchId) && isUndisbursedLoan(l) && l.createdAt && (now - new Date(l.createdAt)) > 3 * 86400000);
+    if(stuck.length) add('High', `${stuck.length} loan application(s) waiting over 3 days`, 'Applications not yet approved or disbursed after three days.', "goTo('loanbook','Loan Applications')");
+    const npl = (DB.loans || []).filter(l => ids.includes(l.branchId) && ['Active','Disbursed'].includes(l.status) && loanArrearsDays(l) > 90);
+    if(npl.length) add('Critical', `${npl.length} loan(s) more than 90 days overdue`, `Arrears of ${fmt(npl.reduce((s, l) => s + loanArrearsAmount(l), 0))} — candidates for recovery or write-off review.`, "goTo('loanbook','Loan Arrears')");
+    if(Array.isArray(ops)){
+      const today = todayISO();
+      const overdue = ops.filter(o => o.isOpen && o.dueDate && o.dueDate < today);
+      if(overdue.length) add('High', `${overdue.length} regional item(s) past their due date`, overdue.slice(0, 3).map(o => o.title).join(' · '), "goTo('regional','Regional Action Plans')");
+      const esc = ops.filter(o => o.kind === 'escalation' && o.isOpen);
+      if(esc.length) add('High', `${esc.length} open escalation(s)`, esc.slice(0, 3).map(o => o.title).join(' · '), "goTo('regional','Escalations')");
+      const reqs = ops.filter(o => o.kind === 'branch_request' && o.status === 'Pending' && (now - new Date(o.createdAt)) > 3 * 86400000);
+      if(reqs.length) add('Normal', `${reqs.length} branch request(s) waiting over 3 days`, reqs.slice(0, 3).map(o => o.title).join(' · '), "goTo('regional','Branch Requests')");
+      const crit = ops.filter(o => o.kind === 'issue' && o.isOpen && o.priority === 'Critical');
+      if(crit.length) add('Critical', `${crit.length} critical operational issue(s) open`, crit.slice(0, 3).map(o => o.title).join(' · '), "goTo('regional','Operational Issues')");
+    }
+    const rank = { Critical: 0, High: 1, Normal: 2 }; alerts.sort((a, b) => rank[a.sev] - rank[b.sev]);
+    const tone = { Critical: 'red', High: 'amber', Normal: 'blue' };
+    return `<div class="card">${rgCardTitle('Summary', ops === undefined ? 'loading open work…' : '')}<div class="adm-tiles">${admTile('Critical', alerts.filter(a => a.sev === 'Critical').length)}${admTile('High', alerts.filter(a => a.sev === 'High').length)}${admTile('Normal', alerts.filter(a => a.sev === 'Normal').length)}</div></div>
+      <div class="card">${rgCardTitle('Active Alerts', alerts.length)}${alerts.length ? alerts.map(a => `<div class="rg-alert rg-alert-${a.sev.toLowerCase()}">
+          <div><span class="badge ${tone[a.sev]}">${a.sev}</span> <strong>${escapeHtml(a.title)}</strong><div class="hint" style="margin-top:3px;">${escapeHtml(a.detail)}</div></div>
+          <button class="btn btn-sm btn-outline" onclick="${a.go}">Open →</button></div>`).join('') : `<div class="empty">No alerts — every branch is within tolerance.</div>`}
+        <div class="hint" style="margin-top:10px;">Thresholds: collection rate below 75% (critical below 60%), PAR30 above 5% (critical above 10%), applications waiting over 3 days, loans over 90 days overdue.</div></div>`;
+  },
+  "Regional Activity Log": () => {
+    const act = rgData('activity', '/api/regional-ops/activity?limit=500', r => r.activity);
+    if(act === undefined) return admLoading(); if(act.__error) return admError(act.__error);
+    const f = session.rgActFilter || (session.rgActFilter = { q: '', branch: '' });
+    const q = f.q.toLowerCase();
+    const list = act.filter(a => (!f.branch || a.branchId === f.branch) && (!q || [a.user, a.action, a.module, a.recordType].some(x => (x || '').toLowerCase().includes(q))));
+    const headers = ['When','User','Role','Branch','Module','Action','Record'];
+    return `<div class="card">${rgCardTitle('Activity', `${list.length} of ${act.length}`, rgGen('Regional Activity Log', headers, list.map(a => [a.at, a.user || '', ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '', a.branchId ? branchName(a.branchId) : '', a.module || '', a.action, ((a.recordType || '') + ' ' + (a.recordId || '')).trim()])))}
+      <div class="pill-row adm-filters"><input placeholder="Search user, action or module" value="${escapeHtml(f.q)}" onchange="session.rgActFilter.q=this.value; renderApp();">
+        <select onchange="session.rgActFilter.branch=this.value; renderApp();"><option value="">All branches</option>${rgBranches().map(b => `<option value="${b.id}" ${f.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select></div>
+      ${admTable(['When','User','Branch','Action','Record'], list.slice(0, 300).map(a => [admWhen(a.at), `${escapeHtml(a.user || '—')}<div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '')}</div>`, escapeHtml(a.branchId ? branchName(a.branchId) : '—'), `<strong>${escapeHtml(a.action)}</strong>${a.module ? `<div class="hint">${escapeHtml(a.module)}</div>` : ''}`, escapeHtml(((a.recordType || '') + ' ' + (a.recordId || '')).trim())]), 'No activity recorded yet.')}</div>`;
+  },
+};
+
+/* ---- Regional Operations records (plans, requests, transfers, issues, escalations) ---- */
+const RG_KIND_LABEL = { action_plan:'action plan', branch_request:'branch request', transfer:'transfer', issue:'issue', escalation:'escalation' };
+const RG_STATUS_TONE = { Planned:'blue', 'In Progress':'amber', Completed:'green', Cancelled:'grey', Pending:'amber', Approved:'blue', Rejected:'red', Fulfilled:'green', Requested:'amber', Open:'red', Resolved:'green', Closed:'grey', Acknowledged:'amber' };
+const RG_PRIORITY_TONE = { Low:'grey', Normal:'blue', High:'amber', Critical:'red' };
+const RG_NEXT = {
+  action_plan: { Planned:['In Progress','Cancelled'], 'In Progress':['Completed','Cancelled'] },
+  branch_request: { Pending:['Approved','Rejected'], Approved:['Fulfilled'] },
+  transfer: { Requested:['Approved','Rejected'], Approved:['Completed'] },
+  issue: { Open:['In Progress','Resolved'], 'In Progress':['Resolved'], Resolved:['Closed'] },
+  escalation: { Open:['Acknowledged','Resolved'], Acknowledged:['Resolved'] },
+};
+function rgCanDecide(){ return ['Regional Manager','Operational Manager','CEO','Director','Admin'].includes(session.role); }
+function rgForm(kind){ session.rgForms = session.rgForms || {}; return session.rgForms[kind] || (session.rgForms[kind] = { title:'', details:'', branch_id:'', priority:'Normal', due_date:'', assigned_to:'', category:'', subject_type:'staff', subject_id:'', to_branch_id:'', to_officer_id:'' }); }
+function rgSet(kind, field, value, rerender){ rgForm(kind)[field] = value; if(rerender) renderApp(); }
+function rgOpsPage(label, kind){
+  const recs = rgData('ops', '/api/regional-ops', r => r.records);
+  if(recs === undefined) return admLoading(); if(recs.__error) return admError(recs.__error);
+  const all = recs.filter(r => r.kind === kind);
+  const fl = session.rgOpsFilter || (session.rgOpsFilter = { status: 'open', branch: '' });
+  const list = all.filter(r => (fl.status === 'all' || (fl.status === 'open' ? r.isOpen : !r.isOpen)) && (!fl.branch || r.branchId === fl.branch));
+  const statuses = Object.keys(RG_STATUS_TONE).filter(s => all.some(r => r.status === s));
+  const today = todayISO();
+  const headers = ['Title','Branch','Priority','Status','Due','Assigned to','Raised by','Raised on'].concat(kind === 'transfer' ? ['Who','From','To'] : []);
+  const data = list.map(r => [r.title, r.branchId ? branchName(r.branchId) : 'Whole region', r.priority, r.status, r.dueDate || '', r.assignedToName || '', r.createdByName || '', String(r.createdAt).slice(0, 10)].concat(kind === 'transfer' ? [r.subjectName || '', branchName(r.fromBranchId), branchName(r.toBranchId)] : []));
+  return `<div class="card">${rgCardTitle('Overview')}<div class="adm-tiles">${admTile('Open', all.filter(r => r.isOpen).length)}${admTile('Closed', all.filter(r => !r.isOpen).length)}${admTile('Overdue', all.filter(r => r.isOpen && r.dueDate && r.dueDate < today).length)}${admTile('High / critical open', all.filter(r => r.isOpen && ['High','Critical'].includes(r.priority)).length)}</div></div>
+    ${rgOpsForm(kind)}
+    <div class="card">${rgCardTitle(label, `${list.length} shown`, rgGen(label, headers, data))}
+      <div class="pill-row adm-filters">
+        <select onchange="session.rgOpsFilter.status=this.value; renderApp();">${[['open','Open'],['closed','Closed'],['all','All']].map(([v, l]) => `<option value="${v}" ${fl.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select onchange="session.rgOpsFilter.branch=this.value; renderApp();"><option value="">All branches</option>${rgBranches().map(b => `<option value="${b.id}" ${fl.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select>
+        ${statuses.length ? `<span class="hint">${statuses.map(s => `${s}: ${all.filter(r => r.status === s).length}`).join(' · ')}</span>` : ''}
+      </div>
+      ${list.length ? list.map(r => rgOpsCard(r)).join('') : `<div class="empty">No ${fl.status === 'all' ? '' : fl.status + ' '}${RG_KIND_LABEL[kind]}s${fl.branch ? ' for this branch' : ''}.</div>`}
+    </div>`;
+}
+function rgOpsCard(r){
+  const today = todayISO(); const overdue = r.isOpen && r.dueDate && r.dueDate < today;
+  const next = rgCanDecide() ? ((RG_NEXT[r.kind] || {})[r.status] || []) : [];
+  return `<div class="rg-rec">
+    <div class="rg-rec-head"><div><strong class="rg-rec-title">${escapeHtml(r.title)}</strong>
+      <div class="hint">${escapeHtml(r.branchId ? branchName(r.branchId) : 'Whole region')}${r.category ? ' · ' + escapeHtml(r.category) : ''} · raised by ${escapeHtml(r.createdByName || '—')} ${timeAgo(r.createdAt)}</div></div>
+      <div class="pill-row" style="flex-wrap:nowrap;">${admBadge(r.priority, RG_PRIORITY_TONE[r.priority])}${admBadge(r.status, RG_STATUS_TONE[r.status] || 'grey')}</div></div>
+    ${r.kind === 'transfer' ? `<div class="rg-rec-line"><b>${escapeHtml(r.subjectType === 'client' ? 'Client' : 'Staff')}:</b> ${escapeHtml(r.subjectName || '—')} · ${escapeHtml(branchName(r.fromBranchId))} → <strong>${escapeHtml(branchName(r.toBranchId))}</strong>${r.subjectType === 'client' ? ` (officer: ${escapeHtml(staffName(r.toOfficerId))})` : ''}</div>` : ''}
+    ${r.details ? `<div class="rg-rec-line">${escapeHtml(r.details)}</div>` : ''}
+    <div class="rg-rec-line hint">${r.dueDate ? `Due <span class="${overdue ? 'rg-overdue' : ''}">${escapeHtml(r.dueDate)}${overdue ? ' — overdue' : ''}</span> · ` : ''}${r.assignedToName ? 'Assigned to ' + escapeHtml(r.assignedToName) : 'Unassigned'}${r.relatedId ? ' · linked to an earlier record' : ''}</div>
+    ${r.resolution ? `<div class="rg-rec-line"><b>Outcome:</b> ${escapeHtml(r.resolution)}</div>` : ''}
+    ${r.isOpen ? `<div class="pill-row" style="margin-top:8px;">${next.map(s => `<button class="btn btn-sm ${['Rejected','Cancelled'].includes(s) ? 'btn-red' : 'btn-primary'}" onclick="rgSetStatus('${r.id}','${s}')">${escapeHtml(s === 'Completed' && r.kind === 'transfer' ? 'Complete transfer' : s)}</button>`).join('')}
+      ${r.kind !== 'escalation' && rgCanDecide() ? `<button class="btn btn-sm btn-outline" onclick="rgEscalate('${r.id}')">Escalate</button>` : ''}</div>` : ''}
+  </div>`;
+}
+function rgOpsForm(kind){
+  const isMgr = session.role === 'Manager';
+  if(!rgCanDecide() && !(isMgr && ['branch_request','issue','transfer'].includes(kind))) return '';
+  const f = rgForm(kind); const branches = rgBranches(); const staff = rgStaff().filter(s => s.status === 'Active');
+  const set = (field, rerender) => `onchange="rgSet('${kind}','${field}',this.value${rerender ? ',true' : ''})"`;
+  const inp = (field, label, type, extra) => `<div class="field${type === 'textarea' ? ' full' : ''}"><label>${label}</label>${type === 'textarea' ? `<textarea rows="2" ${set(field)} oninput="rgSet('${kind}','${field}',this.value)">${escapeHtml(f[field])}</textarea>` : `<input type="${type || 'text'}" value="${escapeHtml(f[field])}" ${set(field)} oninput="rgSet('${kind}','${field}',this.value)" ${extra || ''}>`}</div>`;
+  const sel = (field, label, opts, rerender) => `<div class="field"><label>${label}</label><select ${set(field, rerender)}>${opts.map(o => `<option value="${escapeHtml(o[0])}" ${String(f[field]) === String(o[0]) ? 'selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}</select></div>`;
+  let specific = '';
+  if(kind === 'transfer'){
+    const subjects = f.subject_type === 'client'
+      ? (DB.clients || []).filter(c => rgBranchIds().includes(c.branch)).map(c => [c.id, `${c.name} — ${branchName(c.branch)}`])
+      : staff.filter(s => s.branch).map(s => [s.id, `${s.name} (${s.role}) — ${branchName(s.branch)}`]);
+    const toOfficers = f.to_branch_id ? rgOfficers(f.to_branch_id).map(o => [o.id, o.name]) : [];
+    specific = sel('subject_type', 'Transfer a', [['staff','Staff member'],['client','Client']], true)
+      + sel('subject_id', f.subject_type === 'client' ? 'Client' : 'Staff member', [['', 'Choose…']].concat(subjects))
+      + sel('to_branch_id', 'Move to branch', [['', 'Choose…']].concat(branches.map(b => [b.id, b.name])), true)
+      + (f.subject_type === 'client' ? sel('to_officer_id', 'New loan officer', [['', toOfficers.length ? 'Choose…' : (f.to_branch_id ? 'No active officers at that branch' : 'Pick a branch first')]].concat(toOfficers)) : '');
+  } else {
+    specific = (isMgr ? '' : sel('branch_id', 'Branch', [['', kind === 'action_plan' || kind === 'escalation' ? 'Whole region' : 'Choose…']].concat(branches.map(b => [b.id, b.name]))))
+      + (RG_OPS_CATEGORIES[kind] ? sel('category', 'Category', [['', 'Choose…']].concat(RG_OPS_CATEGORIES[kind].map(c => [c, c]))) : '')
+      + (isMgr ? '' : sel('assigned_to', 'Assign to', [['', 'Nobody yet']].concat(staff.map(s => [s.id, `${s.name} (${s.role})`]))));
+  }
+  return `<div class="card">${rgCardTitle('New ' + RG_KIND_LABEL[kind])}
+    <form onsubmit="return rgCreate(event,'${kind}')"><div class="form-grid">
+      ${inp('title', 'Title', 'text', 'maxlength="160"')}${sel('priority', 'Priority', RG_PRIORITIES.map(p => [p, p]))}
+      ${specific}${kind === 'transfer' ? '' : inp('due_date', 'Due date', 'date')}
+      ${inp('details', kind === 'transfer' ? 'Reason' : 'Details', 'textarea')}
+    </div><button class="btn btn-primary btn-sm" type="submit">Create ${RG_KIND_LABEL[kind]}</button></form></div>`;
+}
+async function rgCreate(ev, kind){
+  ev.preventDefault();
+  const f = rgForm(kind);
+  if(!String(f.title || '').trim()){ toast('Give it a title.'); return false; }
+  if(kind === 'transfer'){
+    if(!f.subject_id){ toast(`Choose the ${f.subject_type === 'client' ? 'client' : 'staff member'} to transfer.`); return false; }
+    if(!f.to_branch_id){ toast('Choose the branch to move to.'); return false; }
+    if(f.subject_type === 'client' && !f.to_officer_id){ toast('Choose the new loan officer.'); return false; }
+  } else if(kind !== 'action_plan' && kind !== 'escalation' && session.role !== 'Manager' && !f.branch_id){ toast('Choose the branch.'); return false; }
+  const body = { kind, title: f.title.trim(), details: f.details, priority: f.priority, category: f.category || undefined, due_date: f.due_date || undefined };
+  if(kind === 'transfer') Object.assign(body, { subject_type: f.subject_type, subject_id: f.subject_id, to_branch_id: f.to_branch_id, to_officer_id: f.to_officer_id || undefined });
+  else Object.assign(body, { branch_id: f.branch_id || undefined, assigned_to: f.assigned_to || undefined });
+  await withRequest('rg-create-' + kind, async ()=>{
+    await api.post('/api/regional-ops', body);
+    session.rgForms[kind] = null; rgForget('ops');
+  }, { mutates: true });
+  return false;
+}
+async function rgSetStatus(id, status){
+  const recs = (DB.adm || {})['rg:ops'] || []; const r = recs.find(x => x.id === id); if(!r) return;
+  let resolution;
+  if(['Rejected','Cancelled','Resolved','Completed','Fulfilled','Closed'].includes(status)){
+    if(r.kind === 'transfer' && status === 'Completed' && typeof confirm === 'function' && !confirm(`Complete this transfer? ${r.subjectName || 'The ' + r.subjectType} will be moved to ${branchName(r.toBranchId)} now.`)) return;
+    resolution = typeof prompt === 'function' ? prompt(`Outcome / note for "${r.title}" (optional):`, '') : '';
+    if(resolution === null) return;
+  }
+  await withRequest('rg-status-' + id, async ()=>{
+    await api.patch('/api/regional-ops/' + id, Object.assign({ status }, resolution ? { resolution } : {}));
+    rgForget('ops'); rgForget('activity');
+    if(r.kind === 'transfer' && status === 'Completed'){
+      const [c, u] = await Promise.all([api.get('/api/clients').catch(()=>null), api.get('/api/users?limit=200').catch(()=>null)]);
+      if(c) DB.clients = c.clients.map(adaptClient); if(u) DB.staff = u.users.map(adaptStaff);
+      const lo = await api.get('/api/loans').catch(()=>null); if(lo) DB.loans = lo.loans.map(adaptLoan);
+    }
+  }, { mutates: true });
+}
+async function rgEscalate(id){
+  const reason = typeof prompt === 'function' ? prompt('Why does this need to go beyond the region?', '') : null;
+  if(!reason || !reason.trim()) return;
+  await withRequest('rg-escalate-' + id, async ()=>{ await api.post(`/api/regional-ops/${id}/escalate`, { reason: reason.trim() }); rgForget('ops'); }, { mutates: true });
+}
+
+// Routing: every Regional page is its own sidebar item for the Regional
+// Manager (own region) and the Operational Manager (company-wide).
+const RG_BIZ_PERF_ITEMS = ["Portfolio Quality","Efficiency & Productivity","Personnel Productivity","Financial Management","Profitability","Dormancy Analysis"];
+["Regional Manager","Operational Manager"].forEach(role => {
+  ROLE_ROUTE_OVERRIDES[role] = Object.assign(ROLE_ROUTE_OVERRIDES[role] || {},
+    Object.fromEntries(Object.keys(RG_PAGES).map(label => [label, {section:"regional", subtab:label}])),
+    { "Loan Portfolio Monitoring": {section:"loanbook", subtab:"Regional Loan Portfolio Quality"} });
+});
+// Business Performance's six sections are separate sidebar items for the
+// Regional Manager rather than a menu inside one page.
+Object.assign(ROLE_ROUTE_OVERRIDES["Regional Manager"], Object.fromEntries(RG_BIZ_PERF_ITEMS.map(k => [k, {section:"business-analytics", subtab:k}])));
+
 function renderPlaceholder(){
   return `
     <div class="section-note">This screen — <strong>${escapeHtml(session.placeholderLabel||"")}</strong> — is part of the navigation spec but isn't built out with real functionality in this prototype yet.</div>
@@ -5823,7 +6372,11 @@ const BIZ_PERF_SECTIONS = [
   {key:"Dormancy Analysis", icon:"⏰", sub:"Clients falling to Dormancy & already in dormancy"},
 ];
 function goToBizPerf(section){ session.bizPerfSection = section; renderApp(); }
-function backToBizPerfMenu(){ session.bizPerfSection = null; renderApp(); }
+function backToBizPerfMenu(){
+  // Opened from its own sidebar item: back goes to the dashboard, not a menu.
+  if(BIZ_PERF_SECTIONS.some(x=>x.key===session.subtab)){ goTo('dashboard'); return; }
+  session.bizPerfSection = null; renderApp();
+}
 function bizPerfBackHeader(title, bName, onBack){
   return `<div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="${onBack}" style="cursor:pointer;">←</span><span>${title}</span> ${bName?`<small>${bName}</small>`:""}</div>`;
 }
@@ -6255,7 +6808,10 @@ function renderBusinessPerformancePage(st, bName, branchIds){
 }
 function renderBusinessAnalyticsModule(){
   const tabs = ["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"];
-  const active = tabs.includes(session.subtab) ? session.subtab : "Loan Sizes";
+  // A Business Performance section opened straight from the sidebar
+  // (Regional Manager) renders on its own, without the in-page menu.
+  if(BIZ_PERF_SECTIONS.some(x=>x.key===session.subtab)) session.bizPerfSection = session.subtab;
+  const active = tabs.includes(session.subtab) ? session.subtab : (BIZ_PERF_SECTIONS.some(x=>x.key===session.subtab) ? "Business Performance" : "Loan Sizes");
   const branchIds = businessAnalyticsBranchIds();
   const st = computeStats(null, branchIds);
   const bName = branchIds && branchIds.length===1 ? branchName(branchIds[0]) : null;
@@ -11806,7 +12362,7 @@ function renderCollectionRatesBranchPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrRatesState.q=this.value; session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.cycle||st.status||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrRatesState={from:st.from,to:st.to,branchId:'',officerId:'',productId:'',cycle:'',status:'',q:'',page:1}; DB.collectionRatesBranch=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportCollectionRatesBranch()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportCollectionRatesBranch()')}</span>
     </div>
 
     <div class="card-title" style="font-size:14px;">Officer Collection Rates</div>
@@ -12198,7 +12754,7 @@ function renderLoanExceptionsPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.opExceptionsState.q=this.value; session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();">
       ${(st.branchId||st.officerId||st.category||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.opExceptionsState={branchId:'',officerId:'',category:'',q:'',page:1}; DB.loanExceptions=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportLoanExceptions()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportLoanExceptions()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Category</th><th>Type</th><th>Source</th><th>Client</th><th>Officer</th><th>Branch</th><th>Amount</th><th>Age</th><th>Detail</th></tr>
@@ -12325,7 +12881,7 @@ function renderOperationalPortfolioPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.opPortfolioState.q=this.value; session.opPortfolioState.page=1; DB.operationalPortfolio=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.opPortfolioState={from:st.from,to:st.to,branchId:'',officerId:'',productId:'',q:'',page:1}; DB.operationalPortfolio=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportOperationalPortfolio()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportOperationalPortfolio()')}</span>
     </div>
 
     <div class="card-title" style="font-size:14px;">Portfolio Detail</div>
@@ -12411,7 +12967,7 @@ function renderApprovedLoansPage(){
       </select>
       <input placeholder="Search client" value="${escapeHtml(st.q)}" oninput="session.mgrApprovedState.q=this.value; session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.disbursedStatus||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrApprovedState={branchId:'',officerId:'',productId:'',disbursedStatus:'',q:'',page:1}; DB.approvedLoans=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportApprovedLoans()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportApprovedLoans()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th>${showBranchBreakdown?'<th>Branch</th>':''}<th>Product</th><th>Amount</th><th>Submitted</th><th>Approved</th><th>Turnaround</th><th>Disbursed</th><th>Status</th></tr>
@@ -12525,7 +13081,7 @@ function renderMaturityPipelinePage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrMaturityState.q=this.value; session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.bucket||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrMaturityState={branchId:'',officerId:'',productId:'',bucket:'',q:'',page:1}; DB.maturityPipeline=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportMaturityPipeline()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportMaturityPipeline()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th>${showBranchBreakdown?'<th>Branch</th>':''}<th>Product</th><th>Outstanding</th><th>Maturity Date</th><th>Days to Maturity</th><th>Bucket</th></tr>
@@ -12656,7 +13212,7 @@ function renderApprovalMonitoringPage(){
       </select>
       <input placeholder="Search client" value="${escapeHtml(st.q)}" oninput="session.mgrApprovalState.q=this.value; session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.stage||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrApprovalState={branchId:'',officerId:'',productId:'',stage:'',minAmount:'',maxAmount:'',q:'',page:1}; DB.approvalMonitoring=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportApprovalMonitoring()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportApprovalMonitoring()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th>${showBranchBreakdown?'<th>Branch</th>':''}<th>Product</th><th>Cycle</th><th>Amount</th><th>Submitted</th><th>Stage</th><th>Days Pending</th></tr>
@@ -12714,7 +13270,7 @@ function renderPortfolioQualityBranchPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrQualityState.q=this.value; session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.riskStatus||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrQualityState={branchId:'',officerId:'',productId:'',riskStatus:'',q:'',page:1}; DB.portfolioQualityBranch=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportPortfolioQualityBranch()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportPortfolioQualityBranch()')}</span>
     </div>
 
     ${showBranchBreakdown && d.byBranch.length ? `
@@ -12826,7 +13382,7 @@ function renderBranchPortfolioPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrPortfolioState.q=this.value; session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.status||st.bucket||st.riskStatus||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrPortfolioState={branchId:'',officerId:'',productId:'',status:'',bucket:'',riskStatus:'',q:'',page:1}; DB.branchPortfolio=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportBranchPortfolio()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportBranchPortfolio()')}</span>
     </div>
 
     <div class="two-col">
@@ -12965,7 +13521,7 @@ function renderViewLoansPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.viewLoansState.q=this.value; session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.rating||st.cycles||st.riskStatus||st.disbursedFrom||st.appliedFrom||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.viewLoansState={category:st.category,branchId:'',productId:'',officerId:'',rating:'',cycles:'',disbursedFrom:'',disbursedTo:'',appliedFrom:'',appliedTo:'',riskStatus:'',minDpd:'',sort:'',q:'',page:1}; DB.viewLoans=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="generateViewLoans()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('generateViewLoans()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th>${isManager?'<th>Branch</th>':''}<th>Product</th><th>Cycle</th><th>Amount</th><th>Balance</th><th>Arrears</th><th>DPD</th><th>Status</th><th>Risk</th></tr>
@@ -13053,7 +13609,7 @@ function renderArrearsBranchPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrArrearsState.q=this.value; session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.bucket||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrArrearsState={asOf:new Date().toISOString().slice(0,10),branchId:'',officerId:'',productId:'',bucket:'',q:'',page:1}; DB.arrearsBranch=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportArrearsBranch()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportArrearsBranch()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th>${showBranchBreakdown?'<th>Branch</th>':''}<th>Product</th><th>Outstanding</th><th>Arrears</th><th>DPD</th><th>Next Due</th></tr>
@@ -13122,7 +13678,7 @@ function renderCollectionReportPage(){
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrReportState.q=this.value; session.mgrReportState.page=1; DB.collectionReport=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.status||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrReportState={from:st.from,to:st.to,branchId:'',officerId:'',productId:'',status:'',q:'',page:1}; DB.collectionReport=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportCollectionReport()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportCollectionReport()')}</span>
     </div>
 
     <div class="two-col">
@@ -13216,7 +13772,7 @@ function renderDisbursementsOverviewPage(){
         ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
       </select>
       ${(st.branchId||st.officerId||st.productId) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrDisbState.branchId=''; session.mgrDisbState.officerId=''; session.mgrDisbState.productId=''; DB.disbursementsOverview=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportDisbursementsOverview()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportDisbursementsOverview()')}</span>
     </div>
     </div>
 
@@ -13297,7 +13853,7 @@ function renderMtdBranchPage(){
         ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
       </select>
       ${(st.branchId||st.officerId||st.productId) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrMtdState={branchId:'',officerId:'',productId:''}; DB.mtdBranch=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportMtdBranch()">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportMtdBranch()')}</span>
     </div>
 
     <div class="two-col">
@@ -13654,7 +14210,7 @@ function renderApplicationsOverviewPage(){
       <input type="date" value="${st.to}" onchange="session.mgrAppOverviewState.to=this.value; session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
       <input placeholder="Search client" value="${escapeHtml(st.q)}" oninput="session.mgrAppOverviewState.q=this.value; session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.status||st.cycle||st.from||st.to||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrAppOverviewState={branchId:'',officerId:'',productId:'',status:'',cycle:'',from:'',to:'',minAmount:'',maxAmount:'',q:'',page:1}; DB.applicationsOverview=null; renderApp();">Clear Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportApplicationsOverview()">Export CSV (all filtered records)</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml('exportApplicationsOverview()')}</span>
     </div>
 
     <div class="table-wrap"><table><tr><th></th><th>Client</th><th>Officer</th>${isRegional?'<th>Branch</th>':''}<th>Product</th><th>Cycle</th><th>Requested</th><th>Total Payable</th><th>Frequency</th><th>Applied</th><th>Age</th><th>Status</th><th>Risk</th></tr>
@@ -13720,7 +14276,7 @@ function renderSheetBranchPage(){
       </select>
       <input placeholder="Search client, loan, reference" value="${escapeHtml(st.q)}" oninput="session.mgrSheetState.q=this.value; DB.sheetBranch=null; renderApp();">
       ${(st.branchId||st.officerId||st.status||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrSheetState={date:st.date,branchId:'',officerId:'',productId:'',status:'',q:'',expandedOfficers:{}}; DB.sheetBranch=null; renderApp();">Reset Filters</button>` : ""}
-      <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="exportRowsToCsv('collection-sheet.csv',['clientId','officerId','loanId','productId','expected','collected','outstanding','status','daysPastDue'],DB.sheetBranch.rows)">Export CSV</button>
+      <span style="margin-left:auto;display:inline-flex;">${generateDropdownHtml(`exportRowsToCsv('collection-sheet.csv',['clientId','officerId','loanId','productId','expected','collected','outstanding','status','daysPastDue'],DB.sheetBranch.rows)`)}</span>
     </div>
 
     <div class="kpi-grid">
@@ -13810,7 +14366,7 @@ function renderArrears(){
     </div>
     <div class="card">
       <div class="card-title">Loan Arrears</div>
-      <button class="btn btn-sm btn-outline" style="margin-bottom:10px;" onclick="exportArrearsCSV()">Export CSV</button>
+      <span style="margin-bottom:10px;display:inline-flex;">${generateDropdownHtml('exportArrearsCSV()')}</span>
       <div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Officer</th><th>Balance</th><th>Days Overdue</th><th>Bucket</th><th></th></tr>
       ${state.arrears.map(x=>`<tr><td>${x.loanId}</td><td>${clientName(x.clientId)}</td><td>${staffName(x.officerId)}</td>
         <td>${fmt(x.balance)}</td><td>${x.daysOverdue} days</td><td><span class="badge red">${x.bucket}</span></td>
@@ -14370,7 +14926,7 @@ function renderPaymentsReport(){
     <div class="table-wrap"><table><tr><th>Ref</th><th>Loan</th><th>Amount</th><th>Channel</th><th>Status</th><th>Date</th></tr>
     ${rows.map(p=>`<tr><td>${p.reference}</td><td>${p.loan_id}</td><td>${fmt(p.amount)}</td><td>${p.channel}</td><td>${statusBadge(p.status)}</td><td>${new Date(p.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No payments match these filters.</td></tr>`}</table></div>
     ${renderPaginationControls('report','loadPaymentsReport',f)}
-    <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="exportPaymentsReportCSV()">Export CSV (full filtered results, not just this page)</button>
+    <span style="margin-top:10px;display:inline-flex;">${generateDropdownHtml('exportPaymentsReportCSV()')}</span>
   </div>`;
 }
 async function loadMpesaStatus(){
@@ -15371,7 +15927,19 @@ function pettyCashbookMonthOptions(){
   }
   return opts;
 }
+// Roles covering more than one branch (Regional Manager: their region;
+// head-office roles: every branch) pick which branch's cashbook to open —
+// the cashbook is always a single branch's cash account.
+function pettyCashbookBranchChoices(){
+  if(['Manager','Loan Officer'].includes(session.role)) return null;
+  const ids = officerScopeBranchIds();
+  return (DB.branches||[]).filter(b=>!ids || ids.includes(b.id)).sort((a,b)=>a.name.localeCompare(b.name));
+}
+function changePettyCashbookBranch(branchId){ const st = DB.acctPages.petty || {}; DB.acctPages.petty = { month: st.month, weekIndex: st.weekIndex, branchId }; renderApp(); }
 function loadPettyCashbook(month, weekIndex){
+  const choices = pettyCashbookBranchChoices();
+  const prev = DB.acctPages.petty || {};
+  const branchId = choices ? (choices.some(b=>b.id===prev.branchId) ? prev.branchId : (choices[0] && choices[0].id)) : null;
   return withRequest('load-petty', async ()=>{
     const [y,m] = month.split('-').map(Number);
     const weeks = mondayWeeksForMonth(y, m-1);
@@ -15383,8 +15951,15 @@ function loadPettyCashbook(month, weekIndex){
     }
     idx = Math.max(0, Math.min(idx, weeks.length-1));
     const week = weeks[idx];
-    const res = await api.get(`/api/accounting/petty-cashbook?from=${isoDate(week.start)}&to=${isoDate(week.end)}`);
-    DB.acctPages.petty = { month, weekIndex: idx, weeks, data: res };
+    if(choices && !branchId){ DB.acctPages.petty = { month, weekIndex: idx, weeks, branchId: null, data: { error: 'No branches in your scope.' } }; return; }
+    try{
+      const res = await api.get(`/api/accounting/petty-cashbook?from=${isoDate(week.start)}&to=${isoDate(week.end)}${branchId ? '&branch_id=' + encodeURIComponent(branchId) : ''}`);
+      DB.acctPages.petty = { month, weekIndex: idx, weeks, branchId, data: res };
+    }catch(e){
+      // Keep the failure on the page instead of re-requesting on every render.
+      DB.acctPages.petty = { month, weekIndex: idx, weeks, branchId, data: { error: e.message || 'Could not load the cashbook.' } };
+      throw e;
+    }
   });
 }
 function changePettyCashbookMonth(month){ return loadPettyCashbook(month, null); }
@@ -15425,15 +16000,19 @@ function pettyCashbookTableHtml(d){
 function renderPettyCashbookPage(){
   const state = DB.acctPages.petty;
   const defaultMonth = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
-  if(!state || !state.data){ loadPettyCashbook(state?state.month:defaultMonth, state?state.weekIndex:null); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!state || !state.data){ loadPettyCashbook(state&&state.month?state.month:defaultMonth, state?state.weekIndex:null); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = state.data;
+  const branchChoices = pettyCashbookBranchChoices();
+  const branchSelect = branchChoices ? `<select onchange="changePettyCashbookBranch(this.value)">${branchChoices.map(b=>`<option value="${b.id}" ${b.id===state.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}</select>` : '';
+  if(d.error) return `<div class="card"><div class="card-title">Petty Cashbook</div>${branchSelect}<div class="empty">${escapeHtml(d.error)}</div></div>`;
   return `
     <div class="card">
-      <div style="position:relative; margin-bottom:12px;">
+      <div style="position:relative; margin-bottom:12px; min-height:34px;">
         <span class="btn btn-outline btn-sm page-back-btn" style="position:absolute; left:0; top:0;" onclick="goTo('dashboard')">←</span>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
         <span style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${branchSelect}
           <select onchange="changePettyCashbookMonth(this.value)">
             ${pettyCashbookMonthOptions().map(o=>`<option value="${o.value}" ${o.value===state.month?'selected':''}>${o.label}</option>`).join("")}
           </select>
@@ -15910,7 +16489,7 @@ function renderBranchDirectoryPage(){
         <select name="status"><option value="">All statuses</option><option ${state.filters.status==='Active'?'selected':''}>Active</option><option ${state.filters.status==='Closed'?'selected':''}>Closed</option><option ${state.filters.status==='Pending Opening'?'selected':''}>Pending Opening</option></select>
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      <button class="btn btn-sm btn-outline" style="margin-bottom:10px;" onclick="exportBranchDirectoryCSV()">Export CSV</button>
+      <span style="margin-bottom:10px;display:inline-flex;">${generateDropdownHtml('exportBranchDirectoryCSV()')}</span>
       <div class="table-wrap"><table><tr><th>Name</th><th>Code</th><th>Region</th><th>Manager</th><th>Location</th><th>Status</th></tr>
       ${state.branches.map(b=>`<tr class="clickable" onclick="openBranchDetails('${b.id}')"><td><strong>${escapeHtml(b.name)}</strong></td><td>${escapeHtml(b.code||'—')}</td>
         <td>${(DB.regions.find(r=>r.id===b.region_id)||{}).name || '—'}</td><td>${b.manager_id?staffName(b.manager_id):'—'}</td><td class="hint">${escapeHtml(b.location||'—')}</td>
@@ -16056,9 +16635,9 @@ function renderRegionsPage(){
       </form>
     </div>` : ""}
     <div class="card">
-      <div class="card-title">Company Regions</div>
+      <div class="card-title">${session.role==='Regional Manager' ? 'My Region' : 'Company Regions'}</div>
       <div class="table-wrap"><table><tr><th></th><th>Name</th><th>Branches</th><th>Staff</th><th>Clients</th>${canManage?'<th>Status</th><th></th>':''}</tr>
-      ${state.regions.map((r,idx)=>{
+      ${state.regions.filter(r=> session.role!=='Regional Manager' || r.id===(DB.me&&DB.me.region_id)).map((r,idx)=>{
         const branchesOf = DB.branches.filter(b=>b.region===r.id);
         return `<tr>
           <td>${idx+1}</td>
@@ -16107,10 +16686,12 @@ async function loadCompanyBranches(filters){
 function renderCompanyBranchesPage(){
   const state = DB.acctPages.companyBranches;
   if(!state){ loadCompanyBranches({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
-  const sorted = state.branches.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  // A Regional Manager sees and manages only the branches in their own region.
+  const inScope = session.role==='Regional Manager' ? (b=>b.region_id===(DB.me&&DB.me.region_id) || b.region===(DB.me&&DB.me.region_id)) : (()=>true);
+  const sorted = state.branches.filter(inScope).slice().sort((a,b)=>a.name.localeCompare(b.name));
   return `
     <div class="card">
-      <div class="card-title">Company Branches</div>
+      <div class="card-title">${session.role==='Regional Manager' ? `Branches in ${escapeHtml((rgRegion()||{}).name||'My Region')}` : 'Company Branches'}</div>
       <div class="table-wrap"><table>
         <tr><th></th><th>Branch</th><th>Paybill</th><th>Staff</th><th>Clients</th><th>Status</th></tr>
         ${sorted.map((b,idx)=>`<tr>
@@ -16281,7 +16862,7 @@ function renderReports(){
   if(!d) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   return `
     <div class="pill-row" style="margin-bottom:10px;">
-      <button class="btn btn-sm btn-outline" onclick="exportReportsCSV()">Export CSV</button>
+      ${generateDropdownHtml('exportReportsCSV()')}
       <button class="btn btn-sm btn-outline" onclick="submitSaveReportPreset()">Save This View</button>
       ${(DB.reportPresets||[]).map(p=>`<span class="badge grey">${escapeHtml(p.name)} <a href="#" onclick="withRequest('del-rpreset-${p.id}', ()=>deleteReportPreset('${p.id}')); return false;">✕</a></span>`).join(" ")}
     </div>
@@ -17797,7 +18378,7 @@ function renderTicketsListPage(){
         <select name="slaStatus"><option value="">All SLA states</option><option value="ON_TRACK" ${state.filters.slaStatus==='ON_TRACK'?'selected':''}>On Track</option><option value="DUE_SOON" ${state.filters.slaStatus==='DUE_SOON'?'selected':''}>Due Soon</option><option value="OVERDUE" ${state.filters.slaStatus==='OVERDUE'?'selected':''}>Overdue</option></select>
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
         <button class="btn btn-sm btn-outline" type="button" onclick="submitSaveTicketPreset()">Save as Preset</button>
-        <button class="btn btn-sm btn-outline" type="button" onclick="exportTickets()">Export CSV</button>
+        ${generateDropdownHtml('exportTickets()')}
       </form>
       <div class="table-wrap"><table><tr><th>ID</th><th>Subject</th><th>Category</th><th>Raised By</th><th>Priority</th><th>Status</th><th>SLA</th></tr>
       ${state.tickets.map(t=>`<tr class="clickable" onclick="openTicketDetail('${t.id}')"><td>${t.id.slice(-6)}</td><td>${escapeHtml(t.subject)}</td><td>${t.category||'General'}</td><td>${staffName(t.createdBy)}</td>
