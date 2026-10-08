@@ -797,21 +797,21 @@ const SIDEBAR_MENUS = {
     {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches"]},
     {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","View Loans"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
+    {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Operational Manager": [
     {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees","Employee Transfers","Workforce Planning"]},
     {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow","Expense Monitoring","Financial Requests"]},
-    {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches","Regional Performance","Branch Comparison","Regional Targets","Branch Transfers","Branch Status"]},
+    {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches","Regional Performance","Branch Comparison","Regional Targets","Branch Transfers","Branch Status","Organizational Overview"]},
     {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance","Regional Collection","Disbursement Analysis","Regional PAR & Risk Analysis","Growth Analysis","Operational Performance"]},
     {section:"Regional Operations", icon:"🗺️", items:["Regional Action Plans","Branch Requests","Branch Transfers","Operational Issues","Escalations","Regional Alerts","Regional Activity Log"]},
     {section:"Operations", icon:"⚙️", items:["Branch Opening","Branch Setup","Branch Requests","Operational Approvals","Operational Tasks","Process Monitoring","Compliance Checks","Operational Issues","Escalations","Operations Activity Log"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
+    {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","M-Pesa Transactions"]},
     {section:"My Account", icon:"🪪", items:["View Details","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -822,8 +822,8 @@ const SIDEBAR_MENUS = {
     {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance","Regional Collection","Disbursement Analysis","Regional PAR & Risk Analysis"]},
     {section:"Regional Operations", icon:"🗺️", items:["Regional Action Plans","Branch Requests","Branch Transfers","Operational Issues","Escalations","Regional Alerts","Regional Activity Log"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","View Loans"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
+    {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"My Account", icon:"🪪", items:["View Details","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -855,14 +855,15 @@ const SIDEBAR_MENUS = {
   ],
   "Accountant": [
     {section:"Employees", icon:"🧑‍🤝‍🧑", items:["Staff Leaves","Staff Portfolios","Daily Workplan","View Employees"]},
-    {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow","Expense Monitoring","Financial Requests","Accounts Payable","Accounts Receivable","General Ledger","Chart of Accounts","Journal Entries","Bank Accounts","Bank Reconciliation","Financial Statements","Accounting Reports"]},
+    {section:"Accounting", icon:"📊", items:["Requisitions","Utility Payments","Petty Cashbook","Cashflow","Expense Monitoring","Financial Requests","Accounts Payable","Accounts Receivable","General Ledger","Chart of Accounts","Journal Entries","Bank Accounts","Bank Reconciliation","Financial Statements","Accounting Periods","Approval Aging","Accounting Reports"]},
     {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches","Regional Performance","Branch Comparison","Branch Status"]},
     {section:"Financial Analytics", icon:"📈", items:["Revenue Analysis","Expense Analysis","Profitability Analysis","Cashflow Analysis","Portfolio Financial Analysis","Collection Analysis","Disbursement Analysis","Fees & Charges Analysis","Penalties Analysis","Financial Performance"]},
     {section:"Financial Controls", icon:"🛡️", items:["Transaction Verification","Payment Verification","Loan Financial Validation","Reconciliation","Variance Analysis","Suspense Accounts","Adjustments","Refunds","Write-Offs","Control Exceptions"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Financial Validation","Loan Portfolio Monitoring","View Loans"]},
-    {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","Refunds","Payment Adjustments"]},
+    {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","Refunds","Payment Adjustments","M-Pesa Transactions","M-Pesa B2C Requests"]},
     {section:"Financial Reports", icon:"📑", items:["Daily Financial Report","Cashflow Report","Income Statement","Balance Sheet","Trial Balance","General Ledger Report","Receivables Report","Payables Report","Loan Portfolio Report","Reconciliation Reports"]},
+    {section:"Investor Accounts", icon:"💼", items:["Investor Directory","Investor Statements","Investor Ledger","Obligations"]},
     {section:"Budget & Planning", icon:"💰", items:["Annual Budget","Budget Monitoring","Budget Variance","Branch Budgets","Expense Budgets","Financial Forecasts"]},
     {section:"My Account", icon:"🪪", items:["View Details","Financial Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
@@ -948,6 +949,24 @@ const SIDEBAR_MENUS = {
    prototype doesn't implement yet, it opens an honestly-labeled
    placeholder instead of pretending or crashing. */
 const LABEL_ROUTES = {
+  // Pages that used to be reachable only through a module's top tab bar.
+  // The tab bars are gone (every page is its own sidebar item), so each of
+  // these sidebar labels now opens its real page directly.
+  "Loan Portfolio Monitoring": {section:"loanbook", subtab:"Portfolio Monitoring"},
+  "Pending Approvals": {section:"loanbook", subtab:"Loan Applications"},
+  "Promises to Pay": {section:"loanbook", subtab:"Promises to Pay"},
+  "Record Payment": {section:"payments", subtab:"Record Payment"},
+  "M-Pesa Transactions": {section:"payments", subtab:"M-Pesa Transactions"},
+  "M-Pesa B2C Requests": {section:"payments", subtab:"M-Pesa B2C Requests"},
+  "Expense Monitoring": {section:"accounting", subtab:"Expenses"},
+  "Expense Overview": {section:"accounting", subtab:"Expenses"},
+  "Income Statement": {section:"accounting", subtab:"Profit & Loss"},
+  "Profitability Analysis": {section:"accounting", subtab:"Branch Profitability"},
+  "Portfolio Financial Analysis": {section:"accounting", subtab:"Portfolio at Risk"},
+  "Accounting Periods": {section:"accounting", subtab:"Accounting Periods"},
+  "Approval Aging": {section:"accounting", subtab:"Approval Aging"},
+  "Branch Opening": {section:"branches", subtab:"Open New Branch"},
+  "Access Audit": {section:"audit", subtab:"Access Audit Trail"},
   "All Branches": {section:"branches", subtab:"Branch Directory"},
   "Branch Directory": {section:"branches", subtab:"Branch Directory"},
   "Branch Overview": {section:"branches", subtab:"Organizational Overview"},
@@ -1183,7 +1202,7 @@ const LABEL_ROUTES = {
   "Database Status": {section:"dashboard"},
   "Audit Logs": {section:"audit"},
   "Security Events": {section:"audit", subtab:"Security Events"},
-  "Permission Changes": {section:"audit"},
+  "Permission Changes": {section:"audit", subtab:"Permission History"},
   "Data Changes": {section:"audit"},
   "Failed Login Attempts": {section:"audit"},
   "Internal Audit": {section:"audit"},
@@ -1282,6 +1301,8 @@ const ROLE_ROUTE_OVERRIDES = {
     "Arrears":{section:"dashboard"}, "Write-offs":{section:"dashboard"}, "Dormant Clients":{section:"dashboard"}, "PAR Analysis":{section:"dashboard"},
   },
   "Director": {
+    "Investor Overview":{section:"investors", subtab:"Investor Directory"},
+    "Investor Returns":{section:"investors", subtab:"Payouts"},
     "Financial Position":{section:"dashboard"}, "Revenue":{section:"dashboard"}, "Expenses":{section:"dashboard"},
     "Collections":{section:"dashboard"}, "Disbursements":{section:"dashboard"}, "Arrears":{section:"dashboard"}, "Write-offs":{section:"dashboard"},
   },
@@ -1297,6 +1318,11 @@ const ROLE_ROUTE_OVERRIDES = {
     "Loan Arrears":{section:"dashboard"}, "Profit & Loss":{section:"dashboard"},
     "Collection Reports":{section:"dashboard"}, "Transaction History":{section:"dashboard"},
     "Branch Overview":{section:"dashboard"},
+    // Investor holds no accounting module — keep this on their own
+    // dashboard rather than the generic accounting Expenses route.
+    "Expense Overview":{section:"dashboard"},
+    "Investment Profile":{section:"account", subtab:"Investment Details"},
+    "Payment Details":{section:"account", subtab:"Profit Distribution History"},
   },
   "HR": {
     // "Login Activity" already has a real, generic global route (see
@@ -7625,7 +7651,7 @@ function renderInvestorDashboard(){
 function renderClients(){
   const tabs = ["All Clients","Add Client","Client Groups","Client Leads"];
   const active = session.subtab || "All Clients";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('clients','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every clients page is its own sidebar item
 
   if(session.selectedClientId){
     if(session.clientNotesOpen) return renderClientNotesPage(session.selectedClientId);
@@ -9267,7 +9293,7 @@ function statusBadge(status){
 function renderLoanBook(){
   const tabs = ["Loan Applications","Create Application","Collection MTD","Collection Sheet","Collection Reports","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Portfolio Monitoring"];
   const active = session.subtab || "Loan Applications";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('loanbook','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every loanbook page is its own sidebar item
 
   // Create Application (Loan Officer) is its own full-screen, chrome-free
   // page — no subtab bar above it, matching the requested design exactly.
@@ -12771,7 +12797,7 @@ function renderPortfolioMonitoring(){
 function renderPayments(){
   const tabs = ["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Pay-in Summary","Payments Report","M-Pesa Integration","M-Pesa Transactions","M-Pesa Reconciliation","M-Pesa B2C Requests"];
   const active = session.subtab || "Record Payment";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('payments','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every payments page is its own sidebar item
   if(active==="Unposted Payments" && session.role !== 'Loan Officer') return tabsHtml + renderUnposted();
   if(active==="Unposted Payments") return renderLoanOfficerUnpostedPayments();
   if(active==="Processed Payments" && session.role !== 'Loan Officer') return tabsHtml + renderProcessedPayments();
@@ -13213,7 +13239,7 @@ function accountingTabsForRole(role){
 function renderAccounting(){
   const tabs = accountingTabsForRole(session.role);
   const active = (session.subtab && tabs.includes(session.subtab)) ? session.subtab : (tabs[0] || "Expenses");
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('accounting','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every accounting page is its own sidebar item
   if(active==="Requisitions") return DB.requisitionForm ? renderCreateRequisitionPage() : renderRequisitionsPage();
   if(active==="Utility Payments") return DB.utilPaymentDetailId ? renderUtilityPaymentDetailPage() : (DB.utilPaymentForm ? renderCreateUtilityPaymentPage() : renderUtilityPaymentsPage());
   if(active==="Petty Cashbook") return session.printPettyCashbook ? renderPettyCashbookPrintPage() : renderPettyCashbookPage();
@@ -14469,7 +14495,7 @@ function renderInvestorManagementModule(){
     ? ["Investor Ledger","Payouts","Obligations"]
     : ["Investor Directory","Payouts","Obligations"];
   const active = session.subtab || tabs[0];
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('investors','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every investors page is its own sidebar item
   if(session.selectedInvestorId) return tabsHtml + renderInvestorProfilePage(session.selectedInvestorId);
   if(active==="Payouts") return tabsHtml + renderInvestorPayoutsPage();
   if(active==="Obligations") return tabsHtml + renderInvestorObligationsPage();
@@ -14491,7 +14517,7 @@ function submitInvestorDirFilter(ev){
 }
 function renderInvestorDirectoryPage(){
   const state = DB.acctPages.investordir;
-  if(!state){ loadInvestorDirectory({},1); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!state){ loadInvestorDirectory({},1); return `<div class="card"><div class="card-title">Investor Directory</div><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canCreate = session.role === 'Admin';
   return `
     <div class="card">
@@ -14650,7 +14676,7 @@ function renderInvestorObligationsPage(){
 function renderBranchesModule(){
   const tabs = ["Branch Directory","Regions","Loan Summary","Open New Branch","Organizational Overview"];
   const active = session.subtab || "Branch Directory";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('branches','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every branches page is its own sidebar item
   if(session.selectedBranchId) return tabsHtml + renderBranchDetailsPage(session.selectedBranchId);
   if(active==="Regions") return renderRegionsPage();
   if(active==="Loan Summary") return renderBranchLoanSummaryPage();
@@ -14676,7 +14702,7 @@ function submitBranchDirFilter(ev){
 }
 function renderBranchDirectoryPage(){
   const state = DB.acctPages.branchdir;
-  if(!state){ loadBranchDirectory({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!state){ loadBranchDirectory({}); return `<div class="card"><div class="card-title">Branch Directory</div><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canCreate = hasPermission(session.role, "Manage Branches");
   return `
     <div class="card">
@@ -15196,12 +15222,10 @@ function renderAudit(){
     "Security Events": l=>l.entity==="Security",
   };
   const filtered = DB.auditLog.filter(filterMap[filter] || filterMap["All"]).slice(0,150);
-  const tabs = Object.keys(filterMap);
   const rows = filtered.map(l=>`<tr><td>${new Date(l.date).toLocaleString()}</td><td>${escapeHtml(l.user)}</td>
     <td><span class="badge blue">${l.role}</span></td><td>${escapeHtml(l.action)}</td><td>${l.entity}</td><td>${escapeHtml(l.details||"")}</td></tr>`).join("");
   return `
     <div class="section-note">Immutable record of user activity, financial actions and system changes — for accountability and regulatory review.</div>
-    <div class="subtabs">${tabs.map(t=>`<div class="subtab ${filter===t?'active':''}" onclick="goTo('audit','${t}')">${t}</div>`).join("")}</div>
     <div class="card"><div class="card-title">${filter} <small>${filtered.length} of ${DB.auditLog.length} entries</small></div>
       <div class="table-wrap"><table><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Action</th><th>Entity</th><th>Details</th></tr>
       ${rows || `<tr><td colspan="6" class="empty">No matching activity yet.</td></tr>`}</table></div>
@@ -16375,11 +16399,8 @@ function renderTargetManagement(){
       ` : `<div class="empty">No eligible staff in your scope to set targets for right now.</div>`}
     </div>
     <div class="card">
-      <div class="subtabs">
-        <div class="subtab ${!showHistory?'active':''}" onclick="goTo('staff','Manage Targets')">Manage Targets</div>
-        <div class="subtab ${showHistory?'active':''}" onclick="loadTargetHistory()">Target History</div>
-      </div>
-      <div class="card-title" style="margin-top:10px;">${showHistory?'Target History':'Targets You\'ve Set'} <small>${showHistory ? 'includes cancelled — real historical achievement preserved' : myTargets.length + ' active'}</small></div>
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span>${showHistory?'Target History':'Targets You\'ve Set'} <small>${showHistory ? 'includes cancelled — real historical achievement preserved' : myTargets.length + ' active'}</small></span>
+        ${showHistory ? `<button class="btn btn-ghost btn-sm" onclick="goTo('staff','Manage Targets')">Show active targets</button>` : `<button class="btn btn-ghost btn-sm" onclick="loadTargetHistory()">Show target history</button>`}</div>
       <div class="table-wrap"><table><tr><th>Recipient</th><th>Metric</th><th>Period</th><th>Target</th><th>Achieved</th><th>Remaining</th><th>Achievement %</th><th>Status</th><th></th></tr>
       ${(showHistory ? (DB.targetHistory||[]) : myTargets).map(t=>`<tr>
         <td>${recipientLabel(t)}</td><td>${TARGET_METRIC_LABELS[t.metric]||t.metric}</td><td>${t.period}</td><td>${fmtNum(t.value)}</td>
@@ -16527,7 +16548,7 @@ function renderSupport(){
   if(session.role === "Loan Officer" && session.subtab==="Raised Ticket") return renderLoanOfficerRaisedTickets();
   const tabs = ["Tickets","FAQ / Knowledge Base","System Announcements"];
   const active = session.subtab || "Tickets";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('support','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every support page is its own sidebar item
   if(session.selectedTicketId) return tabsHtml + renderTicketDetail(session.selectedTicketId);
   if(active==="FAQ / Knowledge Base") return tabsHtml + renderFaqPage();
   if(active==="System Announcements") return tabsHtml + renderAnnouncementsPage();
@@ -18607,7 +18628,7 @@ function submitEquityHolding(ev){
 function renderInvestorAccount(){
   const tabs = ["Investor Profile","Investment Details","Profit Distribution History","Security & Login"];
   const active = tabs.includes(session.subtab) ? session.subtab : "Investor Profile";
-  const tabsHtml = `<div class="subtabs">${tabs.map(t=>`<div class="subtab ${active===t?'active':''}" onclick="goTo('account','${t}')">${t}</div>`).join("")}</div>`;
+  const tabsHtml = ""; // no top sub-menu bar: every account page is its own sidebar item
   const me = DB.me || {};
   let body;
   if(active==="Investment Details"){
