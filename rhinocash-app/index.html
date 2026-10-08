@@ -122,6 +122,50 @@ body{
 }
 .topbar-left{display:flex; align-items:center; gap:10px; min-width:0;}
 .topbar-brand{font-weight:800; font-size:15px; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+/* Admin (System Administrator) pages — bold blue headings throughout */
+.adm-head{padding-bottom:14px;}
+.adm-title{font-size:21px; font-weight:800; color:var(--blue); margin:2px 0 4px; line-height:1.25;}
+.adm-sub{font-size:13px; font-weight:700; color:var(--blue); opacity:0.85;}
+.adm-page .card-title{color:var(--blue); font-weight:800; gap:10px; flex-wrap:wrap;}
+.adm-page td a{color:var(--blue); text-decoration:none;} .adm-page td a:hover{text-decoration:underline;}
+.adm-page .card-title small{color:var(--ink-faint); font-weight:600;}
+.adm-related{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px;}
+.adm-related-label{font-size:11px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; color:var(--ink-soft); margin-right:2px;}
+.adm-chip{font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; background:var(--blue-bg); color:var(--blue);}
+.adm-toggle{display:flex !important; align-items:center; gap:8px; font-size:13px !important; font-weight:600 !important; color:var(--ink) !important; cursor:pointer; padding-top:22px;}
+.adm-toggle input{width:auto !important; margin:0;}
+.adm-checks{display:flex; flex-wrap:wrap; gap:8px;}
+.adm-check{display:flex !important; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); font-size:12.5px !important; font-weight:600 !important; color:var(--ink) !important; cursor:pointer;}
+.adm-check input{width:auto !important; margin:0;}
+.adm-savebar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.adm-preview{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:18px; font-weight:800; color:var(--blue); background:var(--blue-bg); border-radius:8px; padding:10px 14px; display:inline-block; margin-bottom:8px; word-break:break-all;}
+.adm-filters{gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+.adm-filters input, .adm-filters select{padding:7px 10px; border:1px solid var(--line); border-radius:8px; font-size:13px; background:var(--card); min-width:0;}
+.adm-filters input{flex:1 1 200px;}
+.adm-tiles{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px;}
+.adm-tile{border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--card);}
+.adm-tile-label{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft);}
+.adm-tile-value{font-size:22px; font-weight:800; color:var(--blue); margin-top:4px; word-break:break-word;}
+.adm-cards{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px;}
+.adm-user-card{display:flex; gap:12px; align-items:flex-start; border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--card); cursor:pointer;}
+.adm-user-card:hover{border-color:var(--blue);}
+.adm-avatar{width:40px; height:40px; flex-shrink:0; border-radius:50%; background:var(--blue-bg); color:var(--blue); font-weight:800; display:flex; align-items:center; justify-content:center; font-size:14px;}
+.adm-user-name{font-weight:800; color:var(--blue);}
+.adm-diff{font-size:12px; margin-bottom:2px;} .adm-diff span{color:var(--ink-soft); font-weight:700;} .adm-diff s{color:var(--red);} .adm-diff b{color:var(--green);}
+.adm-org{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;}
+.adm-org-region{border:1px solid var(--line); border-radius:10px; padding:12px; background:var(--card);}
+.adm-org-title{font-weight:800; color:var(--blue); margin-bottom:8px;}
+.adm-org-branch{border-left:3px solid var(--blue-bg); padding:4px 0 6px 10px; margin-bottom:6px;}
+.adm-flow{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
+.adm-flow-step{display:flex; gap:10px; align-items:center; border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:var(--card);}
+.adm-flow-no{width:28px; height:28px; border-radius:50%; background:var(--blue); color:#fff; font-weight:800; display:flex; align-items:center; justify-content:center;}
+.adm-flow-arrow{color:var(--blue); font-weight:800; font-size:18px;}
+.adm-kv{display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; flex-wrap:wrap;}
+.adm-kv span{color:var(--ink-soft); font-weight:700;}
+.adm-two{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;}
+.adm-bar{height:8px; background:var(--blue-bg); border-radius:4px; min-width:80px; overflow:hidden;} .adm-bar span{display:block; height:100%; background:var(--blue);}
+.adm-steps{margin:0 0 10px 18px; padding:0; font-size:13px; line-height:1.7;}
+.adm-callout{border-color:var(--blue); background:var(--blue-bg);}
 .ac-eyebrow{font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-soft);}
 .ac-tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; flex-wrap:wrap;}
 .ac-tab{padding:9px 12px; font-size:12.5px; font-weight:700; color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:8px 8px 0 0;}
@@ -606,9 +650,10 @@ const NAV = [
   {id:"business-analytics", num:8.1, label:"Business Analytics"},
   {id:"support", num:12, label:"Support Center"},
   {id:"account", num:13, label:"My Account"},
+  {id:"admin", num:14, label:"System Administration"},
 ];
 const NAV_PERMISSIONS = {
-  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account"],
+  "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
   "Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
@@ -750,6 +795,10 @@ function isSectionAllowed(section){
   // "Access denied" here regardless of their real, server-granted
   // Intelligence features.
   if(section==="intelligence") return true;
+  // "admin" (the System Administrator's setup pages) is not a backend
+  // module either: those pages call Admin-only endpoints, so the section
+  // belongs to the Admin role itself, never to a per-user module grant.
+  if(section==="admin") return session.role==="Admin";
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
   // after any per-user Admin-set restriction. This is a UI hint only;
@@ -3278,6 +3327,7 @@ function renderSection(){
     case "support": return renderSupport();
     case "account": return renderAccount();
     case "intelligence": return renderIntelligence();
+    case "admin": return renderAdminSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -4061,6 +4111,1153 @@ function renderIntelligence(){
     default: return `<div class="empty">This Intelligence category isn't built out yet.</div>`;
   }
 }
+/* ================= Admin (System Administrator) pages =================
+   Every Admin sidebar submenu resolves to one of these registry entries,
+   rendered by a single shared engine so all ~200 pages share one look:
+   an eyebrow (the sidebar section), a bold blue title and subtitle, and
+   cards with bold blue card titles.
+     settings — one saved settings document (PUT /api/admin/settings/:key);
+                `org` fields write the real organization_settings row
+     list     — a reference list (GET/POST/PUT/DELETE /api/admin/lookups)
+     view     — a live page over real data (users, sessions, audit, health…)
+     history  — the change trail of settings documents (by key prefix)
+   `related` names the other roles' pages each configuration relates to —
+   the system is one; Admin configures what everyone else works with. */
+const ADM_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const ADM_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const ADM_STAFF_ROLES = ["Admin","CEO","Director","Operational Manager","Regional Manager","Manager","Accountant","HR","Loan Officer"];
+const ADM_YESNO = ["Yes","No"];
+const aF = (k, label, type, extra) => (type && typeof type === "object")
+  ? Object.assign({ k, label, type: "text" }, type)
+  : Object.assign({ k, label, type: type || "text" }, extra || {});
+const aSel = (k, label, opts, def, extra) => aF(k, label, "select", Object.assign({ opts, def }, extra || {}));
+const aNum = (k, label, def, extra) => aF(k, label, "number", Object.assign({ def }, extra || {}));
+const aTog = (k, label, def, extra) => aF(k, label, "toggle", Object.assign({ def: !!def }, extra || {}));
+const aG = (title, fields, hint) => ({ title, fields, hint });
+const aNumbering = (key, what, prefix, related) => ({
+  type: "settings", key, sub: `How ${what} numbers are generated across the system.`, related,
+  groups: [aG("Number Format", [
+    aF("prefix", "Prefix", "text", { def: prefix }),
+    aSel("separator", "Separator", ["-", "/", "None"], "-"),
+    aTog("includeBranchCode", "Include branch code", true),
+    aTog("includeYear", "Include year", true),
+    aNum("padding", "Sequence digits", 5, { min: 3, max: 10 }),
+    aNum("nextNumber", "Next sequence number", 1, { min: 1 }),
+    aSel("resetEvery", "Restart sequence", ["Never", "Every year", "Every month"], "Never"),
+  ])],
+  preview: v => {
+    const sep = v.separator === "None" ? "" : (v.separator || "-");
+    const parts = [v.prefix || prefix];
+    if (v.includeBranchCode) parts.push("UKD");
+    if (v.includeYear) parts.push(String(new Date().getFullYear()));
+    parts.push(String(v.nextNumber || 1).padStart(Number(v.padding) || 5, "0"));
+    return parts.join(sep);
+  },
+});
+const aWorkflow = (key, what, related) => ({
+  type: "settings", key, sub: `Who approves ${what}, in what order, and when it escalates.`, related,
+  groups: [
+    aG("Approval Levels", [
+      aTog("enabled", "Approval required", true),
+      aSel("levels", "Number of approval levels", ["1", "2", "3"], "2"),
+      aSel("level1Role", "Level 1 approver", ADM_STAFF_ROLES, "Manager"),
+      aSel("level2Role", "Level 2 approver", ADM_STAFF_ROLES, "Accountant"),
+      aSel("level3Role", "Level 3 approver", ADM_STAFF_ROLES, "CEO"),
+    ]),
+    aG("Thresholds & Escalation", [
+      aNum("level2Above", "Level 2 needed above (KES)", 50000),
+      aNum("level3Above", "Level 3 needed above (KES)", 250000),
+      aNum("slaHours", "Decision SLA (hours)", 24),
+      aSel("escalateTo", "Escalate overdue items to", ADM_STAFF_ROLES, "CEO"),
+      aTog("makerCannotApprove", "Requester can never approve their own item", true),
+    ]),
+  ],
+});
+
+const ADMIN_PAGES = {
+  /* ---------- Company Setup ---------- */
+  "Company Information": { type:"settings", key:"company.info", sub:"The company's legal identity, shown on receipts, statements and letters.",
+    related:["All roles · page header & receipts","Investor · Company Profile"],
+    org:[aF("company_name","Company Name"),aF("trading_name","Trading Name"),aF("registration_number","Registration Number"),aF("paybill","M-Pesa Paybill")],
+    groups:[aG("Company Profile",[aSel("industry","Industry",["Microfinance","Digital credit provider","SACCO","Credit-only lender"],"Microfinance"),
+      aSel("licenseType","Licence type",["CBK Digital Credit Provider","Non-deposit-taking MFI","SACCO Society","Other"],"CBK Digital Credit Provider"),
+      aNum("yearEstablished","Year established",null),aF("tagline","Tagline / motto")])] },
+  "Company Registration Details": { type:"settings", key:"company.registration", sub:"Statutory registration numbers and licence validity.",
+    related:["Accountant · Tax Settings","HR · Payroll statutory deductions"],
+    groups:[aG("Registration",[aF("certificateNo","Certificate of incorporation no."),aF("incorporationDate","Date of incorporation","date"),aF("kraPin","KRA PIN"),aF("vatNo","VAT number")]),
+      aG("Licences & Employer Numbers",[aF("cbkLicenseNo","CBK licence no."),aF("cbkLicenseExpiry","CBK licence expiry","date"),aF("businessPermitNo","Single business permit no."),aF("permitExpiry","Permit expiry","date"),
+        aF("nssfEmployerNo","NSSF employer no."),aF("shifEmployerNo","SHA/SHIF employer no."),aF("nitaNo","NITA no.")])] },
+  "Company Logo & Branding": { type:"settings", key:"company.branding", sub:"Colours and text used on printed documents and receipts.",
+    related:["Loan Officer · Receipts","Accountant · Statements"],
+    groups:[aG("Brand Colours",[aF("primaryColor","Primary colour","color",{def:"#1F3864"}),aF("accentColor","Accent colour","color",{def:"#2E5C8A"})]),
+      aG("Documents",[aF("logoUrl","Logo image URL","url"),aTog("showLogoOnReceipts","Show logo on receipts",true),aF("letterheadText","Letterhead text","textarea"),aF("receiptFooter","Receipt footer","textarea")])] },
+  "Contact Information": { type:"settings", key:"company.contact", sub:"How clients, staff and regulators reach the company.",
+    related:["All roles · Contact Support","Investor · Company Profile"],
+    org:[aF("phone","Main phone","tel"),aF("email","Main email","email"),aF("website","Website","url")],
+    groups:[aG("Support Channels",[aF("supportPhone","Customer care phone","tel"),aF("supportEmail","Customer care email","email"),aF("whatsapp","WhatsApp number","tel"),aF("complaintsEmail","Complaints email","email")])] },
+  "Postal and Physical Address": { type:"settings", key:"company.address", sub:"Head office location and postal address.",
+    related:["Receipts & statements","Branches · Branch Directory"],
+    org:[aF("address","Physical address")],
+    groups:[aG("Head Office",[aF("building","Building / floor"),aF("street","Street / road"),aF("town","Town"),aF("county","County",{def:"Kwale"}),aF("gps","GPS / plus code")]),
+      aG("Postal Address",[aF("postalAddress","P.O. Box"),aF("postalCode","Postal code"),aF("postalTown","Postal town")])] },
+  "Business Details": { type:"settings", key:"company.business", sub:"What the company does and how it lends.",
+    related:["CEO · Strategic Plans","Investor · Business Overview"],
+    groups:[aG("Business Profile",[aSel("lendingModel","Lending model",["Individual lending","Group lending","Hybrid"],"Hybrid"),aSel("regulator","Regulator",["Central Bank of Kenya","SASRA","Not regulated"],"Central Bank of Kenya"),
+      aF("natureOfBusiness","Nature of business","textarea"),aF("targetMarket","Target market","textarea"),aF("auditor","External auditor"),aF("bankers","Bankers","textarea")])],
+    extra:"businessLive" },
+  "Company working hours and days": { type:"settings", key:"company.hours", sub:"Standard operating days and hours for the whole company.",
+    related:["Branch Working Hours","HR · Attendance Rules","Loan Officer · Collection Sheet"],
+    groups:[aG("Working Days",[aF("workDays","Working days","days",{def:["Mon","Tue","Wed","Thu","Fri","Sat"]})]),
+      aG("Hours",[aF("openTime","Opening time","time",{def:"08:00"}),aF("closeTime","Closing time","time",{def:"17:00"}),aF("lunchStart","Lunch from","time",{def:"13:00"}),aF("lunchEnd","Lunch to","time",{def:"14:00"}),
+        aF("saturdayOpen","Saturday opening","time",{def:"08:00"}),aF("saturdayClose","Saturday closing","time",{def:"13:00"})]),
+      aG("Public Holidays",[aF("holidays","Holidays (one per line: date – name)","textarea")])] },
+  "Currency & Localization": { type:"settings", key:"company.locale", sub:"Currency and number formatting used throughout the system.",
+    related:["All amounts on every page","Accountant · Financial Statements"],
+    org:[aSel("currency","Base currency",["KES","USD","UGX","TZS"],"KES")],
+    groups:[aG("Formatting",[aF("currencySymbol","Currency symbol",{def:"KSh"}),aSel("decimals","Decimal places",["0","2"],"2"),aSel("thousands","Thousands separator",[",",".","Space"],","),
+      aSel("dateFormat","Date format",["DD/MM/YYYY","YYYY-MM-DD","DD MMM YYYY"],"DD/MM/YYYY"),aSel("language","Default language",["English","Kiswahili"],"English")])] },
+  "Financial Year": { type:"settings", key:"company.fy", sub:"When the company's financial year starts and closes.",
+    related:["Accountant · Accounting Periods","CEO · Budget Monitoring"],
+    org:[aSel("financial_year_start_month","Financial year starts in",ADM_MONTHS.map((m,i)=>({v:String(i+1),l:m})),"1")],
+    groups:[aG("Current Year",[aF("label","Current financial year label",{def:"FY "+new Date().getFullYear()}),aF("closeDeadline","Year-end close deadline","date"),aF("auditDeadline","External audit deadline","date")])] },
+  "Time Zone": { type:"settings", key:"company.time", sub:"The clock every timestamp in the system is shown in.",
+    related:["Audit logs","Payments & receipts timestamps"],
+    org:[aSel("timezone","Time zone",["Africa/Nairobi","Africa/Kampala","Africa/Dar_es_Salaam","UTC"],"Africa/Nairobi")],
+    groups:[aG("Clock",[aSel("timeFormat","Time format",["24-hour","12-hour"],"24-hour"),aSel("weekStartsOn","Week starts on",["Monday","Sunday"],"Monday")])] },
+  "Company Documents": { type:"list", key:"company-documents", singular:"document", sub:"Statutory and corporate documents, with reference numbers and expiry dates.",
+    related:["Document Expiry Tracking","CEO · Governance Records"],
+    cols:[aSel("docType","Document type",["Certificate of Incorporation","CBK Licence","KRA PIN Certificate","Tax Compliance Certificate","Business Permit","Memorandum & Articles","Other"],"Other"),aF("refNo","Reference no."),aF("expiryDate","Expiry date","date"),aF("location","Stored at / link")] },
+  "Company Policies": { type:"list", key:"company-policies", singular:"policy", sub:"The policy register: owner, version and effective date of every policy.",
+    related:["CEO · Policies & Procedures","HR · HR Policies"],
+    cols:[aSel("category","Category",["Credit","HR","Finance","IT & Security","Compliance","Operations"],"Credit"),aF("version","Version",{def:"1.0"}),aF("effectiveDate","Effective date","date"),aF("owner","Policy owner")] },
+  "Company Numbering": { type:"settings", key:"company.numbering", sub:"The master numbering pattern every document number builds on.",
+    related:["Templates & Numbering","Receipts, loans, clients"],
+    groups:[aG("Master Pattern",[aF("companyPrefix","Company prefix",{def:"RC"}),aSel("separator","Separator",["-","/","None"],"-"),aTog("includeBranchCode","Include branch code",true),aTog("includeYear","Include year",true),aNum("padding","Sequence digits",5)])],
+    preview: v => [v.companyPrefix||"RC", v.includeBranchCode?"UKD":null, v.includeYear?String(new Date().getFullYear()):null, "1".padStart(Number(v.padding)||5,"0")].filter(Boolean).join(v.separator==="None"?"":(v.separator||"-")) },
+  "Reference Number Settings": { type:"settings", key:"company.refnumbers", sub:"Prefixes for internal reference numbers.",
+    related:["Accounting · Requisitions","Support · Tickets"],
+    groups:[aG("Prefixes",[aF("requisition","Requisitions",{def:"REQ"}),aF("expense","Expenses",{def:"EXP"}),aF("ticket","Support tickets",{def:"TKT"}),aF("transfer","Transfers",{def:"TRF"}),aF("journal","Journal entries",{def:"JNL"}),aF("leave","Leave requests",{def:"LV"})]),
+      aG("Sequence",[aSel("resetEvery","Restart sequences",["Never","Every year","Every month"],"Every year")])] },
+  "Company Setup History": { type:"history", prefix:"company.", sub:"Every change made under Company Setup — who changed what, and when." },
+
+  /* ---------- Organization Setup ---------- */
+  "Departments": { type:"view", render:"departments", sub:"Departments and how many staff each one holds.", related:["HR · Departments","Employees · View Employees"] },
+  "Branch Codes": { type:"view", render:"branchCodes", sub:"Every branch's code, as used in client, loan and receipt numbers.", related:["Templates & Numbering"] },
+  "Branch Working Hours": { type:"view", render:"branchHours", sub:"Per-branch opening hours; branches left blank follow the company hours.", related:["Company working hours and days"] },
+  "Branch Transfers": { type:"view", render:"branchTransfers", sub:"Staff and client branch transfers recorded in the audit trail.", related:["Operational Manager · Branch Transfers","CEO · Branch Transfers"] },
+  "Organization Structure": { type:"view", render:"orgStructure", sub:"Regions, their branches, branch managers and headcount.", related:["Branches & Regions","CEO · View Company Structure"] },
+};
+Object.assign(ADMIN_PAGES, {
+  /* ---------- Loan Products Setup ---------- */
+  "Loan Products": { type:"view", render:"loanProducts", sub:"The live loan product catalogue every loan application is created from.",
+    related:["Loan Officer · Create Loan Application","Manager · Create Application","Investor · Portfolio"] },
+  "Product Categories": { type:"list", key:"loan-product-categories", singular:"category", sub:"Groupings used to organise loan products in reports.", related:["Loan Products","Business Analytics · Portfolio Breakdown"], cols:[] },
+  "Loan Types": { type:"list", key:"loan-types", singular:"loan type", sub:"The kinds of loans the company offers and how each is structured.", related:["Loan Products"],
+    cols:[aSel("structure","Repayment structure",["Single bullet","Weekly installments","Monthly installments"],"Weekly installments"),aSel("security","Security",["Unsecured","Secured","Group-guaranteed"],"Unsecured")] },
+  "Loan Amount Limits": { type:"settings", key:"loans.amount-limits", sub:"Company-wide ceilings that sit above every individual product's own range.",
+    related:["Loan Officer · Create Loan Application","Manager · Loan Applications"],
+    groups:[aG("Company Limits (KES)",[aNum("minAmount","Smallest loan",1000),aNum("maxAmount","Largest loan",500000),aNum("firstLoanMax","Maximum first loan",20000),aNum("unguaranteedMax","Maximum without guarantor",50000),aNum("approvalAbove","Extra approval above",100000)])],
+    extra:"productLimits" },
+  "Interest Rates": { type:"settings", key:"loans.interest", sub:"Rate policy; each product's actual rate is shown below from the live catalogue.",
+    related:["Loan Products","Accountant · Revenue Analysis"],
+    groups:[aG("Rate Policy",[aNum("defaultRatePct","Default rate (%)",null),aNum("maxRatePct","Maximum allowed rate (%)",null),aSel("rateBasis","Rates are quoted",["Per month","Per annum","Flat per term"],"Flat per term")])],
+    extra:"productRates" },
+  "Interest Calculation Methods": { type:"settings", key:"loans.interest-method", sub:"How interest is computed and rounded.", related:["Loan schedules","Accountant · Profit & Loss"],
+    groups:[aG("Method",[aSel("method","Default method",["Flat rate","Reducing balance","Declining balance (equal principal)"],"Flat rate"),aSel("dayCount","Day count",["Actual/365","30/360"],"Actual/365"),aSel("rounding","Round installments to",["Nearest shilling","Nearest 10 shillings","No rounding"],"Nearest shilling")])] },
+  "Processing Fees": { type:"settings", key:"loans.processing-fees", sub:"Fee charged to process an application; per-product amounts are listed below.",
+    related:["Loan Officer · Create Loan Application","M-Pesa processing fee payment"],
+    groups:[aG("Fee Policy",[aSel("feeType","Fee type",["Flat amount","Percentage of principal"],"Flat amount"),aNum("defaultFlat","Default flat fee (KES)",null),aNum("defaultPct","Default percentage (%)",null),aTog("collectUpfront","Collect before the application is submitted",true),aTog("deductFromDisbursement","Allow deducting from the disbursement",false)])],
+    extra:"productFees" },
+  "Other Loan Fees": { type:"list", key:"loan-fees", singular:"fee", sub:"Any additional charges beyond the processing fee.", related:["Loan Products","Accountant · Fees & Charges Analysis"],
+    cols:[aSel("amountType","Charged as",["Flat","Percentage"],"Flat"),aNum("amount","Amount / %",null),aSel("chargedAt","Charged at",["Application","Disbursement","Each installment","On default"],"Disbursement")] },
+  "Penalty Settings": { type:"settings", key:"loans.penalty", sub:"Late-payment penalties applied to overdue installments.", related:["Loan Arrears","Accountant · Penalties Analysis"],
+    groups:[aG("Penalty Rule",[aSel("penaltyType","Penalty type",["Percentage of arrears","Flat per day","Flat per installment"],"Percentage of arrears"),aNum("rate","Rate / amount",null),aNum("graceDays","Days before penalty applies",0),aNum("capPct","Cap (% of principal)",null),aTog("compound","Penalty compounds",false)])],
+    extra:"productPenalties" },
+  "Repayment Frequencies": { type:"list", key:"repayment-frequencies", singular:"frequency", sub:"Allowed repayment intervals.", related:["Loan Products","Collection Sheet"], cols:[aNum("intervalDays","Interval (days)",7)] },
+  "Loan Terms": { type:"list", key:"loan-terms", singular:"term", sub:"Allowed loan durations.", related:["Loan Products"], cols:[aNum("length","Length",4),aSel("unit","Unit",["Days","Weeks","Months"],"Weeks")] },
+  "Installment Settings": { type:"settings", key:"loans.installments", sub:"When the first installment falls due and how partial payments behave.", related:["Loan schedules","Payments · Record Payment"],
+    groups:[aG("Installments",[aNum("firstAfterDays","First installment due after (days)",7),aTog("allowPartial","Accept partial installment payments",true),aSel("dueDay","Weekly installments fall on",["Disbursement weekday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],"Disbursement weekday")])] },
+  "Grace Periods": { type:"settings", key:"loans.grace", sub:"Grace allowed before repayments or penalties start.", related:["Penalty Settings","Loan Arrears"],
+    groups:[aG("Grace",[aNum("principalGraceDays","Principal grace (days)",0),aNum("interestGraceDays","Interest grace (days)",0),aNum("lateGraceDays","Late-payment grace (days)",0)])] },
+  "Eligibility Rules": { type:"list", key:"eligibility-rules", singular:"rule", sub:"Conditions a client must meet before a loan can be applied for.", related:["Loan Officer · Create Loan Application","Manager · Loan Applications"],
+    cols:[aSel("rule","Rule",["Minimum age","Maximum age","Minimum days as client","Maximum active loans","No arrears on previous loan","Valid national ID","Guarantor required"],"Minimum age"),aF("value","Value")] },
+  "Collateral Requirements": { type:"list", key:"collateral-types", singular:"collateral type", sub:"Acceptable collateral and the share of its value that can be lent against.", related:["Loan Applications"],
+    cols:[aNum("ltvPct","Loan-to-value (%)",50),aNum("requiredAbove","Required above (KES)",null)] },
+  "Guarantor Requirements": { type:"settings", key:"loans.guarantors", sub:"When guarantors are needed and how many.", related:["Client Registry · Add Client (Guarantors tab)","Loan Applications"],
+    groups:[aG("Guarantors",[aNum("requiredAbove","Guarantor required above (KES)",50000),aNum("minGuarantors","Minimum guarantors",1),aNum("maxGuarantors","Maximum guarantors",3),aTog("mustBeClient","Guarantor must be an existing client",false),aNum("maxGuarantees","Maximum loans one person can guarantee",2)])] },
+  "Loan Limits by Customer": { type:"list", key:"customer-loan-limits", singular:"limit", sub:"Maximum exposure per customer category.", related:["Client Categories","Loan Applications"],
+    cols:[aF("category","Customer category"),aNum("maxAmount","Maximum amount (KES)",null),aNum("maxActiveLoans","Maximum active loans",1)] },
+  "Loan Cycle Settings": { type:"list", key:"loan-cycles", singular:"cycle", sub:"How the loan ceiling grows with each successfully repaid cycle.", related:["Loan Applications","Business Analytics · Loan Sizes"],
+    cols:[aNum("cycle","Cycle no.",1),aNum("maxAmount","Maximum amount (KES)",null),aNum("minOnTimePct","Minimum on-time repayment (%)",90)] },
+  "Top-Up Rules": { type:"settings", key:"loans.topup", sub:"When a running loan can be topped up.", related:["Loan Applications"],
+    groups:[aG("Top-Ups",[aTog("allow","Allow top-ups",true),aNum("minPaidPct","Minimum repaid before top-up (%)",50),aNum("minInstallments","Minimum installments paid",2),aTog("settleFromNew","Settle the old balance from the new loan",true),aNum("maxPerLoan","Maximum top-ups per loan",1)])] },
+  "Restructuring Rules": { type:"settings", key:"loans.restructure", sub:"Rescheduling a struggling loan.", related:["Loan Arrears","CEO · Loan Approvals"],
+    groups:[aG("Restructuring",[aTog("allow","Allow restructuring",true),aNum("maxRestructures","Maximum restructures per loan",1),aNum("maxExtensionWeeks","Maximum term extension (weeks)",4),aSel("approver","Approved by",ADM_STAFF_ROLES,"Manager"),aNum("fee","Restructuring fee (KES)",0)])] },
+  "Refinancing Rules": { type:"settings", key:"loans.refinance", sub:"Replacing an existing loan with a new one.", related:["Loan Applications"],
+    groups:[aG("Refinancing",[aTog("allow","Allow refinancing",false),aNum("minPaidPct","Minimum repaid first (%)",60),aTog("rateChange","Rate can change on refinance",false),aSel("approver","Approved by",ADM_STAFF_ROLES,"Manager")])] },
+  "Early Settlement Rules": { type:"settings", key:"loans.early-settlement", sub:"Paying a loan off before its term ends.", related:["Payments · Prepayments"],
+    groups:[aG("Early Settlement",[aTog("allow","Allow early settlement",true),aNum("rebatePct","Interest rebate (%)",0),aNum("fee","Early settlement fee (KES)",0),aNum("minDays","Earliest settlement (days after disbursement)",0)])] },
+  "Write-Off Rules": { type:"settings", key:"loans.writeoff", sub:"When an unrecoverable loan is written off and who signs it off.", related:["Accountant · Write-Offs","CEO · Financial Approvals"],
+    groups:[aG("Write-Off Policy",[aNum("daysPastDue","Write off after (days past due)",180),aSel("approver","Approved by",ADM_STAFF_ROLES,"CEO"),aNum("boardAbove","Board approval above (KES)",null),aTog("continueRecovery","Continue recovery after write-off",true)])] },
+  "Product Change History": { type:"history", prefix:"loans.", audit:{ entity:"LoanProduct" }, sub:"Every change to loan product settings and the product catalogue." },
+
+  /* ---------- Client & KYC Setup ---------- */
+  "Client Types": { type:"list", key:"client-types", singular:"client type", sub:"Kinds of clients the company registers.", related:["Client Registry · Add Client","Loan Limits by Customer"], cols:[] },
+  "Client Categories": { type:"list", key:"client-categories", singular:"category", sub:"Segments used for limits, pricing and reporting.", related:["Loan Limits by Customer","Business Analytics"], cols:[aNum("maxLoan","Maximum loan (KES)",null)] },
+  "Identification Types": { type:"list", key:"id-types", singular:"ID type", sub:"Identity documents accepted at registration.", related:["Client Registry · Add Client"], cols:[aF("format","Format / length"),aSel("mandatory","Accepted as primary ID",ADM_YESNO,"Yes")] },
+  "KYC Requirements": { type:"list", key:"kyc-requirements", singular:"requirement", sub:"Know-your-customer checks by client type.", related:["Client Registry · Add Client","Client Data Quality"],
+    cols:[aSel("appliesTo","Applies to",["All clients","Individual","Group","Business"],"All clients"),aSel("mandatory","Mandatory",ADM_YESNO,"Yes")] },
+  "Client Registration Fields": { type:"settings", key:"kyc.registration-fields", sub:"Which details the Add Client form expects.", related:["Client Registry · Add Client (all roles)"],
+    groups:[aG("Required at Registration",[aTog("photo","Client photo",true),aTog("idFront","ID photo – front",true),aTog("idBack","ID photo – back",true),aTog("nextOfKin","Next of kin",true),aTog("residence","Residence",true),aTog("guarantor","At least one guarantor",false)]),
+      aG("Age",[aNum("minAge","Minimum age",18),aNum("maxAge","Maximum age",70)])] },
+  "Required Documents": { type:"list", key:"required-documents", singular:"document", sub:"Documents collected at each stage.", related:["Add Client · Documents tab","Loan Applications"],
+    cols:[aSel("stage","Stage",["Client registration","Loan application","Guarantor","Employee onboarding"],"Client registration"),aSel("mandatory","Mandatory",ADM_YESNO,"Yes")] },
+  "Client Risk Categories": { type:"list", key:"client-risk-categories", singular:"risk category", sub:"Risk bands and what each band means for lending.", related:["Intelligence · Fraud & Risk","Loan Applications"],
+    cols:[aNum("minScore","From score",0),aNum("maxScore","To score",100),aF("action","Lending action")] },
+  "Client Statuses": { type:"list", key:"client-statuses", singular:"status", sub:"Lifecycle statuses a client record can hold.", related:["Client Registry · View Client"], cols:[aSel("allowsNewLoan","Can take a new loan",ADM_YESNO,"Yes")] },
+  "Customer Groups": { type:"view", render:"customerGroups", sub:"Client groups across all branches.", related:["Client Registry · Default Groups"] },
+  "KYC Configuration": { type:"settings", key:"kyc.config", sub:"Overall verification standard for new and existing clients.", related:["Client Registry","Client Data Quality"],
+    groups:[aG("Verification",[aSel("level","Verification level",["Basic","Standard","Enhanced"],"Standard"),aNum("reverifyMonths","Re-verify clients every (months)",24),aTog("duplicateIdCheck","Block duplicate national IDs",true),aTog("duplicatePhoneCheck","Warn on duplicate phone numbers",true),aTog("pepScreening","Screen politically exposed persons",false)])] },
+
+  /* ---------- Payment & Collection Setup ---------- */
+  "Payment Methods": { type:"list", key:"payment-methods", singular:"method", sub:"Ways clients can pay.", related:["Payments · Record Payment","Receipts"], cols:[aSel("needsReference","Needs a reference",ADM_YESNO,"Yes")] },
+  "Payment Channels": { type:"list", key:"payment-channels", singular:"channel", sub:"Collection channels and their account numbers.", related:["Payments · Unposted Payments"], cols:[aF("provider","Provider"),aF("accountNo","Paybill / account no.")] },
+  "Bank Payments": { type:"list", key:"collection-bank-accounts", singular:"bank account", sub:"Bank accounts clients may deposit repayments into.", related:["Payments · Validate Payment","Accountant · Bank Reconciliation"],
+    cols:[aF("bank","Bank"),aF("branch","Bank branch"),aF("accountNo","Account no."),aF("accountName","Account name")] },
+  "Cash Payments": { type:"settings", key:"payments.cash", sub:"Rules for cash received at branches.", related:["Payments · Record Payment","Accounting · Petty Cashbook"],
+    groups:[aG("Cash Handling",[aTog("allowCash","Accept cash repayments",true),aNum("maxCash","Maximum single cash payment (KES)",50000),aTog("receiptRequired","Printed receipt required",true),aSel("receivedBy","Cash received by",ADM_STAFF_ROLES,"Accountant")])] },
+  "Payment Rules": { type:"settings", key:"payments.rules", sub:"General rules every payment must follow.", related:["Payments (all roles)"],
+    groups:[aG("Rules",[aNum("minPayment","Minimum payment (KES)",50),aNum("backdateDays","Backdating allowed (days)",0),aTog("closedLoanPayments","Accept payments on closed loans",false),aSel("reversalApprover","Reversals approved by",ADM_STAFF_ROLES,"Accountant")])] },
+  "Receipt Settings": { type:"settings", key:"payments.receipts", sub:"What a printed or SMS receipt shows.", related:["Loan Officer · Receipts","Payments · Receipts"],
+    groups:[aG("Receipt Layout",[aF("header","Header line",{def:"RHINOCASH LTD"}),aF("footer","Footer","textarea",{def:"Thank you for repaying on time."}),aSel("paper","Paper size",["A4","80mm thermal","58mm thermal"],"80mm thermal")]),
+      aG("Shown on Receipt",[aTog("showBalance","Outstanding balance",true),aTog("showOfficer","Loan officer",true),aTog("smsReceipt","Send SMS receipt",true)])] },
+  "Collection Settings": { type:"settings", key:"payments.collection", sub:"Collection days, cut-off time and follow-up timing.", related:["Collection Sheet","Follow-Ups","Promises to Pay"],
+    groups:[aG("Collection Calendar",[aF("days","Collection days","days",{def:["Mon","Tue","Wed","Thu","Fri"]}),aF("cutoff","Daily cut-off time","time",{def:"16:00"})]),
+      aG("Follow-Up",[aNum("followUpAfter","Follow up after (days overdue)",1),aNum("escalateAfter","Escalate to manager after (days)",7),aNum("maxPromises","Maximum promises to pay per loan",3)])] },
+  "Payment Validation Rules": { type:"settings", key:"payments.validation", sub:"How incoming payments are matched to loans.", related:["Payments · Validate Payment","Unposted Payments"],
+    groups:[aG("Matching",[aSel("matchBy","Match payments by",["Phone number","National ID","Loan account","Receipt reference"],"Phone number"),aTog("autoPost","Auto-post exact matches",false),aNum("flagAbove","Flag payments above (KES)",100000),aNum("duplicateWindow","Duplicate window (minutes)",10)])] },
+  "Payment Allocation Rules": { type:"settings", key:"payments.allocation", sub:"The order a payment is applied to what the client owes.", related:["Payments","Loan schedules"],
+    groups:[aG("Allocation",[aSel("order","Allocation order",["Penalty → Interest → Principal","Interest → Principal → Penalty","Fees → Penalty → Interest → Principal","Principal → Interest → Penalty"],"Penalty → Interest → Principal"),aTog("oldestFirst","Oldest installment first",true)])] },
+  "Overpayment Rules": { type:"settings", key:"payments.overpayment", sub:"What happens to money paid beyond what is due.", related:["Payments · Overpayments"],
+    groups:[aG("Overpayments",[aSel("treatment","Treatment",["Hold as credit","Apply to next installment","Refund to client"],"Apply to next installment"),aNum("minRefund","Minimum refundable amount (KES)",100),aSel("approver","Refunds approved by",ADM_STAFF_ROLES,"Accountant")])] },
+  "Prepayment Rules": { type:"settings", key:"payments.prepayment", sub:"Paying ahead of schedule.", related:["Payments · Prepayments"],
+    groups:[aG("Prepayments",[aTog("allow","Accept prepayments",true),aSel("applyTo","Apply prepayments to",["Next installments","Reduce term","Reduce installment amount"],"Next installments")])] },
+  "Refund Rules": { type:"settings", key:"payments.refund", sub:"How and when money is refunded to clients.", related:["Accountant · Refunds","M-Pesa B2C Requests"],
+    groups:[aG("Refunds",[aF("methods","Refund methods","checks",{opts:["M-Pesa B2C","Bank transfer","Cash"],def:["M-Pesa B2C"]}),aNum("noApprovalBelow","No approval needed below (KES)",0),aSel("approver","Approved by",ADM_STAFF_ROLES,"Accountant"),aNum("withinDays","Refund within (days)",7)])] },
+  "Payment Numbering": aNumbering("numbering.payment","payment","PAY",["Payments","Receipts"]),
+
+  /* ---------- Accounting Setup ---------- */
+  "Transaction Categories": { type:"list", key:"transaction-categories", singular:"category", sub:"Categories used to classify income and expenses.", related:["Accounting · Expenses","Requisitions"],
+    cols:[aSel("kind","Type",["Income","Expense","Asset","Liability","Equity"],"Expense"),aF("glCode","GL code")] },
+  "Loan Accounts": { type:"view", render:"glFiltered", match:["loan","receivable","portfolio"], sub:"General-ledger accounts that hold the loan portfolio.", related:["Chart of Accounts","Accountant · General Ledger"] },
+  "Fee Accounts": { type:"view", render:"glFiltered", match:["fee","commission","charge"], sub:"General-ledger accounts that receive fee income.", related:["Chart of Accounts","Processing Fees"] },
+  "Penalty Accounts": { type:"view", render:"glFiltered", match:["penalt","late"], sub:"General-ledger accounts that receive penalty income.", related:["Chart of Accounts","Penalty Settings"] },
+  "Cash Accounts": { type:"view", render:"glFiltered", match:["cash","bank","mpesa","m-pesa","float"], sub:"Cash, bank and M-Pesa float accounts.", related:["Chart of Accounts","Accounting · Cashflow"] },
+  "Journal Settings": { type:"settings", key:"acct.journal", sub:"Controls on manual journal entries.", related:["Accountant · Journal Entries"],
+    groups:[aG("Journals",[aTog("requireNarration","Narration required",true),aNum("approvalAbove","Second approval above (KES)",100000),aNum("backdateDays","Backdating allowed (days)",0),aTog("makerChecker","Maker cannot approve own journal",true)])] },
+  "Tax Settings": { type:"settings", key:"acct.tax", sub:"Kenyan tax rates applied in financial reporting.", related:["Accountant · Financial Statements","HR · Payroll"],
+    groups:[aG("Tax Rates",[aTog("vatRegistered","VAT registered",false),aNum("vatPct","VAT (%)",16),aNum("excisePct","Excise duty on fees (%)",20),aNum("whtInterestPct","Withholding tax on interest paid (%)",15),aNum("corporatePct","Corporation tax (%)",30)])] },
+  "Financial Statement Settings": { type:"settings", key:"acct.statements", sub:"Presentation of the Profit & Loss, Balance Sheet and Cashflow.", related:["Accountant · Financial Statements","CEO · Financial Reports","Investor · Financial Performance"],
+    groups:[aG("Presentation",[aTog("comparatives","Show prior-period comparatives",true),aSel("roundTo","Round figures to",["Shilling","Thousands","Millions"],"Shilling"),aF("signatory1","Signatory 1"),aF("signatory2","Signatory 2")])] },
+  "Accounting Rules": { type:"settings", key:"acct.rules", sub:"Accounting basis and loan-loss provisioning.", related:["Accountant · Portfolio at Risk","CEO · Profit & Loss"],
+    groups:[aG("Basis",[aSel("basis","Accounting basis",["Accrual","Cash"],"Accrual"),aSel("interestRecognition","Recognise interest",["On accrual","On collection"],"On accrual"),aSel("provisioning","Provisioning policy",["CBK prudential guidelines","IFRS 9 expected credit loss"],"CBK prudential guidelines")]),
+      aG("Provision Rates (%)",[aNum("par1","PAR 1–30",1),aNum("par31","PAR 31–90",25),aNum("par91","PAR 91–180",50),aNum("par180","PAR 180+",100)])] },
+
+  /* ---------- HR & Payroll Setup ---------- */
+  "Job Titles": { type:"list", key:"job-titles", singular:"job title", sub:"Recognised job titles.", related:["HR · Add Employee","HR · Job Titles"], cols:[aSel("defaultRole","Usual system role",ADM_STAFF_ROLES,"Loan Officer")] },
+  "Job Grades": { type:"list", key:"job-grades", singular:"grade", sub:"Grades and their salary bands.", related:["HR · Job Grades","Payroll"], cols:[aNum("minSalary","Minimum salary (KES)",null),aNum("maxSalary","Maximum salary (KES)",null)] },
+  "Employment Types": { type:"list", key:"employment-types", singular:"employment type", sub:"Contract types and their terms.", related:["HR · Employment Types"], cols:[aNum("probationMonths","Probation (months)",3),aNum("noticeDays","Notice period (days)",30)] },
+  "Leave Types": { type:"list", key:"leave-types", singular:"leave type", sub:"Leave entitlements under the Employment Act.", related:["My Account · Leave Application (all staff)","HR · Leave Types"],
+    cols:[aNum("daysPerYear","Days per year",21),aSel("paid","Paid",ADM_YESNO,"Yes"),aNum("carryForward","Carry forward (days)",0)] },
+  "Leave Rules": { type:"settings", key:"hr.leave-rules", sub:"How leave accrues and is approved.", related:["My Account · Leave Application","Employees · Staff Leaves"],
+    groups:[aG("Leave",[aSel("accrual","Leave accrues",["Monthly","Annually"],"Monthly"),aNum("minNoticeDays","Minimum notice (days)",7),aNum("maxConsecutive","Maximum consecutive days",21),aSel("approver","First approver",ADM_STAFF_ROLES,"Manager"),aTog("hrFinal","HR gives final approval",true)])] },
+  "Attendance Rules": { type:"settings", key:"hr.attendance", sub:"Reporting time, lateness and absence rules.", related:["HR · Attendance","My Account · Leave & Attendance"],
+    groups:[aG("Attendance",[aF("reportBy","Report by","time",{def:"08:00"}),aNum("lateAfterMinutes","Late after (minutes)",15),aNum("halfDayAfterMinutes","Half day after (minutes late)",120),aNum("absenceWarningAfter","Warning after absences (per month)",2)])] },
+  "Payroll Settings": { type:"settings", key:"hr.payroll", sub:"Pay cycle and statutory rates used on payslips.", related:["My Account · View Details › Payroll","HR · Payroll"],
+    groups:[aG("Pay Cycle",[aSel("frequency","Pay frequency",["Monthly","Bi-weekly"],"Monthly"),aNum("payDay","Pay day of month",28)]),
+      aG("Statutory Rates",[aNum("personalRelief","Personal relief (KES / month)",2400),aNum("nssfPct","NSSF (%)",6),aNum("shifPct","SHIF (%)",2.75),aNum("housingLevyPct","Housing levy (%)",1.5)])] },
+  "Salary Components": { type:"list", key:"salary-components", singular:"component", sub:"Building blocks of gross and net pay.", related:["Payslips"],
+    cols:[aSel("kind","Type",["Earning","Deduction"],"Earning"),aSel("taxable","Taxable",ADM_YESNO,"Yes"),aSel("calc","Calculated as",["Fixed amount","% of basic"],"Fixed amount")] },
+  "Allowances": { type:"list", key:"allowances", singular:"allowance", sub:"Allowances paid on top of basic salary.", related:["HR · Allowances","Payslips"],
+    cols:[aSel("amountType","Paid as",["Fixed amount","% of basic"],"Fixed amount"),aNum("amount","Amount / %",null),aSel("taxable","Taxable",ADM_YESNO,"Yes")] },
+  "Deductions": { type:"list", key:"deductions", singular:"deduction", sub:"Statutory and voluntary deductions.", related:["HR · Deductions","Salary Advance recoveries"],
+    cols:[aSel("statutory","Statutory",ADM_YESNO,"No"),aSel("amountType","Deducted as",["Fixed amount","% of gross"],"Fixed amount"),aNum("amount","Amount / %",null)] },
+  "HR Configuration": { type:"settings", key:"hr.config", sub:"General HR defaults.", related:["HR (all pages)"],
+    groups:[aG("Defaults",[aF("employeeIdPrefix","Employee number prefix",{def:"EMP"}),aNum("probationMonths","Default probation (months)",3),aNum("retirementAge","Retirement age",60),aNum("contractReminderDays","Contract renewal reminder (days before)",30)])] },
+});
+Object.assign(ADMIN_PAGES, {
+  /* ---------- User Management ---------- */
+  "All Users": { type:"view", render:"users", sub:"Every employee and the state of their system account.", related:["HR · User Accounts","Employees · View Employees"] },
+  "User Profiles": { type:"view", render:"userProfiles", sub:"Profile cards for every user.", related:["My Account · View Details (each user)"] },
+  "Employee Account Requests": { type:"view", render:"accountRequests", sub:"Employees added by HR who do not have a system login yet.", related:["HR · Add Employee","Create User"] },
+  "Role Assignments": { type:"view", render:"roleAssignments", sub:"Who holds which role.", related:["Roles","Role Permissions"] },
+  "Account Activation": { type:"view", render:"accountActivation", sub:"Accounts waiting to be activated or re-activated.", related:["HR · Account Activation"] },
+  "Account Suspension": { type:"view", render:"accountSuspension", sub:"Suspend an account immediately — its sessions are signed out.", related:["HR · Account Suspension"] },
+  "Account Lock / Unlock": { type:"view", render:"accountLocks", sub:"Accounts locked after 5 failed sign-ins in 15 minutes.", related:["Security · Failed Login Attempts"] },
+  "Password Reset": { type:"view", render:"passwordReset", sub:"Issue a one-time temporary password; the user must change it at next sign-in.", related:["HR · Password & Security"] },
+  "Force Password Change": { type:"view", render:"forcePasswordChange", sub:"Require a user to choose a new password at their next sign-in.", related:["Password Policies"] },
+  "User Sessions": { type:"view", render:"userSessions", sub:"Everyone signed in right now; sign any session out.", related:["Security · Active Sessions"] },
+  "User Audit Log": { type:"view", render:"auditModule", modules:["users","auth"], sub:"Account, role and sign-in changes made to users.", related:["Audit & Activity"] },
+
+  /* ---------- Roles & Access Control ---------- */
+  "Access Policies": { type:"settings", key:"access.policies", sub:"Organisation-wide rules for granting and reviewing access.", related:["Roles","Role Permissions","Access Requests"],
+    groups:[aG("Policies",[aTog("branchScoped","Branch staff only see their own branch",true),aTog("segregation","Segregation of duties (maker ≠ checker)",true),aNum("maxAdmins","Maximum System Administrators",2),aNum("reviewEveryDays","Review all access every (days)",90),aTog("approvalForRoleChange","Role changes need a second approval",true)])] },
+  "Access Requests": { type:"list", key:"access-requests", singular:"access request", sub:"Requests for extra access, logged for approval.", related:["Access Approvals"],
+    cols:[aF("user","Requested for"),aF("access","Access requested"),aSel("decision","Decision",["Pending","Approved","Rejected"],"Pending")] },
+  "Access Approvals": { type:"view", render:"accessApprovals", sub:"Decide pending access requests.", related:["Access Requests","Role Permissions"] },
+
+  /* ---------- Workflow & Approvals ---------- */
+  "Approval Workflows": { type:"view", render:"workflowOverview", sub:"Every approval chain in the system at a glance.", related:["All approval pages"] },
+  "Loan Approval Workflow": { type:"view", render:"loanWorkflow", sub:"The live loan approval chain, step by step.", related:["Manager · Loan Applications","CEO · Loan Approvals"] },
+  "Payment Approval Workflow": aWorkflow("workflow.payment","payments and reversals",["Payments · Validate Payment"]),
+  "Expense Approval Workflow": aWorkflow("workflow.expense","expenses",["Accounting · Expenses","CEO · Financial Approvals"]),
+  "Leave Approval Workflow": aWorkflow("workflow.leave","leave requests",["My Account · Leave Application","Employees · Staff Leaves"]),
+  "Salary Advance Workflow": aWorkflow("workflow.salary-advance","salary advances",["My Account · Salary Advance"]),
+  "Requisition Workflow": aWorkflow("workflow.requisition","requisitions",["Accounting · Requisitions","Utility Payments"]),
+  "Refund Approval Workflow": aWorkflow("workflow.refund","refunds",["Accountant · Refunds"]),
+  "Write-Off Approval Workflow": aWorkflow("workflow.writeoff","loan write-offs",["Accountant · Write-Offs"]),
+  "User Access Approval": aWorkflow("workflow.user-access","new and changed user access",["Access Requests","Create User"]),
+
+  /* ---------- System Configuration ---------- */
+  "General Settings": { type:"settings", key:"system.general", sub:"System-wide basics.", related:["All roles"],
+    groups:[aG("General",[aF("systemName","System name",{def:"Rhinocash"}),aF("supportContact","Support contact shown to users"),aSel("rowsPerPage","Rows per page in tables",["25","50","100"],"50"),aNum("idleLogoutMinutes","Sign out idle users after (minutes)",30)])] },
+  "System Preferences": { type:"settings", key:"system.preferences", sub:"Look and feel defaults.", related:["All roles"],
+    groups:[aG("Display",[aSel("theme","Theme",["Light","Dark","Follow device"],"Light"),aTog("compactTables","Compact tables",false),aSel("chartStyle","Default chart style",["Bar","Line"],"Bar")])] },
+  "Notification Settings": { type:"settings", key:"system.notifications", sub:"Which events notify people, and how.", related:["Notifications","Notification Rules"],
+    groups:[aG("Channels",[aF("channels","Channels","checks",{opts:["In-app","SMS","Email"],def:["In-app"]})]),
+      aG("Events",[aTog("loanApproved","Loan approved",true),aTog("loanDisbursed","Loan disbursed",true),aTog("paymentReceived","Payment received",true),aTog("leaveDecided","Leave decision",true),aF("digestTime","Daily digest time","time",{def:"07:00"})])] },
+  "Approval Settings": { type:"settings", key:"system.approvals", sub:"Rules shared by every approval workflow.", related:["Workflow & Approvals"],
+    groups:[aG("Approvals",[aTog("makerChecker","Maker-checker on every approval",true),aNum("expireHours","Pending approvals expire after (hours)",72),aTog("commentOnReject","Comment required to reject",true)])] },
+  "System Parameters": { type:"settings", key:"system.parameters", sub:"Technical limits and parameters.", related:["Uploads","Sign-in"],
+    groups:[aG("Limits",[aNum("maxUploadMb","Maximum upload size (MB)",5),aNum("exportRowLimit","Maximum rows per export",10000),aNum("searchMinChars","Minimum search characters",2)])],
+    extra:"realSecurityParams" },
+  "Date & Time Settings": { type:"settings", key:"company.time", sub:"Clock and calendar conventions.", related:["All timestamps"],
+    org:[aSel("timezone","Time zone",["Africa/Nairobi","Africa/Kampala","Africa/Dar_es_Salaam","UTC"],"Africa/Nairobi")],
+    groups:[aG("Clock",[aSel("timeFormat","Time format",["24-hour","12-hour"],"24-hour"),aSel("weekStartsOn","Week starts on",["Monday","Sunday"],"Monday")])] },
+  "Currency Settings": { type:"settings", key:"company.locale", sub:"Currency and number formatting (same settings as Company Setup › Currency & Localization).", related:["All amounts"],
+    org:[aSel("currency","Base currency",["KES","USD","UGX","TZS"],"KES")],
+    groups:[aG("Formatting",[aF("currencySymbol","Currency symbol",{def:"KSh"}),aSel("decimals","Decimal places",["0","2"],"2"),aSel("thousands","Thousands separator",[",",".","Space"],",")])] },
+  "Localization Settings": { type:"settings", key:"company.locale", sub:"Language and regional formats.", related:["All roles"],
+    groups:[aG("Localization",[aSel("language","Default language",["English","Kiswahili"],"English"),aSel("dateFormat","Date format",["DD/MM/YYYY","YYYY-MM-DD","DD MMM YYYY"],"DD/MM/YYYY")])] },
+
+  /* ---------- Document Management ---------- */
+  "Document Categories": { type:"list", key:"document-categories", singular:"category", sub:"Top-level grouping for every stored document.", related:["Document Types"], cols:[] },
+  "Document Types": { type:"list", key:"document-types", singular:"document type", sub:"Each kind of document, its category and retention.", related:["Required Documents","Document Expiry Tracking"],
+    cols:[aF("category","Category"),aNum("retentionYears","Keep for (years)",7),aSel("expires","Has an expiry date",ADM_YESNO,"No")] },
+  "Document Templates": { type:"list", key:"document-templates", singular:"template", sub:"Standard letters and agreements, with {placeholders}.", related:["Loan agreements","Demand letters"],
+    cols:[aSel("kind","Used for",["Loan agreement","Offer letter","Demand letter","Clearance letter","Payslip","Other"],"Loan agreement"),aF("body","Template text","textarea")] },
+  "Document Storage": { type:"settings", key:"docs.storage", sub:"What can be uploaded and how long it is kept.", related:["Add Client · Documents","My Account · Update Login (signature)"],
+    groups:[aG("Uploads",[aNum("maxFileMb","Maximum file size (MB)",5),aF("allowedTypes","Allowed file types","checks",{opts:["JPG","PNG","GIF","PDF","DOCX"],def:["JPG","PNG","GIF","PDF"]}),aNum("retentionYears","Default retention (years)",7)])],
+    extra:"uploadStats" },
+  "Document Verification": { type:"settings", key:"docs.verification", sub:"Who checks uploaded documents.", related:["Client Registry","KYC Requirements"],
+    groups:[aG("Verification",[aSel("verifier","Verified by",ADM_STAFF_ROLES,"Manager"),aTog("twoPerson","Two-person check for loan documents",false),aNum("verifyWithinHours","Verify within (hours)",24)])] },
+  "Document Expiry Tracking": { type:"view", render:"docExpiry", sub:"Company documents and licences sorted by how soon they expire.", related:["Company Documents"] },
+  "Document Access": { type:"settings", key:"docs.access", sub:"Which roles may open client and staff documents.", related:["Client Registry · View Client","Employees"],
+    groups:[aG("Client Documents",[aF("clientDocRoles","Roles that can view client documents","checks",{opts:ADM_STAFF_ROLES,def:["Admin","Manager","Loan Officer","Accountant"]})]),
+      aG("Staff Documents",[aF("staffDocRoles","Roles that can view staff documents","checks",{opts:ADM_STAFF_ROLES,def:["Admin","HR","CEO"]})])] },
+  "Document Audit": { type:"view", render:"auditModule", modules:["uploads","clients"], sub:"Uploads and document-related changes in the audit trail.", related:["Audit & Activity"] },
+
+  /* ---------- Templates & Numbering ---------- */
+  "Client Numbering": aNumbering("numbering.client","client","CL",["Client Registry · Add Client"]),
+  "Loan Numbering": aNumbering("numbering.loan","loan","LN",["LoanBook · Create Application"]),
+  "Receipt Numbering": aNumbering("numbering.receipt","receipt","RCT",["Payments · Receipts"]),
+  "Employee Numbering": aNumbering("numbering.employee","employee","EMP",["HR · Add Employee"]),
+  "Document Numbering": aNumbering("numbering.document","document","DOC",["Document Management"]),
+  "SMS Templates": { type:"list", key:"sms-templates", singular:"SMS template", sub:"Text messages sent to clients and staff. Use {name}, {amount}, {balance}, {date}.", related:["Notifications","Receipts"],
+    cols:[aSel("event","Sent on",["Payment received","Installment due","Loan overdue","Loan approved","Loan disbursed","Password reset"],"Payment received"),aF("body","Message","textarea")] },
+  "Email Templates": { type:"list", key:"email-templates", singular:"email template", sub:"Emails sent by the system. Use {name}, {amount}, {date}.", related:["Notifications"],
+    cols:[aSel("event","Sent on",["Welcome","Password reset","Statement","Loan approved","Payslip"],"Welcome"),aF("subject","Subject"),aF("body","Body","textarea")] },
+
+  /* ---------- Integrations ---------- */
+  "eSMS": { type:"settings", key:"integrations.sms", sub:"SMS gateway profile. API keys live in server environment variables, never in the database.", related:["SMS Templates","Notification Logs"],
+    groups:[aG("Gateway",[aSel("provider","Provider",["Africa's Talking","eSMS Kenya","Twilio"],"Africa's Talking"),aF("senderId","Sender ID",{def:"RHINOCASH"}),aF("username","Account username")])], extra:"integrationStatus" },
+  "Email": { type:"settings", key:"integrations.email", sub:"Outgoing email profile. The SMTP password lives in server environment variables.", related:["Email Templates","Notification Logs"],
+    groups:[aG("SMTP",[aF("host","SMTP host"),aNum("port","Port",587),aF("fromAddress","From address","email"),aTog("tls","Use TLS",true)])], extra:"integrationStatus" },
+  "Payment Gateways": { type:"list", key:"payment-gateways", singular:"gateway", sub:"Payment providers connected or planned.", related:["M-Pesa / Daraja","Payment Channels"], cols:[aF("provider","Provider"),aSel("state","State",["Live","Sandbox","Planned"],"Planned")] },
+  "API Configuration": { type:"view", render:"apiConfig", sub:"How this system's API is reached and protected.", related:["API & Developer Management"] },
+  "Webhooks": { type:"list", key:"webhooks", singular:"webhook", sub:"Outbound notification endpoints registered for system events.", related:["Webhook Logs"],
+    cols:[aF("url","Endpoint URL","url"),aSel("event","Event",["payment.received","loan.disbursed","loan.closed","client.created"],"payment.received")] },
+  "Integration Logs": { type:"view", render:"commLog", sub:"Every SMS/email the system attempted, with its real delivery status.", related:["eSMS","Email"] },
+
+  /* ---------- Notifications ---------- */
+  "System Notifications": { type:"view", render:"systemNotifications", sub:"Notifications and announcements the system has issued.", related:["System & Help · System Announcements"] },
+  "Notification Rules": { type:"list", key:"notification-rules", singular:"rule", sub:"Who gets notified about what, and through which channel.", related:["Notification Settings"],
+    cols:[aSel("event","Event",["Loan approved","Loan disbursed","Payment received","Installment overdue","Leave requested","Ticket raised"],"Loan approved"),aSel("channel","Channel",["In-app","SMS","Email"],"In-app"),aSel("recipient","Notify",["Client"].concat(ADM_STAFF_ROLES),"Manager")] },
+  "Notification Logs": { type:"view", render:"commLog", sub:"Delivery log for SMS and email notifications.", related:["Integration Logs"] },
+
+  /* ---------- Data Management ---------- */
+  "Data Import": { type:"view", render:"dataImport", sub:"Where data can be imported into the system.", related:["Client Registry","Utility Payments"] },
+  "Data Export": { type:"view", render:"dataExport", sub:"Download the system's core records as CSV.", related:["Reports"] },
+  "Client Data": { type:"view", render:"dataSet", set:"clients", sub:"Client records: completeness and export.", related:["Client Registry"] },
+  "Employee Data": { type:"view", render:"dataSet", set:"staff", sub:"Employee records: completeness and export.", related:["HR · Employees"] },
+  "Loan Data": { type:"view", render:"dataSet", set:"loans", sub:"Loan records by status, and export.", related:["LoanBook"] },
+  "Payment Data": { type:"view", render:"dataSet", set:"payments", sub:"Payment records by status, and export.", related:["Payments"] },
+  "Data Validation": { type:"view", render:"dataValidation", sub:"Automatic checks for missing or malformed data.", related:["Client Data Quality"] },
+  "Duplicate Detection": { type:"view", render:"duplicates", sub:"Clients sharing a phone number or national ID.", related:["KYC Configuration"] },
+  "Data Corrections": { type:"view", render:"auditModule", modules:["clients","loanbook","payments"], filter:/updat|edit|correct|revers|adjust/i, sub:"Edits, reversals and adjustments to business records.", related:["Audit & Activity"] },
+  "Data Archive": { type:"settings", key:"data.archive", sub:"When old records move to the archive.", related:["Backup Management"],
+    groups:[aG("Archiving",[aNum("closedLoansMonths","Archive closed loans after (months)",24),aNum("auditMonths","Archive audit logs after (months)",36),aNum("inactiveClientsMonths","Archive inactive clients after (months)",36)])] },
+  "Data Management Logs": { type:"view", render:"auditModule", modules:["admin"], sub:"Backups, configuration and data-management actions.", related:["Backup Management"] },
+
+  /* ---------- Security ---------- */
+  "Security Overview": { type:"view", render:"securityOverview", sub:"Live security posture.", related:["Security (all pages)"] },
+  "Login Monitoring": { type:"view", render:"loginMonitoring", sub:"Every sign-in attempt, successful or not.", related:["Login Audit"] },
+  "Failed Login Attempts": { type:"view", render:"loginMonitoring", outcome:"Failed", sub:"Failed sign-in attempts.", related:["Account Lock / Unlock"] },
+  "Active Sessions": { type:"view", render:"userSessions", sub:"Everyone signed in right now.", related:["User Sessions"] },
+  "Two-Factor Authentication": { type:"settings", key:"security.2fa", sub:"Two-factor sign-in policy. Codes are delivered by SMS, so this needs the SMS gateway configured.", related:["eSMS"],
+    groups:[aG("Policy",[aF("requiredFor","Require for roles","checks",{opts:ADM_STAFF_ROLES,def:["Admin"]}),aNum("codeValidMinutes","Code valid for (minutes)",5)])], extra:"integrationStatus" },
+  "Password Policies": { type:"view", render:"passwordPolicy", sub:"The password rules the sign-in system enforces.", related:["Password Reset","Force Password Change"] },
+  "Security Audit Log": { type:"view", render:"auditModule", modules:["auth","users","admin"], sub:"Security-relevant actions across the system.", related:["Audit & Activity"] },
+
+  /* ---------- Audit & Activity ---------- */
+  "System Activity": { type:"view", render:"auditModule", modules:[], sub:"Everything recorded in the audit trail, newest first.", related:["Audit Logs"] },
+  "Login Audit": { type:"view", render:"loginMonitoring", sub:"Sign-in history for every account.", related:["Login Monitoring"] },
+  "Transaction Audit": { type:"view", render:"auditModule", modules:["payments","loanbook","accounting"], sub:"Financial actions: payments, loans and accounting.", related:["Accountant · Transaction Verification"] },
+  "Configuration Changes": { type:"history", prefix:"", sub:"Every system configuration change, with before and after values." },
+  "Audit Reports": { type:"view", render:"auditReport", sub:"Audit activity summarised by module and by user.", related:["Reports"] },
+
+  /* ---------- System Monitoring ---------- */
+  "System Health": { type:"view", render:"systemHealth", sub:"Live health of the database, integrations and sign-ins.", related:["Admin Dashboard"] },
+  "Server Status": { type:"view", render:"serverStatus", sub:"The application server process.", related:["Performance Monitoring"] },
+  "API Monitoring": { type:"view", render:"apiMonitoring", sub:"Live response times of key API endpoints, measured from your browser.", related:["Performance Monitoring"] },
+  "Database Monitoring": { type:"view", render:"databaseStatus", sub:"Database size, connections and the largest tables.", related:["Database Status"] },
+  "Integration Monitoring": { type:"view", render:"integrationMonitoring", sub:"Status of M-Pesa, SMS and email integrations.", related:["Integrations"] },
+  "Background Jobs": { type:"view", render:"backgroundJobs", sub:"Work the server runs on a schedule.", related:["Scheduled Jobs"] },
+  "Error Monitoring": { type:"view", render:"errorLog", sub:"Recent unexpected server errors.", related:["Error Logs"] },
+  "Performance Monitoring": { type:"view", render:"performance", sub:"Memory, uptime and response times.", related:["Server Status","API Monitoring"] },
+
+  /* ---------- Database & System ---------- */
+  "Database Status": { type:"view", render:"databaseStatus", sub:"Database size, connections and the largest tables.", related:["Backup Management"] },
+  "Backup Management": { type:"view", render:"backups", sub:"Create a full data snapshot and see backup history.", related:["Restore Management"] },
+  "Restore Management": { type:"view", render:"restore", sub:"How a backup snapshot is restored.", related:["Backup Management"] },
+  "System Logs": { type:"view", render:"auditModule", modules:["admin","auth"], sub:"System-level actions: configuration, backups, sign-ins.", related:["Audit & Activity"] },
+  "Error Logs": { type:"view", render:"errorLog", sub:"Recent unexpected server errors (kept in memory since the last restart).", related:["Error Monitoring"] },
+  "Storage Management": { type:"view", render:"storage", sub:"Space used by each part of the database.", related:["Database Status","Data Archive"] },
+  "Cache Management": { type:"view", render:"cache", sub:"Data cached in this browser session.", related:["Performance Monitoring"] },
+  "Queue Management": { type:"view", render:"backgroundJobs", sub:"Queued and scheduled server work.", related:["Background Jobs"] },
+  "Scheduled Jobs": { type:"view", render:"backgroundJobs", sub:"Work the server runs on a schedule.", related:["Background Jobs"] },
+  "System Maintenance": { type:"view", render:"maintenance", sub:"Maintenance mode and sign-in session settings.", related:["Maintenance Mode"] },
+
+  /* ---------- API & Developer Management ---------- */
+  "API Keys": { type:"view", render:"apiConfig", sub:"How API callers authenticate.", related:["API Clients"] },
+  "API Clients": { type:"list", key:"api-clients", singular:"API client", sub:"Systems approved to integrate with Rhinocash.", related:["API Keys","API Permissions"],
+    cols:[aF("owner","Owner / contact"),aF("purpose","Purpose"),aSel("environment","Environment",["Production","Sandbox"],"Sandbox")] },
+  "API Permissions": { type:"view", render:"apiPermissions", sub:"Every permission and module the API enforces.", related:["Role Permissions"] },
+  "API Usage": { type:"view", render:"apiUsage", sub:"Who is using the API right now.", related:["User Sessions"] },
+  "API Logs": { type:"view", render:"auditModule", modules:[], sub:"API actions recorded in the audit trail.", related:["System Activity"] },
+  "Webhook Management": { type:"list", key:"webhooks", singular:"webhook", sub:"Outbound notification endpoints registered for system events.", related:["Webhook Logs"],
+    cols:[aF("url","Endpoint URL","url"),aSel("event","Event",["payment.received","loan.disbursed","loan.closed","client.created"],"payment.received")] },
+  "Webhook Logs": { type:"view", render:"mpesaCallbacks", sub:"Inbound M-Pesa callbacks received by the system.", related:["M-Pesa / Daraja"] },
+  "API Rate Limits": { type:"view", render:"rateLimits", sub:"Request limits protecting the API.", related:["API Monitoring"] },
+
+  /* ---------- Reports ---------- */
+  "System Reports": { type:"view", render:"report", report:"system", sub:"System-wide summary.", related:["System Health"] },
+  "User Reports": { type:"view", render:"report", report:"users", sub:"Users by role, branch and account status.", related:["All Users"] },
+  "Access Reports": { type:"view", render:"report", report:"access", sub:"Access granted per role.", related:["Role Permissions"] },
+  "Security Reports": { type:"view", render:"report", report:"security", sub:"Sign-in outcomes and lockouts.", related:["Security Overview"] },
+  "Configuration Reports": { type:"view", render:"report", report:"config", sub:"What has been configured, and what is still on defaults.", related:["Configuration Changes"] },
+  "Data Reports": { type:"view", render:"report", report:"data", sub:"Record counts and data quality.", related:["Data Validation"] },
+});
+// The Admin sidebar section each page lives in — shown as its eyebrow.
+const ADMIN_PAGE_SECTION = {};
+(SIDEBAR_MENUS.Admin || []).forEach(sec => sec.items.forEach(item => { if (ADMIN_PAGES[item] && !ADMIN_PAGE_SECTION[item]) ADMIN_PAGE_SECTION[item] = sec.section; }));
+// Admin labels that should open an existing real page rather than a new one.
+const ADMIN_ROUTE_ALIASES = {
+  "Permissions": {section:"staff", subtab:"Role Permissions"},
+  "Permission Matrix": {section:"staff", subtab:"Role Permissions"},
+  "M-Pesa / Daraja": {section:"account", subtab:"M-Pesa Configuration"},
+  "Maintenance Mode": {section:"admin", subtab:"System Maintenance"},
+};
+ROLE_ROUTE_OVERRIDES.Admin = Object.assign(ROLE_ROUTE_OVERRIDES.Admin || {},
+  Object.fromEntries(Object.keys(ADMIN_PAGES).map(label => [label, {section:"admin", subtab:label}])),
+  ADMIN_ROUTE_ALIASES);
+// key → {label, fields} so history rows can show the page and field names.
+const ADMIN_KEY_INFO = {};
+Object.entries(ADMIN_PAGES).forEach(([label, spec]) => {
+  if (spec.type !== "settings") return;
+  const info = ADMIN_KEY_INFO[spec.key] || (ADMIN_KEY_INFO[spec.key] = { label, fields: {} });
+  (spec.groups || []).forEach(g => g.fields.forEach(f => { info.fields[f.k] = f.label; }));
+});
+
+/* ---- data: lazy, de-duplicated loads into DB.adm ---- */
+function admData(key, path, pick){
+  const st = DB.adm || (DB.adm = {});
+  if(!(key in st)){
+    st[key] = undefined;
+    withRequest('adm-'+key, async ()=>{
+      try{ const r = await api.get(path); st[key] = pick ? pick(r) : r; }
+      catch(e){ st[key] = { __error: (e && e.message) || 'Could not load this page' }; throw e; }
+    });
+  }
+  return st[key];
+}
+function admForget(prefix){
+  if(!DB.adm) return;
+  Object.keys(DB.adm).forEach(k => { if(k === prefix || k.startsWith(prefix)) delete DB.adm[k]; });
+}
+const admIsAdmin = () => session.role === 'Admin';
+const admLoading = (title) => `<div class="card">${title?`<div class="card-title">${escapeHtml(title)}</div>`:''}<div class="empty">${loadingDotsHtml()}</div></div>`;
+const admError = (msg) => `<div class="card"><div class="empty">${escapeHtml(msg)}</div></div>`;
+const admPending = (...vals) => vals.some(v => v === undefined);
+const admFailed = (...vals) => vals.find(v => v && v.__error);
+const admBadge = (text, tone) => `<span class="badge ${tone||'grey'}">${escapeHtml(String(text))}</span>`;
+const admWhen = iso => iso ? `${new Date(iso).toLocaleString('en-KE')} <span class="hint">· ${timeAgo(iso)}</span>` : '—';
+const admBytes = n => { n = Number(n)||0; if(n < 1024) return n+' B'; if(n < 1048576) return (n/1024).toFixed(1)+' KB'; if(n < 1073741824) return (n/1048576).toFixed(1)+' MB'; return (n/1073741824).toFixed(2)+' GB'; };
+const admDuration = s => { s = Number(s)||0; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s%60}s`; };
+function admTile(label, value, hint){
+  return `<div class="adm-tile"><div class="adm-tile-label">${escapeHtml(label)}</div><div class="adm-tile-value">${value}</div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+function admTable(headers, rows, emptyText){
+  return `<div class="table-wrap"><table><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>
+    ${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${c==null||c===''?'—':c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">${escapeHtml(emptyText||'Nothing recorded yet.')}</td></tr>`}</table></div>`;
+}
+function admExportBtn(fn){ return admExports.push(fn), `<button type="button" class="btn btn-sm btn-outline" onclick="admRunExport(${admExports.length-1})">⤓ Export CSV</button>`; }
+let admExports = [];
+function admRunExport(i){ const fn = admExports[i]; if(fn) fn(); }
+
+/* ---- page chassis ---- */
+function renderAdminSection(){
+  const label = session.subtab;
+  const spec = ADMIN_PAGES[label];
+  if(!spec) return renderPlaceholder();
+  admExports = [];
+  let body;
+  try{
+    if(spec.type === 'settings') body = admSettingsBody(spec);
+    else if(spec.type === 'list') body = admListBody(spec, label);
+    else if(spec.type === 'history') body = admHistoryBody(spec);
+    else body = (ADMIN_VIEWS[spec.render] || (()=>admError('This page is not available.')))(spec, label);
+  }catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
+  return `<div class="adm-page">
+    <div class="card adm-head">
+      <div class="ac-eyebrow">${escapeHtml(ADMIN_PAGE_SECTION[label] || 'System Administration')}</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2>
+      <div class="adm-sub">${escapeHtml(spec.sub || '')}</div>
+      ${spec.related && spec.related.length ? `<div class="adm-related"><span class="adm-related-label">Related pages</span>${spec.related.map(r=>`<span class="adm-chip">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
+    </div>
+    ${body}
+  </div>`;
+}
+
+/* ---- fields ---- */
+function admOptList(f){ return (f.opts || []).map(o => typeof o === 'object' ? o : { v: o, l: o }); }
+function admFieldHtml(f, val, disabled){
+  const dis = disabled ? ' disabled' : '';
+  const v = val == null ? '' : val;
+  if(f.type === 'toggle'){
+    return `<div class="field"><label class="adm-toggle"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''}${dis}><span>${escapeHtml(f.label)}</span></label></div>`;
+  }
+  if(f.type === 'days' || f.type === 'checks'){
+    const opts = f.type === 'days' ? ADM_DAYS.map(d => ({ v: d, l: d })) : admOptList(f);
+    const sel = Array.isArray(val) ? val : [];
+    return `<div class="field full"><label>${escapeHtml(f.label)}</label><div class="adm-checks">${opts.map(o =>
+      `<label class="adm-check"><input type="checkbox" name="${f.k}" value="${escapeHtml(o.v)}" ${sel.includes(o.v) ? 'checked' : ''}${dis}><span>${escapeHtml(o.l)}</span></label>`).join('')}</div></div>`;
+  }
+  if(f.type === 'select'){
+    return `<div class="field"><label>${escapeHtml(f.label)}</label><select name="${f.k}"${dis}>${admOptList(f).map(o =>
+      `<option value="${escapeHtml(o.v)}" ${String(o.v) === String(v) ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}</select></div>`;
+  }
+  if(f.type === 'textarea'){
+    return `<div class="field full"><label>${escapeHtml(f.label)}</label><textarea name="${f.k}" rows="3"${dis}>${escapeHtml(v)}</textarea></div>`;
+  }
+  const extra = f.type === 'number' ? ` step="any"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}` : '';
+  return `<div class="field"><label>${escapeHtml(f.label)}</label><input name="${f.k}" type="${f.type}" value="${escapeHtml(v)}"${extra}${dis}></div>`;
+}
+function admDefaults(fields){
+  const out = {};
+  fields.forEach(f => { if(f.def !== undefined) out[f.k] = f.def; });
+  return out;
+}
+function admCollect(fd, fields){
+  const out = {};
+  const getAll = k => typeof fd.getAll === 'function' ? fd.getAll(k) : [].concat(fd.get(k) == null ? [] : fd.get(k));
+  fields.forEach(f => {
+    if(f.type === 'toggle') out[f.k] = fd.has(f.k);
+    else if(f.type === 'days' || f.type === 'checks') out[f.k] = getAll(f.k).map(String);
+    else if(f.type === 'number'){ const raw = fd.get(f.k); out[f.k] = (raw == null || String(raw).trim() === '') ? null : Number(raw); }
+    else { const raw = fd.get(f.k); out[f.k] = raw == null ? '' : String(raw).trim(); }
+  });
+  return out;
+}
+function admInvalidNumber(fields, value){
+  return fields.find(f => f.type === 'number' && value[f.k] !== null && !Number.isFinite(value[f.k]))
+      || fields.find(f => f.type === 'number' && value[f.k] !== null && ((f.min != null && value[f.k] < f.min) || (f.max != null && value[f.k] > f.max)));
+}
+
+/* ---- settings pages ---- */
+function admSettingsBody(spec){
+  const settings = admData('settings', '/api/admin/settings', r => r.settings);
+  const org = spec.org ? admData('org', '/api/system/organization', r => r.organization) : null;
+  if(admPending(settings, org)) return admLoading();
+  const failed = admFailed(settings, org); if(failed) return admError(failed.__error);
+  const fields = spec.groups.flatMap(g => g.fields);
+  const doc = settings[spec.key];
+  const v = Object.assign(admDefaults(fields), doc ? doc.value : {});
+  const ro = !admIsAdmin();
+  return `<form onsubmit="return admSaveSettings(event)">
+    ${spec.org ? `<div class="card"><div class="card-title">Company Record <small>shared with System Administration › Organization Settings</small></div>
+      <div class="form-grid">${spec.org.map(f => admFieldHtml(f, org[f.k] != null ? String(org[f.k]) : (f.def || ''), ro)).join('')}</div></div>` : ''}
+    ${spec.groups.map(g => `<div class="card"><div class="card-title">${escapeHtml(g.title)}</div>${g.hint ? `<div class="hint" style="margin:-6px 0 10px;">${escapeHtml(g.hint)}</div>` : ''}
+      <div class="form-grid">${g.fields.map(f => admFieldHtml(f, v[f.k], ro)).join('')}</div></div>`).join('')}
+    ${spec.preview ? `<div class="card"><div class="card-title">Preview</div><div class="adm-preview">${escapeHtml(spec.preview(v))}</div><div class="hint">How the next number will look with the saved settings.</div></div>` : ''}
+    <div class="card adm-savebar">
+      <div class="hint">${doc ? `Last saved by <strong>${escapeHtml(doc.updatedBy || 'System')}</strong> · ${admWhen(doc.updatedAt)}` : 'Not saved yet — showing the recommended defaults.'}</div>
+      ${ro ? `<span class="hint">View only — only the System Administrator can change this.</span>` : `<button class="btn btn-primary btn-sm" type="submit">Save ${escapeHtml(session.subtab)}</button>`}
+    </div>
+  </form>
+  ${spec.extra && ADMIN_EXTRAS[spec.extra] ? ADMIN_EXTRAS[spec.extra](spec) : ''}`;
+}
+async function admSaveSettings(ev){
+  ev.preventDefault();
+  const spec = ADMIN_PAGES[session.subtab];
+  if(!spec || spec.type !== 'settings' || !admIsAdmin()) return false;
+  const fd = new FormData(ev.target);
+  const fields = spec.groups.flatMap(g => g.fields);
+  const value = admCollect(fd, fields);
+  const bad = admInvalidNumber(fields, value);
+  if(bad){ toast(`${bad.label}: enter a valid number${bad.min != null ? ` (at least ${bad.min})` : ''}${bad.max != null ? ` (at most ${bad.max})` : ''}.`); return false; }
+  const orgBody = spec.org ? admCollect(fd, spec.org) : null;
+  // Several pages can share one settings document (e.g. Currency Settings
+  // and Currency & Localization) — merge so each page only changes its own fields.
+  const existing = DB.adm && DB.adm.settings && DB.adm.settings[spec.key];
+  const merged = Object.assign({}, existing ? existing.value : {}, value);
+  await withRequest('adm-save-settings', async ()=>{
+    if(orgBody){ await api.put('/api/system/organization', orgBody); admForget('org'); DB.sysAdmin = null; }
+    await api.put('/api/admin/settings/' + encodeURIComponent(spec.key), { value: merged });
+    admForget('settings'); admForget('history:');
+  }, { mutates: true });
+  return false;
+}
+
+/* ---- reference-list pages ---- */
+function admListBody(spec, label){
+  const items = admData('lookup:' + spec.key, '/api/admin/lookups/' + spec.key, r => r.items);
+  if(items === undefined) return admLoading();
+  if(items.__error) return admError(items.__error);
+  const canEdit = admIsAdmin();
+  const editing = session.admEdit && session.admEdit.key === spec.key ? items.find(i => i.id === session.admEdit.id) : null;
+  const sing = spec.singular || 'item';
+  const ev = editing ? Object.assign({ name: editing.name, code: editing.code, description: editing.description }, editing.attrs) : admDefaults(spec.cols);
+  const active = items.filter(i => i.status === 'Active').length;
+  const colVal = (it, c) => { const x = it.attrs[c.k]; if(Array.isArray(x)) return escapeHtml(x.join(', ')); if(c.type === 'number' && x != null && x !== '') return Math.abs(Number(x)) >= 1000 ? fmtNum(x) : escapeHtml(String(x)); return x == null || x === '' ? '—' : escapeHtml(String(x)).slice(0, 160); };
+  const exportFn = () => exportCSV(label.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase(), ['Name','Code'].concat(spec.cols.map(c => c.label), ['Description','Status']),
+    items.map(it => [it.name, it.code || ''].concat(spec.cols.map(c => Array.isArray(it.attrs[c.k]) ? it.attrs[c.k].join('; ') : (it.attrs[c.k] ?? '')), [it.description || '', it.status])));
+  return `
+    ${canEdit ? `<div class="card">
+      <div class="card-title">${editing ? `Edit ${escapeHtml(sing)}: ${escapeHtml(editing.name)}` : `Add ${escapeHtml(sing)}`}</div>
+      <form onsubmit="return admSaveItem(event)">
+        <div class="form-grid">
+          <div class="field"><label>Name</label><input name="name" value="${escapeHtml(ev.name || '')}" maxlength="120"></div>
+          <div class="field"><label>Code</label><input name="code" value="${escapeHtml(ev.code || '')}" maxlength="40"></div>
+          ${spec.cols.map(c => admFieldHtml(c, ev[c.k], false)).join('')}
+          <div class="field full"><label>Description</label><textarea name="description" rows="2" maxlength="500">${escapeHtml(ev.description || '')}</textarea></div>
+        </div>
+        <div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">${editing ? 'Save changes' : `Add ${escapeHtml(sing)}`}</button>
+        ${editing ? `<button type="button" class="btn btn-sm btn-outline" onclick="admCancelEdit()">Cancel</button>` : ''}</div>
+      </form>
+    </div>` : ''}
+    <div class="card">
+      <div class="card-title"><span>${escapeHtml(label)} <small>${items.length} total · ${active} active</small></span>${items.length ? admExportBtn(exportFn) : ''}</div>
+      ${admTable(['Name','Code'].concat(spec.cols.filter(c => c.type !== 'textarea').map(c => c.label), ['Description','Status'], canEdit ? [''] : []),
+        items.map(it => [`<strong>${escapeHtml(it.name)}</strong>`, escapeHtml(it.code || '')]
+          .concat(spec.cols.filter(c => c.type !== 'textarea').map(c => colVal(it, c)),
+            [`<span class="hint">${escapeHtml((it.description || '') + (spec.cols.some(c => c.type === 'textarea') ? spec.cols.filter(c => c.type === 'textarea').map(c => it.attrs[c.k] ? ' ' + it.attrs[c.k] : '').join('') : '')).slice(0, 140)}</span>`,
+             admBadge(it.status, it.status === 'Active' ? 'green' : 'grey')],
+            canEdit ? [`<div class="pill-row" style="flex-wrap:nowrap;">
+              <button class="btn btn-sm btn-outline" onclick="admEditItem('${it.id}')">Edit</button>
+              <button class="btn btn-sm btn-outline" onclick="admToggleItem('${it.id}')">${it.status === 'Active' ? 'Deactivate' : 'Activate'}</button>
+              <button class="btn btn-sm btn-red" onclick="admDeleteItem('${it.id}')">Delete</button></div>`] : [])),
+        `No ${sing}s added yet.${canEdit ? ` Add the first one above.` : ''}`)}
+    </div>`;
+}
+function admListSpec(){ const s = ADMIN_PAGES[session.subtab]; return s && s.type === 'list' ? s : null; }
+function admEditItem(id){ const s = admListSpec(); if(!s) return; session.admEdit = { key: s.key, id }; renderApp(); }
+function admCancelEdit(){ session.admEdit = null; renderApp(); }
+async function admSaveItem(ev){
+  ev.preventDefault();
+  const spec = admListSpec(); if(!spec || !admIsAdmin()) return false;
+  const fd = new FormData(ev.target);
+  const name = String(fd.get('name') || '').trim();
+  if(!name){ toast('Name is required.'); return false; }
+  const attrs = admCollect(fd, spec.cols);
+  const bad = admInvalidNumber(spec.cols, attrs);
+  if(bad){ toast(`${bad.label}: enter a valid number.`); return false; }
+  const body = { name, code: String(fd.get('code') || '').trim(), description: String(fd.get('description') || '').trim(), attrs };
+  const editing = session.admEdit && session.admEdit.key === spec.key ? session.admEdit.id : null;
+  await withRequest('adm-save-item', async ()=>{
+    if(editing) await api.put(`/api/admin/lookups/${spec.key}/${editing}`, body);
+    else await api.post(`/api/admin/lookups/${spec.key}`, body);
+    session.admEdit = null;
+    admForget('lookup:' + spec.key);
+  }, { mutates: true });
+  return false;
+}
+async function admToggleItem(id){
+  const spec = admListSpec(); if(!spec) return;
+  const it = ((DB.adm || {})['lookup:' + spec.key] || []).find(i => i.id === id); if(!it) return;
+  await withRequest('adm-toggle-' + id, async ()=>{
+    await api.put(`/api/admin/lookups/${spec.key}/${id}`, { status: it.status === 'Active' ? 'Inactive' : 'Active' });
+    admForget('lookup:' + spec.key);
+  });
+}
+async function admDeleteItem(id){
+  const spec = admListSpec(); if(!spec) return;
+  const it = ((DB.adm || {})['lookup:' + spec.key] || []).find(i => i.id === id); if(!it) return;
+  if(typeof confirm === 'function' && !confirm(`Delete "${it.name}"? This cannot be undone.`)) return;
+  await withRequest('adm-del-' + id, async ()=>{
+    await api.del(`/api/admin/lookups/${spec.key}/${id}`);
+    if(session.admEdit && session.admEdit.id === id) session.admEdit = null;
+    admForget('lookup:' + spec.key);
+  });
+}
+
+/* ---- change-history pages ---- */
+function admDiff(prev, next){
+  const keys = Array.from(new Set(Object.keys(prev || {}).concat(Object.keys(next || {}))));
+  const fmt = x => x == null || x === '' ? '∅' : Array.isArray(x) ? (x.join(', ') || '∅') : typeof x === 'boolean' ? (x ? 'On' : 'Off') : String(x);
+  return keys.filter(k => JSON.stringify((prev || {})[k]) !== JSON.stringify((next || {})[k])).map(k => ({ k, from: fmt((prev || {})[k]), to: fmt((next || {})[k]) }));
+}
+function admHistoryBody(spec){
+  const hist = admData('history:' + spec.prefix, '/api/admin/settings-history?limit=200&prefix=' + encodeURIComponent(spec.prefix), r => r.history);
+  const audit = spec.audit ? admData('audit:entity:' + spec.audit.entity, '/api/audit-logs?limit=200&entity=' + encodeURIComponent(spec.audit.entity), r => r.auditLogs) : null;
+  if(admPending(hist, audit)) return admLoading();
+  const failed = admFailed(hist, audit); if(failed) return admError(failed.__error);
+  const rows = hist.map(h => {
+    const info = ADMIN_KEY_INFO[h.key] || { label: h.key, fields: {} };
+    const diff = admDiff(h.previous, h.next);
+    return [admWhen(h.changedAt), `<strong>${escapeHtml(info.label)}</strong>`, escapeHtml(h.changedBy || '—'),
+      diff.length ? diff.slice(0, 6).map(d => `<div class="adm-diff"><span>${escapeHtml(info.fields[d.k] || d.k)}:</span> <s>${escapeHtml(d.from).slice(0, 60)}</s> → <b>${escapeHtml(d.to).slice(0, 60)}</b></div>`).join('') + (diff.length > 6 ? `<div class="hint">+${diff.length - 6} more</div>` : '') : '<span class="hint">First save</span>'];
+  });
+  return `<div class="card"><div class="card-title"><span>Configuration Changes <small>${hist.length} change(s)</small></span></div>
+    ${admTable(['When','Setting','Changed by','What changed'], rows, 'No changes have been saved here yet.')}</div>
+    ${audit ? `<div class="card"><div class="card-title">Catalogue Changes <small>from the audit trail</small></div>
+      ${admTable(['When','User','Action','Record'], audit.map(a => [admWhen(a.created_at), escapeHtml(a.user_name || '—'), escapeHtml(a.action), escapeHtml(a.new_value || a.record_id || '').slice(0, 80)]), 'No catalogue changes recorded yet.')}</div>` : ''}`;
+}
+/* ---- shared helpers for view pages ---- */
+const admRegionName = id => ((DB.regions || []).find(r => r.id === id) || {}).name || '—';
+const admBranchName = id => ((DB.branches || []).find(b => b.id === id) || {}).name || (id ? id : '—');
+const admAccountTone = s => s === 'Active' ? 'green' : s === 'Suspended' ? 'amber' : s === 'Not Created' ? 'grey' : 'red';
+function admUsersWithAccounts(){ return (DB.staff || []).filter(s => s.hasAccount); }
+function admOpenUser(id){ goTo('staff'); openStaffDetail(id); }
+function admStats(){ return admData('stats', '/api/admin/system-stats'); }
+function admSysAdmin(){ if(!DB.sysAdmin) loadSystemAdminData(); return DB.sysAdmin; }
+function admAuditRows(spec){
+  const mods = spec.modules || [];
+  const sets = mods.length ? mods.map(m => admData('audit:mod:' + m, '/api/audit-logs?limit=200&module=' + encodeURIComponent(m), r => r.auditLogs))
+                           : [admData('audit:all', '/api/audit-logs?limit=200', r => r.auditLogs)];
+  if(admPending(...sets)) return undefined;
+  const failed = admFailed(...sets); if(failed) return failed;
+  let rows = [].concat(...sets);
+  if(spec.filter) rows = rows.filter(a => spec.filter.test(a.action || ''));
+  return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+function admUserFilterBar(stateKey, opts){
+  const f = session[stateKey] || (session[stateKey] = { q: '', role: '', status: '' });
+  return `<div class="pill-row adm-filters">
+    <input placeholder="Search name, email or code" value="${escapeHtml(f.q)}" onchange="session.${stateKey}.q=this.value; renderApp();">
+    <select onchange="session.${stateKey}.role=this.value; renderApp();"><option value="">All roles</option>${ADM_STAFF_ROLES.map(r => `<option ${f.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+    ${opts && opts.status === false ? '' : `<select onchange="session.${stateKey}.status=this.value; renderApp();"><option value="">All account states</option>${['Active','Suspended','Deactivated','Not Created'].map(s => `<option ${f.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>`}
+  </div>`;
+}
+function admFilterUsers(list, stateKey){
+  const f = session[stateKey] || { q: '', role: '', status: '' };
+  const q = (f.q || '').toLowerCase();
+  return list.filter(s => (!q || [s.name, s.email, s.staffCode].some(x => (x || '').toLowerCase().includes(q)))
+    && (!f.role || s.role === f.role) && (!f.status || (s.systemAccount || 'Not Created') === f.status));
+}
+function admUserCell(s){ return `<a href="#" onclick="admOpenUser('${s.id}'); return false;"><strong>${escapeHtml(s.name)}</strong></a><div class="hint">${escapeHtml(s.staffCode || s.email || '')}</div>`; }
+function admProductsTable(cols){
+  const products = DB.products || [];
+  return admTable(['Product'].concat(cols.map(c => c[0])), products.map(p => [`<strong>${escapeHtml(p.name)}</strong>`].concat(cols.map(c => c[1](p)))), 'No loan products are defined yet.');
+}
+const admTerm = p => p.termWeeks ? `${p.termWeeks} week(s)` : `${p.minTerm}–${p.maxTerm} month(s)`;
+
+/* ---- extras appended to settings pages ---- */
+const ADMIN_EXTRAS = {
+  businessLive: () => `<div class="card"><div class="card-title">Live Footprint</div><div class="adm-tiles">
+    ${admTile('Regions', (DB.regions || []).length)}${admTile('Branches', (DB.branches || []).length)}
+    ${admTile('Active staff', (DB.staff || []).filter(s => s.status === 'Active').length)}${admTile('Clients', fmtNum((DB.clients || []).length))}
+    ${admTile('Loan products', (DB.products || []).length)}</div></div>`,
+  productLimits: () => `<div class="card"><div class="card-title">Per-Product Ranges <small>live catalogue</small></div>${admProductsTable([['Minimum (KES)', p => fmtNum(p.minAmt)], ['Maximum (KES)', p => fmtNum(p.maxAmt)], ['Term', admTerm]])}</div>`,
+  productRates: () => `<div class="card"><div class="card-title">Rates by Product <small>live catalogue</small></div>${admProductsTable([['Rate', p => `${p.rate}% ${escapeHtml(p.rateType || '')}`], ['Term', admTerm]])}</div>`,
+  productFees: () => `<div class="card"><div class="card-title">Fees by Product <small>live catalogue</small></div>${admProductsTable([['Processing fee', p => p.processingFeeAmount != null ? 'KES ' + fmtNum(p.processingFeeAmount) : (p.fee ? p.fee + '%' : '—')]])}</div>`,
+  productPenalties: () => `<div class="card"><div class="card-title">Penalty Rate by Product <small>live catalogue</small></div>${admProductsTable([['Penalty', p => (p.penalty || 0) + '%']])}</div>`,
+  realSecurityParams: () => { const d = admSysAdmin(); return d ? renderSecuritySettingsCard(d.security, admIsAdmin()) : admLoading('Security Settings'); },
+  integrationStatus: () => renderSystemHealthCard(),
+  uploadStats: () => {
+    const st = admStats(); if(st === undefined) return admLoading('Stored Files'); if(st.__error) return '';
+    const t = st.tables.filter(x => /upload|document/i.test(x.name));
+    return `<div class="card"><div class="card-title">Stored Files <small>live</small></div>${admTable(['Table','Records','Space used'], t.map(x => [escapeHtml(x.name), fmtNum(x.rows), admBytes(x.sizeBytes)]), 'No file storage tables found.')}</div>`;
+  },
+};
+
+/* ---- view pages ---- */
+const ADMIN_VIEWS = {
+  departments: () => {
+    const deps = DB.departments || [];
+    return `<div class="card"><div class="card-title">Departments <small>${deps.length} department(s)</small></div>
+      ${admTable(['Department','Staff','Active staff'], deps.map(d => { const st = (DB.staff || []).filter(s => s.department === d.id);
+        return [`<strong>${escapeHtml(d.name)}</strong>`, st.length, st.filter(s => s.status === 'Active').length]; }), 'No departments are defined yet.')}
+      <div class="hint" style="margin-top:8px;">Department membership is set on each employee's record by HR.</div></div>`;
+  },
+  branchCodes: () => `<div class="card"><div class="card-title">Branch Codes <small>${(DB.branches || []).length} branch(es)</small></div>
+    ${admTable(['Branch','Code','Region','Status','Staff'], (DB.branches || []).map(b => [`<strong>${escapeHtml(b.name)}</strong>`, `<code>${escapeHtml(b.code || '—')}</code>`, escapeHtml(admRegionName(b.region)), admBadge(b.status || 'Active', (b.status || 'Active') === 'Active' ? 'green' : 'grey'), (DB.staff || []).filter(s => s.branch === b.id).length]))}
+    <div class="hint" style="margin-top:8px;">A branch's code is fixed when the branch is opened (Branches & Regions › Open New Branch).</div></div>`,
+  branchHours: () => {
+    const settings = admData('settings', '/api/admin/settings', r => r.settings);
+    if(settings === undefined) return admLoading(); if(settings.__error) return admError(settings.__error);
+    const doc = settings['org.branch-hours']; const v = doc ? doc.value : {}; const ro = !admIsAdmin() ? ' disabled' : '';
+    return `<form onsubmit="return admSaveBranchHours(event)"><div class="card"><div class="card-title">Branch Hours</div>
+      ${admTable(['Branch','Opens','Closes','Saturday opens','Saturday closes'], (DB.branches || []).map(b => { const h = v[b.id] || {};
+        return [`<strong>${escapeHtml(b.name)}</strong>`].concat(['open','close','satOpen','satClose'].map(k => `<input type="time" name="${k}__${b.id}" value="${escapeHtml(h[k] || '')}"${ro}>`)); }), 'No branches yet.')}
+      </div><div class="card adm-savebar"><div class="hint">${doc ? `Last saved by <strong>${escapeHtml(doc.updatedBy || 'System')}</strong> · ${admWhen(doc.updatedAt)}` : 'Blank times follow Company Setup › Company working hours and days.'}</div>
+      ${ro ? '' : `<button class="btn btn-primary btn-sm" type="submit">Save Branch Hours</button>`}</div></form>`;
+  },
+  branchTransfers: (spec) => {
+    const rows = admAuditRows({ modules: [], filter: /transfer/i });
+    if(rows === undefined) return admLoading(); if(rows.__error) return admError(rows.__error);
+    return `<div class="card"><div class="card-title">Recorded Transfers <small>${rows.length}</small></div>
+      ${admTable(['When','By','Action','Record'], rows.map(a => [admWhen(a.created_at), escapeHtml(a.user_name || '—'), escapeHtml(a.action), escapeHtml(a.record_type || '') + ' ' + escapeHtml(a.record_id || '')]), 'No transfers have been recorded yet.')}</div>`;
+  },
+  orgStructure: () => {
+    const regions = DB.regions || []; const branches = DB.branches || [];
+    const orphan = branches.filter(b => !regions.some(r => r.id === b.region));
+    const block = (title, list) => `<div class="adm-org-region"><div class="adm-org-title">${escapeHtml(title)} <small>${list.length} branch(es)</small></div>
+      ${list.length ? list.map(b => { const staff = (DB.staff || []).filter(s => s.branch === b.id);
+        return `<div class="adm-org-branch"><strong>${escapeHtml(b.name)}</strong> <code>${escapeHtml(b.code || '')}</code>
+          <div class="hint">Manager: ${escapeHtml(b.managerId ? staffName(b.managerId) : 'Not assigned')} · ${staff.length} staff · ${(DB.clients || []).filter(c => c.branch === b.id).length} clients</div></div>`; }).join('') : '<div class="hint">No branches.</div>'}</div>`;
+    return `<div class="card"><div class="card-title">Company Structure <small>${regions.length} region(s) · ${branches.length} branch(es)</small></div>
+      <div class="adm-org">${regions.map(r => block(r.name, branches.filter(b => b.region === r.id))).join('')}${orphan.length ? block('No region', orphan) : ''}</div></div>`;
+  },
+  loanProducts: () => {
+    const products = DB.products || [];
+    return `${admIsAdmin() ? `<div class="card"><div class="card-title">Add Loan Product</div>
+      <form onsubmit="return admAddProduct(event)"><div class="form-grid">
+        <div class="field"><label>Product name</label><input name="name" maxlength="80"></div>
+        <div class="field"><label>Interest rate (%)</label><input name="rate_pct" type="number" step="any" min="0"></div>
+        <div class="field"><label>Minimum amount (KES)</label><input name="min_amount" type="number" min="0"></div>
+        <div class="field"><label>Maximum amount (KES)</label><input name="max_amount" type="number" min="0"></div>
+        <div class="field"><label>Fixed term (weeks)</label><input name="term_weeks" type="number" min="1" placeholder="Leave blank for monthly terms"></div>
+        <div class="field"><label>Processing fee (KES)</label><input name="processing_fee_amount" type="number" min="0"></div>
+        <div class="field"><label>Penalty (%)</label><input name="penalty_pct" type="number" step="any" min="0"></div>
+      </div><button class="btn btn-primary btn-sm" type="submit">Add product</button></form></div>` : ''}
+      <div class="card"><div class="card-title">Product Catalogue <small>${products.length} active product(s)</small></div>
+      ${admProductsTable([['Rate', p => `${p.rate}%`], ['Amount (KES)', p => `${fmtNum(p.minAmt)} – ${fmtNum(p.maxAmt)}`], ['Term', admTerm], ['Processing fee', p => p.processingFeeAmount != null ? 'KES ' + fmtNum(p.processingFeeAmount) : (p.fee ? p.fee + '%' : '—')], ['Penalty', p => (p.penalty || 0) + '%'], ['Loans', p => (DB.loans || []).filter(l => l.productId === p.id).length]])}</div>`;
+  },
+  customerGroups: () => { const groups = DB.groups || [];
+    return `<div class="card"><div class="card-title">Client Groups <small>${groups.length}</small></div>
+      ${admTable(['Group','Branch','Meeting day','Members'], groups.map(g => [`<strong>${escapeHtml(g.name)}</strong>`, escapeHtml(admBranchName(g.branchId)), escapeHtml(g.meetingDay || '—'), (g.memberIds || []).length]), 'No client groups have been created yet.')}
+      <div class="hint" style="margin-top:8px;">Groups are created and managed by branch staff under Client Registry › Default Groups.</div></div>`; },
+  glFiltered: (spec) => {
+    const all = DB.accounts || [];
+    const list = all.filter(a => spec.match.some(m => (a.name || '').toLowerCase().includes(m)));
+    return `<div class="card"><div class="card-title"><span>Matching GL Accounts <small>${list.length} of ${all.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('accounting','Chart of Accounts')">Open Chart of Accounts →</button></div>
+      ${admTable(['Code','Account','Type','Status'], list.map(a => [`<code>${escapeHtml(a.code)}</code>`, `<strong>${escapeHtml(a.name)}</strong>`, escapeHtml(a.account_type || ''), admBadge(a.status || 'Active', (a.status || 'Active') === 'Active' ? 'green' : 'grey')]), 'No matching accounts in the chart of accounts yet.')}</div>`;
+  },
+  users: () => { const list = admFilterUsers(DB.staff || [], 'admUsersFilter');
+    return `<div class="card"><div class="card-title"><span>Users <small>${list.length} of ${(DB.staff || []).length}</small></span>
+      <span class="pill-row">${admExportBtn(() => exportCSV('users', ['Name','Code','Email','Role','Branch','Account','Last login'], list.map(s => [s.name, s.staffCode || '', s.email || '', s.role, admBranchName(s.branch), s.systemAccount || 'Not Created', s.lastLoginAt || ''])))}
+      <button class="btn btn-sm btn-primary" onclick="goTo('staff','Create User')">+ Create User</button></span></div>
+      ${admUserFilterBar('admUsersFilter')}
+      ${admTable(['User','Role','Branch','System account','Last sign-in'], list.map(s => [admUserCell(s), escapeHtml(s.role), escapeHtml(admBranchName(s.branch)), admBadge(s.systemAccount || 'Not Created', admAccountTone(s.systemAccount || 'Not Created')), s.lastLoginAt ? timeAgo(s.lastLoginAt) : 'Never']), 'No users match these filters.')}</div>`; },
+  userProfiles: () => { const list = admFilterUsers(DB.staff || [], 'admProfilesFilter');
+    return `<div class="card"><div class="card-title">User Profiles <small>${list.length}</small></div>${admUserFilterBar('admProfilesFilter')}
+      <div class="adm-cards">${list.map(s => `<div class="adm-user-card" onclick="admOpenUser('${s.id}')">
+        <div class="adm-avatar">${escapeHtml((s.name || '?').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase())}</div>
+        <div><div class="adm-user-name">${escapeHtml(s.name)}</div><div class="hint">${escapeHtml(s.role)} · ${escapeHtml(admBranchName(s.branch))}</div>
+        <div style="margin-top:4px;">${admBadge(s.systemAccount || 'Not Created', admAccountTone(s.systemAccount || 'Not Created'))}</div></div></div>`).join('') || '<div class="empty">No users match these filters.</div>'}</div></div>`; },
+  accountRequests: () => { const list = (DB.staff || []).filter(s => !s.hasAccount && s.status !== 'Terminated');
+    return `<div class="card"><div class="card-title">Employees Without a Login <small>${list.length}</small></div>
+      ${admTable(['Employee','Role','Branch','Added',''], list.map(s => [admUserCell(s), escapeHtml(s.role), escapeHtml(admBranchName(s.branch)), s.createdAt ? timeAgo(s.createdAt) : '—', admIsAdmin() ? `<button class="btn btn-sm btn-primary" onclick="goTo('staff','Create User')">Create login</button>` : '']), 'Every employee already has a system account.')}</div>`; },
+  roleAssignments: () => { const staff = DB.staff || [];
+    const counts = ADM_STAFF_ROLES.map(r => [r, staff.filter(s => s.role === r).length]);
+    const list = admFilterUsers(staff, 'admRolesFilter');
+    return `<div class="card"><div class="card-title">Users per Role</div><div class="adm-tiles">${counts.map(([r, n]) => admTile(r, n)).join('')}</div></div>
+      <div class="card"><div class="card-title"><span>Assignments <small>${list.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('staff','Roles')">Manage roles →</button></div>
+      ${admUserFilterBar('admRolesFilter', { status: false })}
+      ${admTable(['User','Role','Access level','Branch'], list.map(s => [admUserCell(s), `<strong>${escapeHtml(s.role)}</strong>`, escapeHtml(s.accessLevel || '—'), escapeHtml(admBranchName(s.branch))]), 'No users match these filters.')}</div>`; },
+  accountActivation: () => { const list = admUsersWithAccounts().filter(s => s.systemAccount !== 'Active');
+    return `<div class="card"><div class="card-title">Inactive Accounts <small>${list.length}</small></div>
+      ${admTable(['User','Role','Account',''], list.map(s => [admUserCell(s), escapeHtml(s.role), admBadge(s.systemAccount, admAccountTone(s.systemAccount)), admIsAdmin() ? `<button class="btn btn-sm btn-primary" onclick="admSetAccountStatus('${s.id}','Active')">Activate</button>` : '']), 'Every system account is active.')}</div>`; },
+  accountSuspension: () => { const users = admUsersWithAccounts(); const active = admFilterUsers(users.filter(s => s.systemAccount === 'Active' && s.id !== session.userId), 'admSuspendFilter'); const suspended = users.filter(s => s.systemAccount === 'Suspended');
+    return `<div class="card"><div class="card-title">Suspended Accounts <small>${suspended.length}</small></div>
+      ${admTable(['User','Role',''], suspended.map(s => [admUserCell(s), escapeHtml(s.role), admIsAdmin() ? `<button class="btn btn-sm btn-primary" onclick="admSetAccountStatus('${s.id}','Active')">Reinstate</button>` : '']), 'No accounts are suspended.')}</div>
+      <div class="card"><div class="card-title">Active Accounts <small>${active.length}</small></div>${admUserFilterBar('admSuspendFilter', { status: false })}
+      ${admTable(['User','Role','Branch',''], active.map(s => [admUserCell(s), escapeHtml(s.role), escapeHtml(admBranchName(s.branch)), admIsAdmin() ? `<button class="btn btn-sm btn-red" onclick="admSetAccountStatus('${s.id}','Suspended')">Suspend</button>` : '']), 'No active accounts match.')}</div>`; },
+  accountLocks: () => { const locked = admData('locked', '/api/system/locked-accounts', r => r.lockedAccounts);
+    if(locked === undefined) return admLoading(); if(locked.__error) return admError(locked.__error);
+    return `<div class="card"><div class="card-title">Locked Right Now <small>${locked.length}</small></div>
+      ${admTable(['Sign-in email','Failed attempts (15 min)','Last attempt',''], locked.map(l => [`<strong>${escapeHtml(l.email)}</strong>`, l.fails, admWhen(l.last_attempt_at), admIsAdmin() ? `<button class="btn btn-sm btn-primary" onclick="admUnlock('${escapeHtml(String(l.email).replace(/'/g, ''))}')">Unlock</button>` : '']), 'No accounts are locked.')}
+      <div class="hint" style="margin-top:8px;">An account locks after 5 failed sign-ins within 15 minutes and unlocks by itself after 15 minutes. Unlocking keeps the failed attempts in the security log. To block an account deliberately, use Account Suspension.</div></div>`; },
+  passwordReset: () => { const list = admFilterUsers(admUsersWithAccounts(), 'admResetFilter'); const t = session.admTempPassword;
+    return `${t ? `<div class="card adm-callout"><div class="card-title">Temporary password for ${escapeHtml(t.name)}</div><div class="adm-preview">${escapeHtml(t.password)}</div>
+      <div class="hint">Give this to ${escapeHtml(t.name)} privately. It works once — they must choose a new password when they sign in. All their open sessions were signed out.</div>
+      <button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="session.admTempPassword=null; renderApp();">Done</button></div>` : ''}
+      <div class="card"><div class="card-title">Reset a Password <small>${list.length}</small></div>${admUserFilterBar('admResetFilter', { status: false })}
+      ${admTable(['User','Role','Last sign-in',''], list.map(s => [admUserCell(s), escapeHtml(s.role), s.lastLoginAt ? timeAgo(s.lastLoginAt) : 'Never', admIsAdmin() ? `<button class="btn btn-sm btn-outline" onclick="admResetPassword('${s.id}')">Reset password</button>` : '']), 'No users match.')}</div>`; },
+  forcePasswordChange: () => { const list = admFilterUsers(admUsersWithAccounts(), 'admForceFilter');
+    return `<div class="card"><div class="card-title">Password Change at Next Sign-in <small>${list.filter(s => s.mustChangePassword).length} pending</small></div>${admUserFilterBar('admForceFilter', { status: false })}
+      ${admTable(['User','Role','Must change password',''], list.map(s => [admUserCell(s), escapeHtml(s.role), s.mustChangePassword ? admBadge('Yes', 'amber') : admBadge('No', 'green'),
+        admIsAdmin() ? `<button class="btn btn-sm btn-outline" onclick="admForcePassword('${s.id}', ${!s.mustChangePassword})">${s.mustChangePassword ? 'Clear requirement' : 'Require change'}</button>` : '']), 'No users match.')}</div>`; },
+  userSessions: () => { const d = admSysAdmin(); return d ? renderActiveSessionsCard(d.sessions) : admLoading('Active Sessions'); },
+  auditModule: (spec) => { const rows = admAuditRows(spec);
+    if(rows === undefined) return admLoading(); if(rows.__error) return admError(rows.__error);
+    const q = (session.admAuditQ || '').toLowerCase();
+    const list = q ? rows.filter(a => [a.user_name, a.action, a.module, a.record_type, a.record_id].some(x => (x || '').toLowerCase().includes(q))) : rows;
+    return `<div class="card"><div class="card-title"><span>Audit Entries <small>${list.length}${rows.length >= 200 ? ' (latest 200 per module)' : ''}</small></span>
+      ${admExportBtn(() => exportCSV('audit-' + session.subtab.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase(), ['When','User','Role','Module','Action','Record type','Record'], list.map(a => [a.created_at, a.user_name || '', a.role_id || '', a.module || '', a.action, a.record_type || '', a.record_id || ''])))}</div>
+      <div class="pill-row adm-filters"><input placeholder="Search user, action or record" value="${escapeHtml(session.admAuditQ || '')}" onchange="session.admAuditQ=this.value; renderApp();"></div>
+      ${admTable(['When','User','Module','Action','Record'], list.slice(0, 300).map(a => [admWhen(a.created_at), `${escapeHtml(a.user_name || 'system')}<div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[a.role_id] || a.role_id || '')}</div>`, escapeHtml(a.module || '—'), `<strong>${escapeHtml(a.action)}</strong>${a.reason ? `<div class="hint">${escapeHtml(a.reason)}</div>` : ''}`, escapeHtml(((a.record_type || '') + ' ' + (a.record_id || '')).trim())]), 'Nothing recorded yet.')}</div>`; },
+  accessApprovals: () => { const items = admData('lookup:access-requests', '/api/admin/lookups/access-requests', r => r.items);
+    if(items === undefined) return admLoading(); if(items.__error) return admError(items.__error);
+    const pending = items.filter(i => (i.attrs.decision || 'Pending') === 'Pending'); const decided = items.filter(i => (i.attrs.decision || 'Pending') !== 'Pending');
+    return `<div class="card"><div class="card-title">Pending <small>${pending.length}</small></div>
+      ${admTable(['Request','For','Access',''], pending.map(i => [`<strong>${escapeHtml(i.name)}</strong><div class="hint">${escapeHtml(i.description || '')}</div>`, escapeHtml(i.attrs.user || '—'), escapeHtml(i.attrs.access || '—'),
+        admIsAdmin() ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="admDecideAccess('${i.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="admDecideAccess('${i.id}','Rejected')">Reject</button></div>` : '']), 'No access requests are waiting.')}
+      <div class="hint" style="margin-top:8px;">Log new requests under Access Requests. Approving records the decision; grant the access itself under Role Permissions or the user's profile.</div></div>
+      <div class="card"><div class="card-title">Decided <small>${decided.length}</small></div>${admTable(['Request','For','Access','Decision','Updated'], decided.map(i => [escapeHtml(i.name), escapeHtml(i.attrs.user || '—'), escapeHtml(i.attrs.access || '—'), admBadge(i.attrs.decision, i.attrs.decision === 'Approved' ? 'green' : 'red'), i.updatedAt ? timeAgo(i.updatedAt) : '—']), 'No decisions yet.')}</div>`; },
+  workflowOverview: () => { const settings = admData('settings', '/api/admin/settings', r => r.settings);
+    if(settings === undefined) return admLoading(); if(settings.__error) return admError(settings.__error);
+    const flows = Object.entries(ADMIN_PAGES).filter(([, s]) => s.type === 'settings' && s.key.startsWith('workflow.'));
+    return `<div class="card"><div class="card-title">Approval Chains</div>
+      ${admTable(['Workflow','Levels','Approvers','Escalates to','Last changed',''], [[`<strong>Loan Approval Workflow</strong>`, '—', '<span class="hint">Live chain — see page</span>', '—', '—', `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Loan Approval Workflow')">Open</button>`]].concat(flows.map(([label, s]) => {
+        const fields = s.groups.flatMap(g => g.fields); const doc = settings[s.key]; const v = Object.assign(admDefaults(fields), doc ? doc.value : {});
+        const n = Number(v.levels) || 1; const chain = [v.level1Role, v.level2Role, v.level3Role].slice(0, n).join(' → ');
+        return [`<strong>${escapeHtml(label)}</strong>${v.enabled ? '' : ' ' + admBadge('Off', 'grey')}`, n, escapeHtml(chain), escapeHtml(v.escalateTo || '—'), doc ? timeAgo(doc.updatedAt) : '<span class="hint">Defaults</span>', `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${label}')">Open</button>`]; })))}</div>`; },
+  loanWorkflow: () => { const steps = admData('loanwf', '/api/admin/loan-workflow', r => r.steps);
+    if(steps === undefined) return admLoading(); if(steps.__error) return admError(steps.__error);
+    return `<div class="card"><div class="card-title">Live Approval Chain <small>${steps.length} step(s)</small></div>
+      <div class="adm-flow">${steps.map((s, i) => `<div class="adm-flow-step"><div class="adm-flow-no">${s.step_order}</div><div><strong>${escapeHtml(ROLE_ID_TO_DISPLAY[s.role_id] || s.role_name || s.role_id)}</strong><div class="hint">${escapeHtml(s.status_label)}</div></div></div>${i < steps.length - 1 ? '<div class="adm-flow-arrow">→</div>' : ''}`).join('')}</div>
+      <div class="hint" style="margin-top:10px;">Every loan application moves through these steps in order; each decision is recorded against the application.</div></div>`; },
+  docExpiry: () => { const items = admData('lookup:company-documents', '/api/admin/lookups/company-documents', r => r.items);
+    if(items === undefined) return admLoading(); if(items.__error) return admError(items.__error);
+    const today = new Date(new Date().toDateString());
+    const rows = items.filter(i => i.attrs.expiryDate).map(i => ({ i, days: Math.round((new Date(i.attrs.expiryDate) - today) / 86400000) })).sort((a, b) => a.days - b.days);
+    return `<div class="card"><div class="card-title">Expiry Watchlist <small>${rows.length} dated document(s)</small></div>
+      ${admTable(['Document','Type','Reference','Expires','Status'], rows.map(({ i, days }) => [`<strong>${escapeHtml(i.name)}</strong>`, escapeHtml(i.attrs.docType || '—'), escapeHtml(i.attrs.refNo || '—'), escapeHtml(i.attrs.expiryDate),
+        days < 0 ? admBadge(`Expired ${-days}d ago`, 'red') : days <= 30 ? admBadge(`${days}d left`, 'amber') : admBadge(`${days}d left`, 'green')]), 'No documents with an expiry date. Add them under Company Setup › Company Documents.')}</div>`; },
+  apiConfig: () => { const st = admStats();
+    return `<div class="card"><div class="card-title">API Access</div>
+      <div class="adm-kv"><span>API address</span><code>${escapeHtml(API_BASE || window.location.origin)}</code></div>
+      <div class="adm-kv"><span>Authentication</span><b>Bearer session token issued at sign-in</b></div>
+      <div class="adm-kv"><span>Sessions per account</span><b>One active session at a time</b></div>
+      <div class="adm-kv"><span>Rate limit</span><b>${st && !st.__error ? st.rateLimitPerMinute + ' requests / minute per IP' : '…'}</b></div>
+      <div class="adm-kv"><span>Long-lived API keys</span><b>None issued</b></div>
+      <div class="hint" style="margin-top:8px;">Every API call runs as a real signed-in user and is checked against that user's role, modules and permissions. Register external systems that need access under API Clients before creating a dedicated service user for them.</div></div>`; },
+  commLog: () => renderCommunicationLogCard(),
+  systemNotifications: () => { const list = DB.notifications || [];
+    return `<div class="card"><div class="card-title"><span>Notifications <small>${list.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('support','System Announcements')">System Announcements →</button></div>
+      ${admTable(['When','Title','Message','Read'], list.slice(0, 200).map(n => [admWhen(n.date || n.createdAt), `<strong>${escapeHtml(n.title || n.type || 'Notification')}</strong>`, escapeHtml(n.message || n.body || '').slice(0, 140), n.read ? admBadge('Read', 'grey') : admBadge('New', 'blue')]), 'No notifications yet.')}</div>`; },
+  dataImport: () => `<div class="card"><div class="card-title">Import Tools</div>
+    <div class="adm-cards">
+      <div class="adm-user-card" onclick="goTo('clients','View Client'); openImportClientsModal();"><div class="adm-avatar">👥</div><div><div class="adm-user-name">Import clients</div><div class="hint">CSV of new clients with officer and next of kin.</div></div></div>
+      <div class="adm-user-card" onclick="goTo('accounting','Utility Payments'); openBulkUploadModal();"><div class="adm-avatar">💡</div><div><div class="adm-user-name">Bulk utility payments</div><div class="hint">CSV of vendor payments for approval.</div></div></div>
+      <div class="adm-user-card" onclick="goTo('staff','Create User')"><div class="adm-avatar">👤</div><div><div class="adm-user-name">Users</div><div class="hint">Created one at a time so every account is verified.</div></div></div>
+    </div><div class="hint" style="margin-top:8px;">Every imported record is validated and written to the audit trail, exactly like one entered by hand.</div></div>`,
+  dataExport: () => { const sets = ADM_DATASETS;
+    return `<div class="card"><div class="card-title">Export Records</div>
+      ${admTable(['Data set','Records',''], Object.entries(sets).map(([k, d]) => [`<strong>${d.title}</strong>`, fmtNum(d.rows().length), admExportBtn(() => admExportDataset(k))]))}
+      <div class="hint" style="margin-top:8px;">Exports contain what your account can see. For a full machine-readable snapshot use Backup Management.</div></div>`; },
+  dataSet: (spec) => { const d = ADM_DATASETS[spec.set]; const rows = d.rows();
+    const byStatus = {}; rows.forEach(r => { const s = d.status(r) || 'Unknown'; byStatus[s] = (byStatus[s] || 0) + 1; });
+    return `<div class="card"><div class="card-title"><span>${d.title} <small>${fmtNum(rows.length)} record(s)</small></span>${admExportBtn(() => admExportDataset(spec.set))}</div>
+      <div class="adm-tiles">${Object.entries(byStatus).map(([s, n]) => admTile(s, fmtNum(n))).join('') || admTile('Records', 0)}</div></div>
+      <div class="card"><div class="card-title">Completeness</div>${admTable(['Field','Missing','Complete'], d.checks.map(([label, fn]) => { const miss = rows.filter(r => !fn(r)).length;
+        return [escapeHtml(label), miss ? admBadge(fmtNum(miss), 'amber') : admBadge('0', 'green'), rows.length ? Math.round(100 * (rows.length - miss) / rows.length) + '%' : '—']; }))}</div>`; },
+  dataValidation: () => { const checks = [];
+    Object.values(ADM_DATASETS).forEach(d => d.checks.forEach(([label, fn]) => { const bad = d.rows().filter(r => !fn(r)); checks.push([d.title, label, bad.length, bad.slice(0, 3).map(r => d.label(r)).join(', ')]); }));
+    const phoneBad = (DB.clients || []).filter(c => c.phone && !/^(\+?254|0)[17]\d{8}$/.test(String(c.phone).replace(/\s+/g, '')));
+    checks.push(['Clients', 'Phone number is a valid Kenyan mobile number', phoneBad.length, phoneBad.slice(0, 3).map(c => c.name).join(', ')]);
+    return `<div class="card"><div class="card-title">Validation Checks <small>${checks.filter(c => c[2]).length} with issues</small></div>
+      ${admTable(['Records','Check','Failing','Examples'], checks.map(c => [escapeHtml(c[0]), escapeHtml(c[1]), c[2] ? admBadge(fmtNum(c[2]), 'amber') : admBadge('Pass', 'green'), escapeHtml(c[3] || '')]))}</div>`; },
+  duplicates: () => { const groups = []; const by = (key, label) => { const m = {}; (DB.clients || []).forEach(c => { const k = String(c[key] || '').replace(/\s+/g, '').toLowerCase(); if(k) (m[k] = m[k] || []).push(c); });
+      Object.entries(m).filter(([, l]) => l.length > 1).forEach(([k, l]) => groups.push([label, k, l])); };
+    by('phone', 'Phone number'); by('idNumber', 'National ID');
+    return `<div class="card"><div class="card-title">Possible Duplicates <small>${groups.length} group(s)</small></div>
+      ${admTable(['Matched on','Value','Clients'], groups.map(([label, k, l]) => [escapeHtml(label), `<code>${escapeHtml(k)}</code>`, l.map(c => `${escapeHtml(c.name)} <span class="hint">(${escapeHtml(admBranchName(c.branch))})</span>`).join('<br>')]), 'No duplicate phone numbers or national IDs found.')}</div>`; },
+  auditReport: () => { const rows = admAuditRows({ modules: [] });
+    if(rows === undefined) return admLoading(); if(rows.__error) return admError(rows.__error);
+    const count = (fn) => { const m = {}; rows.forEach(r => { const k = fn(r) || '—'; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
+    const mods = count(r => r.module), users = count(r => r.user_name);
+    return `<div class="card"><div class="card-title"><span>Audit Summary <small>latest ${rows.length} entries</small></span>${admExportBtn(() => exportCSV('audit-summary', ['Group','Name','Entries'], mods.map(m => ['Module'].concat(m)).concat(users.map(u => ['User'].concat(u)))))}</div>
+      <div class="adm-two">${admTable(['Module','Entries'], mods.map(([k, n]) => [escapeHtml(k), n]))}${admTable(['User','Entries'], users.slice(0, 20).map(([k, n]) => [escapeHtml(k), n]))}</div></div>`; },
+  securityOverview: () => { const locked = admData('locked', '/api/system/locked-accounts', r => r.lockedAccounts); const d = admSysAdmin(); const users = admUsersWithAccounts();
+    return `<div class="card"><div class="card-title">Security Posture</div><div class="adm-tiles">
+      ${admTile('Locked accounts', locked === undefined ? '…' : (locked.__error ? '—' : locked.length))}
+      ${admTile('Active sessions', d && d.sessions ? d.sessions.sessions.length : '…')}
+      ${admTile('Suspended accounts', users.filter(s => s.systemAccount === 'Suspended').length)}
+      ${admTile('Password change pending', users.filter(s => s.mustChangePassword).length)}
+      ${admTile('Never signed in', users.filter(s => !s.lastLoginAt).length)}</div></div>${renderSystemHealthCard()}`; },
+  loginMonitoring: (spec) => { const key = spec.outcome || 'all';
+    const events = admData('events:' + key, '/api/system/security-events?limit=200' + (spec.outcome ? '&outcome=' + spec.outcome : ''), r => r.events);
+    if(events === undefined) return admLoading(); if(events.__error) return admError(events.__error);
+    const ok = events.filter(e => e.success).length;
+    return `<div class="card"><div class="card-title">Summary <small>latest ${events.length} attempts</small></div><div class="adm-tiles">${admTile('Successful', ok)}${admTile('Failed', events.length - ok)}${admTile('Distinct accounts', new Set(events.map(e => e.email)).size)}</div></div>
+      <div class="card"><div class="card-title"><span>Sign-in Attempts</span>${admExportBtn(() => exportCSV('sign-in-attempts', ['When','Email','Outcome','Reason','IP'], events.map(e => [e.created_at, e.email, e.success ? 'Success' : 'Failed', e.reason || '', e.ip || ''])))}</div>
+      ${admTable(['When','Email','Outcome','Reason','IP'], events.map(e => [admWhen(e.created_at), escapeHtml(e.email), e.success ? admBadge('Success', 'green') : admBadge('Failed', 'red'), escapeHtml(e.reason || '—'), escapeHtml(e.ip || '—')]), 'No sign-in attempts recorded yet.')}</div>`; },
+  passwordPolicy: () => `<div class="card"><div class="card-title">Enforced Rules</div>
+    ${admTable(['Rule','Setting'], [['Minimum length','8 characters'],['Password expiry','Every 15 days — a change is required at the next sign-in'],['Temporary passwords','Must be changed at first sign-in'],['Lockout','5 failed attempts within 15 minutes'],['Lockout duration','15 minutes, or until an Admin unlocks it'],['Concurrent sessions','One active session per account'],['Storage','Salted one-way hash — passwords are never stored or shown']].map(r => [`<strong>${r[0]}</strong>`, r[1]]))}
+    <div class="hint" style="margin-top:8px;">These rules are enforced by the sign-in service for every role.</div></div>`,
+  systemHealth: () => renderSystemHealthCard(),
+  serverStatus: () => { const st = admStats(); if(st === undefined) return admLoading(); if(st.__error) return admError(st.__error); const p = st.process;
+    return `<div class="card"><div class="card-title"><span>Application Server <small>${admBadge('Running', 'green')}</small></span><button class="btn btn-sm btn-outline" onclick="admForget('stats'); renderApp();">Refresh</button></div><div class="adm-tiles">
+      ${admTile('Uptime', admDuration(p.uptimeSec))}${admTile('Memory in use', admBytes(p.rssBytes))}${admTile('Heap used', admBytes(p.heapUsedBytes), 'of ' + admBytes(p.heapTotalBytes))}${admTile('Runtime', escapeHtml(p.nodeVersion), escapeHtml(p.platform))}</div>
+      <div class="hint" style="margin-top:8px;">Measured ${admWhen(st.generatedAt)}.</div></div>`; },
+  apiMonitoring: () => admLatencyCard(),
+  databaseStatus: () => { const st = admStats(); if(st === undefined) return admLoading(); if(st.__error) return admError(st.__error); const db = st.database;
+    return `<div class="card"><div class="card-title"><span>Database <small>${admBadge('Online', 'green')}</small></span><button class="btn btn-sm btn-outline" onclick="admForget('stats'); renderApp();">Refresh</button></div><div class="adm-tiles">
+      ${admTile('Size', admBytes(db.sizeBytes))}${admTile('Connections', db.connections.total, db.connections.active + ' active')}${admTile('Tables', st.tables.length)}${admTile('Engine', escapeHtml((db.version.match(/^\w+ [\d.]+/) || [db.version])[0]))}</div></div>
+      <div class="card"><div class="card-title">Largest Tables</div>${admTable(['Table','Rows','Space'], st.tables.slice(0, 15).map(t => [`<code>${escapeHtml(t.name)}</code>`, fmtNum(t.rows), admBytes(t.sizeBytes)]))}</div>`; },
+  integrationMonitoring: () => { const m = admData('mpesa', '/api/mpesa/status');
+    return `${renderSystemHealthCard()}<div class="card"><div class="card-title"><span>M-Pesa</span><button class="btn btn-sm btn-outline" onclick="goTo('account','M-Pesa Configuration')">Configure →</button></div>
+      ${m === undefined ? `<div class="empty">${loadingDotsHtml()}</div>` : m.__error ? `<div class="hint">${escapeHtml(m.__error)}</div>` : admTable(['Item','Value'], Object.entries(m).filter(([, v]) => typeof v !== 'object').map(([k, v]) => [escapeHtml(k), escapeHtml(String(v))]))}</div>`; },
+  backgroundJobs: () => { const st = admStats();
+    return `<div class="card"><div class="card-title">Scheduled Work</div>
+      ${admTable(['Job','Runs','State'], [['Rate-limit window cleanup','Every minute', admBadge('Running', 'green')],['Session expiry','Checked on every request', admBadge('Running', 'green')],['Account lockout release','Checked on every sign-in', admBadge('Running', 'green')]])}
+      <div class="hint" style="margin-top:8px;">There is no deferred job queue: payments post, schedules compute and notifications send inside the request that triggers them, so nothing can sit stuck in a queue. ${st && !st.__error ? `Server up for ${admDuration(st.process.uptimeSec)}.` : ''}</div></div>`; },
+  errorLog: () => { const e = admData('errors', '/api/admin/error-log'); if(e === undefined) return admLoading(); if(e.__error) return admError(e.__error);
+    return `<div class="card"><div class="card-title"><span>Server Errors <small>${e.totalSinceStart} since the server started</small></span><button class="btn btn-sm btn-outline" onclick="admForget('errors'); renderApp();">Refresh</button></div>
+      ${admTable(['When','Request','Error'], e.errors.map(x => [admWhen(x.at), `<code>${escapeHtml((x.method || '') + ' ' + (x.path || ''))}</code>`, escapeHtml(x.message)]), 'No server errors since the last restart.')}</div>`; },
+  performance: () => { const st = admStats();
+    return `${st === undefined ? admLoading() : st.__error ? admError(st.__error) : `<div class="card"><div class="card-title">Server Resources</div><div class="adm-tiles">
+      ${admTile('Memory in use', admBytes(st.process.rssBytes))}${admTile('Heap used', Math.round(100 * st.process.heapUsedBytes / Math.max(1, st.process.heapTotalBytes)) + '%')}${admTile('Uptime', admDuration(st.process.uptimeSec))}${admTile('DB connections', st.database.connections.total)}</div></div>`}${admLatencyCard()}`; },
+  backups: () => { const d = admSysAdmin(); return d ? renderBackupCard(d.backups) : admLoading('System Backup'); },
+  restore: () => { const d = admSysAdmin();
+    return `<div class="card"><div class="card-title">Restoring a Backup</div><ol class="adm-steps">
+      <li>Download the snapshot from Backup Management (each backup downloads as a JSON file when it is created).</li>
+      <li>Put the system in Maintenance Mode so nobody records new transactions during the restore.</li>
+      <li>Have the database administrator load the snapshot's tables into a fresh database and verify the row counts against the backup record below.</li>
+      <li>Point the server at the restored database, then switch Maintenance Mode off.</li></ol>
+      <div class="hint">Restores are deliberately not a one-click action here: replacing live financial records needs a controlled, verified procedure.</div></div>
+      ${d ? renderBackupCard(d.backups) : admLoading('Backups')}`; },
+  storage: () => { const st = admStats(); if(st === undefined) return admLoading(); if(st.__error) return admError(st.__error);
+    const max = Math.max(1, ...st.tables.map(t => t.sizeBytes));
+    return `<div class="card"><div class="card-title">Space by Table <small>total ${admBytes(st.database.sizeBytes)}</small></div>
+      ${admTable(['Table','Rows','Space',''], st.tables.map(t => [`<code>${escapeHtml(t.name)}</code>`, fmtNum(t.rows), admBytes(t.sizeBytes), `<div class="adm-bar"><span style="width:${Math.max(2, Math.round(100 * t.sizeBytes / max))}%"></span></div>`]))}</div>`; },
+  cache: () => { const sets = ['clients','loans','payments','staff','branches','products','notifications','auditLog'].map(k => [k, Array.isArray(DB[k]) ? DB[k].length : 0]);
+    return `<div class="card"><div class="card-title"><span>Data Cached in This Session</span><button class="btn btn-sm btn-primary" onclick="admReloadCore()">Reload all data</button></div>
+      ${admTable(['Data set','Records cached'], sets.map(([k, n]) => [escapeHtml(k), fmtNum(n)]))}
+      <div class="hint" style="margin-top:8px;">The server keeps no data cache — every request reads the database directly. This browser session caches records after sign-in; reload them here if something looks out of date.</div></div>`; },
+  maintenance: () => { const d = admSysAdmin(); return d ? `${renderMaintenanceModeCard(d.maintenance, admIsAdmin())}${renderSecuritySettingsCard(d.security, admIsAdmin())}` : admLoading('Maintenance Mode'); },
+  apiPermissions: () => { const perms = admData('perms', '/api/permissions', r => r.permissions); const mods = admData('modules', '/api/modules', r => r.modules);
+    if(admPending(perms, mods)) return admLoading(); const failed = admFailed(perms, mods); if(failed) return admError(failed.__error);
+    return `<div class="card"><div class="card-title"><span>Action Permissions <small>${perms.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('staff','Role Permissions')">Role Permissions →</button></div>${admTable(['Permission','Code'], perms.map(p => [`<strong>${escapeHtml(p.label)}</strong>`, `<code>${escapeHtml(p.id)}</code>`]))}</div>
+      <div class="card"><div class="card-title">Modules <small>${mods.length}</small></div>${admTable(['Module','Code'], mods.map(m => [`<strong>${escapeHtml(m.label)}</strong>`, `<code>${escapeHtml(m.id)}</code>`]))}</div>`; },
+  apiUsage: () => { const d = admSysAdmin(); if(!d || !d.sessions) return admLoading('API Usage');
+    const s = d.sessions.sessions; const m = {}; s.forEach(x => { const k = ROLE_ID_TO_DISPLAY[x.role_id] || x.role_id || '—'; m[k] = (m[k] || 0) + 1; });
+    return `<div class="card"><div class="card-title">Active API Sessions <small>${s.length}</small></div><div class="adm-tiles">${Object.entries(m).map(([k, n]) => admTile(k, n)).join('') || admTile('Sessions', 0)}</div></div>
+      <div class="card"><div class="card-title">Clients in Use</div>${admTable(['User','Client / browser','IP','Since'], s.map(x => [escapeHtml(x.name || x.email || '—'), `<span class="hint">${escapeHtml(String(x.user_agent || '—').slice(0, 90))}</span>`, escapeHtml(x.ip || '—'), timeAgo(x.created_at)]), 'Nobody is signed in.')}</div>`; },
+  mpesaCallbacks: () => { const tx = admData('mpesatx', '/api/mpesa/transactions', r => r.transactions); if(tx === undefined) return admLoading(); if(tx.__error) return admError(tx.__error);
+    return `<div class="card"><div class="card-title">Inbound M-Pesa Callbacks <small>${tx.length}</small></div>
+      ${admTable(['When','Receipt','Phone','Amount','Result','Processed'], tx.map(t => [admWhen(t.created_at), escapeHtml(t.mpesa_receipt_number || '—'), escapeHtml(t.phone || '—'), t.amount != null ? fmtNum(t.amount) : '—', Number(t.result_code) === 0 ? admBadge('Success', 'green') : admBadge(t.result_desc || 'Failed', 'red'), t.processed ? admBadge('Yes', 'green') : admBadge('No', 'amber')]), 'No callbacks received yet.')}</div>`; },
+  rateLimits: () => { const st = admStats(); if(st === undefined) return admLoading(); if(st.__error) return admError(st.__error);
+    return `<div class="card"><div class="card-title">Request Limits</div>
+      ${admTable(['Limit','Value'], [['Requests per IP address', `${st.rateLimitPerMinute} per minute`],['Window','Rolling 60 seconds'],['When exceeded','Request refused with HTTP 429 until the window frees up'],['Failed sign-ins','5 per account per 15 minutes']].map(r => [`<strong>${r[0]}</strong>`, r[1]]))}
+      <div class="hint" style="margin-top:8px;">The per-minute limit is set by the server's RATE_LIMIT_PER_MINUTE environment variable.</div></div>`; },
+  report: (spec) => (ADMIN_REPORTS[spec.report] || (() => ''))(),
+};
+
+/* ---- data sets used by Data Management and Reports ---- */
+const ADM_DATASETS = {
+  clients: { title: 'Clients', rows: () => DB.clients || [], status: r => r.status, label: r => r.name,
+    checks: [['Phone number', r => !!r.phone], ['National ID', r => !!r.idNumber], ['Branch', r => !!r.branch], ['Loan officer', r => !!r.officerId], ['Next of kin', r => !!r.nextOfKin]],
+    csv: [['Code', r => r.clientCode], ['Name', r => r.name], ['Phone', r => r.phone], ['National ID', r => r.idNumber], ['Branch', r => admBranchName(r.branch)], ['Officer', r => staffName(r.officerId)], ['Status', r => r.status]] },
+  staff: { title: 'Employees', rows: () => DB.staff || [], status: r => r.status, label: r => r.name,
+    checks: [['Email', r => !!r.email], ['Phone', r => !!r.phone], ['Branch', r => !!r.branch || ['Admin','CEO','Director','HR'].includes(r.role)], ['Staff code', r => !!r.staffCode], ['National ID', r => !!r.nationalId]],
+    csv: [['Code', r => r.staffCode], ['Name', r => r.name], ['Email', r => r.email], ['Phone', r => r.phone], ['Role', r => r.role], ['Branch', r => admBranchName(r.branch)], ['Status', r => r.status], ['Account', r => r.systemAccount]] },
+  loans: { title: 'Loans', rows: () => DB.loans || [], status: r => r.status, label: r => r.id,
+    checks: [['Client', r => !!r.clientId], ['Product', r => !!r.productId], ['Principal above zero', r => Number(r.principal) > 0]],
+    csv: [['Loan', r => r.id], ['Client', r => ((DB.clients || []).find(c => c.id === r.clientId) || {}).name], ['Product', r => r.productName], ['Principal', r => r.principal], ['Status', r => r.status]] },
+  payments: { title: 'Payments', rows: () => DB.payments || [], status: r => r.status, label: r => r.reference || r.id,
+    checks: [['Reference', r => !!r.reference], ['Linked to a loan', r => !!r.loanId], ['Amount above zero', r => Number(r.amount) > 0]],
+    csv: [['Payment', r => r.id], ['Date', r => r.date], ['Amount', r => r.amount], ['Channel', r => r.channel], ['Reference', r => r.reference], ['Status', r => r.status]] },
+};
+function admExportDataset(k){ const d = ADM_DATASETS[k]; exportCSV(k, d.csv.map(c => c[0]), d.rows().map(r => d.csv.map(c => c[1](r) ?? ''))); }
+
+/* ---- Admin reports ---- */
+const ADMIN_REPORTS = {
+  system: () => `<div class="card"><div class="card-title">System Summary</div><div class="adm-tiles">
+    ${admTile('Users', (DB.staff || []).length)}${admTile('Branches', (DB.branches || []).length)}${admTile('Clients', fmtNum((DB.clients || []).length))}${admTile('Loans', fmtNum((DB.loans || []).length))}${admTile('Payments', fmtNum((DB.payments || []).length))}${admTile('Loan products', (DB.products || []).length)}</div></div>${ADMIN_VIEWS.serverStatus()}`,
+  users: () => { const staff = DB.staff || []; const roles = ADM_STAFF_ROLES.map(r => [r, staff.filter(s => s.role === r)]);
+    return `<div class="card"><div class="card-title"><span>Users by Role</span>${admExportBtn(() => exportCSV('users-by-role', ['Role','Users','Active accounts','Suspended','No login'], roles.map(([r, l]) => [r, l.length, l.filter(s => s.systemAccount === 'Active').length, l.filter(s => s.systemAccount === 'Suspended').length, l.filter(s => !s.hasAccount).length])))}</div>
+      ${admTable(['Role','Users','Active accounts','Suspended','No login'], roles.map(([r, l]) => [`<strong>${r}</strong>`, l.length, l.filter(s => s.systemAccount === 'Active').length, l.filter(s => s.systemAccount === 'Suspended').length, l.filter(s => !s.hasAccount).length]))}</div>
+      <div class="card"><div class="card-title">Users by Branch</div>${admTable(['Branch','Users'], (DB.branches || []).map(b => [escapeHtml(b.name), staff.filter(s => s.branch === b.id).length]).concat([['<span class="hint">Head office (no branch)</span>', staff.filter(s => !s.branch).length]]))}</div>`; },
+  access: () => { const roles = admData('roles', '/api/roles?with_counts=1'); if(roles === undefined) return admLoading(); if(roles.__error) return admError(roles.__error);
+    return `<div class="card"><div class="card-title"><span>Access by Role</span>${admExportBtn(() => exportCSV('access-by-role', ['Role','Users','Modules','Permissions'], roles.roles.map(r => [r.name, r.userCount, `${r.moduleCount}/${roles.modulesTotal}`, `${r.permissionCount}/${roles.permissionsTotal}`])))}</div>
+      ${admTable(['Role','Users','Modules','Permissions','Last changed'], roles.roles.map(r => [`<strong>${escapeHtml(r.name)}</strong>`, r.userCount, `${r.moduleCount} / ${roles.modulesTotal}`, `${r.permissionCount} / ${roles.permissionsTotal}`, r.lastModifiedAt ? timeAgo(r.lastModifiedAt) : '—']))}</div>`; },
+  security: () => ADMIN_VIEWS.loginMonitoring({}),
+  config: () => { const settings = admData('settings', '/api/admin/settings', r => r.settings); if(settings === undefined) return admLoading(); if(settings.__error) return admError(settings.__error);
+    const pages = Object.entries(ADMIN_PAGES).filter(([, s]) => s.type === 'settings'); const seen = new Set(); const rows = [];
+    pages.forEach(([label, s]) => { if(seen.has(s.key)) return; seen.add(s.key); const d = settings[s.key]; rows.push([label, ADMIN_PAGE_SECTION[label] || '', d ? 'Configured' : 'Defaults', d ? d.updatedBy || '' : '', d ? d.updatedAt : '']); });
+    return `<div class="card"><div class="card-title"><span>Configuration Status <small>${rows.filter(r => r[2] === 'Configured').length} of ${rows.length} configured</small></span>${admExportBtn(() => exportCSV('configuration-status', ['Page','Section','Status','Updated by','Updated at'], rows))}</div>
+      ${admTable(['Page','Section','Status','Updated'], rows.map(r => [`<a href="#" onclick="sidebarNavigate('${r[0]}'); return false;"><strong>${escapeHtml(r[0])}</strong></a>`, escapeHtml(r[1]), r[2] === 'Configured' ? admBadge('Configured', 'green') : admBadge('Defaults', 'grey'), r[4] ? `${escapeHtml(r[3])} · ${timeAgo(r[4])}` : '—']))}</div>`; },
+  data: () => Object.keys(ADM_DATASETS).map(k => ADMIN_VIEWS.dataSet({ set: k })).join(''),
+};
+
+/* ---- latency probe (API Monitoring / Performance) ---- */
+function admLatencyCard(){
+  const r = session.admLatency;
+  return `<div class="card"><div class="card-title"><span>Response Times <small>measured from this browser</small></span><button class="btn btn-sm btn-primary" onclick="admRunLatency()">${r ? 'Run again' : 'Run check'}</button></div>
+    ${r ? admTable(['Endpoint','Status','Time'], r.map(x => [`<code>${escapeHtml(x.path)}</code>`, x.ok ? admBadge('OK', 'green') : admBadge(x.error || 'Failed', 'red'), `${x.ms} ms`])) : '<div class="hint">Times a request to each key API endpoint.</div>'}</div>`;
+}
+async function admRunLatency(){
+  const paths = ['/api/system/health', '/api/auth/me', '/api/branches', '/api/loan-products', '/api/admin/settings'];
+  const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  await withRequest('adm-latency', async ()=>{
+    const out = [];
+    for(const p of paths){ const t = now(); try{ await api.get(p); out.push({ path: p, ok: true, ms: Math.round(now() - t) }); } catch(e){ out.push({ path: p, ok: false, error: e.message, ms: Math.round(now() - t) }); } }
+    session.admLatency = out;
+  });
+}
+
+/* ---- actions ---- */
+async function admSaveBranchHours(ev){
+  ev.preventDefault(); if(!admIsAdmin()) return false;
+  const fd = new FormData(ev.target); const value = {};
+  (DB.branches || []).forEach(b => { const h = {}; ['open','close','satOpen','satClose'].forEach(k => { const x = fd.get(`${k}__${b.id}`); if(x) h[k] = String(x); }); if(Object.keys(h).length) value[b.id] = h; });
+  await withRequest('adm-branch-hours', async ()=>{ await api.put('/api/admin/settings/org.branch-hours', { value }); admForget('settings'); admForget('history:'); }, { mutates: true });
+  return false;
+}
+async function admAddProduct(ev){
+  ev.preventDefault(); if(!admIsAdmin()) return false;
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!String(f.name || '').trim() || !(Number(f.rate_pct) > 0)){ toast('Enter a product name and an interest rate above zero.'); return false; }
+  if(f.min_amount && f.max_amount && Number(f.min_amount) > Number(f.max_amount)){ toast('Minimum amount cannot be more than the maximum.'); return false; }
+  const num = x => x === undefined || x === '' ? undefined : Number(x);
+  await withRequest('adm-add-product', async ()=>{
+    await api.post('/api/loan-products', { name: String(f.name).trim(), rate_type: 'Flat', rate_pct: Number(f.rate_pct), min_amount: num(f.min_amount), max_amount: num(f.max_amount),
+      term_weeks: num(f.term_weeks), processing_fee_amount: num(f.processing_fee_amount), penalty_pct: num(f.penalty_pct) });
+    const r = await api.get('/api/loan-products'); DB.products = r.products.map(adaptProduct);
+  }, { mutates: true });
+  return false;
+}
+async function admRefreshStaff(){ const r = await api.get('/api/users?limit=200'); DB.staff = r.users.map(adaptStaff); }
+async function admSetAccountStatus(id, status){
+  const s = (DB.staff || []).find(x => x.id === id); if(!s) return;
+  let reason = null;
+  if(status !== 'Active'){ reason = typeof prompt === 'function' ? prompt(`Reason for suspending ${s.name}'s account:`) : 'Suspended by System Administrator'; if(reason === null) return; }
+  await withRequest('adm-status-' + id, async ()=>{ await api.post(`/api/users/${id}/status`, { status, reason }); await admRefreshStaff(); admForget('stats'); DB.sysAdmin = null; }, { mutates: true });
+}
+async function admUnlock(email){
+  await withRequest('adm-unlock', async ()=>{ await api.post('/api/admin/accounts/unlock', { email }); admForget('locked'); admForget('events:'); }, { mutates: true });
+}
+async function admResetPassword(id){
+  const s = (DB.staff || []).find(x => x.id === id); if(!s) return;
+  if(typeof confirm === 'function' && !confirm(`Reset ${s.name}'s password? They will be signed out and given a one-time temporary password.`)) return;
+  await withRequest('adm-reset-' + id, async ()=>{ const r = await api.post(`/api/users/${id}/reset-password`, {}); session.admTempPassword = { name: s.name, password: r.tempPassword }; await admRefreshStaff(); });
+}
+async function admForcePassword(id, required){
+  await withRequest('adm-force-' + id, async ()=>{ await api.post(`/api/admin/users/${id}/force-password-change`, { required }); await admRefreshStaff(); }, { mutates: true });
+}
+async function admDecideAccess(id, decision){
+  const items = (DB.adm || {})['lookup:access-requests'] || []; const it = items.find(i => i.id === id); if(!it) return;
+  await withRequest('adm-access-' + id, async ()=>{ await api.put(`/api/admin/lookups/access-requests/${id}`, { attrs: Object.assign({}, it.attrs, { decision }) }); admForget('lookup:access-requests'); }, { mutates: true });
+}
+async function admReloadCore(){
+  const keep = { section: session.section, subtab: session.subtab };
+  await withRequest('adm-reload-core', async ()=>{ await loadCoreData(); session.section = keep.section; session.subtab = keep.subtab; });
+}
+
 function renderPlaceholder(){
   return `
     <div class="section-note">This screen — <strong>${escapeHtml(session.placeholderLabel||"")}</strong> — is part of the navigation spec but isn't built out with real functionality in this prototype yet.</div>
@@ -16364,7 +17561,7 @@ function renderStaff(){
     <div class="card">
       <div class="card-title">Role Permissions Matrix</div>
       <div class="table-wrap"><table><tr><th>Role</th><th>Access</th></tr>
-      ${ROLES.map(r=>`<tr><td><span class="badge blue">${r}</span></td><td>${NAV_PERMISSIONS[r].map(id=>NAV.find(n=>n.id===id).label).join(", ")}</td></tr>`).join("")}</table></div>
+      ${ROLES.map(r=>`<tr><td><span class="badge blue">${r}</span></td><td>${NAV_PERMISSIONS[r].map(id=>(NAV.find(n=>n.id===id)||{label:id}).label).join(", ")}</td></tr>`).join("")}</table></div>
     </div>` : `<div class="section-note">Only Admins can add staff or edit permissions.</div>`}
     ${renderTargetManagement()}
   `;
@@ -16400,7 +17597,7 @@ function renderTargetManagement(){
     </div>
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span>${showHistory?'Target History':'Targets You\'ve Set'} <small>${showHistory ? 'includes cancelled — real historical achievement preserved' : myTargets.length + ' active'}</small></span>
-        ${showHistory ? `<button class="btn btn-ghost btn-sm" onclick="goTo('staff','Manage Targets')">Show active targets</button>` : `<button class="btn btn-ghost btn-sm" onclick="loadTargetHistory()">Show target history</button>`}</div>
+        ${showHistory ? `<button class="btn btn-outline btn-sm" onclick="goTo('staff','Manage Targets')">Show active targets</button>` : `<button class="btn btn-outline btn-sm" onclick="loadTargetHistory()">Show target history</button>`}</div>
       <div class="table-wrap"><table><tr><th>Recipient</th><th>Metric</th><th>Period</th><th>Target</th><th>Achieved</th><th>Remaining</th><th>Achievement %</th><th>Status</th><th></th></tr>
       ${(showHistory ? (DB.targetHistory||[]) : myTargets).map(t=>`<tr>
         <td>${recipientLabel(t)}</td><td>${TARGET_METRIC_LABELS[t.metric]||t.metric}</td><td>${t.period}</td><td>${fmtNum(t.value)}</td>

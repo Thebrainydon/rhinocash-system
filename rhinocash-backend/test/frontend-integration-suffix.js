@@ -7584,6 +7584,73 @@ apiRequest = async function(method, path, body){
     __assert(session.loggedIn === true, "sanity: real login still works normally after exercising the Investor forced password-reset screen");
   }
 
+  // ---- Admin (System Administrator): every sidebar submenu is a real page ----
+  {
+    const admForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return admForm; } };
+    if(!session.loggedIn || session.role !== 'Admin') await doLogin({ preventDefault(){}, target:{} });
+    const waitAdm = async (key) => { for(let i=0; i<200 && (!DB.adm || DB.adm[key] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp(); };
+    const items = SIDEBAR_MENUS.Admin.flatMap(sec => sec.items);
+    const placeholders = items.filter(it => { const r = resolveRoute(it); return !r || r.section === 'placeholder'; });
+    __assert(placeholders.length === 0, "every Admin sidebar submenu resolves to a real page, none to the placeholder: " + placeholders.join(', '));
+    const enginePages = items.filter(it => (resolveRoute(it) || {}).section === 'admin');
+    __assert(enginePages.length >= 190, "the Admin setup/monitoring submenus open the shared Admin page engine (" + enginePages.length + " pages)");
+    __assert(isSectionAllowed('admin'), "Admin may open the System Administration section");
+
+    // A settings page: bold blue chassis, real defaults, then a real save.
+    sidebarNavigate('Tax Settings');
+    await waitAdm('settings');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('class="adm-title">Tax Settings<') && html.includes('Accounting Setup'), "the Tax Settings page renders with its section eyebrow and bold blue title");
+    __assert(html.includes('name="vatPct"') && html.includes('value="16"'), "the Tax Settings page shows the Kenyan VAT default of 16%");
+    const taxForm = new Map([['vatRegistered','on'],['vatPct','16'],['excisePct','20'],['whtInterestPct','15'],['corporatePct','30']]);
+    global.FormData = class { constructor(){ return taxForm; } };
+    await admSaveSettings({ preventDefault(){}, target:{} });
+    await waitAdm('settings');
+    __assert(DB.adm.settings['acct.tax'] && DB.adm.settings['acct.tax'].value.vatRegistered === true && DB.adm.settings['acct.tax'].value.corporatePct === 30, "saving Tax Settings persists the real values through the Admin config API");
+    const badForm = new Map([['vatPct','abc']]);
+    global.FormData = class { constructor(){ return badForm; } };
+    await admSaveSettings({ preventDefault(){}, target:{} });
+    __assert(DB.adm.settings['acct.tax'].value.vatPct === 16, "a non-numeric value is rejected on the page, never saved");
+
+    // A reference-list page: add, then deactivate.
+    sidebarNavigate('Leave Types');
+    await waitAdm('lookup:leave-types');
+    const leaveForm = new Map([['name','Annual Leave'],['code','AL'],['description','Employment Act s.28'],['daysPerYear','21'],['paid','Yes'],['carryForward','5']]);
+    global.FormData = class { constructor(){ return leaveForm; } };
+    await admSaveItem({ preventDefault(){}, target:{} });
+    await waitAdm('lookup:leave-types');
+    const al = (DB.adm['lookup:leave-types'] || []).find(i => i.name === 'Annual Leave');
+    __assert(al && al.attrs.daysPerYear === 21 && al.code === 'AL', "Admin adds a real Leave Type with its entitlement");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Annual Leave') && html.includes('1 total'), "the new Leave Type is listed on the page");
+    await admToggleItem(al.id);
+    await waitAdm('lookup:leave-types');
+    __assert(DB.adm['lookup:leave-types'].find(i => i.id === al.id).status === 'Inactive', "Admin can deactivate a list item");
+
+    // The change history page shows the real before/after of the save.
+    sidebarNavigate('Configuration Changes');
+    await waitAdm('history:');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Tax Settings') && html.includes('VAT registered'), "Configuration Changes lists the Tax Settings save with its field names");
+
+    // A live data page.
+    sidebarNavigate('Database Status');
+    await waitAdm('stats');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Largest Tables') && html.includes('users'), "Database Status shows real table statistics");
+
+    // Every Admin engine page renders without crashing or leaking undefined.
+    const broken = [];
+    for(const it of enginePages){
+      sidebarNavigate(it);
+      const h = document.getElementById('root').innerHTML;
+      if(h.includes('could not be displayed') || h.includes('This page is not available') || />undefined</.test(h) || h.includes('[object Object]')) broken.push(it);
+    }
+    __assert(broken.length === 0, "every Admin engine page renders cleanly: " + broken.join(', '));
+    global.FormData = class { constructor(){ return admForm; } };
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();
