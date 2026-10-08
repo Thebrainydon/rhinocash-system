@@ -2219,7 +2219,8 @@ function kFmt(n){ return n>=1000000? (n/1000000).toFixed(1)+"M" : n>=1000? (n/10
 /* ---------------- Chart helpers (hand-rolled SVG, no external libs) ---------------- */
 const PALETTE = ["#2E5C8A","#B5651D","#2F7D5C","#B4791F","#7A4FA3","#3A8FA8","#C0507A","#5C8A2E","#9C3B3B","#4A5568"];
 function polarPoint(cx,cy,r,angleDeg){ const a=(angleDeg)*Math.PI/180; return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; }
-function donutChart(data, size){
+// A solid pie (no centre hole — donut charts are not used in this system).
+function pieChartSvg(data, size){
   size = size||170;
   const total = data.reduce((s,d)=>s+d.value,0) || 1;
   let angle = -90;
@@ -2235,7 +2236,7 @@ function donutChart(data, size){
     const [x2,y2] = polarPoint(cx,cy,r,end);
     paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${d.color}" stroke="var(--card)" stroke-width="1.5"></path>`;
   });
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}<circle cx="${cx}" cy="${cy}" r="${r*0.56}" fill="var(--card)"></circle></svg>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
 }
 function pieLegend(data){
   const total = data.reduce((s,d)=>s+d.value,0) || 1;
@@ -2251,7 +2252,7 @@ function pieCard(title, sub, data, size){
   return `<div class="card">
     <div class="card-title">${title} ${sub?`<small>${sub}</small>`:""}</div>
     <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-      ${donutChart(data, size)}
+      ${pieChartSvg(data, size)}
       <div style="flex:1; min-width:150px;">${pieLegend(data)}</div>
     </div>
   </div>`;
@@ -4796,7 +4797,8 @@ const ADM_PALETTE = ['#2E5C8A','#2A9D8F','#E9C46A','#F4A261','#E76F51','#7B5EA7'
 // A chart card for any table that has a natural picture; empty data renders nothing.
 function admChart(id, title, type, labels, datasets, opts){
   if(!labels.length || !datasets.some(d => d.data.some(v => Number(v) > 0))) return '';
-  const multi = type === 'doughnut' || type === 'pie';
+  if(type === 'doughnut') type = 'pie'; // donut charts are not used in this system
+  const multi = type === 'pie' || type === 'polarArea';
   const config = { type, data: { labels, datasets: datasets.map((d, i) => Object.assign({ backgroundColor: multi ? labels.map((_, j) => ADM_PALETTE[j % ADM_PALETTE.length]) : ADM_PALETTE[i % ADM_PALETTE.length], borderColor: ADM_PALETTE[i % ADM_PALETTE.length] }, d)) },
     options: Object.assign({ responsive: true, maintainAspectRatio: false }, multi ? {} : { scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { precision: 0 } } } }, opts || {}) };
   return `<div class="card"><div class="card-title">${escapeHtml(title)}</div>${registerChart(id, config)}</div>`;
@@ -5169,7 +5171,7 @@ const ADMIN_VIEWS = {
     const counts = ADM_STAFF_ROLES.map(r => [r, staff.filter(s => s.role === r).length]);
     const list = admFilterUsers(staff, 'admRolesFilter');
     return `<div class="card"><div class="card-title">Users per Role</div><div class="adm-tiles">${counts.map(([r, n]) => admTile(r, n)).join('')}</div></div>
-      ${admChart('adm-role-share', 'Share of Users by Role', 'doughnut', counts.filter(c => c[1]).map(c => c[0]), [{ data: counts.filter(c => c[1]).map(c => c[1]) }])}
+      ${admChart('adm-role-share', 'Share of Users by Role', 'polarArea', counts.filter(c => c[1]).map(c => c[0]), [{ data: counts.filter(c => c[1]).map(c => c[1]) }])}
       <div class="card"><div class="card-title"><span>Assignments <small>${list.length}</small></span><button class="btn btn-sm btn-outline" onclick="goTo('staff','Roles')">Manage roles →</button></div>
       ${admUserFilterBar('admRolesFilter', { status: false })}
       ${admTable(['User','Role','Access level','Branch'], list.map(s => [admUserCell(s), `<strong>${escapeHtml(s.role)}</strong>`, escapeHtml(s.accessLevel || '—'), escapeHtml(admBranchName(s.branch))]), 'No users match these filters.')}</div>`; },
@@ -5260,7 +5262,7 @@ const ADMIN_VIEWS = {
     const byStatus = {}; rows.forEach(r => { const s = d.status(r) || 'Unknown'; byStatus[s] = (byStatus[s] || 0) + 1; });
     return `<div class="card"><div class="card-title"><span>${d.title} <small>${fmtNum(rows.length)} record(s)</small></span>${admExportBtn(() => admExportDataset(spec.set))}</div>
       <div class="adm-tiles">${Object.entries(byStatus).map(([s, n]) => admTile(s, fmtNum(n))).join('') || admTile('Records', 0)}</div></div>
-      ${admChart('adm-ds-' + spec.set, d.title + ' by Status', 'doughnut', Object.keys(byStatus), [{ data: Object.values(byStatus) }])}
+      ${admChart('adm-ds-' + spec.set, d.title + ' by Status', 'pie', Object.keys(byStatus), [{ data: Object.values(byStatus) }])}
       <div class="card"><div class="card-title">Completeness</div>${admTable(['Field','Missing','Complete'], d.checks.map(([label, fn]) => { const miss = rows.filter(r => !fn(r)).length;
         return [escapeHtml(label), miss ? admBadge(fmtNum(miss), 'amber') : admBadge('0', 'green'), rows.length ? Math.round(100 * (rows.length - miss) / rows.length) + '%' : '—']; }))}</div>`; },
   dataValidation: () => { const checks = [];
@@ -5280,7 +5282,7 @@ const ADMIN_VIEWS = {
     const mods = count(r => r.module), users = count(r => r.user_name);
     return `<div class="card"><div class="card-title"><span>Audit Summary <small>latest ${rows.length} entries</small></span>${admExportBtn(() => exportCSV('audit-summary', ['Group','Name','Entries'], mods.map(m => ['Module'].concat(m)).concat(users.map(u => ['User'].concat(u)))))}</div>
       <div class="adm-two">${admTable(['Module','Entries'], mods.map(([k, n]) => [escapeHtml(k), n]))}${admTable(['User','Entries'], users.slice(0, 20).map(([k, n]) => [escapeHtml(k), n]))}</div></div>
-      <div class="adm-two">${admChart('adm-audit-mod', 'Entries by Module', 'doughnut', mods.slice(0, 10).map(m => m[0]), [{ data: mods.slice(0, 10).map(m => m[1]) }])}${admChart('adm-audit-user', 'Most Active Users', 'bar', users.slice(0, 10).map(u => u[0]), [{ label: 'Entries', data: users.slice(0, 10).map(u => u[1]) }], { indexAxis: 'y', scales: { x: { beginAtZero: true } } })}</div>`; },
+      <div class="adm-two">${admChart('adm-audit-mod', 'Entries by Module', 'bar', mods.slice(0, 10).map(m => m[0]), [{ label: 'Entries', data: mods.slice(0, 10).map(m => m[1]) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } })}${admChart('adm-audit-user', 'Most Active Users', 'bar', users.slice(0, 10).map(u => u[0]), [{ label: 'Entries', data: users.slice(0, 10).map(u => u[1]) }], { indexAxis: 'y', scales: { x: { beginAtZero: true } } })}</div>`; },
   securityOverview: () => { const locked = admData('locked', '/api/system/locked-accounts', r => r.lockedAccounts); const d = admSysAdmin(); const users = admUsersWithAccounts();
     return `<div class="card"><div class="card-title">Security Posture</div><div class="adm-tiles">
       ${admTile('Locked accounts', locked === undefined ? '…' : (locked.__error ? '—' : locked.length))}
@@ -5349,7 +5351,7 @@ const ADMIN_VIEWS = {
   apiUsage: () => { const d = admSysAdmin(); if(!d || !d.sessions) return admLoading('API Usage');
     const s = d.sessions.sessions; const m = {}; s.forEach(x => { const k = ROLE_ID_TO_DISPLAY[x.role_id] || x.role_id || '—'; m[k] = (m[k] || 0) + 1; });
     return `<div class="card"><div class="card-title">Active API Sessions <small>${s.length}</small></div><div class="adm-tiles">${Object.entries(m).map(([k, n]) => admTile(k, n)).join('') || admTile('Sessions', 0)}</div></div>
-      ${admChart('adm-api-roles', 'Sessions by Role', 'doughnut', Object.keys(m), [{ data: Object.values(m) }])}
+      ${admChart('adm-api-roles', 'Sessions by Role', 'pie', Object.keys(m), [{ data: Object.values(m) }])}
       <div class="card"><div class="card-title">Clients in Use</div>${admTable(['User','Client / browser','IP','Since'], s.map(x => [escapeHtml(x.name || x.email || '—'), `<span class="hint">${escapeHtml(String(x.user_agent || '—').slice(0, 90))}</span>`, escapeHtml(x.ip || '—'), timeAgo(x.created_at)]), 'Nobody is signed in.')}</div>`; },
   mpesaCallbacks: () => { const tx = admData('mpesatx', '/api/mpesa/transactions', r => r.transactions); if(tx === undefined) return admLoading(); if(tx.__error) return admError(tx.__error);
     return `<div class="card"><div class="card-title">Inbound M-Pesa Callbacks <small>${tx.length}</small></div>
@@ -5658,7 +5660,7 @@ const RG_VIEWS = {
     return `<div class="card">${rgCardTitle('Region Risk')}<div class="adm-tiles">
         ${admTile('Outstanding principal', fmt(total))}${admTile('PAR1', par(0).toFixed(1) + '%')}${admTile('PAR30', par(30).toFixed(1) + '%')}${admTile('PAR90', par(90).toFixed(1) + '%')}${admTile('Loans in arrears', active.filter(l => loanArrearsDays(l) > 0).length, 'of ' + active.length + ' active')}</div></div>
       <div class="card">${rgCardTitle('Arrears Ageing')}${admTable(['Bucket','Loans','Outstanding principal','Share'], byBucket.map(x => [`<strong>${x.label}</strong>`, x.n, fmt(x.amt), rgPct(x.amt, total).toFixed(1) + '%']))}
-        ${registerChart('rg-par-buckets', { type:'doughnut', data:{ labels: byBucket.map(x => x.label), datasets:[{ data: byBucket.map(x => Math.round(x.amt)), backgroundColor:['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E','#7A1F0B'] }] }, options:{ responsive:true, maintainAspectRatio:false } })}</div>
+        ${registerChart('rg-par-buckets', { type:'bar', data:{ labels: byBucket.map(x => x.label), datasets:[{ label:'Outstanding principal', data: byBucket.map(x => Math.round(x.amt)), backgroundColor:['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E','#7A1F0B'] }] }, options:{ responsive:true, maintainAspectRatio:false } })}</div>
       <div class="card">${rgCardTitle('PAR by Branch', '', rgGen('PAR by Branch', brHeaders, branchRows.map(r => [r.b.name, r.n, Math.round(r.t), r.par1.toFixed(1), r.par30.toFixed(1), r.par90.toFixed(1), Math.round(r.arrears)])))}
         ${admTable(brHeaders, branchRows.map(r => [`<strong>${escapeHtml(r.b.name)}</strong>`, r.n, fmt(r.t), rgPctBadge(r.par1, 5, 10, true), rgPctBadge(r.par30, 5, 10, true), rgPctBadge(r.par90, 2, 5, true), fmt(r.arrears)]), 'No branches in your region yet.')}</div>
       <div class="card">${rgCardTitle('Largest Exposures in Arrears', top.length, rgGen('Largest Exposures in Arrears', topHeaders, top.map(l => [clientName(l.clientId), branchName(l.branchId), staffName(l.officerId), loanArrearsDays(l), Math.round(loanArrearsAmount(l)), Math.round(loanOutstandingPrincipal(l))])))}
@@ -5741,7 +5743,7 @@ function rgOpsPage(label, kind){
   const data = list.map(r => [r.title, r.branchId ? branchName(r.branchId) : 'Whole region', r.priority, r.status, r.dueDate || '', r.assignedToName || '', r.createdByName || '', String(r.createdAt).slice(0, 10)].concat(kind === 'transfer' ? [r.subjectName || '', branchName(r.fromBranchId), branchName(r.toBranchId)] : []));
   return `<div class="card">${rgCardTitle('Overview')}<div class="adm-tiles">${admTile('Open', all.filter(r => r.isOpen).length)}${admTile('Closed', all.filter(r => !r.isOpen).length)}${admTile('Overdue', all.filter(r => r.isOpen && r.dueDate && r.dueDate < today).length)}${admTile('High / critical open', all.filter(r => r.isOpen && ['High','Critical'].includes(r.priority)).length)}</div></div>
     ${rgOpsForm(kind)}
-    <div class="adm-two">${admChart('rg-ops-status-' + kind, 'By Status', 'doughnut', statuses, [{ data: statuses.map(st => all.filter(r => r.status === st).length) }])}${admChart('rg-ops-branch-' + kind, 'By Branch', 'bar', rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => b.name), [{ label: 'Open', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && r.isOpen).length) }, { label: 'Closed', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && !r.isOpen).length) }])}</div>
+    <div class="adm-two">${admChart('rg-ops-status-' + kind, 'By Status', 'pie', statuses, [{ data: statuses.map(st => all.filter(r => r.status === st).length) }])}${admChart('rg-ops-branch-' + kind, 'By Branch', 'bar', rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => b.name), [{ label: 'Open', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && r.isOpen).length) }, { label: 'Closed', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && !r.isOpen).length) }])}</div>
     <div class="card">${rgCardTitle(label, `${list.length} shown`, rgGen(label, headers, data))}
       <div class="pill-row adm-filters">
         <select onchange="session.rgOpsFilter.status=this.value; renderApp();">${[['open','Open'],['closed','Closed'],['all','All']].map(([v, l]) => `<option value="${v}" ${fl.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -8330,7 +8332,7 @@ function renderAdminDashboard(){
       <div class="card">
         <div class="card-title">Payment Status Distribution <small>real payment ledger, all statuses</small></div>
         ${Object.keys(paymentsByStatus).length ? registerChart('chart-admin-paystatus', {
-          type:'doughnut',
+          type:'pie',
           data:{ labels:Object.keys(paymentsByStatus), datasets:[{ data:Object.values(paymentsByStatus), backgroundColor:ADMIN_CHART_COLORS }] },
           options:{ responsive:true, maintainAspectRatio:false }
         }) : `<div class="empty">No payments recorded yet.</div>`}
@@ -13827,7 +13829,7 @@ function renderDisbursementsOverviewPage(){
       <div>
         <div class="card-title" style="font-size:14px;">Disbursement Method</div>
         ${registerChart('chart-disb-method', {
-          type:'doughnut', data:{ labels: d.byMethod.map(m=>m.method), datasets:[{ data: d.byMethod.map(m=>m.amount), backgroundColor:['#4c956c','#e9c46a','#264653','#8c97b8'] }] },
+          type:'pie', data:{ labels: d.byMethod.map(m=>m.method), datasets:[{ data: d.byMethod.map(m=>m.amount), backgroundColor:['#4c956c','#e9c46a','#264653','#8c97b8'] }] },
           options:{ responsive:true, maintainAspectRatio:false }
         })}
       </div>
@@ -14146,8 +14148,8 @@ function renderApplicationsOverviewPage(){
 
     <div class="two-col" style="margin-top:16px;">
       <div>
-        ${registerChart('chart-app-status-donut', {
-          type:'doughnut', data:{ labels: d.byStatus.map(s=>s.status), datasets:[{ data: d.byStatus.map(s=>s.count), backgroundColor:['#4c956c','#e9c46a','#c1121f','#264653','#8c97b8','#2c6e49','#e07a5f','#3d405b','#f4a261'] }] },
+        ${registerChart('chart-app-status-pie', {
+          type:'pie', data:{ labels: d.byStatus.map(s=>s.status), datasets:[{ data: d.byStatus.map(s=>s.count), backgroundColor:['#4c956c','#e9c46a','#c1121f','#264653','#8c97b8','#2c6e49','#e07a5f','#3d405b','#f4a261'] }] },
           options:{ responsive:true, maintainAspectRatio:false }
         })}
       </div>
@@ -14362,7 +14364,7 @@ function renderSheetBranchPage(){
       <div>
         <div class="card-title" style="font-size:14px;">Collection Status Distribution</div>
         ${registerChart('chart-sheet-status', {
-          type:'doughnut', data:{ labels: d.byStatus.map(s=>s.status), datasets:[{ data: d.byStatus.map(s=>s.count), backgroundColor: d.byStatus.map(s=>statusColors[s.status]||'#999') }] },
+          type:'pie', data:{ labels: d.byStatus.map(s=>s.status), datasets:[{ data: d.byStatus.map(s=>s.count), backgroundColor: d.byStatus.map(s=>statusColors[s.status]||'#999') }] },
           options:{ responsive:true, maintainAspectRatio:false }
         })}
       </div>
@@ -14409,7 +14411,7 @@ function renderArrears(){
     <div class="card">
       <div class="card-title">Loan Arrears</div>
       <span style="margin-bottom:10px;display:inline-flex;">${generateDropdownHtml('exportArrearsCSV()')}</span>
-      ${admTwoCharts(admChart('ch-arr-count','Overdue Loans by Age','bar',state.buckets.map(b=>b.bucket),[{label:'Loans',data:state.buckets.map(b=>b.count)}]), admChart('ch-arr-amt','Amount at Risk by Age (KES)','doughnut',state.buckets.map(b=>b.bucket),[{data:state.buckets.map(b=>Math.round(b.amount))}]))}<div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Officer</th><th>Balance</th><th>Days Overdue</th><th>Bucket</th><th></th></tr>
+      ${admTwoCharts(admChart('ch-arr-count','Overdue Loans by Age','bar',state.buckets.map(b=>b.bucket),[{label:'Loans',data:state.buckets.map(b=>b.count)}]), admChart('ch-arr-amt','Amount at Risk by Age (KES)','polarArea',state.buckets.map(b=>b.bucket),[{data:state.buckets.map(b=>Math.round(b.amount))}]))}<div class="table-wrap"><table><tr><th>Loan</th><th>Client</th><th>Officer</th><th>Balance</th><th>Days Overdue</th><th>Bucket</th><th></th></tr>
       ${state.arrears.map(x=>`<tr><td>${x.loanId}</td><td>${clientName(x.clientId)}</td><td>${staffName(x.officerId)}</td>
         <td>${fmt(x.balance)}</td><td>${x.daysOverdue} days</td><td><span class="badge red">${x.bucket}</span></td>
         <td><button class="btn btn-sm btn-outline" onclick="goTo('payments','Record Payment'); prefillPayment('${x.loanId}')">Collect</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No loans in arrears. 🎉</td></tr>`}</table></div>
@@ -14445,7 +14447,7 @@ function renderCollectionActivities(){
     </div></div></div>
     <div class="card">
       <div class="card-title">Recent Collection Activities <small>${state.activities.length}</small></div>
-      ${(()=>{ const t = admGroup(state.activities, a=>a.activity_type), o = admGroup(state.activities, a=>a.outcome); return admTwoCharts(admChart('ch-act-type','Activities by Type','bar',t[0],[{label:'Activities',data:t[1]}]), admChart('ch-act-outcome','Outcomes','doughnut',o[0],[{data:o[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Type</th><th>Notes</th><th>Outcome</th><th>By</th><th>Date</th></tr>
+      ${(()=>{ const t = admGroup(state.activities, a=>a.activity_type), o = admGroup(state.activities, a=>a.outcome); return admTwoCharts(admChart('ch-act-type','Activities by Type','bar',t[0],[{label:'Activities',data:t[1]}]), admChart('ch-act-outcome','Outcomes','pie',o[0],[{data:o[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Type</th><th>Notes</th><th>Outcome</th><th>By</th><th>Date</th></tr>
       ${state.activities.map(a=>`<tr><td>${clientName(a.client_id)}</td><td>${a.activity_type}</td><td class="hint">${escapeHtml(a.notes||'—')}</td><td class="hint">${escapeHtml(a.outcome||'—')}</td><td>${staffName(a.staff_id)}</td><td>${new Date(a.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No collection activities logged yet.</td></tr>`}</table></div>
     </div>
   `;
@@ -14489,7 +14491,7 @@ function renderFollowUps(){
         <select name="status"><option value="">All statuses</option><option>Pending</option><option>Completed</option><option>Cancelled</option></select>
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      ${(()=>{ const st = admGroup(state.followUps, f=>f.status), by = admGroup(state.followUps, f=>String(f.follow_up_date||'').slice(0,10)); return admTwoCharts(admChart('ch-fu-status','Follow-Ups by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-fu-date','Follow-Ups by Date','bar',by[0].sort(),[{label:'Follow-ups',data:by[0].sort().map(k=>state.followUps.filter(f=>String(f.follow_up_date||'').slice(0,10)===k).length)}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Date</th><th>Reason</th><th>Responsible</th><th>Status</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.followUps, f=>f.status), by = admGroup(state.followUps, f=>String(f.follow_up_date||'').slice(0,10)); return admTwoCharts(admChart('ch-fu-status','Follow-Ups by Status','pie',st[0],[{data:st[1]}]), admChart('ch-fu-date','Follow-Ups by Date','bar',by[0].sort(),[{label:'Follow-ups',data:by[0].sort().map(k=>state.followUps.filter(f=>String(f.follow_up_date||'').slice(0,10)===k).length)}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Date</th><th>Reason</th><th>Responsible</th><th>Status</th><th></th></tr>
       ${state.followUps.map(f=>`<tr><td>${clientName(f.client_id)}</td><td>${f.follow_up_date}</td><td class="hint">${escapeHtml(f.reason||'—')}</td><td>${staffName(f.responsible_staff_id)}</td>
         <td><span class="badge ${f.effective_status==='Completed'?'green':f.effective_status==='Overdue'?'red':f.effective_status==='Cancelled'?'grey':'amber'}">${f.effective_status}</span></td>
         <td>${f.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="const o=prompt('Outcome:'); withRequest('fu-complete-${f.id}', ()=>decideFollowUp('${f.id}','Completed',o))">Complete</button> <button class="btn btn-sm btn-outline" onclick="withRequest('fu-cancel-${f.id}', ()=>decideFollowUp('${f.id}','Cancelled'))">Cancel</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No follow-ups yet.</td></tr>`}</table></div>
@@ -14540,7 +14542,7 @@ function renderPromisesToPay(){
     </div></div></div>
     <div class="card">
       <div class="card-title">Promises to Pay <small>${state.promises.length}</small></div>
-      ${(()=>{ const st = admGroup(state.promises, p=>p.status), amt = admGroup(state.promises, p=>p.status, p=>p.promised_amount); return admTwoCharts(admChart('ch-ptp-status','Promises by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-ptp-amt','Promised Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Loan</th><th>Amount</th><th>Date</th><th>Status</th><th>Fulfilled</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.promises, p=>p.status), amt = admGroup(state.promises, p=>p.status, p=>p.promised_amount); return admTwoCharts(admChart('ch-ptp-status','Promises by Status','pie',st[0],[{data:st[1]}]), admChart('ch-ptp-amt','Promised Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Client</th><th>Loan</th><th>Amount</th><th>Date</th><th>Status</th><th>Fulfilled</th><th></th></tr>
       ${state.promises.map(p=>`<tr><td>${clientName(p.client_id)}</td><td>${p.loan_id}</td><td>${fmt(p.promised_amount)}</td><td>${p.promise_date}</td>
         <td><span class="badge ${p.status==='Fulfilled'?'green':p.status==='Broken'?'red':p.status==='Partially Fulfilled'?'amber':p.status==='Cancelled'?'grey':'blue'}">${p.status}</span></td>
         <td>${fmt(p.fulfilled_amount)}</td>
@@ -14671,7 +14673,7 @@ function renderMpesaTransactions(){
       <select name="status"><option value="">All statuses</option><option>Success</option><option>Failed</option><option>Unprocessed</option></select>
       <button class="btn btn-sm btn-outline" type="submit">Apply</button>
     </form>
-    ${(()=>{ const r = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed'), a = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed', t=>t.amount); return admTwoCharts(admChart('ch-mp-result','Transactions by Result','doughnut',r[0],[{data:r[1]}]), admChart('ch-mp-amt','Amount by Result (KES)','bar',a[0],[{label:'KES',data:a[1]}])); })()}<div class="table-wrap"><table><tr><th>Checkout Ref</th><th>Receipt</th><th>Phone</th><th>Amount</th><th>Result</th><th>Loan</th><th>Date</th></tr>
+    ${(()=>{ const r = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed'), a = admGroup(state.transactions, t=>Number(t.result_code)===0?'Successful':'Failed', t=>t.amount); return admTwoCharts(admChart('ch-mp-result','Transactions by Result','pie',r[0],[{data:r[1]}]), admChart('ch-mp-amt','Amount by Result (KES)','bar',a[0],[{label:'KES',data:a[1]}])); })()}<div class="table-wrap"><table><tr><th>Checkout Ref</th><th>Receipt</th><th>Phone</th><th>Amount</th><th>Result</th><th>Loan</th><th>Date</th></tr>
     ${state.transactions.map(t=>`<tr class="clickable" onclick="openMpesaTxDetail('${t.id}')"><td class="hint">${t.checkout_request_id}</td><td>${t.mpesa_receipt_number||'—'}</td><td>${t.phone||'—'}</td><td>${t.amount?fmt(t.amount):'—'}</td>
       <td><span class="badge ${Number(t.result_code)===0?'green':'red'}">${Number(t.result_code)===0?'Success':'Failed'}</span></td><td>${t.loan_id||'—'}</td><td>${new Date(t.created_at).toLocaleString()}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No M-Pesa transactions recorded yet.</td></tr>`}</table></div>
   </div>`;
@@ -14809,7 +14811,7 @@ function renderPayinSummary(){
   const byChannel = {};
   DB.payments.filter(p=>p.status!=="Unposted").forEach(p=>{ byChannel[p.channel]=(byChannel[p.channel]||{count:0,total:0}); byChannel[p.channel].count++; byChannel[p.channel].total+=p.amount; });
   return `<div class="card"><div class="card-title">Pay-in Summary <small>all posted payments by channel</small></div>
-    ${admTwoCharts(admChart('ch-payin-count','Payments by Channel','doughnut',Object.keys(byChannel),[{data:Object.values(byChannel).map(v=>v.count)}]), admChart('ch-payin-amt','Amount by Channel (KES)','bar',Object.keys(byChannel),[{label:'KES',data:Object.values(byChannel).map(v=>Math.round(v.total))}]))}
+    ${admTwoCharts(admChart('ch-payin-count','Payments by Channel','pie',Object.keys(byChannel),[{data:Object.values(byChannel).map(v=>v.count)}]), admChart('ch-payin-amt','Amount by Channel (KES)','bar',Object.keys(byChannel),[{label:'KES',data:Object.values(byChannel).map(v=>Math.round(v.total))}]))}
     <div class="table-wrap"><table><tr><th>Channel</th><th>No. of Payments</th><th>Total Amount</th></tr>
     ${Object.entries(byChannel).map(([c,v])=>`<tr><td>${c}</td><td>${v.count}</td><td>${fmt(v.total)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No payments yet.</td></tr>`}</table></div></div>`;
 }
@@ -15101,7 +15103,7 @@ function renderExpensesPage(){
     <div class="card">
       <div class="card-title">Expenses <small>${state.totals.count} total, KES ${fmtNum(state.totals.amount)}</small></div>
       ${acctScopeFilterBar('exp', `<select name="status"><option value="">All statuses</option>${["Pending","Approved","Paid","Rejected"].map(s=>`<option ${state.filters.status===s?'selected':''}>${s}</option>`).join("")}</select>`)}
-      ${(()=>{ const c = admGroup(state.expenses, e=>e.category, e=>e.amount), st = admGroup(state.expenses, e=>e.status); return admTwoCharts(admChart('ch-exp-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-exp-status','By Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Note</th><th>Status</th><th>Date</th><th></th></tr>
+      ${(()=>{ const c = admGroup(state.expenses, e=>e.category, e=>e.amount), st = admGroup(state.expenses, e=>e.status); return admTwoCharts(admChart('ch-exp-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-exp-status','By Status','pie',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Note</th><th>Status</th><th>Date</th><th></th></tr>
       ${state.expenses.map(e=>`<tr><td>${e.category}</td><td>${fmt(e.amount)}</td><td class="hint">${escapeHtml(e.note||'—')}</td><td>${statusBadge(e.status)}</td><td>${new Date(e.created_at).toLocaleDateString()}</td>
         <td>${canDecide && e.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('exp-approve-${e.id}', ()=>decideExpense('${e.id}','approve'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const r=prompt('Reason:'); if(r!==null) withRequest('exp-reject-${e.id}', ()=>decideExpense('${e.id}','reject',r))">Reject</button>` : ""}
         ${canDecide && e.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('exp-pay-${e.id}', ()=>decideExpense('${e.id}','pay'))">Pay</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No expenses match these filters.</td></tr>`}</table></div>
@@ -15166,7 +15168,7 @@ function renderRequisitionsPage(){
         <input name="month" type="month">
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
+      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','pie',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
       ${state.requisitions.map(r=>`<tr><td>${r.category}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(r.description||'—')}</td><td>${branchName(r.branch_id)}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
         <td>${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
         ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
@@ -16223,7 +16225,7 @@ function renderAdjustmentsPage(){
     </div></div></div>` : ""}
     <div class="card">
       <div class="card-title">Adjustments <small>${state.adjustments.length}</small></div>
-      ${(()=>{ const st = admGroup(state.adjustments, a=>a.status), amt = admGroup(state.adjustments, a=>a.status, a=>a.amount); return admTwoCharts(admChart('ch-adj-status','Adjustments by Status','doughnut',st[0],[{data:st[1]}]), admChart('ch-adj-amt','Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Reason</th><th>Debit</th><th>Credit</th><th>Amount</th><th>Status</th><th>Created By</th><th></th></tr>
+      ${(()=>{ const st = admGroup(state.adjustments, a=>a.status), amt = admGroup(state.adjustments, a=>a.status, a=>a.amount); return admTwoCharts(admChart('ch-adj-status','Adjustments by Status','pie',st[0],[{data:st[1]}]), admChart('ch-adj-amt','Amount by Status (KES)','bar',amt[0],[{label:'KES',data:amt[1]}])); })()}<div class="table-wrap"><table><tr><th>Reason</th><th>Debit</th><th>Credit</th><th>Amount</th><th>Status</th><th>Created By</th><th></th></tr>
       ${state.adjustments.map(a=>{
         const isOwn = a.created_by===(DB.me&&DB.me.id);
         return `<tr><td>${escapeHtml(a.reason)}</td><td>${a.debit_account}</td><td>${a.credit_account}</td><td>${fmt(a.amount)}</td><td>${statusBadge(a.status)}</td><td>${staffName(a.created_by)}</td>
@@ -16464,7 +16466,7 @@ function renderInvestorPayoutsPage(){
       <select name="status"><option value="">All statuses</option><option>Pending</option><option>Paid</option></select>
       <button class="btn btn-sm btn-outline" type="submit">Apply</button>
     </form>
-    ${(()=>{ const per = admGroup(state.payouts, p=>p.period, p=>p.investor_profit), st = admGroup(state.payouts, p=>p.status); const keys = per[0].map((k,i)=>[k,per[1][i]]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))); return admTwoCharts(admChart('ch-pay-period','Investor Profit by Period (KES)','bar',keys.map(k=>k[0]),[{label:'KES',data:keys.map(k=>k[1])}]), admChart('ch-pay-status','Payouts by Status','doughnut',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Investor</th><th>Period</th><th>Investor Profit</th><th>Status</th></tr>
+    ${(()=>{ const per = admGroup(state.payouts, p=>p.period, p=>p.investor_profit), st = admGroup(state.payouts, p=>p.status); const keys = per[0].map((k,i)=>[k,per[1][i]]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))); return admTwoCharts(admChart('ch-pay-period','Investor Profit by Period (KES)','bar',keys.map(k=>k[0]),[{label:'KES',data:keys.map(k=>k[1])}]), admChart('ch-pay-status','Payouts by Status','pie',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Investor</th><th>Period</th><th>Investor Profit</th><th>Status</th></tr>
     ${state.payouts.map(p=>`<tr class="clickable" onclick="openInvestorProfile('${p.investor_id}')"><td>${p.investor_id}</td><td>${p.period}</td><td>${fmt(p.investor_profit)}</td><td>${statusBadge(p.status)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No payouts yet.</td></tr>`}</table></div>
   </div>`;
 }

@@ -32,6 +32,15 @@ function requireAdminView(req, res, next) {
   return next({ status: 403, message: 'Your role does not have System Administration visibility' });
 }
 const canWrite = [requireAuth, requirePermission('manage_system_settings'), requireAdminOnly];
+// HR maintains the people-related reference lists itself; every other list
+// stays with the System Administrator.
+const HR_LISTS = ['job-titles', 'job-grades', 'employment-types', 'leave-types', 'allowances', 'deductions', 'salary-components', 'training-categories', 'benefit-types'];
+async function requireListWriter(req, res, next) {
+  if (req.user.role_id === 'hr' && HR_LISTS.includes(req.params.listKey)) return next();
+  if (req.user.role_id !== 'admin') return next({ status: 403, message: 'Only the System Administrator can change system configuration' });
+  return requirePermission('manage_system_settings')(req, res, next);
+}
+const canWriteList = [requireAuth, requireListWriter];
 
 function parseJson(text) { try { return JSON.parse(text); } catch { return null; } }
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
@@ -119,7 +128,7 @@ function register(router) {
     return !!r;
   }
 
-  router.post('/api/admin/lookups/:listKey', ...canWrite, async (req, res, next) => {
+  router.post('/api/admin/lookups/:listKey', ...canWriteList, async (req, res, next) => {
     const listKey = req.params.listKey;
     if (!KEY_RE.test(listKey)) return next({ status: 400, message: 'Invalid list' });
     const v = readLookupBody(req.body || {}, null);
@@ -133,7 +142,7 @@ function register(router) {
     res.status(201).json({ item: lookupOut(row) });
   });
 
-  router.put('/api/admin/lookups/:listKey/:id', ...canWrite, async (req, res, next) => {
+  router.put('/api/admin/lookups/:listKey/:id', ...canWriteList, async (req, res, next) => {
     const existing = await get('SELECT * FROM admin_lookups WHERE id = ? AND list_key = ?', [req.params.id, req.params.listKey]);
     if (!existing) return next({ status: 404, message: 'Item not found' });
     const v = readLookupBody(req.body || {}, existing);
@@ -146,7 +155,7 @@ function register(router) {
     res.json({ item: lookupOut(row) });
   });
 
-  router.delete('/api/admin/lookups/:listKey/:id', ...canWrite, async (req, res, next) => {
+  router.delete('/api/admin/lookups/:listKey/:id', ...canWriteList, async (req, res, next) => {
     const existing = await get('SELECT * FROM admin_lookups WHERE id = ? AND list_key = ?', [req.params.id, req.params.listKey]);
     if (!existing) return next({ status: 404, message: 'Item not found' });
     await run('DELETE FROM admin_lookups WHERE id = ?', [existing.id]);
@@ -208,4 +217,4 @@ function register(router) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, HR_LISTS };

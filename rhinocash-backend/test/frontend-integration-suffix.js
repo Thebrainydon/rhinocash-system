@@ -6108,7 +6108,7 @@ apiRequest = async function(method, path, body){
     const pieData = portfolioBreakdownPieData(afterPB);
     __assert(pieData.length >= 2, "the real pie chart genuinely has at least two real, non-fabricated slices once a real arrears bucket is populated");
     __assert(Math.abs(pieData.reduce((s,p)=>s+p.value,0) - afterPB.totalLoanCharges) < 0.01, "the real pie chart's real slice values genuinely sum back to the exact real Total Loan+Charges — the same real total the table above shows");
-    __assert(html.includes('<svg') || html.includes('<circle'), "the real donut pie chart's own real SVG genuinely renders in the real page, with no external library dependency");
+    __assert(html.includes('<svg') || html.includes('<circle'), "the real pie chart's own real SVG genuinely renders in the real page, with no external library dependency");
 
     // Restore this loan's real schedule (only this in-memory DB.loans
     // object — the real backend row was never touched) so later sections

@@ -132,4 +132,4 @@ function register(router) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, computePayslip };

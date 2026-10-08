@@ -1292,6 +1292,77 @@ CREATE TABLE IF NOT EXISTS regional_operations (
 );
 CREATE INDEX IF NOT EXISTS idx_regional_ops_region ON regional_operations(region_id, kind);
 
+-- Human Resources: typed HR records (recruitment, performance, benefits,
+-- training, employee relations, compliance, documents, policies,
+-- transfers, access requests), daily attendance, and payroll runs.
+CREATE TABLE IF NOT EXISTS hr_records (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  employee_id TEXT REFERENCES users(id),
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  category TEXT,
+  start_date TEXT,
+  end_date TEXT,
+  amount NUMERIC(14,2),
+  score NUMERIC(6,2),
+  related_id TEXT,
+  data_json TEXT,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hr_records_kind ON hr_records(kind, status);
+CREATE INDEX IF NOT EXISTS idx_hr_records_employee ON hr_records(employee_id);
+CREATE TABLE IF NOT EXISTS hr_attendance (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES users(id),
+  date TEXT NOT NULL,
+  status TEXT NOT NULL,
+  check_in TEXT,
+  check_out TEXT,
+  minutes_late INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  recorded_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_at TEXT,
+  UNIQUE (employee_id, date)
+);
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id TEXT PRIMARY KEY,
+  period TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'Draft',
+  employee_count INTEGER NOT NULL DEFAULT 0,
+  total_gross NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total_deductions NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total_net NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  computed_at TEXT,
+  approved_by TEXT REFERENCES users(id),
+  approved_at TEXT,
+  paid_at TEXT
+);
+CREATE TABLE IF NOT EXISTS payroll_lines (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES payroll_runs(id),
+  employee_id TEXT NOT NULL REFERENCES users(id),
+  basic NUMERIC(14,2) NOT NULL DEFAULT 0,
+  allowances NUMERIC(14,2) NOT NULL DEFAULT 0,
+  gross NUMERIC(14,2) NOT NULL DEFAULT 0,
+  nssf NUMERIC(14,2) NOT NULL DEFAULT 0,
+  shif NUMERIC(14,2) NOT NULL DEFAULT 0,
+  paye NUMERIC(14,2) NOT NULL DEFAULT 0,
+  salary_advance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  other_deductions NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total_deductions NUMERIC(14,2) NOT NULL DEFAULT 0,
+  net NUMERIC(14,2) NOT NULL DEFAULT 0,
+  payslip_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_lines_run ON payroll_lines(run_id);
+
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_loans_officer ON loans(officer_id);
 CREATE INDEX IF NOT EXISTS idx_loans_branch ON loans(branch_id);
@@ -1477,6 +1548,12 @@ async function initSchema() {
   // the recent failed attempts as cleared (kept for the security trail)
   // instead of deleting them, so the lockout counter restarts.
   await ensureColumn('login_attempts', 'cleared_at TEXT');
+  // HR employment details (HR › Employees, Contract Tracking, Job Grades).
+  await ensureColumn('users', 'job_grade TEXT');
+  await ensureColumn('users', 'employment_type TEXT');
+  await ensureColumn('users', 'contract_start TEXT');
+  await ensureColumn('users', 'contract_end TEXT');
+  await ensureColumn('users', 'probation_end TEXT');
   // Real password-age policy: every genuine password-set event (self-
   // service change, Admin reset, forgot-password) stamps this; the login
   // route compares it against a 15-day threshold to force a change, the

@@ -15,6 +15,8 @@ function nowIso() { return new Date().toISOString(); }
 async function canDecideOn(actor, requesterRecord) {
   if (actor.id === requesterRecord.user_id) return false; // never your own
   if (await hasPermission(actor, 'manage_users')) return true;
+  // HR (manage_employees) decides leave and salary advances company-wide.
+  if (await hasPermission(actor, 'manage_employees')) return true;
   const requester = await get('SELECT reporting_manager_id FROM users WHERE id = ?', [requesterRecord.user_id]);
   return !!requester && requester.reporting_manager_id === actor.id;
 }
@@ -438,8 +440,8 @@ function register(router) {
     if (mine) return res.json({ leaveRequests: await all('SELECT * FROM leave_requests WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]) });
     // Non-"mine" view: requests this user actually has authority to see —
     // their direct reports, or all of them for an Admin/manage_users holder.
-    const rows = (await hasPermission(req.user, 'manage_users'))
-      ? await all('SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 100')
+    const rows = ((await hasPermission(req.user, 'manage_users')) || (await hasPermission(req.user, 'manage_employees')))
+      ? await all('SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 500')
       : await all('SELECT * FROM leave_requests WHERE user_id IN (SELECT id FROM users WHERE reporting_manager_id = ?) ORDER BY created_at DESC', [req.user.id]);
     res.json({ leaveRequests: rows });
   });
@@ -469,8 +471,8 @@ function register(router) {
   router.get('/api/salary-advances', requireAuth, requireMenuFeature('menu-salary-advance'), async (req, res) => {
     const mine = req.query.mine === '1';
     if (mine) return res.json({ salaryAdvances: await all('SELECT * FROM salary_advance_requests WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]) });
-    const rows = (await hasPermission(req.user, 'manage_users'))
-      ? await all('SELECT * FROM salary_advance_requests ORDER BY created_at DESC LIMIT 100')
+    const rows = ((await hasPermission(req.user, 'manage_users')) || (await hasPermission(req.user, 'manage_employees')))
+      ? await all('SELECT * FROM salary_advance_requests ORDER BY created_at DESC LIMIT 500')
       : await all('SELECT * FROM salary_advance_requests WHERE user_id IN (SELECT id FROM users WHERE reporting_manager_id = ?) ORDER BY created_at DESC', [req.user.id]);
     res.json({ salaryAdvances: rows });
   });
