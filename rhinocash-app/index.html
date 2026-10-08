@@ -1785,6 +1785,10 @@ class ApiError extends Error {
 }
 async function apiRequest(method, path, body){
   const headers = {'Content-Type':'application/json'};
+  // The token this request was sent with. A request that was still in
+  // flight when its user signed out (or another user signed in) must not
+  // end the NEW session when its old token comes back 401.
+  const sentToken = authToken;
   if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
   let res;
   try{
@@ -1797,7 +1801,7 @@ async function apiRequest(method, path, body){
   if(res.status === 401){
     // Session expired/revoked/invalid — force back to the login screen
     // rather than let the app carry on showing stale, now-inaccessible data.
-    if(session.loggedIn){
+    if(session.loggedIn && sentToken === authToken){
       authToken = null; session.loggedIn = false; session.authenticated = false; session.section="dashboard";
       DB = null;
       // A background load from the ending session may still be in flight —
