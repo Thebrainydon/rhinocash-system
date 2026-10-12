@@ -1,4 +1,4 @@
-# Rhinocash Microfinance System
+# Rhinocash Ltd | Account Login 
 
 A role-aware microfinance management system: full LoanBook module across every
 role, financial accounting, M-Pesa integration, staff/branch management, and a
