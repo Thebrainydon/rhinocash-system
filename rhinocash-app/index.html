@@ -664,6 +664,7 @@ const NAV = [
   {id:"regional", num:15, label:"Regional Management"},
   {id:"hr", num:16, label:"Human Resources"},
   {id:"director", num:17, label:"Executive"},
+  {id:"invest", num:18, label:"Investor"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
@@ -673,7 +674,7 @@ const NAV_PERMISSIONS = {
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
-  "Investor": ["dashboard","reports","notifications","support","account"],
+  "Investor": ["dashboard","reports","notifications","support","account","invest"],
   // HR has no lending/accounting/branch authority — just company-wide
   // visibility into the real Staff Directory ("staff") it shares with
   // every other operational role, plus the universal notifications/
@@ -823,6 +824,8 @@ function isSectionAllowed(section){
   // endpoint checks the HR role itself.
   // "director" (the Director's executive pages) — every endpoint they use checks the role itself.
   if(section==="director") return ["Director","CEO"].includes(session.role);
+  // "invest" (the Investor's pages) — /api/investor/* accepts investor sessions only.
+  if(section==="invest") return session.role==="Investor";
   if(section==="hr"){ const m = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules; return Array.isArray(m) && DB.me.finalAccess.permissions ? m.includes("hr") : ["HR","Admin"].includes(session.role); }
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
@@ -3524,6 +3527,7 @@ function renderSection(){
     case "regional": return renderRegionalSection();
     case "hr": return renderHrSection();
     case "director": return renderDirectorSection();
+    case "invest": return renderInvestorSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -7867,6 +7871,334 @@ function dirAuditPage(which, pred){
     ${dirTable('Activity', list, [['When', e => admWhen(e.when)], ['By', e => `<strong>${escapeHtml(e.user || '—')}</strong><div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[e.roleId] || e.roleId || '')}</div>`], ['Action', e => escapeHtml(e.action)], ['Area', e => escapeHtml(e.module || '—')], ['Record', e => escapeHtml(e.record || '—')]], 'No activity recorded.')}`;
 }
 
+
+/* ================= Investor pages =================
+   Everything an investor sees about the company comes from one aggregate-
+   only report (GET /api/investor/report): totals, shares, per-month and
+   per-branch sums, plus the investor's own investment and payouts. No
+   client, borrower or staff record is ever sent to an investor. Same
+   chassis as the other roles: bold blue title, tables, charts (never
+   donuts) and Generate (PDF / Excel) on every table. */
+const invReport = () => admData('inv:report', '/api/investor/report');
+const invM = m => rgMonthLabel(m);
+const invPct = v => (Math.round((v || 0) * 10) / 10).toFixed(1) + '%';
+const invStacked = { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } };
+const INV_PAGES = {
+  // Investment overview
+  "Investment Summary": { view:'summary', sub:'Your investment at a glance: capital, returns and the company behind it.' },
+  "Capital Invested": { view:'capital', sub:'The capital you have invested and its terms.' },
+  "Investment Value": { view:'value', sub:'What your investment is worth today: capital plus returns earned but not yet paid.' },
+  "Expected Returns": { view:'expected', sub:'Returns you can expect, based on the company\'s profit over the last 12 months.' },
+  "Realized Returns": { view:'realized', sub:'Returns already paid to you.' },
+  "Pending Returns": { view:'pending', sub:'Returns calculated but not yet paid.' },
+  // Company performance
+  "Company KPIs": { view:'kpis', sub:'The key numbers that describe how the company is doing.' },
+  "Collection Performance": { view:'collection', sub:'Money collected from borrowers, month by month.' },
+  "Disbursement Performance": { view:'disbursement', sub:'Loans disbursed, month by month.' },
+  "Profitability": { view:'profitability', sub:'Income, expenses and profit, month by month.' },
+  "Business Growth": { view:'growth', sub:'How the client base and lending are growing.' },
+  "Company Performance": { view:'companyPerf', sub:'Lending, collections and profit over the last 12 months.' },
+  // Portfolio
+  "Loan Portfolio": { view:'loanPortfolio', sub:'The size and health of the loan book.' },
+  "Portfolio Breakdown": { view:'breakdown', sub:'The loan book by product, loan size and region.' },
+  "Active Loans": { view:'activeLoans', sub:'Loans currently running, in total and by branch.' },
+  "Loan Disbursements": { view:'disbursement', sub:'Loans disbursed, month by month.' },
+  "Loan Collections": { view:'collection', sub:'Money collected from borrowers, month by month.' },
+  "Loan Arrears": { view:'arrears', sub:'Late repayments, by how late they are.' },
+  "Portfolio at Risk": { view:'par', sub:'Share of the loan book that is behind on repayments.' },
+  // Financial performance
+  "Revenue Overview": { view:'revenue', sub:'Interest and fee income, month by month.' },
+  "Expense Overview": { view:'expenses', sub:'Operating expenses, month by month.' },
+  "Profit & Loss": { view:'pnl', sub:'Income, expenses and profit — all time and for the last 12 months.' },
+  "Cash Position": { view:'cash', sub:'Cash the company holds today.' },
+  "Profit Distribution": { view:'distribution', sub:'Your share of company profit, period by period.' },
+  "Financial Performance": { view:'finPerf', sub:'Revenue, costs and margins.' },
+  // Investment & capital
+  "Capital Contributions": { view:'contributions', sub:'Your capital and investor capital in the company.' },
+  "Capital Allocation": { view:'allocation', sub:'Where the company has allocated its capital.' },
+  "Investment Returns": { view:'returns', sub:'Returns on your investment, paid and pending.' },
+  "Return History": { view:'returnHistory', sub:'Every return period for your investment.' },
+  "Funding Requirements": { view:'funding', sub:'Funding the company is looking for.' },
+  "Capital Utilization": { view:'utilization', sub:'How the company\'s money is being used.' },
+  "Investment Reports": { view:'report', report:'Investment', sub:'Your investment report.' },
+  // Reports
+  "Financial Reports": { view:'report', report:'Financial', sub:'The company\'s financial report.' },
+  "Portfolio Reports": { view:'report', report:'Portfolio', sub:'The loan portfolio report.' },
+  "Collection Reports": { view:'report', report:'Collection', sub:'The collections report.' },
+  "Profitability Reports": { view:'report', report:'Profitability', sub:'The profitability report.' },
+  "Scheduled Reports": { view:'scheduled', sub:'How often you would like to receive your statement.' },
+  // Risk & compliance
+  "Investment Risk": { view:'investRisk', sub:'Risks to your investment and how they are measured.' },
+  "Portfolio Risk": { view:'par', sub:'Share of the loan book that is behind on repayments.' },
+  "Company Risk": { view:'companyRisk', sub:'The company\'s open risks by category.' },
+  "Compliance Overview": { view:'compliance', sub:'Compliance checks and regulatory matters.' },
+  "Risk Reports": { view:'report', report:'Risk', sub:'The risk report.' },
+  // Transactions
+  "Capital Transactions": { view:'capitalTx', sub:'Capital you have put into the company.' },
+  "Return Payments": { view:'returnPayments', sub:'Payments of returns to you.' },
+  "Transaction History": { view:'txHistory', sub:'All movements on your investment.' },
+  "Payment Statements": { view:'statements', sub:'Statements of what has been paid to you.' },
+  "Transaction Reports": { view:'txHistory', sub:'All movements on your investment.' },
+  // Company information
+  "Company Profile": { view:'profile', sub:'Who the company is.' },
+  "Company Structure": { view:'structure', sub:'Regions, branches and people.' },
+  "Business Overview": { view:'business', sub:'What the company does and how big it is.' },
+  "Branch Overview": { view:'branches', sub:'Every branch with its lending figures.' },
+  "Strategic Updates": { view:'strategic', sub:'The company\'s strategy, expansion and progress.' },
+  // My account
+  "Payment Details": { view:'paymentDetails', sub:'How your returns are paid to you.' },
+};
+const INV_SECTION_OF = {};
+(SIDEBAR_MENUS.Investor || []).forEach(sec => sec.items.forEach(item => { if(INV_PAGES[item] && !INV_SECTION_OF[item]) INV_SECTION_OF[item] = sec.section; }));
+ROLE_ROUTE_OVERRIDES.Investor = Object.assign(ROLE_ROUTE_OVERRIDES.Investor || {}, Object.fromEntries(Object.keys(INV_PAGES).map(l => [l, { section:'invest', subtab:l }])));
+
+function renderInvestorSection(){
+  const label = session.subtab; const spec = INV_PAGES[label];
+  if(!spec) return renderPlaceholder();
+  admExports = [];
+  let body;
+  const R = invReport();
+  if(R === undefined) body = admLoading();
+  else if(R.__error) body = admError(R.__error);
+  else { try{ body = (INV_VIEWS[spec.view] || (() => admError('This page is not available.')))(R, spec, label); }
+    catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); } }
+  return `<div class="adm-page">
+    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(INV_SECTION_OF[label] || 'Investor')} · ${escapeHtml(R && R.company ? R.company.name : 'Company')}</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2><div class="adm-sub">${escapeHtml(spec.sub || '')}</div></div>
+    ${body}</div>`;
+}
+const invPayoutTone = s => s === 'Paid' ? 'green' : 'amber';
+const invPayoutCols = [['Period', p => `<strong>${escapeHtml(p.period)}</strong>`], ['Company net profit', p => fmt(p.companyNetProfit)], ['Your return', p => fmt(p.amount)], ['Status', p => admBadge(p.status, invPayoutTone(p.status))], ['Reference', p => escapeHtml(p.reference || '—')], ['Paid on', p => escapeHtml(p.paidAt ? String(p.paidAt).slice(0, 10) : '—')]];
+const invMonthlyChart = (id, title, R, series, opts) => admChart(id, title, series.type || 'bar', R.monthly.map(m => invM(m.month)), series.sets, opts);
+function invInvestmentTiles(R){
+  const i = R.investment;
+  return dirTiles([['Capital invested', fmt(i.capital)], ['Profit share', i.profitSharePct + '%'], ['Returns paid', fmt(i.realized)], ['Returns pending', fmt(i.pending)], ['Term', i.termMonths + ' months', `${i.monthsElapsed} done · ${i.monthsRemaining} to go`], ['Matures', escapeHtml(i.maturityDate)]]);
+}
+const INV_VIEWS = {
+  summary: R => { const i = R.investment, p = R.portfolio, f = R.finance;
+    return `${invInvestmentTiles(R)}
+      ${admTwoCharts(invMonthlyChart('inv-sum-np', 'Company Net Profit by Month (KES)', R, { sets: [{ label: 'Net profit', data: R.monthly.map(m => Math.round(m.netProfit)), backgroundColor: R.monthly.map(m => m.netProfit >= 0 ? '#2A9D8F' : '#E76F51') }] }),
+        admChart('inv-sum-ret', 'Your Returns', 'bar', ['Paid','Pending','Expected (rest of term)'], [{ label: 'KES', data: [i.realized, i.pending, Math.round(i.expectedRemaining)], backgroundColor: ['#2A9D8F','#E9C46A','#3D8BD9'] }]))}
+      <div class="card"><div class="card-title">The company behind your investment</div><div class="adm-tiles">
+        ${admTile('Loan book', fmt(p.outstanding), fmtNum(p.activeLoans) + ' active loans')}${admTile('Portfolio at risk (30+ days)', invPct(p.par30Pct))}${admTile('Active clients', fmtNum(R.company.activeClients))}${admTile('Branches', R.company.activeBranches)}${admTile('Net profit (all time)', fmt(f.netProfit))}${admTile('Cash held', fmt(f.cashTotal))}</div></div>
+      ${dirTable('Investment summary', [['Capital invested', fmt(i.capital)], ['Profit share', i.profitSharePct + '% of company net profit'], ['Returns paid', fmt(i.realized)], ['Returns pending', fmt(i.pending)], ['Current value', fmt(i.currentValue)], ['Expected return per year', fmt(i.expectedAnnual)], ['Term', `${i.termMonths} months (${i.monthsElapsed} done, ${i.monthsRemaining} to go)`], ['Maturity date', i.maturityDate], ['Company loan book', fmt(p.outstanding)], ['Company net profit (12 months)', fmt(f.last12NetProfit)]], [['Item', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Value', r => escapeHtml(String(r[1]))]], '—')}`; },
+  capital: R => { const i = R.investment;
+    return `${dirTiles([['Capital invested', fmt(i.capital)], ['Start date', escapeHtml(i.startDate)], ['Term', i.termMonths + ' months'], ['Maturity date', escapeHtml(i.maturityDate)], ['Your share of investor capital', invPct(i.shareOfInvestorCapital)], ['Status', admBadge(i.status, i.status === 'Active' ? 'green' : 'grey')]])}
+      ${admChart('inv-cap-term', 'Term Progress (months)', 'bar', ['Elapsed','Remaining'], [{ label: 'Months', data: [i.monthsElapsed, i.monthsRemaining], backgroundColor: ['#2E5C8A','#E9C46A'] }])}
+      ${dirTable('Investment terms', [['Capital invested', fmt(i.capital)], ['Profit share', i.profitSharePct + '% of company net profit'], ['Start date', i.startDate], ['Term', i.termMonths + ' months'], ['Maturity date', i.maturityDate], ['Total investor capital in the company', fmt(R.company.investorCapital)]], [['Term', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Value', r => escapeHtml(String(r[1]))]], '—')}`; },
+  value: R => { const i = R.investment; const paid = i.payouts.filter(p => p.status === 'Paid');
+    let cum = 0; const cumPaid = R.monthly.map(m => { cum += paid.filter(p => p.period.slice(0, 7) === m.month).reduce((s, p) => s + p.amount, 0); return Math.round(cum + paid.filter(p => p.period.slice(0, 7) < R.monthly[0].month).reduce((s, p) => s + p.amount, 0)); });
+    return `${dirTiles([['Capital', fmt(i.capital)], ['Returns earned, not yet paid', fmt(i.pending)], ['Current value', fmt(i.currentValue)], ['Returns paid to date', fmt(i.realized)], ['Total value created', fmt(i.capital + i.pending + i.realized), 'capital + all returns']])}
+      ${admTwoCharts(admChart('inv-val-mix', 'Value Breakdown (KES)', 'bar', ['Capital','Pending returns','Paid returns'], [{ label: 'KES', data: [i.capital, i.pending, i.realized], backgroundColor: ['#2E5C8A','#E9C46A','#2A9D8F'] }]),
+        admChart('inv-val-cum', 'Returns Paid to Date (KES)', 'line', R.monthly.map(m => invM(m.month)), [{ label: 'Cumulative paid', data: cumPaid, fill: true, tension: 0.3 }]))}
+      ${dirTable('Investment value', [['Capital', i.capital], ['Returns earned, not yet paid', i.pending], ['Current value', i.currentValue], ['Returns paid to date', i.realized], ['Total value created', i.capital + i.pending + i.realized]], [['Component', r => /^(Current|Total)/.test(r[0]) ? `<strong>${r[0]}</strong>` : r[0]], ['Amount', r => fmt(r[1])]], '—')}`; },
+  expected: R => { const i = R.investment; const monthlyAvg = R.finance.last12NetProfit / 12;
+    const proj = Array.from({ length: Math.max(1, Math.min(12, i.monthsRemaining)) }, (_, k) => Math.round(Math.max(0, monthlyAvg) * i.profitSharePct / 100 * (k + 1)));
+    return `${dirTiles([['Company net profit (last 12 months)', fmt(R.finance.last12NetProfit)], ['Your share', i.profitSharePct + '%'], ['Expected return per year', fmt(i.expectedAnnual)], ['Expected for the rest of your term', fmt(i.expectedRemaining), i.monthsRemaining + ' month(s) left'], ['Expected annual yield', i.capital ? invPct(i.expectedAnnual / i.capital * 100) : '—']])}
+      ${admChart('inv-exp', 'Projected Cumulative Return (KES)', 'line', proj.map((_, k) => 'Month +' + (k + 1)), [{ label: 'Projected', data: proj, fill: true, tension: 0.3, borderDash: [6, 4] }])}
+      ${dirTable('Projected returns', proj.map((v, k) => [k + 1, v]), [['Month', r => 'Month +' + r[0]], ['Projected cumulative return', r => fmt(r[1])]], '—')}
+      <div class="card"><div class="hint">Projection: the average monthly net profit of the last 12 months × your ${i.profitSharePct}% share. Actual returns depend on actual profit and are confirmed each period by the company's accountant.</div></div>`; },
+  realized: R => { const paid = R.investment.payouts.filter(p => p.status === 'Paid');
+    return `${dirTiles([['Returns paid', fmt(R.investment.realized)], ['Payments', paid.length], ['Yield on capital so far', R.investment.capital ? invPct(R.investment.realized / R.investment.capital * 100) : '—']])}
+      ${admChart('inv-real', 'Returns Paid by Period (KES)', 'bar', paid.map(p => p.period), [{ label: 'Paid', data: paid.map(p => p.amount), backgroundColor: '#2A9D8F' }])}
+      ${dirTable('Paid returns', paid, invPayoutCols, 'No returns have been paid yet.')}`; },
+  pending: R => { const pend = R.investment.payouts.filter(p => p.status !== 'Paid');
+    return `${dirTiles([['Returns pending', fmt(R.investment.pending)], ['Periods waiting', pend.length]])}
+      ${admChart('inv-pend', 'Pending Returns by Period (KES)', 'bar', pend.map(p => p.period), [{ label: 'Pending', data: pend.map(p => p.amount), backgroundColor: '#E9C46A' }])}
+      ${dirTable('Pending returns', pend, invPayoutCols, 'Nothing is waiting to be paid.')}`; },
+  kpis: R => { const c = R.company, p = R.portfolio, f = R.finance; const last = R.monthly[R.monthly.length - 1] || {};
+    const k = [['Loan book', fmt(p.outstanding), fmtNum(p.activeLoans) + ' active loans'], ['Portfolio at risk (30+)', invPct(p.par30Pct)], ['Portfolio at risk (90+)', invPct(p.par90Pct)], ['Average loan', fmt(p.averageLoan)], ['Active clients', fmtNum(c.activeClients), fmtNum(c.clients) + ' registered'], ['Disbursed this month', fmt(last.disbursed || 0)], ['Collected this month', fmt(last.collected || 0)], ['Net profit (12 months)', fmt(f.last12NetProfit)], ['Net profit (all time)', fmt(f.netProfit)], ['Cost-to-income', (f.interestIncome + f.feeIncome) > 0 ? invPct(f.expenses / (f.interestIncome + f.feeIncome) * 100) : '—'], ['Branches', c.activeBranches + ' active'], ['Loan officers', c.loanOfficers]];
+    return `<div class="card"><div class="card-title"><span>Company KPIs <small>as of ${escapeHtml(String(R.generatedAt).slice(0, 10))}</small></span>${dirGen('Company KPIs', ['KPI','Value','Note'], k.map(x => x.map(dirPlain)))}</div><div class="adm-tiles">${k.map(x => admTile(x[0], x[1], x[2])).join('')}</div></div>
+      ${admTwoCharts(invMonthlyChart('inv-kpi-dc', 'Disbursed vs Collected (KES)', R, { sets: [{ label: 'Disbursed', data: R.monthly.map(m => Math.round(m.disbursed)), backgroundColor: '#2E5C8A' }, { label: 'Collected', data: R.monthly.map(m => Math.round(m.collected)), backgroundColor: '#2A9D8F' }] }),
+        invMonthlyChart('inv-kpi-np', 'Net Profit (KES)', R, { type: 'line', sets: [{ label: 'Net profit', data: R.monthly.map(m => Math.round(m.netProfit)), fill: false, tension: 0.25 }] }))}`; },
+  collection: R => { const tot = dirSum(R.monthly, m => m.collected);
+    return `${dirTiles([['Collected (12 months)', fmt(tot)], ['This month', fmt((R.monthly[R.monthly.length - 1] || {}).collected || 0)], ['Monthly average', fmt(tot / 12)], ['Collected vs disbursed (12 months)', dirSum(R.monthly, m => m.disbursed) ? invPct(tot / dirSum(R.monthly, m => m.disbursed) * 100) : '—']])}
+      ${invMonthlyChart('inv-coll', 'Collections by Month (KES)', R, { type: 'line', sets: [{ label: 'Collected', data: R.monthly.map(m => Math.round(m.collected)), fill: true, tension: 0.3 }] })}
+      ${dirTable('Collections by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Collected', m => fmt(m.collected)], ['Disbursed', m => fmt(m.disbursed)]], '—')}`; },
+  disbursement: R => { const tot = dirSum(R.monthly, m => m.disbursed); const n = dirSum(R.monthly, m => m.disbursedLoans);
+    return `${dirTiles([['Disbursed (12 months)', fmt(tot), fmtNum(n) + ' loans'], ['This month', fmt((R.monthly[R.monthly.length - 1] || {}).disbursed || 0)], ['Average loan', n ? fmt(tot / n) : '—'], ['Disbursed since the start', fmt(R.company.disbursedAllTime), fmtNum(R.company.loansAllTime) + ' loans']])}
+      ${admTwoCharts(invMonthlyChart('inv-disb-v', 'Amount Disbursed (KES)', R, { sets: [{ label: 'Disbursed', data: R.monthly.map(m => Math.round(m.disbursed)), backgroundColor: '#2E5C8A' }] }),
+        invMonthlyChart('inv-disb-n', 'Loans Disbursed', R, { type: 'line', sets: [{ label: 'Loans', data: R.monthly.map(m => m.disbursedLoans), fill: false, tension: 0.25 }] }))}
+      ${dirTable('Disbursements by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Loans', m => fmtNum(m.disbursedLoans)], ['Amount', m => fmt(m.disbursed)], ['Average', m => m.disbursedLoans ? fmt(m.disbursed / m.disbursedLoans) : '—']], '—')}`; },
+  profitability: R => { const f = R.finance;
+    return `${dirTiles([['Net profit (12 months)', fmt(f.last12NetProfit)], ['Net profit (all time)', fmt(f.netProfit)], ['Profit margin (all time)', (f.interestIncome + f.feeIncome) > 0 ? invPct(f.netProfit / (f.interestIncome + f.feeIncome) * 100) : '—'], ['Profitable months (of 12)', R.monthly.filter(m => m.netProfit > 0).length]])}
+      ${invMonthlyChart('inv-prof', 'Income, Expenses and Net Profit (KES)', R, { sets: [{ label: 'Income', data: R.monthly.map(m => Math.round(m.interestIncome + m.feeIncome)), backgroundColor: '#2A9D8F' }, { label: 'Expenses', data: R.monthly.map(m => Math.round(m.expenses)), backgroundColor: '#E76F51' }, { label: 'Net profit', data: R.monthly.map(m => Math.round(m.netProfit)), type: 'line', borderColor: '#2E5C8A', fill: false }] })}
+      ${dirTable('Profit by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Income', m => fmt(m.interestIncome + m.feeIncome)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => m.netProfit >= 0 ? fmt(m.netProfit) : `<span style="color:var(--red); font-weight:700;">${fmt(m.netProfit)}</span>`]], '—')}`; },
+  growth: R => { let cum = 0; const clients = R.monthly.map(m => (cum += m.newClients));
+    return `${dirTiles([['Registered clients', fmtNum(R.company.clients)], ['Active clients', fmtNum(R.company.activeClients)], ['New clients (12 months)', fmtNum(dirSum(R.monthly, m => m.newClients))], ['Loans disbursed (12 months)', fmtNum(dirSum(R.monthly, m => m.disbursedLoans))]])}
+      ${admTwoCharts(invMonthlyChart('inv-gr-c', 'New Clients per Month', R, { sets: [{ label: 'New clients', data: R.monthly.map(m => m.newClients), backgroundColor: '#3D8BD9' }] }),
+        invMonthlyChart('inv-gr-cum', 'Clients Added (cumulative, 12 months)', R, { type: 'line', sets: [{ label: 'Clients added', data: clients, fill: true, tension: 0.3 }] }))}
+      ${dirTable('Growth by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['New clients', m => fmtNum(m.newClients)], ['Loans disbursed', m => fmtNum(m.disbursedLoans)], ['Amount disbursed', m => fmt(m.disbursed)]], '—')}`; },
+  companyPerf: R => `${INV_VIEWS.kpis(R)}${dirTable('Last 12 months', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Disbursed', m => fmt(m.disbursed)], ['Collected', m => fmt(m.collected)], ['Income', m => fmt(m.interestIncome + m.feeIncome)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => fmt(m.netProfit)]], '—')}`,
+  loanPortfolio: R => { const p = R.portfolio;
+    return `${dirTiles([['Outstanding', fmt(p.outstanding)], ['Active loans', fmtNum(p.activeLoans)], ['Average loan', fmt(p.averageLoan)], ['Current (not late)', invPct(p.outstanding ? (p.arrears[0].amount / p.outstanding * 100) : 0)], ['PAR30', invPct(p.par30Pct)]])}
+      ${admTwoCharts(admChart('inv-lp-age', 'Loan Book by Repayment Status (KES)', 'bar', p.arrears.map(a => a.bucket), [{ label: 'Outstanding', data: p.arrears.map(a => Math.round(a.amount)), backgroundColor: ['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E'] }]),
+        admChart('inv-lp-prod', 'Loan Book by Product (KES)', 'bar', p.byProduct.map(x => x.product), [{ label: 'Outstanding', data: p.byProduct.map(x => Math.round(x.outstanding)) }], dirHoriz))}
+      ${dirTable('Loan book by product', p.byProduct, [['Product', x => `<strong>${escapeHtml(x.product)}</strong>`], ['Active loans', x => fmtNum(x.activeLoans)], ['Outstanding', x => fmt(x.outstanding)], ['Share', x => hrBar(Math.round(rgPct(x.outstanding, p.outstanding)))]], 'No active loans.')}`; },
+  breakdown: R => { const p = R.portfolio; const regs = [...new Set(p.byBranch.map(b => b.region || 'No region'))];
+    return `${admTwoCharts(admChart('inv-bd-size', 'Active Loans by Size', 'bar', p.sizes.map(s => s.band), [{ label: 'Loans', data: p.sizes.map(s => s.loans) }]),
+        admChart('inv-bd-reg', 'Loan Book by Region (KES)', 'bar', regs, [{ label: 'Outstanding', data: regs.map(r => Math.round(dirSum(p.byBranch.filter(b => (b.region || 'No region') === r), b => b.outstanding))) }]))}
+      ${admChart('inv-bd-prod', 'Loan Book by Product (KES)', 'polarArea', p.byProduct.map(x => x.product), [{ data: p.byProduct.map(x => Math.round(x.outstanding)) }])}
+      ${dirTable('By region', regs.map(r => ({ r, bs: p.byBranch.filter(b => (b.region || 'No region') === r) })), [['Region', x => `<strong>${escapeHtml(x.r)}</strong>`], ['Branches', x => x.bs.length], ['Active loans', x => fmtNum(dirSum(x.bs, b => b.activeLoans))], ['Outstanding', x => fmt(dirSum(x.bs, b => b.outstanding))]], '—')}
+      ${dirTable('By loan size', p.sizes, [['Loan size', s => escapeHtml(s.band)], ['Active loans', s => fmtNum(s.loans)]], '—')}`; },
+  activeLoans: R => { const p = R.portfolio; const bs = p.byBranch.filter(b => b.activeLoans).sort((a, b) => b.outstanding - a.outstanding);
+    return `${dirTiles([['Active loans', fmtNum(p.activeLoans)], ['Outstanding', fmt(p.outstanding)], ['Branches lending', bs.length + ' / ' + p.byBranch.length]])}
+      ${admChart('inv-al', 'Active Loans by Branch (top 15)', 'bar', bs.slice(0, 15).map(b => b.branch), [{ label: 'Loans', data: bs.slice(0, 15).map(b => b.activeLoans) }], dirHoriz)}
+      ${dirTable('Active loans by branch', bs, [['Branch', b => `<strong>${escapeHtml(b.branch)}</strong>`], ['Region', b => escapeHtml(b.region)], ['Active loans', b => fmtNum(b.activeLoans)], ['Outstanding', b => fmt(b.outstanding)]], 'No active loans.')}`; },
+  arrears: R => { const p = R.portfolio; const late = p.arrears.slice(1);
+    return `${dirTiles([['Late loans', fmtNum(dirSum(late, a => a.loans))], ['Amount late', fmt(dirSum(late, a => a.amount))], ['Share of loan book', invPct(p.outstanding ? dirSum(late, a => a.amount) / p.outstanding * 100 : 0)]])}
+      ${admChart('inv-arr', 'Outstanding by How Late (KES)', 'bar', late.map(a => a.bucket), [{ label: 'Outstanding', data: late.map(a => Math.round(a.amount)), backgroundColor: ['#E9C46A','#F4A261','#E76F51','#C1440E'] }])}
+      ${dirTable('Arrears ageing', p.arrears, [['Status', a => `<strong>${escapeHtml(a.bucket)}</strong>`], ['Loans', a => fmtNum(a.loans)], ['Outstanding', a => fmt(a.amount)], ['Share', a => hrBar(Math.round(rgPct(a.amount, p.outstanding)))]], '—')}`; },
+  par: R => { const p = R.portfolio; const bs = p.byBranch.filter(b => b.activeLoans).sort((a, b) => b.par30Pct - a.par30Pct);
+    return `${dirTiles([['PAR30', invPct(p.par30Pct), 'loan book more than 30 days late'], ['PAR90', invPct(p.par90Pct)], ['Healthy benchmark', 'under 5%']])}
+      ${admTwoCharts(admChart('inv-par-b', 'PAR30 by Branch (%)', 'bar', bs.slice(0, 15).map(b => b.branch), [{ label: 'PAR30 %', data: bs.slice(0, 15).map(b => Math.round(b.par30Pct * 10) / 10) }], dirHoriz),
+        admChart('inv-par-a', 'Loan Book by Repayment Status (KES)', 'bar', p.arrears.map(a => a.bucket), [{ label: 'Outstanding', data: p.arrears.map(a => Math.round(a.amount)) }]))}
+      ${dirTable('Portfolio at risk by branch', bs, [['Branch', b => `<strong>${escapeHtml(b.branch)}</strong>`], ['Outstanding', b => fmt(b.outstanding)], ['PAR30', b => rgPctBadge(b.par30Pct, 5, 10, true)]], 'No active loans.')}`; },
+  revenue: R => { const f = R.finance;
+    return `${dirTiles([['Revenue (all time)', fmt(f.interestIncome + f.feeIncome)], ['Interest income', fmt(f.interestIncome)], ['Fee income', fmt(f.feeIncome)], ['Revenue (12 months)', fmt(dirSum(R.monthly, m => m.interestIncome + m.feeIncome))]])}
+      ${invMonthlyChart('inv-rev', 'Revenue by Month (KES)', R, { sets: [{ label: 'Interest', data: R.monthly.map(m => Math.round(m.interestIncome)), backgroundColor: '#2E5C8A' }, { label: 'Fees', data: R.monthly.map(m => Math.round(m.feeIncome)), backgroundColor: '#E9C46A' }] }, invStacked)}
+      ${dirTable('Revenue by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Interest', m => fmt(m.interestIncome)], ['Fees', m => fmt(m.feeIncome)], ['Total', m => `<strong>${fmt(m.interestIncome + m.feeIncome)}</strong>`]], '—')}`; },
+  expenses: R => { const f = R.finance;
+    return `${dirTiles([['Expenses (all time)', fmt(f.expenses)], ['Expenses (12 months)', fmt(dirSum(R.monthly, m => m.expenses))], ['Monthly average', fmt(dirSum(R.monthly, m => m.expenses) / 12)], ['Cost-to-income', (f.interestIncome + f.feeIncome) > 0 ? invPct(f.expenses / (f.interestIncome + f.feeIncome) * 100) : '—']])}
+      ${invMonthlyChart('inv-exp-m', 'Operating Expenses by Month (KES)', R, { type: 'line', sets: [{ label: 'Expenses', data: R.monthly.map(m => Math.round(m.expenses)), fill: true, tension: 0.3 }] })}
+      ${dirTable('Expenses by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Expenses', m => fmt(m.expenses)], ['Income', m => fmt(m.interestIncome + m.feeIncome)]], '—')}`; },
+  pnl: R => { const f = R.finance; const y = { inc: dirSum(R.monthly, m => m.interestIncome + m.feeIncome), exp: dirSum(R.monthly, m => m.expenses) };
+    const rows = [['Interest income', f.interestIncome, dirSum(R.monthly, m => m.interestIncome)], ['Fee income', f.feeIncome, dirSum(R.monthly, m => m.feeIncome)], ['Total income', f.interestIncome + f.feeIncome, y.inc], ['Operating expenses', -f.expenses, -y.exp], ['Net profit', f.netProfit, y.inc - y.exp]];
+    return `${dirTiles([['Net profit (all time)', fmt(f.netProfit)], ['Net profit (12 months)', fmt(y.inc - y.exp)]])}
+      ${admChart('inv-pnl', 'Profit & Loss (KES)', 'bar', ['Income','Expenses','Net profit'], [{ label: 'All time', data: [f.interestIncome + f.feeIncome, f.expenses, f.netProfit].map(Math.round), backgroundColor: '#2E5C8A' }, { label: 'Last 12 months', data: [y.inc, y.exp, y.inc - y.exp].map(Math.round), backgroundColor: '#2A9D8F' }])}
+      ${dirTable('Profit & loss', rows, [['Line', r => /^Total|^Net/.test(r[0]) ? `<strong>${r[0]}</strong>` : r[0]], ['All time', r => fmt(r[1])], ['Last 12 months', r => fmt(r[2])]], '—')}`; },
+  cash: R => { const c = R.finance.cash;
+    return `${dirTiles([['Cash held', fmt(R.finance.cashTotal)], ['Cash', fmt(c.cash)], ['Bank', fmt(c.bank)], ['M-Pesa', fmt(c.mpesa)], ['Lent out (loans receivable)', fmt(R.finance.loansReceivable)]])}
+      ${admChart('inv-cash', 'Where the Money Is (KES)', 'bar', ['Cash','Bank','M-Pesa','Lent out'], [{ label: 'KES', data: [c.cash, c.bank, c.mpesa, R.finance.loansReceivable].map(Math.round), backgroundColor: ['#2E5C8A','#3D8BD9','#2A9D8F','#E9C46A'] }])}
+      ${dirTable('Cash position', [['Cash', c.cash], ['Bank', c.bank], ['M-Pesa', c.mpesa], ['Total cash', R.finance.cashTotal], ['Loans receivable', R.finance.loansReceivable]], [['Account', r => /^Total/.test(r[0]) ? `<strong>${r[0]}</strong>` : r[0]], ['Balance', r => fmt(r[1])]], '—')}`; },
+  distribution: R => { const ps = R.investment.payouts;
+    return `${dirTiles([['Your profit share', R.investment.profitSharePct + '%'], ['Distributed to you', fmt(dirSum(ps, p => p.amount))], ['Periods', ps.length]])}
+      ${admChart('inv-dist', 'Company Profit vs Your Share (KES)', 'bar', ps.map(p => p.period), [{ label: 'Company net profit', data: ps.map(p => p.companyNetProfit), backgroundColor: '#2E5C8A' }, { label: 'Your share', data: ps.map(p => p.amount), backgroundColor: '#2A9D8F' }])}
+      ${dirTable('Profit distribution', ps, invPayoutCols, 'No profit has been distributed yet.')}`; },
+  finPerf: R => `${INV_VIEWS.profitability(R)}`,
+  contributions: R => { const i = R.investment, c = R.company;
+    return `${dirTiles([['Your capital', fmt(i.capital)], ['All investor capital', fmt(c.investorCapital)], ['Investors', c.investors], ['Your share of investor capital', invPct(i.shareOfInvestorCapital)]])}
+      ${admChart('inv-contrib', 'Investor Capital (KES)', 'bar', ['Your capital','Other investors'], [{ label: 'KES', data: [i.capital, Math.max(0, c.investorCapital - i.capital)], backgroundColor: ['#2E5C8A','#6C757D'] }])}
+      ${dirTable('Your contributions', [{ date: i.startDate, amount: i.capital, note: 'Initial investment' }], [['Date', x => escapeHtml(x.date)], ['Amount', x => fmt(x.amount)], ['Note', x => escapeHtml(x.note)]], '—')}`; },
+  allocation: R => { const a = R.strategy.allocation; const cats = [...new Set(a.map(x => x.category || 'Other'))];
+    return `${dirTiles([['Capital allocated', fmt(dirSum(a, x => x.amount))], ['Allocations', a.length]])}
+      ${admChart('inv-alloc', 'Capital Allocated by Area (KES)', 'bar', cats, [{ label: 'KES', data: cats.map(c => dirSum(a.filter(x => (x.category || 'Other') === c), x => x.amount)) }], dirHoriz)}
+      ${dirTable('Capital allocation', a, [['Allocation', x => `<strong>${escapeHtml(x.title)}</strong><div class="hint">${escapeHtml(x.category || '')}</div>`], ['Amount', x => fmt(x.amount)], ['Status', x => admBadge(x.status, x.status === 'Spent' ? 'green' : 'blue')]], 'The company has not published any capital allocations yet.')}`; },
+  returns: R => `${INV_VIEWS.realized(R).split('<div class="card"><div class="card-title"><span>Paid returns')[0]}${dirTiles([['Paid', fmt(R.investment.realized)], ['Pending', fmt(R.investment.pending)], ['Expected per year', fmt(R.investment.expectedAnnual)]])}${dirTable('All returns', R.investment.payouts, invPayoutCols, 'No returns have been calculated yet.')}`,
+  returnHistory: R => { const ps = R.investment.payouts; let cum = 0;
+    return `${admChart('inv-rh', 'Your Return by Period (KES)', 'line', ps.map(p => p.period), [{ label: 'Return', data: ps.map(p => p.amount), fill: false, tension: 0.25 }, { label: 'Cumulative', data: ps.map(p => (cum += p.amount)), fill: false, tension: 0.25 }])}
+      ${dirTable('Return history', ps.slice().reverse(), invPayoutCols, 'No returns have been calculated yet.')}`; },
+  funding: R => { const fs = R.strategy.funding;
+    return `${dirTiles([['Funding sought', fmt(dirSum(fs.filter(f => f.status !== 'Funded'), f => f.amount))], ['Requirements', fs.length], ['Already funded', fs.filter(f => f.status === 'Funded').length]])}
+      ${admChart('inv-fund', 'Funding Requirements (KES)', 'bar', fs.map(f => f.title), [{ label: 'KES', data: fs.map(f => f.amount || 0) }], dirHoriz)}
+      ${dirTable('Funding requirements', fs, [['Requirement', f => `<strong>${escapeHtml(f.title)}</strong><div class="hint">${escapeHtml(f.category || '')}</div>`], ['Amount', f => fmt(f.amount)], ['Needed by', f => escapeHtml(f.due || '—')], ['Status', f => admBadge(f.status, f.status === 'Funded' ? 'green' : 'amber')]], 'The company has not published any funding requirements.',
+        '<div class="hint" style="margin-bottom:8px;">Interested in funding one of these? Raise it with the company through Create Ticket.</div>')}`; },
+  utilization: R => { const f = R.finance; const total = R.finance.loansReceivable + f.cashTotal;
+    return `${dirTiles([['Lent out to borrowers', fmt(f.loansReceivable)], ['Held as cash', fmt(f.cashTotal)], ['Share lent out', total > 0 ? invPct(f.loansReceivable / total * 100) : '—'], ['Investor capital', fmt(R.company.investorCapital)]])}
+      ${admChart('inv-util', 'How the Company\'s Money Is Used (KES)', 'bar', ['Lent out','Cash','Bank','M-Pesa'], [{ label: 'KES', data: [f.loansReceivable, f.cash.cash, f.cash.bank, f.cash.mpesa].map(Math.round), backgroundColor: ['#2E5C8A','#2A9D8F','#3D8BD9','#E9C46A'] }])}
+      ${dirTable('Capital utilisation', [['Lent out (loans receivable)', f.loansReceivable], ['Cash', f.cash.cash], ['Bank', f.cash.bank], ['M-Pesa', f.cash.mpesa]], [['Use', r => escapeHtml(r[0])], ['Amount', r => fmt(r[1])], ['Share', r => hrBar(Math.round(rgPct(r[1], total)))]], '—')}`; },
+  report: (R, spec, label) => {
+    const f = R.finance, p = R.portfolio, i = R.investment; const kind = spec.report;
+    const sections = {
+      Investment: [['Capital invested', fmt(i.capital)], ['Profit share', i.profitSharePct + '%'], ['Returns paid', fmt(i.realized)], ['Returns pending', fmt(i.pending)], ['Expected per year', fmt(i.expectedAnnual)], ['Maturity date', i.maturityDate]],
+      Financial: [['Interest income', fmt(f.interestIncome)], ['Fee income', fmt(f.feeIncome)], ['Expenses', fmt(f.expenses)], ['Net profit', fmt(f.netProfit)], ['Net profit (12 months)', fmt(f.last12NetProfit)], ['Cash held', fmt(f.cashTotal)]],
+      Portfolio: [['Outstanding', fmt(p.outstanding)], ['Active loans', fmtNum(p.activeLoans)], ['Average loan', fmt(p.averageLoan)], ['PAR30', invPct(p.par30Pct)], ['PAR90', invPct(p.par90Pct)]],
+      Collection: [['Collected (12 months)', fmt(dirSum(R.monthly, m => m.collected))], ['Disbursed (12 months)', fmt(dirSum(R.monthly, m => m.disbursed))], ['This month collected', fmt((R.monthly[R.monthly.length - 1] || {}).collected || 0)]],
+      Profitability: [['Income (12 months)', fmt(dirSum(R.monthly, m => m.interestIncome + m.feeIncome))], ['Expenses (12 months)', fmt(dirSum(R.monthly, m => m.expenses))], ['Net profit (12 months)', fmt(f.last12NetProfit)], ['Profitable months', R.monthly.filter(m => m.netProfit > 0).length + ' of 12']],
+      Risk: [['PAR30', invPct(p.par30Pct)], ['PAR90', invPct(p.par90Pct)], ['Open company risks', R.risk.openRisks], ['High risks', R.risk.highRisks], ['Compliance checks failed', R.risk.compliance.checksFailed], ['Open regulatory matters', R.risk.compliance.regulatoryOpen]],
+    }[kind] || [];
+    const monthCols = { Collection: [['Collected', m => fmt(m.collected)], ['Disbursed', m => fmt(m.disbursed)]], Profitability: [['Income', m => fmt(m.interestIncome + m.feeIncome)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => fmt(m.netProfit)]], Financial: [['Income', m => fmt(m.interestIncome + m.feeIncome)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => fmt(m.netProfit)]], Portfolio: [['Disbursed', m => fmt(m.disbursed)], ['Collected', m => fmt(m.collected)]] }[kind];
+    return `<div class="card"><div class="card-title"><span>${escapeHtml(kind)} report <small>as of ${escapeHtml(String(R.generatedAt).slice(0, 10))}</small></span>${dirGen(label, ['Measure','Value'], sections.map(s => [s[0], dirPlain(s[1])]))}</div><div class="adm-tiles">${sections.map(s => admTile(s[0], s[1])).join('')}</div></div>
+      ${kind === 'Investment' ? dirTable('Returns', i.payouts, invPayoutCols, 'No returns yet.') : ''}
+      ${kind === 'Risk' ? dirTable('Open risks by category', R.risk.categories, [['Category', c => `<strong>${escapeHtml(c.category)}</strong>`], ['Open', c => c.open], ['High', c => c.high], ['Average score (of 25)', c => c.avgScore.toFixed(1)]], 'No open risks.') : ''}
+      ${monthCols ? invMonthlyChart('inv-rep-' + kind, kind + ' by Month (KES)', R, { sets: monthCols.slice(0, 2).map((c, k) => ({ label: c[0], data: R.monthly.map(m => Math.round(Number(dirPlain(c[1](m)).replace(/[^0-9.-]/g, '')) || 0)), backgroundColor: ['#2E5C8A','#2A9D8F'][k] })) }) + dirTable(kind + ' by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)]].concat(monthCols), '—') : ''}`;
+  },
+  scheduled: R => { const cur = R.investment.reportFrequency || 'None';
+    return `<div class="card"><div class="card-title">Statement schedule</div>
+      <form onsubmit="return invSaveSchedule(event)"><div class="form-grid"><div class="field"><label>Send me my investment statement</label><select name="frequency">${['None','Monthly','Quarterly','Annually'].map(f => `<option ${f === cur ? 'selected' : ''}>${f}</option>`).join('')}</select></div></div>
+      <button class="btn btn-primary btn-sm" type="submit">Save</button></form>
+      <div class="hint" style="margin-top:8px;">Statements go to the email address on your investor profile. Every report is also available any time under Investor Reports.</div></div>
+      ${dirTable('Available reports', ['Investment','Financial','Portfolio','Collection','Profitability','Risk'].map(k => k), [['Report', k => `<strong>${escapeHtml(k)} report</strong>`], ['', k => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${k === 'Investment' ? 'Investment Reports' : k === 'Risk' ? 'Risk Reports' : k + ' Reports'}')">Open</button>`]], '—')}`; },
+  investRisk: R => { const p = R.portfolio, i = R.investment;
+    const items = [['Credit risk (loan book late 30+ days)', invPct(p.par30Pct), p.par30Pct < 5 ? 'Low' : p.par30Pct < 10 ? 'Moderate' : 'High'], ['Profit risk (loss-making months of 12)', R.monthly.filter(m => m.netProfit < 0).length, R.monthly.filter(m => m.netProfit < 0).length <= 2 ? 'Low' : R.monthly.filter(m => m.netProfit < 0).length <= 5 ? 'Moderate' : 'High'],
+      ['Liquidity (cash vs lent out)', R.finance.loansReceivable > 0 ? invPct(R.finance.cashTotal / R.finance.loansReceivable * 100) : '—', R.finance.cashTotal > 0 ? 'Low' : 'High'], ['Concentration (your share of investor capital)', invPct(i.shareOfInvestorCapital), i.shareOfInvestorCapital > 50 ? 'Moderate' : 'Low'], ['Company risks rated high', R.risk.highRisks, R.risk.highRisks ? 'Moderate' : 'Low']];
+    const tone = l => l === 'Low' ? 'green' : l === 'Moderate' ? 'amber' : 'red';
+    return `${dirTiles(items.map(x => [x[0], x[1], x[2] + ' risk']))}
+      ${admChart('inv-ir', 'Risk Levels', 'bar', items.map(x => x[0]), [{ label: 'Level (1 = low, 3 = high)', data: items.map(x => x[2] === 'Low' ? 1 : x[2] === 'Moderate' ? 2 : 3), backgroundColor: items.map(x => ({ Low:'#2A9D8F', Moderate:'#E9C46A', High:'#E76F51' })[x[2]]) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 3, ticks: { precision: 0 } } } })}
+      ${dirTable('Investment risk', items, [['Risk', x => `<strong>${escapeHtml(x[0])}</strong>`], ['Measure', x => escapeHtml(String(x[1]))], ['Level', x => admBadge(x[2], tone(x[2]))]], '—')}`; },
+  companyRisk: R => { const cs = R.risk.categories;
+    return `${dirTiles([['Open risks', R.risk.openRisks], ['High risks', R.risk.highRisks], ['Categories', cs.length]])}
+      ${admChart('inv-cr', 'Open Risks by Category', 'bar', cs.map(c => c.category), [{ label: 'Open', data: cs.map(c => c.open), backgroundColor: '#3D8BD9' }, { label: 'High', data: cs.map(c => c.high), backgroundColor: '#E76F51' }])}
+      ${dirTable('Company risks', cs, [['Category', c => `<strong>${escapeHtml(c.category)}</strong>`], ['Open risks', c => c.open], ['High', c => c.high], ['Average score (of 25)', c => c.avgScore.toFixed(1)]], 'The company has no open risks on its register.')}`; },
+  compliance: R => { const c = R.risk.compliance;
+    return `${dirTiles([['Compliance checks passed', c.checksPassed], ['Checks failed', c.checksFailed], ['Open regulatory matters', c.regulatoryOpen]])}
+      ${admChart('inv-comp', 'Compliance Checks', 'bar', ['Passed','Failed'], [{ label: 'Checks', data: [c.checksPassed, c.checksFailed], backgroundColor: ['#2A9D8F','#E76F51'] }])}
+      ${dirTable('Compliance overview', [['Compliance checks passed', c.checksPassed], ['Compliance checks failed', c.checksFailed], ['Open regulatory matters', c.regulatoryOpen]], [['Measure', r => escapeHtml(r[0])], ['Count', r => r[1]]], '—')}`; },
+  capitalTx: R => { const i = R.investment; const rows = [{ date: i.startDate, type: 'Capital invested', amount: i.capital, status: 'Received' }];
+    return `${dirTiles([['Capital invested', fmt(i.capital)], ['Transactions', rows.length]])}
+      ${dirTable('Capital transactions', rows, [['Date', r => escapeHtml(r.date)], ['Type', r => escapeHtml(r.type)], ['Amount', r => fmt(r.amount)], ['Status', r => admBadge(r.status, 'green')]], '—')}`; },
+  returnPayments: R => { const paid = R.investment.payouts.filter(p => p.status === 'Paid');
+    return `${dirTiles([['Return payments', paid.length], ['Total paid', fmt(R.investment.realized)], ['Paid to', escapeHtml(R.investment.paymentDetails.method || 'Not set — see Payment Details')]])}
+      ${admChart('inv-rp', 'Return Payments (KES)', 'bar', paid.map(p => p.period), [{ label: 'Paid', data: paid.map(p => p.amount), backgroundColor: '#2A9D8F' }])}
+      ${dirTable('Return payments', paid, invPayoutCols, 'No returns have been paid yet.')}`; },
+  txHistory: R => { const i = R.investment;
+    const rows = [{ date: i.startDate, type: 'Capital invested', amount: i.capital, dir: 'In', status: 'Received', ref: '' }].concat(i.payouts.map(p => ({ date: p.paidAt ? String(p.paidAt).slice(0, 10) : p.period, type: 'Return for ' + p.period, amount: p.amount, dir: 'Out', status: p.status, ref: p.reference || '' }))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return `${dirTiles([['Transactions', rows.length], ['Paid in', fmt(i.capital)], ['Paid out to you', fmt(i.realized)], ['Waiting to be paid', fmt(i.pending)]])}
+      ${dirTable('Transaction history', rows, [['Date', r => escapeHtml(r.date)], ['Transaction', r => `<strong>${escapeHtml(r.type)}</strong>`], ['Direction', r => r.dir === 'In' ? 'You → company' : 'Company → you'], ['Amount', r => fmt(r.amount)], ['Status', r => admBadge(r.status, r.status === 'Pending' ? 'amber' : 'green')], ['Reference', r => escapeHtml(r.ref || '—')]], '—')}`; },
+  statements: R => { const i = R.investment; const years = [...new Set(i.payouts.map(p => p.period.slice(0, 4)))].sort().reverse();
+    return `${dirTiles([['Statements', years.length || 0], ['Total paid', fmt(i.realized)]])}
+      ${dirTable('Statements by year', years.map(y => ({ y, ps: i.payouts.filter(p => p.period.slice(0, 4) === y) })), [['Year', x => `<strong>${x.y}</strong>`], ['Periods', x => x.ps.length], ['Paid', x => fmt(dirSum(x.ps.filter(p => p.status === 'Paid'), p => p.amount))], ['Pending', x => fmt(dirSum(x.ps.filter(p => p.status !== 'Paid'), p => p.amount))]], 'No statements yet — they appear once returns are calculated.')}
+      ${dirTable('Statement lines', i.payouts, invPayoutCols, 'No statement lines yet.')}`; },
+  profile: R => { const c = R.company;
+    const rows = [['Company', c.name], ['Trading name', c.tradingName || '—'], ['Registration number', c.registrationNumber || '—'], ['Address', c.address || '—'], ['Phone', c.phone || '—'], ['Email', c.email || '—'], ['Website', c.website || '—'], ['Currency', c.currency]];
+    return `${dirTiles([['Regions', c.regions], ['Branches', c.activeBranches], ['Staff', c.staff], ['Active clients', fmtNum(c.activeClients)]])}
+      ${dirTable('Company profile', rows, [['', r => `<strong>${escapeHtml(r[0])}</strong>`], ['', r => escapeHtml(String(r[1]))]], '—')}`; },
+  structure: R => { const c = R.company;
+    return `${dirTiles([['Regions', c.regions], ['Branches', c.branches], ['Staff', c.staff], ['Loan officers', c.loanOfficers]])}
+      ${admTwoCharts(admChart('inv-st-r', 'Branches per Region', 'bar', c.regionBranches.map(r => r.name), [{ label: 'Branches', data: c.regionBranches.map(r => r.branches) }]),
+        admChart('inv-st-s', 'Staff by Role', 'bar', c.staffByRole.map(r => r.role), [{ label: 'Staff', data: c.staffByRole.map(r => r.staff) }], dirHoriz))}
+      ${dirTable('Regions', c.regionBranches, [['Region', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Branches', r => r.branches]], '—')}
+      ${dirTable('People', c.staffByRole, [['Role', r => escapeHtml(r.role)], ['Staff', r => r.staff]], '—')}`; },
+  business: R => { const c = R.company, p = R.portfolio;
+    return `<div class="card"><div class="card-title">What we do</div><div style="line-height:1.6;">${escapeHtml(c.name)} provides small loans to individuals and small businesses through ${c.activeBranches} branches in ${c.regions} regions. Loans are repaid in regular instalments, collected through M-Pesa, bank and cash.</div></div>
+      ${dirTiles([['Clients served', fmtNum(c.clients)], ['Loans disbursed since the start', fmtNum(c.loansAllTime)], ['Amount lent since the start', fmt(c.disbursedAllTime)], ['Active loans', fmtNum(p.activeLoans)], ['Products', p.byProduct.length]])}
+      ${admChart('inv-bo-p', 'Active Loans by Product', 'bar', p.byProduct.map(x => x.product), [{ label: 'Loans', data: p.byProduct.map(x => x.activeLoans) }], dirHoriz)}
+      ${dirTable('Products', p.byProduct, [['Product', x => `<strong>${escapeHtml(x.product)}</strong>`], ['Active loans', x => fmtNum(x.activeLoans)], ['Outstanding', x => fmt(x.outstanding)]], 'No active loans.')}`; },
+  branches: R => { const bs = R.portfolio.byBranch;
+    return `${dirTiles([['Branches', bs.length], ['Lending now', bs.filter(b => b.activeLoans).length], ['Regions', R.company.regions]])}
+      ${admChart('inv-br', 'Loan Book by Branch (KES, top 15)', 'bar', bs.slice().sort((a, b) => b.outstanding - a.outstanding).slice(0, 15).map(b => b.branch), [{ label: 'Outstanding', data: bs.slice().sort((a, b) => b.outstanding - a.outstanding).slice(0, 15).map(b => Math.round(b.outstanding)) }], dirHoriz)}
+      ${dirTable('Branches', bs, [['Branch', b => `<strong>${escapeHtml(b.branch)}</strong>`], ['Region', b => escapeHtml(b.region)], ['Status', b => admBadge(b.status || 'Active', (b.status || 'Active') === 'Active' ? 'green' : 'grey')], ['Active loans', b => fmtNum(b.activeLoans)], ['Outstanding', b => fmt(b.outstanding)], ['PAR30', b => b.activeLoans ? rgPctBadge(b.par30Pct, 5, 10, true) : '—']], '—')}`; },
+  strategic: R => { const s = R.strategy;
+    const prog = r => r.progress != null ? hrBar(Math.round(r.progress)) : '—';
+    return `${dirTiles([['Strategic plans', s.plans.length], ['Long-term goals', s.goals.length], ['Expansion projects', s.expansion.length], ['Strategic investments', s.investments.length]])}
+      ${admChart('inv-su', 'Strategic Plan Progress (%)', 'bar', s.plans.concat(s.goals).map(p => p.title), [{ label: 'Progress %', data: s.plans.concat(s.goals).map(p => p.progress || 0) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100 } } })}
+      ${dirTable('Strategic plans', s.plans, [['Plan', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category || '')}</div>`], ['Target date', r => escapeHtml(r.due || '—')], ['Progress', prog], ['Status', r => admBadge(r.status, r.status === 'Achieved' ? 'green' : 'blue')]], 'No strategic plans have been shared yet.')}
+      ${dirTable('Long-term goals', s.goals, [['Goal', r => `<strong>${escapeHtml(r.title)}</strong>`], ['Progress', prog], ['Status', r => admBadge(r.status, r.status === 'Off Track' ? 'red' : r.status === 'At Risk' ? 'amber' : 'green')]], 'No long-term goals have been shared yet.')}
+      ${dirTable('Expansion', s.expansion, [['Project', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category || '')}</div>`], ['Budget', r => r.amount != null ? fmt(r.amount) : '—'], ['Target', r => escapeHtml(r.due || '—')], ['Status', r => admBadge(r.status, r.status === 'Completed' ? 'green' : 'blue')]], 'No expansion projects have been shared yet.')}`; },
+  paymentDetails: R => { const d = R.investment.paymentDetails;
+    return `<div class="card"><div class="card-title">How you are paid <small>${escapeHtml(d.method || 'not set yet')}</small></div>
+      <form onsubmit="return invSavePayment(event)"><div class="form-grid">
+        <div class="field"><label>Payment method</label><select name="method">${['Bank transfer','M-Pesa','Cheque'].map(m => `<option ${m === d.method ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+        <div class="field"><label>Bank name</label><input name="bankName" value="${escapeHtml(d.bankName || '')}"></div>
+        <div class="field"><label>Bank account number</label><input name="bankAccount" value="${escapeHtml(d.bankAccount || '')}"></div>
+        <div class="field"><label>M-Pesa phone</label><input name="mpesaPhone" value="${escapeHtml(d.mpesaPhone || '')}" placeholder="07XXXXXXXX"></div>
+      </div><button class="btn btn-primary btn-sm" type="submit">Save payment details</button></form>
+      <div class="hint" style="margin-top:8px;">The company's accountant pays your returns using these details.</div></div>
+      ${INV_VIEWS.returnPayments(R)}`; },
+};
+async function invSavePayment(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const body = { method: fd.get('method'), bankName: String(fd.get('bankName') || '').trim(), bankAccount: String(fd.get('bankAccount') || '').trim(), mpesaPhone: String(fd.get('mpesaPhone') || '').trim() };
+  await withRequest('inv-pay', async ()=>{ await api.put('/api/investor/payment-details', body); admForget('inv:report'); }, { mutates: true });
+  return false;
+}
+async function invSaveSchedule(ev){
+  ev.preventDefault();
+  const frequency = new FormData(ev.target).get('frequency');
+  await withRequest('inv-sched', async ()=>{ await api.put('/api/investor/report-preferences', { frequency }); admForget('inv:report'); }, { mutates: true });
+  return false;
+}
 function renderPlaceholder(){
   return `
     <div class="section-note">This screen — <strong>${escapeHtml(session.placeholderLabel||"")}</strong> — is part of the navigation spec but isn't built out with real functionality in this prototype yet.</div>

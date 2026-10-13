@@ -1614,6 +1614,12 @@ async function initSchema() {
   // staff, not a lesser version of it.
   await ensureColumn('investors', 'must_change_password INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('investors', 'password_changed_at TEXT');
+  // The investor's own payout details and statement preference (Investor > My Account).
+  await ensureColumn('investors', 'payout_method TEXT');
+  await ensureColumn('investors', 'bank_name TEXT');
+  await ensureColumn('investors', 'bank_account TEXT');
+  await ensureColumn('investors', 'mpesa_phone TEXT');
+  await ensureColumn('investors', 'report_frequency TEXT');
   await rawRun(`UPDATE investors SET password_changed_at = created_at WHERE password_changed_at IS NULL`);
   // A single real company-wide M-Pesa Paybill number — shown identically
   // on every branch in the "Company Branches" view (a company-wide

@@ -7774,9 +7774,9 @@ apiRequest = async function(method, path, body){
       if(!items.includes(label)) continue;
       window.__pendingCharts = [];
       sidebarNavigate(label); renderApp();
-      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
       const h = document.getElementById('root').innerHTML;
-      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || h.includes('[object Object]')) broken.push(label);
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || h.includes('[object Object]')) broken.push(label);
       if(window.__pendingCharts.some(c => c.config.type === 'doughnut')) donut.push(label);
     }
     __assert(broken.length === 0, "every HR page renders with its bold blue title and no errors: " + broken.join(', '));
@@ -7874,9 +7874,9 @@ apiRequest = async function(method, path, body){
       if(!items.includes(label) || (DIR_PAGES[label].only && !DIR_PAGES[label].only.includes(session.role))) continue;
       window.__pendingCharts = [];
       sidebarNavigate(label); renderApp();
-      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
       const h = document.getElementById('root').innerHTML;
-      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || window.__pendingCharts.some(c => c.config.type === 'doughnut')) broken.push(label);
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || window.__pendingCharts.some(c => c.config.type === 'doughnut')) broken.push(label);
     }
     __assert(broken.length === 0, "every Director page renders with its bold blue title, no errors and no donut charts: " + broken.join(', '));
     sidebarNavigate('Company Performance');
@@ -7911,13 +7911,50 @@ apiRequest = async function(method, path, body){
     for(const label of Object.keys(DIR_PAGES)){
       if(!items.includes(label) || (DIR_PAGES[label].only && !DIR_PAGES[label].only.includes(session.role))) continue;
       sidebarNavigate(label); renderApp();
-      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
       const h = document.getElementById('root').innerHTML;
-      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h)) broken.push(label);
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h)) broken.push(label);
     }
     __assert(broken.length === 0, "every CEO executive page renders cleanly: " + broken.join(', '));
     sidebarNavigate('Audit Findings'); renderApp();
     __assert(document.getElementById('root').innerHTML.includes('class="adm-title">Audit Findings<'), "the CEO has an Audit Findings page");
+  }
+
+  // ---- Investor: every menu item is a real, aggregate-only page ----
+  {
+    const iForm = new Map([['username','sara.investor@example.com'],['password', process.env.SEEDED_INVESTOR_PASSWORD]]);
+    global.FormData = class { constructor(){ return iForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.role === 'Investor', "setup: signed in as the investor");
+    const QUICK = ['Create Ticket'];
+    const items = SIDEBAR_MENUS.Investor.flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every Investor submenu opens a real page: " + dead.join(', '));
+    const broken = [], noGen = [];
+    for(const label of Object.keys(INV_PAGES)){
+      if(!items.includes(label)) continue;
+      sidebarNavigate(label); renderApp();
+      for(let i=0; i<250 && !(DB.adm && DB.adm['inv:report'] !== undefined); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      renderApp();
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h) || /\bNaN\b/.test(h)) broken.push(label);
+      if(!h.includes('-- Generate --')) noGen.push(label);
+    }
+    __assert(broken.length === 0, "every Investor page renders cleanly: " + broken.join(', '));
+    __assert(noGen.length === 0, "every Investor page offers Generate (PDF / Excel): " + noGen.join(', '));
+    __assert(!/doughnut/.test(JSON.stringify(Object.values(INV_VIEWS).map(String))), "Investor pages never use donut charts");
+    sidebarNavigate('Payment Details'); renderApp();
+    const pf = new Map([['method','Bank transfer'],['bankName','Equity Bank'],['bankAccount','0011223344'],['mpesaPhone','']]);
+    global.FormData = class { constructor(){ return pf; } };
+    await invSavePayment({ preventDefault(){}, target:{} });
+    for(let i=0; i<250 && !(DB.adm && DB.adm['inv:report'] && DB.adm['inv:report'].investment); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    __assert(DB.adm['inv:report'].investment.paymentDetails.bankName === 'Equity Bank', "the investor saves their bank details from Payment Details");
+    const sf = new Map([['frequency','Monthly']]);
+    global.FormData = class { constructor(){ return sf; } };
+    sidebarNavigate('Scheduled Reports'); renderApp();
+    await invSaveSchedule({ preventDefault(){}, target:{} });
+    for(let i=0; i<250 && !(DB.adm && DB.adm['inv:report'] && DB.adm['inv:report'].investment); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    __assert(DB.adm['inv:report'].investment.reportFrequency === 'Monthly', "the investor chooses a statement schedule");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);
