@@ -4,6 +4,8 @@
 // client transfers, operational issues, escalations), plus the region's
 // own activity log.
 //
+// Operational tasks and compliance checks are recorded here too.
+//
 // Scope is the region, enforced server-side on every call:
 //   regional_manager      — only branches in their own region; full control
 //   operational_manager,
@@ -22,12 +24,17 @@ const KINDS = {
   transfer:       { label: 'Transfer',        statuses: ['Requested', 'Approved', 'Rejected', 'Completed'], open: ['Requested', 'Approved'] },
   issue:          { label: 'Operational issue', statuses: ['Open', 'In Progress', 'Resolved', 'Closed'], open: ['Open', 'In Progress'] },
   escalation:     { label: 'Escalation',      statuses: ['Open', 'Acknowledged', 'Resolved'], open: ['Open', 'Acknowledged'] },
+  task:           { label: 'Operational task', statuses: ['Open', 'In Progress', 'Done', 'Cancelled'], open: ['Open', 'In Progress'] },
+  compliance_check: { label: 'Compliance check', statuses: ['Scheduled', 'Passed', 'Failed', 'Waived'], open: ['Scheduled'] },
 };
 const PRIORITIES = ['Low', 'Normal', 'High', 'Critical'];
 const OVERSIGHT = ['operational_manager', 'ceo', 'director', 'admin'];
 const ALLOWED = ['regional_manager', 'manager', ...OVERSIGHT];
 // Kinds a branch Manager may raise themselves.
 const MANAGER_KINDS = ['branch_request', 'issue', 'transfer'];
+// A transfer moves a staff member, a client (with their open loans) or a
+// single loan to another officer / branch.
+const SUBJECTS = ['staff', 'client', 'loan'];
 
 function clean(v, max) { if (v === undefined || v === null) return null; const s = String(v).trim(); return s ? s.slice(0, max) : null; }
 
@@ -62,12 +69,14 @@ function out(r) {
   };
 }
 const SELECT = `SELECT o.*, a.name AS assigned_name, c.name AS created_name,
-  COALESCE(su.name, sc.name) AS subject_name
+  COALESCE(su.name, sc.name, slc.name) AS subject_name
   FROM regional_operations o
   LEFT JOIN users a ON a.id = o.assigned_to
   LEFT JOIN users c ON c.id = o.created_by
   LEFT JOIN users su ON o.subject_type = 'staff' AND su.id = o.subject_id
-  LEFT JOIN clients sc ON o.subject_type = 'client' AND sc.id = o.subject_id`;
+  LEFT JOIN clients sc ON o.subject_type = 'client' AND sc.id = o.subject_id
+  LEFT JOIN loans sl ON o.subject_type = 'loan' AND sl.id = o.subject_id
+  LEFT JOIN clients slc ON slc.id = sl.client_id`;
 
 function register(router) {
   router.get('/api/regional-ops', requireAuth, requireOpsRole, async (req, res, next) => {
@@ -116,21 +125,26 @@ function register(router) {
     let subjectType = null, subjectId = null, fromBranch = null, toBranch = null, toOfficer = null;
     if (kind === 'transfer') {
       subjectType = b.subject_type;
-      if (!['staff', 'client'].includes(subjectType)) return next({ status: 400, message: 'Transfer must be for a staff member or a client' });
+      if (!SUBJECTS.includes(subjectType)) return next({ status: 400, message: 'Transfer must be for a staff member, a client or a loan' });
       subjectId = clean(b.subject_id, 60);
       const subject = subjectType === 'staff'
         ? await get('SELECT id, branch_id FROM users WHERE id = ?', [subjectId])
-        : await get('SELECT id, branch_id FROM clients WHERE id = ?', [subjectId]);
+        : subjectType === 'client' ? await get('SELECT id, branch_id FROM clients WHERE id = ?', [subjectId])
+        : await get('SELECT id, branch_id, officer_id, status FROM loans WHERE id = ?', [subjectId]);
       if (!subject) return next({ status: 400, message: `Unknown ${subjectType}` });
+      if (subjectType === 'loan' && !['Pending', 'Approved', 'Active', 'Disbursed'].includes(subject.status) && !/^Waiting|Approved for/.test(subject.status)) return next({ status: 400, message: 'Only an open loan can be transferred' });
+      if (subjectType === 'loan' && await get(`SELECT id FROM regional_operations WHERE kind = 'transfer' AND subject_type = 'loan' AND subject_id = ? AND status IN ('Requested','Approved')`, [subjectId])) return next({ status: 409, message: 'This loan already has a transfer in progress' });
       fromBranch = subject.branch_id;
       toBranch = clean(b.to_branch_id, 60);
-      if (!toBranch || toBranch === fromBranch) return next({ status: 400, message: 'Choose a different destination branch' });
+      // A loan may move to another officer in the same branch; staff and clients must change branch.
+      if (!toBranch || (toBranch === fromBranch && subjectType !== 'loan')) return next({ status: 400, message: 'Choose a different destination branch' });
       if (!(await get('SELECT id FROM branches WHERE id = ?', [toBranch]))) return next({ status: 400, message: 'Unknown destination branch' });
       if (!scope.all && (!scope.branchIds.includes(fromBranch) || (req.user.role_id !== 'manager' && !scope.branchIds.includes(toBranch)))) {
         return next({ status: 403, message: 'Transfers must start in your scope' + (req.user.role_id === 'regional_manager' ? ' and stay within your region' : '') });
       }
-      if (subjectType === 'client') {
+      if (subjectType === 'client' || subjectType === 'loan') {
         toOfficer = clean(b.to_officer_id, 60);
+        if (subjectType === 'loan' && toOfficer && toOfficer === subject.officer_id && toBranch === fromBranch) return next({ status: 400, message: 'Choose a different loan officer' });
         const off = toOfficer && await get("SELECT id FROM users WHERE id = ? AND branch_id = ? AND role_id = 'loan_officer'", [toOfficer, toBranch]);
         if (!off) return next({ status: 400, message: 'Choose a loan officer at the destination branch' });
       }
@@ -186,6 +200,8 @@ function register(router) {
             const held = await get(`SELECT COUNT(*) AS n FROM clients WHERE officer_id = ?`, [row.subject_id]);
             if (Number(held.n) > 0) throw { status: 400, message: `Reassign or transfer this officer's ${held.n} client(s) first` };
             await run('UPDATE users SET branch_id = ? WHERE id = ?', [row.to_branch_id, row.subject_id]);
+          } else if (row.subject_type === 'loan') {
+            await run('UPDATE loans SET branch_id = ?, officer_id = ? WHERE id = ?', [row.to_branch_id, row.to_officer_id, row.subject_id]);
           } else {
             await run('UPDATE clients SET branch_id = ?, officer_id = ? WHERE id = ?', [row.to_branch_id, row.to_officer_id, row.subject_id]);
             await run(`UPDATE loans SET branch_id = ?, officer_id = ? WHERE client_id = ? AND status IN ('Pending','Approved','Active','Disbursed')`, [row.to_branch_id, row.to_officer_id, row.subject_id]);

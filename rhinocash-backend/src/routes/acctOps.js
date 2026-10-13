@@ -10,7 +10,8 @@
 //                                  proposals, verifications and exceptions
 //
 // Who can do what:
-//   - view:   Accountant, CEO, Director, System Administrator
+//   - view:   Accountant, CEO, Director, System Administrator (the
+//             Operational Manager reads /finance and /client-quality only)
 //   - record: anyone holding post_accounting_entries (Accountant, Admin)
 //   - decide a budget, refund or write-off: CEO, Director or Admin — never
 //     the person who raised it. Paying an approved refund and executing an
@@ -51,6 +52,8 @@ function lastMonths(n) {
 const daysBetween = (a, b) => Math.floor((new Date(b) - new Date(a)) / 86400000);
 
 function requireView(req, res, next) { return VIEW.includes(req.user.role_id) ? next() : next({ status: 403, message: 'These finance pages are for the Accountant, CEO, Director and System Administrator' }); }
+// The Operational Manager reads the company figures and client data quality (no controls, no records).
+function requireFigures(req, res, next) { return VIEW.includes(req.user.role_id) || req.user.role_id === 'operational_manager' ? next() : requireView(req, res, next); }
 async function requireWrite(req, res, next) {
   try { return (await hasPermission(req.user, 'post_accounting_entries')) ? next() : next({ status: 403, message: 'You need the Post Accounting Entries permission' }); }
   catch (e) { return next(e); }
@@ -100,6 +103,7 @@ async function buildFinance(year) {
   const due = await all(`SELECT to_char(due_date::date, 'YYYY-MM') AS m, COALESCE(SUM(total_due),0) AS v FROM loan_schedule s JOIN loans l ON l.id = s.loan_id
     WHERE l.status NOT IN ('Rejected','Pending','Cancelled') AND s.due_date >= ? AND s.due_date <= ? GROUP BY 1`, [from, today()]);
   const fees = await all(`SELECT to_char(COALESCE(confirmed_at, created_at)::timestamptz, 'YYYY-MM') AS m, COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS v FROM loan_fee_payments WHERE status = 'Confirmed' AND COALESCE(confirmed_at, created_at) >= ? GROUP BY 1`, [from]);
+  const newClients = await all(`SELECT to_char(created_at::timestamptz, 'YYYY-MM') AS m, COUNT(*)::int AS n FROM clients WHERE created_at >= ? GROUP BY 1`, [from]);
   const find = (rows, m) => rows.find(x => x.m === m) || {};
 
   const monthly = months.map(m => {
@@ -113,7 +117,7 @@ async function buildFinance(year) {
       interestIncome: sumAcct(jm, m, 'interest_income'), feeIncome: sumAcct(jm, m, 'fee_income'), penaltyIncome: sumAcct(jm, m, 'penalty_income'),
       income, expenses, netProfit: income - expenses,
       cashIn: cashRows.reduce((s, r) => s + num(r.d), 0), cashOut: cashRows.reduce((s, r) => s + num(r.c), 0),
-      processingFees: num(find(fees, m).v), processingFeeCount: num(find(fees, m).n) };
+      processingFees: num(find(fees, m).v), processingFeeCount: num(find(fees, m).n), newClients: num(find(newClients, m).n) };
   });
 
   // Per GL account (last 12 months, by month) for revenue and expense accounts.
@@ -348,13 +352,13 @@ async function clientCredit(clientId, excludeId) {
 }
 
 function register(router) {
-  router.get('/api/acct/finance', requireAuth, requireView, async (req, res, next) => {
+  router.get('/api/acct/finance', requireAuth, requireFigures, async (req, res, next) => {
     const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
     if (!Number.isInteger(year) || year < 2000 || year > 2100) return next({ status: 400, message: 'Year must be a four-digit year' });
     res.json(await buildFinance(year));
   });
   router.get('/api/acct/controls', requireAuth, requireView, async (req, res) => res.json(await buildControls()));
-  router.get('/api/acct/client-quality', requireAuth, requireView, async (req, res) => res.json(await buildClientQuality()));
+  router.get('/api/acct/client-quality', requireAuth, requireFigures, async (req, res) => res.json(await buildClientQuality()));
   router.get('/api/acct/daily', requireAuth, requireView, async (req, res, next) => {
     const date = req.query.date || today();
     if (!isDate(date)) return next({ status: 400, message: 'Date must be YYYY-MM-DD' });

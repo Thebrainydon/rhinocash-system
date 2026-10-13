@@ -5599,7 +5599,7 @@ function renderRegionalSection(){
   if(!page) return renderPlaceholder();
   admExports = [];
   let body;
-  try{ body = page.kind ? rgOpsPage(label, page.kind) : (RG_VIEWS[label] || (()=>''))(); }
+  try{ body = page.kind ? rgOpsPage(label, page.kind, page.subject) + (page.extra ? page.extra() : '') : (RG_VIEWS[label] || (()=>''))(); }
   catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
   return `<div class="adm-page">
     <div class="card adm-head">
@@ -5812,10 +5812,10 @@ const RG_NEXT = {
 function rgCanDecide(){ return ['Regional Manager','Operational Manager','CEO','Director','Admin'].includes(session.role); }
 function rgForm(kind){ session.rgForms = session.rgForms || {}; return session.rgForms[kind] || (session.rgForms[kind] = { title:'', details:'', branch_id:'', priority:'Normal', due_date:'', assigned_to:'', category:'', subject_type:'staff', subject_id:'', to_branch_id:'', to_officer_id:'' }); }
 function rgSet(kind, field, value, rerender){ rgForm(kind)[field] = value; if(rerender) renderApp(); }
-function rgOpsPage(label, kind){
+function rgOpsPage(label, kind, subject){
   const recs = rgData('ops', '/api/regional-ops', r => r.records);
   if(recs === undefined) return admLoading(); if(recs.__error) return admError(recs.__error);
-  const all = recs.filter(r => r.kind === kind);
+  const all = recs.filter(r => r.kind === kind && (!subject || r.subjectType === subject));
   const fl = session.rgOpsFilter || (session.rgOpsFilter = { status: 'open', branch: '' });
   const list = all.filter(r => (fl.status === 'all' || (fl.status === 'open' ? r.isOpen : !r.isOpen)) && (!fl.branch || r.branchId === fl.branch));
   const statuses = Object.keys(RG_STATUS_TONE).filter(s => all.some(r => r.status === s));
@@ -5823,7 +5823,7 @@ function rgOpsPage(label, kind){
   const headers = ['Title','Branch','Priority','Status','Due','Assigned to','Raised by','Raised on'].concat(kind === 'transfer' ? ['Who','From','To'] : []);
   const data = list.map(r => [r.title, r.branchId ? branchName(r.branchId) : 'Whole region', r.priority, r.status, r.dueDate || '', r.assignedToName || '', r.createdByName || '', String(r.createdAt).slice(0, 10)].concat(kind === 'transfer' ? [r.subjectName || '', branchName(r.fromBranchId), branchName(r.toBranchId)] : []));
   return `<div class="card">${rgCardTitle('Overview')}<div class="adm-tiles">${admTile('Open', all.filter(r => r.isOpen).length)}${admTile('Closed', all.filter(r => !r.isOpen).length)}${admTile('Overdue', all.filter(r => r.isOpen && r.dueDate && r.dueDate < today).length)}${admTile('High / critical open', all.filter(r => r.isOpen && ['High','Critical'].includes(r.priority)).length)}</div></div>
-    ${rgOpsForm(kind)}
+    ${rgOpsForm(kind, subject)}
     <div class="adm-two">${admChart('rg-ops-status-' + kind, 'By Status', 'pie', statuses, [{ data: statuses.map(st => all.filter(r => r.status === st).length) }])}${admChart('rg-ops-branch-' + kind, 'By Branch', 'bar', rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => b.name), [{ label: 'Open', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && r.isOpen).length) }, { label: 'Closed', data: rgBranches().filter(b => all.some(r => r.branchId === b.id)).map(b => all.filter(r => r.branchId === b.id && !r.isOpen).length) }])}</div>
     <div class="card">${rgCardTitle(label, `${list.length} shown`, rgGen(label, headers, data))}
       <div class="pill-row adm-filters">
@@ -5831,7 +5831,7 @@ function rgOpsPage(label, kind){
         <select onchange="session.rgOpsFilter.branch=this.value; renderApp();"><option value="">All branches</option>${rgBranches().map(b => `<option value="${b.id}" ${fl.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select>
         ${statuses.length ? `<span class="hint">${statuses.map(s => `${s}: ${all.filter(r => r.status === s).length}`).join(' · ')}</span>` : ''}
       </div>
-      ${list.length ? list.map(r => rgOpsCard(r)).join('') : `<div class="empty">No ${fl.status === 'all' ? '' : fl.status + ' '}${RG_KIND_LABEL[kind]}s${fl.branch ? ' for this branch' : ''}.</div>`}
+      ${list.length ? list.map(r => rgOpsCard(r)).join('') : `<div class="empty">No ${fl.status === 'all' ? '' : fl.status + ' '}${subject ? subject + ' ' : ''}${RG_KIND_LABEL[kind]}s${fl.branch ? ' for this branch' : ''}.</div>`}
     </div>`;
 }
 function rgOpsCard(r){
@@ -5841,7 +5841,7 @@ function rgOpsCard(r){
     <div class="rg-rec-head"><div><strong class="rg-rec-title">${escapeHtml(r.title)}</strong>
       <div class="hint">${escapeHtml(r.branchId ? branchName(r.branchId) : 'Whole region')}${r.category ? ' · ' + escapeHtml(r.category) : ''} · raised by ${escapeHtml(r.createdByName || '—')} ${timeAgo(r.createdAt)}</div></div>
       <div class="pill-row" style="flex-wrap:nowrap;">${admBadge(r.priority, RG_PRIORITY_TONE[r.priority])}${admBadge(r.status, RG_STATUS_TONE[r.status] || 'grey')}</div></div>
-    ${r.kind === 'transfer' ? `<div class="rg-rec-line"><b>${escapeHtml(r.subjectType === 'client' ? 'Client' : 'Staff')}:</b> ${escapeHtml(r.subjectName || '—')} · ${escapeHtml(branchName(r.fromBranchId))} → <strong>${escapeHtml(branchName(r.toBranchId))}</strong>${r.subjectType === 'client' ? ` (officer: ${escapeHtml(staffName(r.toOfficerId))})` : ''}</div>` : ''}
+    ${r.kind === 'transfer' ? `<div class="rg-rec-line"><b>${escapeHtml(r.subjectType === 'client' ? 'Client' : r.subjectType === 'loan' ? 'Loan of' : 'Staff')}:</b> ${escapeHtml(r.subjectName || '—')} · ${escapeHtml(branchName(r.fromBranchId))} → <strong>${escapeHtml(branchName(r.toBranchId))}</strong>${r.subjectType !== 'staff' ? ` (officer: ${escapeHtml(staffName(r.toOfficerId))})` : ''}</div>` : ''}
     ${r.details ? `<div class="rg-rec-line">${escapeHtml(r.details)}</div>` : ''}
     <div class="rg-rec-line hint">${r.dueDate ? `Due <span class="${overdue ? 'rg-overdue' : ''}">${escapeHtml(r.dueDate)}${overdue ? ' — overdue' : ''}</span> · ` : ''}${r.assignedToName ? 'Assigned to ' + escapeHtml(r.assignedToName) : 'Unassigned'}${r.relatedId ? ' · linked to an earlier record' : ''}</div>
     ${r.resolution ? `<div class="rg-rec-line"><b>Outcome:</b> ${escapeHtml(r.resolution)}</div>` : ''}
@@ -5849,10 +5849,11 @@ function rgOpsCard(r){
       ${r.kind !== 'escalation' && rgCanDecide() ? `<button class="btn btn-sm btn-outline" onclick="rgEscalate('${r.id}')">Escalate</button>` : ''}</div>` : ''}
   </div>`;
 }
-function rgOpsForm(kind){
+function rgOpsForm(kind, subject){
   const isMgr = session.role === 'Manager';
   if(!rgCanDecide() && !(isMgr && ['branch_request','issue','transfer'].includes(kind))) return '';
   const f = rgForm(kind); const branches = rgBranches(); const staff = rgStaff().filter(s => s.status === 'Active');
+  if(subject && f.subject_type !== subject){ f.subject_type = subject; f.subject_id = ''; f.to_officer_id = ''; }
   const set = (field, rerender) => `onchange="rgSet('${kind}','${field}',this.value${rerender ? ',true' : ''})"`;
   const inp = (field, label, type, extra) => `<div class="field${type === 'textarea' ? ' full' : ''}"><label>${label}</label>${type === 'textarea' ? `<textarea rows="2" ${set(field)} oninput="rgSet('${kind}','${field}',this.value)">${escapeHtml(f[field])}</textarea>` : `<input type="${type || 'text'}" value="${escapeHtml(f[field])}" ${set(field)} oninput="rgSet('${kind}','${field}',this.value)" ${extra || ''}>`}</div>`;
   const sel = (field, label, opts, rerender) => `<div class="field"><label>${label}</label><select ${set(field, rerender)}>${opts.map(o => `<option value="${escapeHtml(o[0])}" ${String(f[field]) === String(o[0]) ? 'selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}</select></div>`;
@@ -5860,18 +5861,21 @@ function rgOpsForm(kind){
   if(kind === 'transfer'){
     const subjects = f.subject_type === 'client'
       ? (DB.clients || []).filter(c => rgBranchIds().includes(c.branch)).map(c => [c.id, `${c.name} — ${branchName(c.branch)}`])
+      : f.subject_type === 'loan'
+      ? (DB.loans || []).filter(l => rgBranchIds().includes(l.branchId) && OM_OPEN_LOAN(l)).map(l => [l.id, `${clientName(l.clientId)} — ${fmt(l.principal)} (${staffName(l.officerId)}, ${branchName(l.branchId)})`])
       : staff.filter(s => s.branch).map(s => [s.id, `${s.name} (${s.role}) — ${branchName(s.branch)}`]);
     const toOfficers = f.to_branch_id ? rgOfficers(f.to_branch_id).map(o => [o.id, o.name]) : [];
-    specific = sel('subject_type', 'Transfer a', [['staff','Staff member'],['client','Client']], true)
-      + sel('subject_id', f.subject_type === 'client' ? 'Client' : 'Staff member', [['', 'Choose…']].concat(subjects))
-      + sel('to_branch_id', 'Move to branch', [['', 'Choose…']].concat(branches.map(b => [b.id, b.name])), true)
-      + (f.subject_type === 'client' ? sel('to_officer_id', 'New loan officer', [['', toOfficers.length ? 'Choose…' : (f.to_branch_id ? 'No active officers at that branch' : 'Pick a branch first')]].concat(toOfficers)) : '');
+    const subjLabel = { client:'Client', loan:'Loan', staff:'Staff member' }[f.subject_type] || 'Staff member';
+    specific = (subject ? '' : sel('subject_type', 'Transfer a', [['staff','Staff member'],['client','Client'],['loan','Loan']], true))
+      + sel('subject_id', subjLabel, [['', 'Choose…']].concat(subjects))
+      + sel('to_branch_id', f.subject_type === 'loan' ? 'Branch of the new officer' : 'Move to branch', [['', 'Choose…']].concat(branches.map(b => [b.id, b.name])), true)
+      + (f.subject_type !== 'staff' ? sel('to_officer_id', 'New loan officer', [['', toOfficers.length ? 'Choose…' : (f.to_branch_id ? 'No active officers at that branch' : 'Pick a branch first')]].concat(toOfficers)) : '');
   } else {
-    specific = (isMgr ? '' : sel('branch_id', 'Branch', [['', kind === 'action_plan' || kind === 'escalation' ? 'Whole region' : 'Choose…']].concat(branches.map(b => [b.id, b.name]))))
+    specific = (isMgr ? '' : sel('branch_id', 'Branch', [['', ['action_plan','escalation','task'].includes(kind) ? (rgIsRegional() ? 'Whole region' : 'Whole company') : 'Choose…']].concat(branches.map(b => [b.id, b.name]))))
       + (RG_OPS_CATEGORIES[kind] ? sel('category', 'Category', [['', 'Choose…']].concat(RG_OPS_CATEGORIES[kind].map(c => [c, c]))) : '')
       + (isMgr ? '' : sel('assigned_to', 'Assign to', [['', 'Nobody yet']].concat(staff.map(s => [s.id, `${s.name} (${s.role})`]))));
   }
-  return `<div class="fp ${isFormOpen('rg-'+kind)?'fp-open':''}">${formToggleBtn('rg-'+kind, 'New ' + RG_KIND_LABEL[kind])}<div class="fp-body"><div class="card">${rgCardTitle('New ' + RG_KIND_LABEL[kind])}
+  return `<div class="fp ${isFormOpen('rg-'+kind)?'fp-open':''}">${formToggleBtn('rg-'+kind, 'New ' + (subject ? subject + ' ' : '') + RG_KIND_LABEL[kind])}<div class="fp-body"><div class="card">${rgCardTitle('New ' + RG_KIND_LABEL[kind])}
     <form onsubmit="return rgCreate(event,'${kind}')"><div class="form-grid">
       ${inp('title', 'Title', 'text', 'maxlength="160"')}${sel('priority', 'Priority', RG_PRIORITIES.map(p => [p, p]))}
       ${specific}${kind === 'transfer' ? '' : inp('due_date', 'Due date', 'date')}
@@ -5883,10 +5887,10 @@ async function rgCreate(ev, kind){
   const f = rgForm(kind);
   if(!String(f.title || '').trim()){ toast('Give it a title.'); return false; }
   if(kind === 'transfer'){
-    if(!f.subject_id){ toast(`Choose the ${f.subject_type === 'client' ? 'client' : 'staff member'} to transfer.`); return false; }
+    if(!f.subject_id){ toast(`Choose the ${{ client:'client', loan:'loan' }[f.subject_type] || 'staff member'} to transfer.`); return false; }
     if(!f.to_branch_id){ toast('Choose the branch to move to.'); return false; }
-    if(f.subject_type === 'client' && !f.to_officer_id){ toast('Choose the new loan officer.'); return false; }
-  } else if(kind !== 'action_plan' && kind !== 'escalation' && session.role !== 'Manager' && !f.branch_id){ toast('Choose the branch.'); return false; }
+    if(f.subject_type !== 'staff' && !f.to_officer_id){ toast('Choose the new loan officer.'); return false; }
+  } else if(!['action_plan','escalation','task'].includes(kind) && session.role !== 'Manager' && !f.branch_id){ toast('Choose the branch.'); return false; }
   const body = { kind, title: f.title.trim(), details: f.details, priority: f.priority, category: f.category || undefined, due_date: f.due_date || undefined };
   if(kind === 'transfer') Object.assign(body, { subject_type: f.subject_type, subject_id: f.subject_id, to_branch_id: f.to_branch_id, to_officer_id: f.to_officer_id || undefined });
   else Object.assign(body, { branch_id: f.branch_id || undefined, assigned_to: f.assigned_to || undefined });
@@ -5899,7 +5903,7 @@ async function rgCreate(ev, kind){
 async function rgSetStatus(id, status){
   const recs = (DB.adm || {})['rg:ops'] || []; const r = recs.find(x => x.id === id); if(!r) return;
   let resolution;
-  if(['Rejected','Cancelled','Resolved','Completed','Fulfilled','Closed'].includes(status)){
+  if(['Rejected','Cancelled','Resolved','Completed','Fulfilled','Closed','Done','Passed','Failed','Waived'].includes(status)){
     if(r.kind === 'transfer' && status === 'Completed' && typeof confirm === 'function' && !confirm(`Complete this transfer? ${r.subjectName || 'The ' + r.subjectType} will be moved to ${branchName(r.toBranchId)} now.`)) return;
     resolution = typeof prompt === 'function' ? prompt(`Outcome / note for "${r.title}" (optional):`, '') : '';
     if(resolution === null) return;
@@ -5920,6 +5924,169 @@ async function rgEscalate(id){
   await withRequest('rg-escalate-' + id, async ()=>{ await api.post(`/api/regional-ops/${id}/escalate`, { reason: reason.trim() }); rgForget('ops'); }, { mutates: true });
 }
 
+/* ---- Operational Manager pages (company-wide operations) ----
+   Added to the same regional chassis: transfers, tasks and compliance
+   checks are Regional Operations records; the analysis pages read the
+   live loans/staff/branches plus the company finance figures. */
+Object.assign(RG_PAGES, {
+  "Employee Transfers": { eyebrow:"Employees", sub:"Move staff members between branches — requested, approved, then completed.", kind:"transfer", subject:"staff" },
+  "Client Transfers": { eyebrow:"Client Registry", sub:"Move a client, with their open loans, to another branch and loan officer.", kind:"transfer", subject:"client" },
+  "Loan Transfers": { eyebrow:"LoanBook", sub:"Hand a single loan to another loan officer, in the same branch or another one.", kind:"transfer", subject:"loan" },
+  "Operational Tasks": { eyebrow:"Operations", sub:"Work you assign across branches, with owners, deadlines and progress.", kind:"task" },
+  "Compliance Checks": { eyebrow:"Operations", sub:"Branch compliance reviews and their findings, beside live client-file completeness.", kind:"compliance_check", extra: () => omKycCard() },
+  "Workforce Planning": { eyebrow:"Employees", sub:"Staffing against workload in every branch, and where officers are short." },
+  "Financial Requests": { eyebrow:"Accounting", sub:"Money operations need released, sent to the CEO and Director for a decision." },
+  "Branch Status": { eyebrow:"Branches & Regions", sub:"Every branch: status, age, people and loan book." },
+  "Growth Analysis": { eyebrow:"Business Analytics", sub:"How clients, lending and the network are growing, month by month and region by region." },
+  "Operational Performance": { eyebrow:"Business Analytics", sub:"Turnaround, collections and how quickly operational work gets closed, branch by branch." },
+  "Operational Approvals": { eyebrow:"Operations", sub:"Everything waiting for the Operational Manager's decision, in one place." },
+  "Process Monitoring": { eyebrow:"Operations", sub:"Where loans and payments are in their approval steps, and what is stuck." },
+  "Operations Activity Log": { eyebrow:"Operations", sub:"Operational actions across the company: loans, clients, branches, payments and operations records." },
+  "Client Data Quality": { eyebrow:"Client Registry", sub:"Client records with missing or clashing details." },
+});
+Object.assign(RG_KIND_LABEL, { task:'task', compliance_check:'compliance check' });
+Object.assign(RG_STATUS_TONE, { Done:'green', Scheduled:'blue', Passed:'green', Failed:'red', Waived:'grey' });
+Object.assign(RG_NEXT, { task: { Open:['In Progress','Done','Cancelled'], 'In Progress':['Done','Cancelled'] }, compliance_check: { Scheduled:['Passed','Failed','Waived'] } });
+Object.assign(RG_OPS_CATEGORIES, {
+  task: ["Branch operations","Collections","Systems","Staff","Premises","Reporting","Other"],
+  compliance_check: ["KYC & client files","Cash handling","Loan documentation","Collections conduct","Data protection","Branch premises","Other"],
+});
+const OM_OPEN_LOAN = l => ['Pending','Approved','Active','Disbursed'].includes(l.status) || /^Waiting|^Approved for/.test(l.status || '');
+const OM_STAGES = ['Pending','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Approved for Disbursement'];
+const omDays = (a, b) => Math.max(0, (new Date(b) - new Date(a)) / 86400000);
+const omSinceStep = l => { const last = (l.approvals || []).slice(-1)[0]; return last ? last.createdAt : l.createdAt; };
+function omKycCard(){
+  const Q = admData('acc:cq', '/api/acct/client-quality'); const F = accFin();
+  if(Q === undefined || F === undefined) return admLoading('Client file completeness by branch');
+  if(Q.__error || F.__error) return '';
+  const rows = F.branches.filter(b => b.clients).map(b => { const gaps = Q.clients.filter(c => c.branch === b.name); const kyc = gaps.filter(c => c.issues.some(i => /ID number|phone|next of kin|documents|verified/i.test(i))).length;
+    return { name: b.name, clients: b.clients, gaps: gaps.length, kyc, complete: rgPct(b.clients - gaps.length, b.clients) }; }).sort((a, b) => a.complete - b.complete);
+  return `${admChart('om-kyc', 'Complete Client Files by Branch (%)', 'bar', rows.slice(0, 15).map(r => r.name), [{ label: '% complete', data: rows.slice(0, 15).map(r => Math.round(r.complete)) }], dirHoriz)}
+    ${dirTable('Client file completeness by branch', rows, [['Branch', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Clients', r => fmtNum(r.clients)], ['With a gap', r => fmtNum(r.gaps)], ['KYC gaps', r => fmtNum(r.kyc)], ['Complete', r => rgPctBadge(r.complete, 90, 75)]], 'No clients yet.',
+      `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Client Data Quality')">See every gap</button></div>`)}`;
+}
+function omActivityLog(title, modules){
+  const act = rgData('activity', '/api/regional-ops/activity?limit=500', r => r.activity);
+  if(act === undefined) return admLoading(); if(act.__error) return admError(act.__error);
+  const ops = act.filter(a => !modules || modules.includes(a.module));
+  const f = session.omActFilter || (session.omActFilter = { q:'', module:'' });
+  const q = f.q.toLowerCase();
+  const list = ops.filter(a => (!f.module || a.module === f.module) && (!q || [a.user, a.action, a.recordType].some(x => (x || '').toLowerCase().includes(q))));
+  const mods = [...new Set(ops.map(a => a.module).filter(Boolean))].sort();
+  const days = admLastDays(14);
+  return `${dirTiles([['Actions', ops.length], ['Today', ops.filter(a => String(a.at).slice(0, 10) === todayISO()).length], ['People active', new Set(ops.map(a => a.userId)).size]])}
+    ${admTwoCharts(admChart('om-act-d', 'Actions per Day (last 14 days)', 'bar', days.map(admDayLabel), [{ label: 'Actions', data: days.map(d => ops.filter(a => String(a.at).slice(0, 10) === d).length) }]),
+      admChart('om-act-m', 'Actions by Area', 'bar', mods, [{ label: 'Actions', data: mods.map(m => ops.filter(a => a.module === m).length) }], dirHoriz))}
+    ${dirTable(title, list.slice(0, 500), [['When', a => admWhen(a.at)], ['User', a => `${escapeHtml(a.user || '—')}<div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[a.roleId] || a.roleId || '')}</div>`], ['Branch', a => escapeHtml(a.branchId ? branchName(a.branchId) : '—')], ['Area', a => escapeHtml(a.module || '—')], ['Action', a => `<strong>${escapeHtml(a.action)}</strong>`], ['Record', a => escapeHtml(((a.recordType || '') + ' ' + (a.recordId || '')).trim() || '—')]], 'No operational activity recorded yet.',
+      `<div class="pill-row adm-filters"><input placeholder="Search user, action or record" value="${escapeHtml(f.q)}" onchange="session.omActFilter.q=this.value; renderApp();">
+        <select onchange="session.omActFilter.module=this.value; renderApp();"><option value="">All areas</option>${mods.map(m => `<option ${f.module === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}</select></div>`)}`;
+}
+Object.assign(RG_VIEWS, {
+  "Financial Requests": () => ACC_VIEWS.finReq(),
+  "Branch Status": () => ACC_VIEWS.branchStatus(),
+  "Client Data Quality": () => ACC_VIEWS.clientQuality(),
+  "Operations Activity Log": () => omActivityLog('Operations activity', ['loanbook','clients','branches','payments','regional_ops','staff','collections']),
+  "Workforce Planning": () => {
+    const ratio = Number(session.omRatio) || 150;
+    const ops = rgData('ops', '/api/regional-ops', r => r.records); if(ops === undefined) return admLoading(); if(ops.__error) return admError(ops.__error);
+    const today = todayISO();
+    const onLeave = new Set((DB.leaveRequests || []).filter(l => l.status === 'Approved' && l.start_date <= today && l.end_date >= today).map(l => l.user_id));
+    const staffT = ops.filter(r => r.kind === 'transfer' && r.subjectType === 'staff' && r.isOpen);
+    const rows = rgBranches().map(b => {
+      const st = computeStats(null, [b.id]); const staff = (DB.staff || []).filter(s => s.branch === b.id && s.status === 'Active');
+      const officers = staff.filter(s => s.role === 'Loan Officer').length;
+      const need = st.activeClients ? Math.ceil(st.activeClients / ratio) : 0;
+      return { b, staff: staff.length, officers, managers: staff.filter(s => s.role === 'Manager').length, clients: st.activeClients, loans: st.activeScope.length, portfolio: st.portfolioOutstanding,
+        perOfficer: officers ? st.activeClients / officers : null, portPerOfficer: officers ? st.portfolioOutstanding / officers : null, need, gap: need - officers,
+        leave: staff.filter(s => onLeave.has(s.id)).length, tin: staffT.filter(r => r.toBranchId === b.id).length, tout: staffT.filter(r => r.fromBranchId === b.id).length };
+    });
+    const short = rows.filter(r => r.gap > 0), over = rows.filter(r => r.gap < 0 && r.officers > 1);
+    const roles = [...new Set((DB.staff || []).filter(s => s.status === 'Active').map(s => s.role))];
+    const topGap = rows.filter(r => r.gap !== 0).sort((a, b) => b.gap - a.gap).slice(0, 15);
+    return `<div class="card"><div class="pill-row adm-filters"><label class="hint">Clients one loan officer can carry</label><select onchange="session.omRatio=this.value; renderApp();">${[100,150,200,250,300].map(v => `<option ${v === ratio ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+      ${dirTiles([['Active staff', fmtNum((DB.staff || []).filter(s => s.status === 'Active').length)], ['Loan officers', fmtNum(dirSum(rows, r => r.officers))], ['Clients per officer', dirSum(rows, r => r.officers) ? fmtNum(dirSum(rows, r => r.clients) / dirSum(rows, r => r.officers)) : '—'], ['Branches short of officers', short.length, fmtNum(dirSum(short, r => r.gap)) + ' officers needed'], ['Branches with spare officers', over.length], ['On leave today', onLeave.size], ['Staff transfers open', staffT.length]])}
+      ${admTwoCharts(admChart('om-wf-gap', 'Officers Needed (+) or Spare (−) by Branch', 'bar', topGap.map(r => r.b.name), [{ label: 'Officers', data: topGap.map(r => r.gap), backgroundColor: topGap.map(r => r.gap > 0 ? '#E76F51' : '#2A9D8F') }], { indexAxis: 'y', scales: { x: { ticks: { precision: 0 } } } }),
+        admChart('om-wf-role', 'Active Staff by Role', 'bar', roles, [{ label: 'Staff', data: roles.map(ro => (DB.staff || []).filter(s => s.status === 'Active' && s.role === ro).length) }], dirHoriz))}
+      ${dirTable('Workforce by branch', rows.sort((a, b) => b.gap - a.gap), [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['Staff', r => fmtNum(r.staff)], ['Managers', r => r.managers || admBadge('None', 'red')], ['Loan officers', r => fmtNum(r.officers)], ['Active clients', r => fmtNum(r.clients)], ['Clients per officer', r => r.perOfficer === null ? (r.clients ? admBadge('No officer', 'red') : '—') : fmtNum(r.perOfficer)], ['Portfolio per officer', r => r.portPerOfficer === null ? '—' : fmt(r.portPerOfficer)],
+        ['Officers needed', r => fmtNum(r.need)], ['Gap', r => r.gap > 0 ? admBadge('+' + r.gap + ' short', 'red') : r.gap < 0 ? admBadge(Math.abs(r.gap) + ' spare', 'green') : admBadge('Balanced', 'grey')], ['On leave', r => r.leave || '—'], ['Transfers in / out', r => `${r.tin} / ${r.tout}`]], 'No branches.',
+        `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Employee Transfers')">Move staff</button></div>`)}`;
+  },
+  "Growth Analysis": () => {
+    const F = accFin(); const g = dirGuard(F); if(g) return g;
+    const M = F.monthly; const first = M.slice(0, 6), last = M.slice(6);
+    const gr = (fn) => { const a = dirSum(first, fn), b = dirSum(last, fn); return a > 0 ? (b / a - 1) * 100 : null; };
+    let cum = 0; const cumClients = M.map(m => (cum += m.newClients));
+    const yearAgo = M[0].month + '-01';
+    const opened = F.branches.filter(b => b.createdAt && b.createdAt >= yearAgo);
+    const regs = [...new Set(F.branches.map(b => b.region || 'No region'))].sort().map(name => { const bs = F.branches.filter(b => (b.region || 'No region') === name);
+      return { name, branches: bs.length, opened: bs.filter(b => b.createdAt && b.createdAt >= yearAgo).length, clients: dirSum(bs, b => b.clients), loans12: dirSum(bs, b => b.loans12), disbursed: dirSum(bs, b => b.disbursed12), outstanding: dirSum(bs, b => b.outstanding) }; });
+    return `${dirTiles([['New clients (12 months)', fmtNum(dirSum(M, m => m.newClients))], ['Client growth (last 6 vs first 6 months)', accPct(gr(m => m.newClients))], ['Disbursed (12 months)', fmt(dirSum(M, m => m.disbursed))], ['Lending growth (last 6 vs first 6 months)', accPct(gr(m => m.disbursed))], ['Loan book now', fmt(F.portfolio.outstanding)], ['Branches opened (12 months)', opened.length]])}
+      ${admTwoCharts(admChart('om-gr-c', 'New Clients per Month', 'bar', M.map(m => accM(m.month)), [{ label: 'New clients', data: M.map(m => m.newClients) }]),
+        admChart('om-gr-cum', 'Clients Added (cumulative, 12 months)', 'line', M.map(m => accM(m.month)), [{ label: 'Clients added', data: cumClients, fill: true, tension: 0.3 }]))}
+      ${admChart('om-gr-d', 'Loans Disbursed per Month (KES)', 'line', M.map(m => accM(m.month)), [{ label: 'Disbursed', data: M.map(m => Math.round(m.disbursed)), fill: false, tension: 0.25 }, { label: 'Collected', data: M.map(m => Math.round(m.collected)), fill: false, tension: 0.25 }])}
+      ${dirTable('Growth by month', M.slice().reverse(), [['Month', m => accM(m.month)], ['New clients', m => fmtNum(m.newClients)], ['Loans disbursed', m => fmtNum(m.disbursedLoans)], ['Amount disbursed', m => fmt(m.disbursed)], ['Change vs previous month', m => { const i = M.indexOf(m); const p = i > 0 ? M[i - 1].disbursed : 0; return p > 0 ? admBadge(accPct((m.disbursed / p - 1) * 100), m.disbursed >= p ? 'green' : 'red') : '—'; }]], '—')}
+      ${dirTable('Growth by region — last 12 months', regs, [['Region', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Branches', r => fmtNum(r.branches)], ['Opened', r => fmtNum(r.opened)], ['Clients', r => fmtNum(r.clients)], ['Loans disbursed', r => fmtNum(r.loans12)], ['Amount disbursed', r => fmt(r.disbursed)], ['Loan book', r => fmt(r.outstanding)]], 'No regions.')}
+      ${dirTable('Branches opened in the last 12 months', opened, [['Branch', b => `<strong>${escapeHtml(b.name)}</strong>`], ['Region', b => escapeHtml(b.region || '—')], ['Opened', b => escapeHtml(String(b.createdAt).slice(0, 10))], ['Clients', b => fmtNum(b.clients)], ['Loan book', b => fmt(b.outstanding)]], 'No branches opened in the last 12 months.')}`;
+  },
+  "Operational Performance": () => {
+    const ops = rgData('ops', '/api/regional-ops', r => r.records); if(ops === undefined) return admLoading(); if(ops.__error) return admError(ops.__error);
+    const since = new Date(Date.now() - 90 * 86400000).toISOString();
+    const disb = (DB.loans || []).filter(l => l.disbursedAt && l.disbursedAt >= since && l.createdAt);
+    const tat = xs => xs.length ? dirSum(xs, l => omDays(l.createdAt, l.disbursedAt)) / xs.length : null;
+    const closed = ops.filter(r => !r.isOpen && r.closedAt);
+    const resolveDays = kind => { const xs = closed.filter(r => r.kind === kind); return xs.length ? dirSum(xs, r => omDays(r.createdAt, r.closedAt)) / xs.length : null; };
+    const tasks = ops.filter(r => r.kind === 'task' && r.status === 'Done'); const onTime = tasks.filter(r => !r.dueDate || String(r.closedAt).slice(0, 10) <= r.dueDate).length;
+    const rows = rgBranchRows().map(r => { const xs = disb.filter(l => l.branchId === r.b.id); const open = ops.filter(o => o.branchId === r.b.id && o.isOpen);
+      const t = tat(xs); const score = Math.round(((r.collRate == null ? 100 : Math.min(100, r.collRate)) * 0.4) + (Math.max(0, 100 - r.par30Pct * 5) * 0.3) + ((t == null ? 100 : Math.max(0, 100 - t * 10)) * 0.2) + (Math.max(0, 100 - open.length * 10) * 0.1));
+      return Object.assign(r, { tat: t, loans90: xs.length, open: open.length, overdue: open.filter(o => o.dueDate && o.dueDate < todayISO()).length, score }); }).sort((a, b) => b.score - a.score);
+    const kinds = ['issue','branch_request','task','escalation','transfer'];
+    return `${dirTiles([['Application to disbursement', tat(disb) == null ? '—' : tat(disb).toFixed(1) + ' days', 'last 90 days'], ['Loans disbursed (90 days)', fmtNum(disb.length)], ['Issues resolved in', resolveDays('issue') == null ? '—' : resolveDays('issue').toFixed(1) + ' days'], ['Branch requests closed in', resolveDays('branch_request') == null ? '—' : resolveDays('branch_request').toFixed(1) + ' days'], ['Tasks done on time', tasks.length ? accPct(onTime / tasks.length * 100) : '—'], ['Open operational records', ops.filter(r => r.isOpen).length]])}
+      ${admTwoCharts(admChart('om-op-score', 'Operational Score by Branch (top 15)', 'bar', rows.slice(0, 15).map(r => r.b.name), [{ label: 'Score', data: rows.slice(0, 15).map(r => r.score) }], dirHoriz),
+        admChart('om-op-kind', 'Average Days to Close', 'bar', kinds.map(k => RG_KIND_LABEL[k]), [{ label: 'Days', data: kinds.map(k => { const d = resolveDays(k); return d == null ? 0 : Math.round(d * 10) / 10; }) }]))}
+      ${dirTable('Branch operational scorecard', rows, [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['Score', r => admBadge(r.score, r.score >= 80 ? 'green' : r.score >= 60 ? 'amber' : 'red')], ['Turnaround (days)', r => r.tat == null ? '—' : r.tat.toFixed(1)], ['Loans disbursed (90 days)', r => fmtNum(r.loans90)], ['Collection rate MTD', r => rgPctBadge(r.collRate, 95, 85)], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)], ['Open records', r => r.open], ['Overdue', r => r.overdue ? admBadge(r.overdue, 'red') : '—']], 'No branches.',
+        '<div class="hint" style="margin-bottom:8px;">Score: collection rate 40%, portfolio at risk 30%, loan turnaround 20%, open operational records 10%.</div>')}`;
+  },
+  "Operational Approvals": () => {
+    const ops = rgData('ops', '/api/regional-ops', r => r.records); const props = rgData('proposals', '/api/branch-proposals', r => r.proposals);
+    if(ops === undefined || props === undefined) return admLoading(); if(ops.__error) return admError(ops.__error);
+    const loans = (DB.loans || []).filter(l => l.status === 'Waiting for Operational Manager');
+    const reqs = ops.filter(r => r.kind === 'branch_request' && r.status === 'Pending');
+    const trs = ops.filter(r => r.kind === 'transfer' && r.status === 'Requested');
+    const esc = ops.filter(r => r.kind === 'escalation' && r.status === 'Open');
+    const prop = Array.isArray(props) ? props.filter(p => p.status === 'Proposed') : [];
+    const btn = (id, s, red) => `<button class="btn btn-sm ${red ? 'btn-red' : 'btn-primary'}" onclick="rgSetStatus('${id}','${s}')">${s}</button>`;
+    const age = d => { const h = Math.round((Date.now() - new Date(d)) / 3600000); return admBadge(h >= 48 ? Math.round(h / 24) + ' d' : h + ' h', h >= 48 ? 'red' : h >= 24 ? 'amber' : 'grey'); };
+    const types = [['Loan approvals', loans.length], ['Branch requests', reqs.length], ['Transfers', trs.length], ['Escalations', esc.length], ['Branch proposals', prop.length]];
+    return `${dirTiles(types.concat([['Total waiting', dirSum(types, t => t[1])]]))}
+      ${admChart('om-ap', 'Waiting by Type', 'bar', types.map(t => t[0]), [{ label: 'Items', data: types.map(t => t[1]) }], dirHoriz)}
+      ${dirTable('Loans waiting for you', loans, [['Client', l => `<strong>${escapeHtml(clientName(l.clientId))}</strong>`], ['Branch', l => escapeHtml(branchName(l.branchId))], ['Amount', l => fmt(l.principal)], ['Officer', l => escapeHtml(staffName(l.officerId))], ['Waiting', l => age(omSinceStep(l))]], 'No loans are waiting for you.',
+        `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-primary" onclick="sidebarNavigate('Undisbursed Loans')">Approve on Undisbursed Loans</button></div>`)}
+      ${dirTable('Branch requests', reqs, [['Request', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Branch', r => escapeHtml(r.branchId ? branchName(r.branchId) : '—')], ['Category', r => escapeHtml(r.category || '—')], ['Priority', r => admBadge(r.priority, RG_PRIORITY_TONE[r.priority])], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Waiting', r => age(r.createdAt)], ['', r => `<div class="pill-row" style="flex-wrap:nowrap;">${btn(r.id, 'Approved')}${btn(r.id, 'Rejected', true)}</div>`]], 'No branch requests are waiting.')}
+      ${dirTable('Transfers', trs, [['Who / what', r => `<strong>${escapeHtml(r.subjectName || '—')}</strong><div class="hint">${escapeHtml(r.subjectType)}</div>`], ['From', r => escapeHtml(branchName(r.fromBranchId))], ['To', r => escapeHtml(branchName(r.toBranchId))], ['Reason', r => escapeHtml(r.details || r.title)], ['Waiting', r => age(r.createdAt)], ['', r => `<div class="pill-row" style="flex-wrap:nowrap;">${btn(r.id, 'Approved')}${btn(r.id, 'Rejected', true)}</div>`]], 'No transfers are waiting.')}
+      ${dirTable('Escalations', esc, [['Escalation', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Branch', r => escapeHtml(r.branchId ? branchName(r.branchId) : 'Whole region')], ['Priority', r => admBadge(r.priority, RG_PRIORITY_TONE[r.priority])], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Waiting', r => age(r.createdAt)], ['', r => `<div class="pill-row" style="flex-wrap:nowrap;">${btn(r.id, 'Acknowledged')}${btn(r.id, 'Resolved')}</div>`]], 'No escalations are open.')}
+      ${dirTable('Branch opening proposals', prop, [['Proposed branch', p => `<strong>${escapeHtml(p.name || p.proposed_name || '—')}</strong>`], ['Location', p => escapeHtml(p.location || '—')], ['Proposed', p => escapeHtml(String(p.created_at || '').slice(0, 10))], ['Status', p => admBadge(p.status, 'amber')]], 'No branch proposals are waiting.',
+        '<div class="hint" style="margin-bottom:8px;">Branch proposals are decided by the CEO / Director; shown here so you can follow them.</div>')}`;
+  },
+  "Process Monitoring": () => {
+    const ops = rgData('ops', '/api/regional-ops', r => r.records); const aging = rgData('aging', '/api/accounting/approval-aging', r => r.items);
+    if(ops === undefined || aging === undefined) return admLoading(); if(ops.__error) return admError(ops.__error);
+    const AG = Array.isArray(aging) ? aging : [];
+    const now = new Date().toISOString();
+    const inStage = OM_STAGES.map(s => { const xs = (DB.loans || []).filter(l => l.status === s); const hrs = xs.map(l => omDays(omSinceStep(l), now) * 24);
+      return { s, n: xs.length, avg: hrs.length ? dirSum(hrs) / hrs.length : 0, max: hrs.length ? Math.max(...hrs) : 0, stuck: xs.filter(l => omDays(omSinceStep(l), now) * 24 > 48) }; });
+    const stuck = inStage.flatMap(x => x.stuck.map(l => ({ l, stage: x.s, hrs: omDays(omSinceStep(l), now) * 24 }))).sort((a, b) => b.hrs - a.hrs);
+    const overdueOps = ops.filter(r => r.isOpen && r.dueDate && r.dueDate < todayISO());
+    const agTypes = [...new Set(AG.map(i => i.type))];
+    return `${dirTiles([['Loans in the approval pipeline', fmtNum(dirSum(inStage, x => x.n))], ['Stuck over 48 hours', stuck.length], ['Accounting items waiting', AG.length, AG.filter(i => i.overdue).length + ' overdue'], ['Overdue operational records', overdueOps.length]])}
+      ${admTwoCharts(admChart('om-pm-n', 'Loans at Each Step', 'bar', inStage.map(x => x.s), [{ label: 'Loans', data: inStage.map(x => x.n) }], dirHoriz),
+        admChart('om-pm-h', 'Average Hours Waiting at Each Step', 'bar', inStage.map(x => x.s), [{ label: 'Hours', data: inStage.map(x => Math.round(x.avg)) }], dirHoriz))}
+      ${dirTable('Loan approval pipeline', inStage, [['Step', x => `<strong>${escapeHtml(x.s)}</strong>`], ['Loans', x => fmtNum(x.n)], ['Average wait', x => x.n ? Math.round(x.avg) + ' h' : '—'], ['Longest wait', x => x.n ? admBadge(Math.round(x.max) + ' h', x.max > 48 ? 'red' : 'grey') : '—'], ['Stuck (48h+)', x => x.stuck.length ? admBadge(x.stuck.length, 'red') : '—']], '—')}
+      ${dirTable('Stuck loans', stuck, [['Client', x => `<strong>${escapeHtml(clientName(x.l.clientId))}</strong>`], ['Branch', x => escapeHtml(branchName(x.l.branchId))], ['Amount', x => fmt(x.l.principal)], ['Step', x => escapeHtml(x.stage)], ['Waiting', x => admBadge(Math.round(x.hrs / 24) + ' days', 'red')]], 'Nothing has been stuck for more than 48 hours.')}
+      ${admChart('om-pm-ag', 'Accounting Approvals Waiting by Type', 'bar', agTypes, [{ label: 'On time', data: agTypes.map(t => AG.filter(i => i.type === t && !i.overdue).length) }, { label: 'Overdue', data: agTypes.map(t => AG.filter(i => i.type === t && i.overdue).length) }], dirStacked)}
+      ${dirTable('Accounting approvals in progress', AG, [['Type', i => escapeHtml(i.type)], ['Reference', i => escapeHtml(i.reference || '—')], ['Branch', i => escapeHtml(i.branchId ? branchName(i.branchId) : '—')], ['Waiting for', i => escapeHtml(i.awaitingRole || '—')], ['Age', i => i.overdue ? admBadge(Math.round(i.ageHours) + ' h', 'red') : Math.round(i.ageHours) + ' h']], 'No accounting approvals are pending.')}
+      ${dirTable('Overdue operational records', overdueOps, [['Record', r => `<strong>${escapeHtml(r.title)}</strong>`], ['Type', r => escapeHtml(RG_KIND_LABEL[r.kind] || r.kind)], ['Branch', r => escapeHtml(r.branchId ? branchName(r.branchId) : 'Whole region')], ['Due', r => admBadge(r.dueDate, 'red')], ['Assigned to', r => escapeHtml(r.assignedToName || 'Unassigned')]], 'No operational record is overdue.')}`;
+  },
+});
 // Routing: every Regional page is its own sidebar item for the Regional
 // Manager (own region) and the Operational Manager (company-wide).
 const RG_BIZ_PERF_ITEMS = ["Portfolio Quality","Efficiency & Productivity","Personnel Productivity","Financial Management","Profitability","Dormancy Analysis"];
@@ -8432,7 +8599,7 @@ const ACC_VIEWS = {
         admChart('acc-fr-m', 'Requested per Month (KES)', 'line', months.map(accM), [{ label: 'Requested', data: months.map(m => Math.round(dirSum(recs.filter(r => String(r.createdAt).slice(0, 7) === m), r => r.amount))), fill: true, tension: 0.3 }]))}
       ${dirTable('Financial requests', recs, [['Request', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Category', r => escapeHtml(r.category || '—')], ['Amount', r => fmt(r.amount)], ['Branch', r => escapeHtml(r.branchId ? branchName(r.branchId) : 'Head office')], ['Needed by', r => escapeHtml(r.dueDate || '—')], ['Raised by', r => escapeHtml(r.createdByName || '—')],
         ['Status', r => accBadge(r.status) + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '') + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')],
-        ['', r => r.status === 'Approved' ? `<button class="btn btn-sm btn-primary" onclick="accFinReqPaid('${r.id}')">Mark paid</button>` : r.status === 'Pending' ? '<span class="hint">Awaiting CEO / Director</span>' : '']], 'No financial requests yet.')}`;
+        ['', r => r.status === 'Approved' ? (session.role === 'Accountant' ? `<button class="btn btn-sm btn-primary" onclick="accFinReqPaid('${r.id}')">Mark paid</button>` : '<span class="hint">Awaiting payment by the Accountant</span>') : r.status === 'Pending' ? '<span class="hint">Awaiting CEO / Director</span>' : '']], 'No financial requests yet.')}`;
   },
   statements: () => {
     const F = accFin(); const g = accGuard(F); if(g) return g;
