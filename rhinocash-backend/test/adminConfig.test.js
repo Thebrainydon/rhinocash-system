@@ -146,6 +146,27 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert(clear.status === 200 && clear.json.mustChangePassword === false, '4: Admin can clear the requirement again');
   }
 
+  // Outbound integrations (SMS / email) controlled by the System Administrator
+  {
+    const list = await api('GET', '/api/admin/integrations', { token: adminToken });
+    assert(list.status === 200 && list.json.sms && list.json.email, 'integrations: Admin sees SMS and email settings');
+    assert((await api('GET', '/api/admin/integrations', { token: managerToken })).status === 403, 'integrations: other roles cannot see them');
+    const noKey = await api('PUT', '/api/admin/integrations/sms', { token: adminToken, body: { provider: 'africastalking', username: 'sandbox', enabled: true } });
+    assert(noKey.status === 400, 'integrations: SMS cannot be switched on without an API key');
+    const badProv = await api('PUT', '/api/admin/integrations/email', { token: adminToken, body: { provider: 'carrier-pigeon' } });
+    assert(badProv.status === 400, 'integrations: an unknown provider is rejected');
+    const saved = await api('PUT', '/api/admin/integrations/sms', { token: adminToken, body: { provider: 'africastalking', username: 'sandbox', apiKey: 'atsk_secret_9876', enabled: false } });
+    assert(saved.status === 200 && saved.json.integration.configured && saved.json.integration.apiKey === '••••••••9876' && !JSON.stringify(saved.json).includes('atsk_secret'), 'integrations: the API key is stored and only ever shown masked');
+    const { get } = require('../src/db');
+    const row = await get("SELECT secret_enc FROM integration_configs WHERE kind = 'sms'");
+    assert(row && row.secret_enc && !row.secret_enc.includes('atsk_secret'), 'integrations: the API key is encrypted at rest');
+    const off = await api('POST', '/api/admin/integrations/sms/test', { token: adminToken, body: { to: '0712345678' } });
+    assert(off.status === 200 && off.json.status === 'NOT_CONFIGURED', 'integrations: a test while switched off says it is not switched on');
+    assert((await api('PUT', '/api/admin/integrations/sms', { token: managerToken, body: { enabled: false } })).status === 403, 'integrations: only the System Administrator changes them');
+    const cleared = await api('DELETE', '/api/admin/integrations/sms', { token: adminToken });
+    assert(cleared.status === 200 && (await api('GET', '/api/admin/integrations', { token: adminToken })).json.sms.configured === false, 'integrations: settings can be removed');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

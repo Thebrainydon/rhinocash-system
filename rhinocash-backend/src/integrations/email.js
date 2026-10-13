@@ -72,7 +72,7 @@ async function send(templateName, toAddress, ctx, meta) {
   }
   let out;
   try { out = toAddress ? await deliver(cfg, toAddress, subject, body) : { ok: false, detail: 'No email address' }; }
-  catch (e) { out = { ok: false, detail: e && e.name === 'TimeoutError' ? 'The email provider did not respond in time' : (e && e.message) || 'Could not reach the email provider' }; }
+  catch (e) { out = { ok: false, detail: e && e.name === 'TimeoutError' ? 'The email provider did not respond in time' : `Could not reach the email provider${e && e.cause && e.cause.code ? ' (' + e.cause.code + ')' : ''} — check the server's internet access` }; }
   const status = out.ok ? 'Sent' : 'FAILED';
   await store.logAttempt('email', templateName, toAddress, subject, status, meta);
   return { status, provider: cfg.provider, to: toAddress, subject, providerRef: out.providerRef || null, detail: out.detail || null };

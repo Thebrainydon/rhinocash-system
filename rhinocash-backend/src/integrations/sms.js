@@ -82,7 +82,7 @@ async function send(templateName, phone, ctx, meta) {
     if (!to) out = { ok: false, detail: 'No phone number' };
     else if (cfg.provider === 'africastalking') out = await sendAfricasTalking(cfg, to, message);
     else out = { ok: false, detail: `SMS provider "${cfg.provider}" is not supported` };
-  } catch (e) { out = { ok: false, detail: e && e.name === 'TimeoutError' ? 'The SMS provider did not respond in time' : (e && e.message) || 'Could not reach the SMS provider' }; }
+  } catch (e) { out = { ok: false, detail: e && e.name === 'TimeoutError' ? 'The SMS provider did not respond in time' : `Could not reach the SMS provider${e && e.cause && e.cause.code ? ' (' + e.cause.code + ')' : ''} — check the server's internet access` }; }
   const status = out.ok ? 'Sent' : 'FAILED';
   await store.logAttempt('sms', templateName, to, null, status, meta);
   return { status, provider: cfg.provider, phone: to, message, providerRef: out.providerRef || null, detail: out.detail || null };

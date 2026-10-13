@@ -7836,6 +7836,28 @@ apiRequest = async function(method, path, body){
     await api.patch('/api/hr/records/' + req.id, { status:'Rejected' });
   }
 
+  // ---- Undisbursed Loans desk; Admin SMS / Email integration pages ----
+  {
+    const mForm = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
+    global.FormData = class { constructor(){ return mForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    __assert(SIDEBAR_MENUS.Manager.some(sec => sec.items.includes('Undisbursed Loans')), "approvers have an Undisbursed Loans page in LoanBook");
+    sidebarNavigate('Undisbursed Loans');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('class="adm-title">Undisbursed Loans<') && html.includes('Waiting for your approval') && html.includes('Ready to disburse'), "Undisbursed Loans shows the approval and disbursement queues");
+    const waiting = (DB.loans || []).find(l => l.status === 'Waiting for Manager');
+    if(waiting) __assert(undisbMyStep(waiting) && html.includes(`undisbDecide('${waiting.id}','approve')`), "a loan waiting for the Manager offers Approve on the Manager's desk");
+    const aForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return aForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    sidebarNavigate('eSMS');
+    for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
+    renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(html.includes('name="apiKey"') && html.includes('Send test SMS') && html.includes("Africa's Talking"), "Admin can enter SMS credentials, switch SMS on and send a test");
+    sidebarNavigate('Email'); renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(html.includes('SendGrid') && html.includes('Mailgun') && html.includes('Send test email'), "Admin can configure email through SendGrid or Mailgun");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

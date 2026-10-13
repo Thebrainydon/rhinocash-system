@@ -4661,10 +4661,8 @@ Object.assign(ADMIN_PAGES, {
     cols:[aSel("event","Sent on",["Welcome","Password reset","Statement","Loan approved","Payslip"],"Welcome"),aF("subject","Subject"),aF("body","Body","textarea")] },
 
   /* ---------- Integrations ---------- */
-  "eSMS": { type:"settings", key:"integrations.sms", sub:"SMS gateway profile. API keys live in server environment variables, never in the database.", related:["SMS Templates","Notification Logs"],
-    groups:[aG("Gateway",[aSel("provider","Provider",["Africa's Talking","eSMS Kenya","Twilio"],"Africa's Talking"),aF("senderId","Sender ID",{def:"RHINOCASH"}),aF("username","Account username")])], extra:"integrationStatus" },
-  "Email": { type:"settings", key:"integrations.email", sub:"Outgoing email profile. The SMTP password lives in server environment variables.", related:["Email Templates","Notification Logs"],
-    groups:[aG("SMTP",[aF("host","SMTP host"),aNum("port","Port",587),aF("fromAddress","From address","email"),aTog("tls","Use TLS",true)])], extra:"integrationStatus" },
+  "eSMS": { type:"view", render:"integrationSms", sub:"Send real SMS through Africa's Talking. Enter the account details, switch it on, and send a test message.", related:["SMS Templates","Integration Logs"] },
+  "Email": { type:"view", render:"integrationEmail", sub:"Send real email through SendGrid or Mailgun. Enter the account details, switch it on, and send a test email.", related:["Email Templates","Integration Logs"] },
   "Payment Gateways": { type:"list", key:"payment-gateways", singular:"gateway", sub:"Payment providers connected or planned.", related:["M-Pesa / Daraja","Payment Channels"], cols:[aF("provider","Provider"),aSel("state","State",["Live","Sandbox","Planned"],"Planned")] },
   "API Configuration": { type:"view", render:"apiConfig", sub:"How this system's API is reached and protected.", related:["API & Developer Management"] },
   "Webhooks": { type:"list", key:"webhooks", singular:"webhook", sub:"Outbound notification endpoints registered for system events.", related:["Webhook Logs"],
@@ -4980,6 +4978,58 @@ function admListBody(spec, label){
 // Reference lists HR keeps (the server allows HR to write exactly these).
 const HR_LIST_KEYS = ['job-titles','job-grades','employment-types','leave-types','allowances','deductions','salary-components','training-categories','benefit-types'];
 const admCanEditList = spec => admIsAdmin() || (HR_LIST_KEYS.includes(spec.key) && typeof hrHas === 'function' && hrHas('manage_hr'));
+/* ---- outbound integrations (SMS / email) ---- */
+const ADM_INTEG = {
+  sms: { title: 'SMS', providers: [['africastalking', "Africa's Talking"]], fields: [['username', "Africa's Talking username", 'text', "Use 'sandbox' while testing"], ['senderId', 'Sender ID (optional)', 'text', 'Approved alphanumeric sender, e.g. RHINOCASH']], testLabel: 'Phone number', testPh: '07XXXXXXXX' },
+  email: { title: 'Email', providers: [['sendgrid', 'SendGrid'], ['mailgun', 'Mailgun']], fields: [['fromAddress', 'From address', 'email', 'A verified sender address'], ['fromName', 'From name', 'text', 'Rhinocash'], ['domain', 'Mailgun domain (Mailgun only)', 'text', 'mg.yourdomain.com'], ['region', 'Mailgun region (Mailgun only)', 'text', 'US or EU']], testLabel: 'Email address', testPh: 'you@example.com' },
+};
+function admIntegrationPage(kind){
+  const all = admData('integrations', '/api/admin/integrations');
+  if(all === undefined) return admLoading(); if(all.__error) return admError(all.__error);
+  const c = all[kind]; const def = ADM_INTEG[kind]; const can = admIsAdmin();
+  const state = !c.configured ? ['Not set up', 'grey'] : c.enabled ? ['On', 'green'] : ['Off', 'amber'];
+  const logs = (DB.communicationLog || []).filter(l => l.channel === kind);
+  if(!DB.communicationLog) loadCommunicationLog();
+  const days = admLastDays(14);
+  return `<div class="card"><div class="card-title">Status</div><div class="adm-tiles">
+      ${admTile('Delivery', admBadge(state[0], state[1]))}${admTile('Provider', escapeHtml((def.providers.find(p => p[0] === c.provider) || [, '—'])[1]))}${admTile('Last test', escapeHtml(c.lastTestStatus), c.lastTestAt ? timeAgo(c.lastTestAt) : '')}${admTile('Sent (logged)', logs.filter(l => l.status === 'Sent').length)}</div>
+      ${c.lastTestMessage ? `<div class="hint" style="margin-top:8px;">${escapeHtml(c.lastTestMessage)}</div>` : ''}
+      ${c.envFallback && !c.configured ? `<div class="hint" style="margin-top:8px;">Currently using settings from the server's environment variables. Saving here takes over from them.</div>` : ''}</div>
+    ${c.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red);"><strong>Re-enter the API key.</strong> The saved key can no longer be read because the server's encryption key changed.</div>` : ''}
+    ${can ? `<div class="card"><div class="card-title">${escapeHtml(def.title)} settings</div>
+      <form onsubmit="return admSaveIntegration(event,'${kind}')"><div class="form-grid">
+        <div class="field"><label>Provider</label><select name="provider">${def.providers.map(p => `<option value="${p[0]}" ${c.provider === p[0] ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select></div>
+        <div class="field"><label>API key ${c.apiKey ? `(${escapeHtml(c.apiKey)})` : ''}</label><input name="apiKey" type="password" autocomplete="new-password" placeholder="${c.apiKey ? 'Leave blank to keep the current key' : 'Paste the API key'}"></div>
+        ${def.fields.map(f => `<div class="field"><label>${escapeHtml(f[1])}</label><input name="${f[0]}" type="${f[2]}" value="${escapeHtml((c.settings || {})[f[0]] || '')}" placeholder="${escapeHtml(f[3])}"></div>`).join('')}
+        <div class="field"><label class="adm-toggle"><input type="checkbox" name="enabled" ${c.enabled ? 'checked' : ''}><span>Send real ${kind === 'sms' ? 'SMS' : 'email'}</span></label></div>
+      </div><div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">Save</button>
+      ${c.configured ? `<button type="button" class="btn btn-sm btn-red" onclick="admClearIntegration('${kind}')">Remove settings</button>` : ''}</div></form></div>
+    <div class="card"><div class="card-title">Send a test</div>
+      <form onsubmit="return admTestIntegration(event,'${kind}')"><div class="form-grid"><div class="field"><label>${escapeHtml(def.testLabel)}</label><input name="to" placeholder="${escapeHtml(def.testPh)}"></div></div>
+      <button class="btn btn-sm btn-outline" type="submit">Send test ${kind === 'sms' ? 'SMS' : 'email'}</button></form></div>` : ''}
+    ${admChart('integ-' + kind, 'Messages per Day (14 days)', 'bar', days.map(admDayLabel), [{ label: 'Sent', data: days.map(d => logs.filter(l => l.status === 'Sent' && String(l.created_at).slice(0, 10) === d).length), backgroundColor: '#2A9D8F' }, { label: 'Failed', data: days.map(d => logs.filter(l => l.status === 'FAILED' && String(l.created_at).slice(0, 10) === d).length), backgroundColor: '#E76F51' }], { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } })}
+    <div class="card"><div class="card-title"><span>Recent ${kind === 'sms' ? 'SMS' : 'emails'} <small>${logs.length}</small></span>${generateMenuHtml(def.title + ' log', () => ({ headers: ['When','Recipient','Message','Status'], rows: logs.map(l => [String(l.created_at).replace('T', ' ').slice(0, 16), l.recipient || '', l.subject || l.template, l.status]) }))}</div>
+      ${admTable(['When','Recipient','Message','Status'], logs.slice(0, 50).map(l => [admWhen(l.created_at), escapeHtml(l.recipient || '—'), escapeHtml(l.subject || l.template), admBadge(l.status, l.status === 'Sent' ? 'green' : l.status === 'NOT_CONFIGURED' ? 'grey' : 'red')]), 'Nothing sent yet.')}</div>`;
+}
+async function admSaveIntegration(ev, kind){
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const body = { provider: fd.get('provider'), enabled: fd.has('enabled') };
+  if(String(fd.get('apiKey') || '').trim()) body.apiKey = String(fd.get('apiKey')).trim();
+  ADM_INTEG[kind].fields.forEach(f => { body[f[0]] = String(fd.get(f[0]) || '').trim(); });
+  await withRequest('integ-save-' + kind, async ()=>{ await api.put('/api/admin/integrations/' + kind, body); admForget('integrations'); }, { mutates: true });
+  return false;
+}
+async function admTestIntegration(ev, kind){
+  ev.preventDefault();
+  const to = String(new FormData(ev.target).get('to') || '').trim(); if(!to){ toast('Enter where to send the test.'); return false; }
+  await withRequest('integ-test-' + kind, async ()=>{ const r = await api.post(`/api/admin/integrations/${kind}/test`, { to }); toast(r.message); admForget('integrations'); DB.communicationLog = null; });
+  return false;
+}
+async function admClearIntegration(kind){
+  if(typeof confirm === 'function' && !confirm('Remove these settings? Real sending stops until they are entered again.')) return;
+  await withRequest('integ-clear-' + kind, async ()=>{ await api.del('/api/admin/integrations/' + kind); admForget('integrations'); }, { mutates: true });
+}
 function admListSpec(){
   const s = ADMIN_PAGES[session.subtab]; if(s && s.type === 'list') return s;
   const h = session.section === 'hr' && typeof HR_PAGES !== 'undefined' && HR_PAGES[session.subtab];
@@ -5107,6 +5157,8 @@ const ADMIN_EXTRAS = {
 
 /* ---- view pages ---- */
 const ADMIN_VIEWS = {
+  integrationSms: () => admIntegrationPage('sms'),
+  integrationEmail: () => admIntegrationPage('email'),
   departments: () => {
     const deps = DB.departments || [];
     return `<div class="card"><div class="card-title">Departments <small>${deps.length} department(s)</small></div>
@@ -21397,7 +21449,7 @@ function renderSecurityEventsCard(){
   </div>`;
 }
 async function loadCommunicationLog(){
-  return withRequest('load-commlog', async ()=>{ const r = await api.get('/api/communication-log'); DB.communicationLog = r.log; });
+  return withRequest('load-commlog', async ()=>{ try{ const r = await api.get('/api/communication-log'); DB.communicationLog = r.log; } catch(e){ DB.communicationLog = []; throw e; } });
 }
 function renderCommunicationLogCard(){
   if(!DB.communicationLog) loadCommunicationLog();
