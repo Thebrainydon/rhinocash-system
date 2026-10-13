@@ -155,6 +155,28 @@ async function driveLoanToDisbursed(t, principal, term) {
   const frl = await api('GET', '/api/exec/records?kind=financial_request', { token: t.acct });
   assert(frl.status === 200 && frl.json.records.some(r => r.id === fr.json.record.id), '7: the Accountant sees financial requests');
 
+  // 8. Receivables ledger, general-ledger summary and reconciliations
+  const recv = await api('GET', '/api/acct/receivables', { token: t.acct });
+  assert(recv.status === 200 && Array.isArray(recv.json.loans) && recv.json.loans.every(l => typeof l.daysLate === 'number' && typeof l.outstanding === 'number'), '8: the receivables ledger lists open loans with what is owed');
+  assert(!recv.json.loans.some(l => l.loanId === L2.loanId), '8: a written-off loan is no longer a receivable');
+  assert((await api('GET', '/api/acct/receivables', { token: t.officer })).status === 403, '8: a Loan Officer cannot open the receivables ledger');
+  const gl = await api('GET', `/api/acct/gl-summary?from=${year}-01-01&to=${new Date().toISOString().slice(0, 10)}`, { token: t.acct });
+  const glAcc = (gl.json && gl.json.accounts) || [];
+  assert(gl.status === 200 && glAcc.length > 10 && Math.abs(glAcc.reduce((s, a) => s + a.debit - a.credit, 0)) < 0.01, '8: the GL summary covers every account and debits equal credits');
+  const bankGl = glAcc.find(a => a.id === 'bank');
+  assert(bankGl && Math.abs(bankGl.closing - (bankGl.opening + bankGl.debit - bankGl.credit)) < 0.01, '8: closing = opening + debits − credits for an asset account');
+  assert((await api('GET', '/api/acct/gl-summary?from=2026-12-01&to=2026-01-01', { token: t.acct })).status === 400, '8: a backwards period is rejected');
+  const ctlB = await api('GET', '/api/acct/finance', { token: t.acct });
+  const bankBal = ctlB.json.accounts.find(a => a.id === 'bank').balance;
+  const today = new Date().toISOString().slice(0, 10);
+  const rec1 = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'reconciliation', category: 'bank', amount: bankBal, data: { date: today } } });
+  assert(rec1.status === 201 && rec1.json.record.status === 'Reconciled' && Math.abs(rec1.json.record.data.difference) < 0.01, '8: a statement that matches the ledger is reconciled');
+  const rec2 = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'reconciliation', category: 'bank', amount: bankBal + 250, data: { date: today } } });
+  assert(rec2.status === 201 && rec2.json.record.status === 'Unreconciled' && Math.abs(rec2.json.record.data.difference - 250) < 0.01, '8: a statement that differs is unreconciled with the difference worked out');
+  assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'reconciliation', category: 'loans_receivable', amount: 1, data: { date: today } } })).status === 400, '8: only bank, M-Pesa or cash can be reconciled');
+  assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'reconciliation', category: 'bank', amount: 1, data: { date: '2099-01-01' } } })).status === 400, '8: a future statement date is rejected');
+  assert((await api('PATCH', `/api/acct/records/${rec2.json.record.id}`, { token: t.acct, body: { status: 'Resolved', outcome: 'Bank charge not yet posted' } })).json.record.status === 'Resolved', '8: the difference is marked resolved');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

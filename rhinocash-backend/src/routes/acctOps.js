@@ -6,8 +6,11 @@
 //   GET  /api/acct/controls        verification queues and exceptions
 //   GET  /api/acct/client-quality  client records with missing or clashing data
 //   GET  /api/acct/daily?date=     one day's money in and out
+//   GET  /api/acct/receivables     every open loan with what is owed on it
+//   GET  /api/acct/gl-summary      per-account opening, debits, credits, closing
 //   GET/POST/PATCH /api/acct/records  budgets, forecasts, refunds, write-off
-//                                  proposals, verifications and exceptions
+//                                  proposals, verifications, exceptions and
+//                                  bank / M-Pesa / cash reconciliations
 //
 // Who can do what:
 //   - view:   Accountant, CEO, Director, System Administrator (the
@@ -34,7 +37,9 @@ const KINDS = {
   write_off:    { statuses: ['Pending', 'Approved', 'Rejected', 'Written Off'], decision: true },
   verification: { statuses: ['Verified', 'Flagged', 'Resolved'] },
   exception:    { statuses: ['Open', 'Investigating', 'Resolved', 'Dismissed'] },
+  reconciliation: { statuses: ['Reconciled', 'Unreconciled', 'Resolved'] },
 };
+const RECON_ACCOUNTS = ['bank', 'mpesa', 'cash'];
 const FORECAST_LINES = ['Disbursements', 'Collections', 'Revenue', 'Expenses'];
 const REF_TYPES = ['payment', 'journal', 'loan', 'client'];
 
@@ -359,6 +364,34 @@ function register(router) {
   });
   router.get('/api/acct/controls', requireAuth, requireView, async (req, res) => res.json(await buildControls()));
   router.get('/api/acct/client-quality', requireAuth, requireFigures, async (req, res) => res.json(await buildClientQuality()));
+  // Every open loan with what is owed on it (the receivables ledger).
+  router.get('/api/acct/receivables', requireAuth, requireView, async (req, res) => {
+    const loans = await activeLoans();
+    const names = await all(`SELECT l.id, b.name AS branch, u.name AS officer, p.name AS product FROM loans l LEFT JOIN branches b ON b.id = l.branch_id
+      LEFT JOIN users u ON u.id = l.officer_id LEFT JOIN loan_products p ON p.id = l.product_id WHERE l.status IN ('Active','Disbursed')`);
+    const nm = new Map(names.map(n => [n.id, n]));
+    res.json({ loans: loans.map(l => { const n = nm.get(l.id) || {};
+      return { loanId: l.id, client: l.client_name, branch: n.branch || '', officer: n.officer || '', product: n.product || '', disbursedAt: l.disbursed_at,
+        principal: l.principal, outstanding: round2(l.outstanding), principalOutstanding: round2(l.principalOutstanding), overdue: round2(l.overdue),
+        penaltyOutstanding: round2(l.penaltyOutstanding), daysLate: l.daysLate }; }) });
+  });
+
+  // Per-account movement for a period: opening balance, debits, credits, closing balance.
+  router.get('/api/acct/gl-summary', requireAuth, requireView, async (req, res, next) => {
+    const from = req.query.from || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString().slice(0, 10);
+    const to = req.query.to || today();
+    if (!isDate(from) || !isDate(to) || from > to) return next({ status: 400, message: 'Choose a valid period (YYYY-MM-DD, from before to)' });
+    const end = new Date(Date.parse(to + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+    const rows = await all(`SELECT a.id, a.code, a.name, a.account_type,
+        COALESCE(SUM(CASE WHEN j.entry_date < ? THEN j.debit - j.credit ELSE 0 END),0) AS before_net,
+        COALESCE(SUM(CASE WHEN j.entry_date >= ? AND j.entry_date < ? THEN j.debit ELSE 0 END),0) AS d,
+        COALESCE(SUM(CASE WHEN j.entry_date >= ? AND j.entry_date < ? THEN j.credit ELSE 0 END),0) AS c,
+        COUNT(CASE WHEN j.entry_date >= ? AND j.entry_date < ? THEN 1 END)::int AS lines
+      FROM gl_accounts a LEFT JOIN journal_entries j ON j.account_id = a.id GROUP BY a.id, a.code, a.name, a.account_type ORDER BY a.code`, [from, from, end, from, end, from, end]);
+    res.json({ from, to, accounts: rows.map(r => { const sign = ['Asset', 'Expense'].includes(r.account_type) ? 1 : -1; const opening = round2(sign * num(r.before_net));
+      return { id: r.id, code: r.code, name: r.name, type: r.account_type, opening, debit: round2(r.d), credit: round2(r.c), lines: r.lines, closing: round2(opening + sign * (num(r.d) - num(r.c))) }; }) });
+  });
+
   router.get('/api/acct/daily', requireAuth, requireView, async (req, res, next) => {
     const date = req.query.date || today();
     if (!isDate(date)) return next({ status: 400, message: 'Date must be YYYY-MM-DD' });
@@ -381,7 +414,7 @@ function register(router) {
     const def = KINDS[b.kind];
     if (!def) return next({ status: 400, message: 'Unknown record type' });
     const amount = b.amount === undefined || b.amount === null || b.amount === '' ? null : Number(b.amount);
-    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) return next({ status: 400, message: 'Amount must be zero or more' });
+    if (amount !== null && (!Number.isFinite(amount) || (amount < 0 && b.kind !== 'reconciliation'))) return next({ status: 400, message: 'Amount must be zero or more' });
     if (b.branch_id && !(await get('SELECT id FROM branches WHERE id = ?', [b.branch_id]))) return next({ status: 400, message: 'Unknown branch' });
     let title = clean(b.title, 200), category = clean(b.category, 80), period = clean(b.period, 7), refType = clean(b.ref_type, 20), refId = clean(b.ref_id, 80);
     let status = def.statuses[0]; let finalAmount = amount; const data = b.data && typeof b.data === 'object' && !Array.isArray(b.data) ? b.data : {};
@@ -432,6 +465,18 @@ function register(router) {
       title = title || `${refType} ${refId}`;
     } else if (b.kind === 'exception') {
       if (!title) return next({ status: 400, message: 'A title is required' });
+    } else if (b.kind === 'reconciliation') {
+      // The statement balance is entered; the ledger balance at that date is computed here.
+      if (!RECON_ACCOUNTS.includes(category)) return next({ status: 400, message: 'Choose the bank, M-Pesa or cash account' });
+      const date = data.date;
+      if (!isDate(date) || date > today()) return next({ status: 400, message: 'Statement date must be a past date (YYYY-MM-DD)' });
+      if (amount === null || !Number.isFinite(amount)) return next({ status: 400, message: 'Enter the statement closing balance' });
+      const next1 = new Date(Date.parse(date + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+      const lb = await get(`SELECT COALESCE(SUM(debit - credit),0) AS v FROM journal_entries WHERE account_id = ? AND entry_date < ?`, [category, next1]);
+      data.ledgerBalance = round2(lb.v); data.difference = round2(amount - num(lb.v));
+      status = Math.abs(data.difference) < 0.01 ? 'Reconciled' : 'Unreconciled';
+      finalAmount = round2(amount); period = date.slice(0, 7);
+      title = title || `${category === 'mpesa' ? 'M-Pesa' : category === 'bank' ? 'Bank' : 'Cash'} reconciliation — ${date}`;
     }
     const id = 'acr_' + crypto.randomUUID();
     await run(`INSERT INTO acct_records (id, kind, title, details, category, status, branch_id, period, amount, ref_type, ref_id, data_json, outcome, created_by)

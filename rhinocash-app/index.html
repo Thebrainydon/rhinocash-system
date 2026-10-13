@@ -8989,6 +8989,226 @@ const ACC_VIEWS = {
       ${dirTable('Forecasts entered', FC.slice().sort((a, b) => String(a.period).localeCompare(String(b.period))), [['Month', r => accM(r.period)], ['Line', r => escapeHtml(r.category)], ['Forecast', r => fmt(r.amount)], ['Basis', r => escapeHtml(r.details || '—')], ['Entered by', r => escapeHtml(r.createdByName || '—')]], 'No forecasts entered yet.')}`;
   },
 };
+/* ---- Accountant pages that used to reuse another page ----
+   Each of these now has its own page: payables / receivables working
+   lists, journal entries, bank accounts and reconciliations, payment
+   reconciliation, merged payments, payment exceptions, pending approvals,
+   the loan portfolio report and the investor ledger / statements. */
+Object.assign(ACC_PAGES, {
+  "Accounts Payable": { view:'ap', sub:'Bills and obligations waiting to be paid, oldest first, with where to pay each one.' },
+  "Accounts Receivable": { view:'ar', sub:'Every open loan and what the borrower still owes, with how late it is.' },
+  "Journal Entries": { view:'journal', sub:'Every posted transaction with its debit and credit lines.' },
+  "Bank Accounts": { view:'bankAccounts', sub:'Cash at hand, bank and M-Pesa: balances and recent movement.' },
+  "Bank Reconciliation": { view:'bankRecon', sub:'Compare the statement balance with the ledger and record the result.' },
+  "Reconciliation": { view:'reconHub', sub:'Where every reconciliation stands: bank, M-Pesa, payments and suspense.' },
+  "Payment Reconciliation": { view:'payRecon', sub:'Check that every client payment reached the ledger with the right amount.' },
+  "Merged Payments": { view:'merged', sub:'Clients who paid more than once on the same day, shown as one combined amount.' },
+  "Payment Exceptions": { view:'payExceptions', sub:'Payments that need attention: duplicates, reversals, overpayments and delays.' },
+  "Pending Approvals": { view:'pending', sub:'Everything waiting for the Accountant: loans, expenses, requisitions, payments and requests.' },
+  "Loan Portfolio Report": { view:'portfolioReport', sub:'The loan book by product, branch, officer and how late repayments are.' },
+  "Investor Ledger": { view:'investorLedger', sub:'Capital received and returns paid or owed, investor by investor.' },
+  "Investor Statements": { view:'investorStatements', sub:'A statement for one investor: capital, every return period and totals.' },
+  "General Ledger Report": { view:'glReport', sub:'Every account for a period: opening balance, debits, credits and closing balance.' },
+});
+(SIDEBAR_MENUS.Accountant || []).forEach(sec => sec.items.forEach(item => { if(ACC_PAGES[item] && !ACC_SECTION_OF[item]) ACC_SECTION_OF[item] = sec.section; }));
+Object.assign(ROLE_ROUTE_OVERRIDES.Accountant, Object.fromEntries(Object.keys(ACC_PAGES).map(l => [l, { section:'acct', subtab:l }])),
+  { "Validate Payment": { section:'payments', subtab:'Validate Payments' } });
+const accRecv = () => admData('acc:recv', '/api/acct/receivables', r => r.loans);
+const ACC_AGE_BANDS = [['Under 7 days', 0, 6], ['7-30 days', 7, 30], ['31-60 days', 31, 60], ['Over 60 days', 61, 1e9]];
+const accAcctName = { cash:'Cash at hand', bank:'Bank', mpesa:'M-Pesa' };
+async function accSaveRecon(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const v = { category: fd.get('category'), date: fd.get('date'), amount: fd.get('amount'), details: fd.get('details') };
+  (session.accFormVals = session.accFormVals || {})['acc-recon'] = v;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.date || '')){ toast('Choose the statement date.'); return false; }
+  if(v.amount === '' || v.amount === null || !Number.isFinite(Number(v.amount))){ toast('Enter the statement closing balance.'); return false; }
+  await accPost('acc-recon', { kind:'reconciliation', category: v.category, amount: Number(v.amount), details: v.details, data: { date: v.date } }, 'Reconciliation recorded.');
+  return false;
+}
+function accJournal(){
+  const f = session.accJrFilter || (session.accJrFilter = { from: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10), to: todayISO(), account: '' });
+  const qs = new URLSearchParams({ limit: 200, date_from: f.from, date_to: f.to }); if(f.account) qs.set('account_id', f.account);
+  return [f, admData('acc:jr:' + qs.toString(), '/api/journal-entries?' + qs.toString(), r => r.entries)];
+}
+
+Object.assign(ACC_VIEWS, {
+  glReport: () => {
+    const f = session.accGlFilter || (session.accGlFilter = { from: todayISO().slice(0, 8) + '01', to: todayISO(), used: true });
+    const G = admData('acc:gl:' + f.from + ':' + f.to, `/api/acct/gl-summary?from=${f.from}&to=${f.to}`);
+    const filters = `<div class="card"><div class="pill-row adm-filters"><label class="hint">From</label><input type="date" value="${f.from}" onchange="session.accGlFilter.from=this.value; renderApp();"><label class="hint">To</label><input type="date" value="${f.to}" onchange="session.accGlFilter.to=this.value; renderApp();">
+      <label class="adm-check"><input type="checkbox" ${f.used ? 'checked' : ''} onchange="session.accGlFilter.used=this.checked; renderApp();"><span>Only accounts with a balance or movement</span></label></div></div>`;
+    const g = accGuard(G); if(g) return filters + g;
+    const A = G.accounts.filter(a => !f.used || a.opening || a.closing || a.lines);
+    const types = ['Asset','Liability','Equity','Revenue','Expense'];
+    const moved = A.filter(a => a.debit || a.credit).sort((a, b) => (b.debit + b.credit) - (a.debit + a.credit)).slice(0, 12);
+    return `${filters}${dirTiles([['Accounts shown', A.length], ['Journal lines in period', fmtNum(dirSum(A, a => a.lines))], ['Total debits', fmt(dirSum(A, a => a.debit))], ['Total credits', fmt(dirSum(A, a => a.credit))], ['Balanced', Math.abs(dirSum(A, a => a.debit - a.credit)) < 0.01 ? admBadge('Yes', 'green') : admBadge('No', 'red')]])}
+      ${admChart('acc-gl', 'Most Active Accounts in the Period (KES)', 'bar', moved.map(a => a.name), [{ label: 'Debits', data: moved.map(a => Math.round(a.debit)) }, { label: 'Credits', data: moved.map(a => Math.round(a.credit)) }], dirHoriz)}
+      ${types.map(t => { const xs = A.filter(a => a.type === t); return xs.length ? dirTable(`${t} accounts — ${G.from} to ${G.to}`, xs.concat([{ name: 'Total ' + t.toLowerCase(), opening: dirSum(xs, a => a.opening), debit: dirSum(xs, a => a.debit), credit: dirSum(xs, a => a.credit), closing: dirSum(xs, a => a.closing), b: 1 }]),
+        [['Account', a => a.b ? `<strong>${escapeHtml(a.name)}</strong>` : `${escapeHtml(a.code)} · ${escapeHtml(a.name)}`], ['Opening', a => accMoneyRed(a.opening)], ['Debits', a => fmt(a.debit)], ['Credits', a => fmt(a.credit)], ['Closing', a => a.b ? `<strong>${accMoneyRed(a.closing)}</strong>` : accMoneyRed(a.closing)]], '—') : ''; }).join('')}`;
+  },
+  ap: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const P = F.payables;
+    const groups = [['Expenses', P.expenses, 'Expense Monitoring'], ['Requisitions', P.requisitions, 'Requisitions'], ['Utility payments', P.utilities, 'Utility Payments'], ['Investor returns', P.investorPayouts, 'Obligations'], ['Client refunds', P.refunds, 'Refunds']];
+    const all = groups.flatMap(([t, xs, page]) => xs.map(x => Object.assign({ type: t, page }, x))).sort((a, b) => (b.ageDays || 0) - (a.ageDays || 0));
+    const band = x => (ACC_AGE_BANDS.find(([, lo, hi]) => (x.ageDays || 0) >= lo && (x.ageDays || 0) <= hi) || ACC_AGE_BANDS[0])[0];
+    return `${dirTiles([['Owed', fmt(dirSum(all, x => x.amount)), all.length + ' items'], ['Approved, ready to pay', fmt(dirSum(all.filter(x => ['Approved','CEO Approved'].includes(x.status)), x => x.amount))], ['Waiting for approval', fmt(dirSum(all.filter(x => x.status === 'Pending'), x => x.amount))], ['Over 30 days old', all.filter(x => (x.ageDays || 0) > 30).length]])}
+      ${admTwoCharts(admChart('acc-ap-age', 'Payables by Age (KES)', 'bar', ACC_AGE_BANDS.map(b => b[0]), [{ label: 'KES', data: ACC_AGE_BANDS.map(b => Math.round(dirSum(all.filter(x => band(x) === b[0]), x => x.amount))) }]),
+        admChart('acc-ap-type', 'Payables by Type (KES)', 'bar', groups.map(x => x[0]), [{ label: 'Ready to pay', data: groups.map(([, xs]) => Math.round(dirSum(xs.filter(x => ['Approved','CEO Approved'].includes(x.status)), x => x.amount))) }, { label: 'Waiting for approval', data: groups.map(([, xs]) => Math.round(dirSum(xs.filter(x => !['Approved','CEO Approved'].includes(x.status)), x => x.amount))) }], dirStacked))}
+      ${dirTable('Accounts payable', all, [['Type', x => escapeHtml(x.type)], ['Item', x => `<strong>${escapeHtml(x.item || '—')}</strong>`], ['Branch', x => escapeHtml(x.branch || '—')], ['Amount', x => fmt(x.amount)], ['Status', x => accBadge(x.status)], ['Age', x => x.ageDays === null ? '—' : admBadge(x.ageDays + ' d', x.ageDays > 30 ? 'red' : x.ageDays > 7 ? 'amber' : 'grey')], ['', x => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${x.page}')">${['Approved','CEO Approved'].includes(x.status) ? 'Pay' : 'Open'}</button>`]], 'Nothing is owed right now.')}`;
+  },
+  ar: () => {
+    const L = accRecv(); const g = accGuard(L); if(g) return g;
+    const f = session.accArFilter || (session.accArFilter = { q:'', late:'' });
+    const q = f.q.toLowerCase();
+    const list = L.filter(l => (!q || [l.client, l.branch, l.officer, l.loanId].some(x => (x || '').toLowerCase().includes(q))) && (!f.late || (f.late === 'late' ? l.daysLate > 0 : f.late === '30' ? l.daysLate > 30 : l.daysLate > 90))).sort((a, b) => b.daysLate - a.daysLate || b.outstanding - a.outstanding);
+    const bands = [['Current', 0, 0], ['1-30 days', 1, 30], ['31-60 days', 31, 60], ['61-90 days', 61, 90], ['Over 90 days', 91, 1e9]];
+    const byB = admGroup(L, l => l.branch, l => l.outstanding);
+    return `${dirTiles([['Open loans', fmtNum(L.length)], ['Owed', fmt(dirSum(L, l => l.outstanding))], ['Overdue', fmt(dirSum(L, l => l.overdue))], ['Principal still owed', fmt(dirSum(L, l => l.principalOutstanding))], ['Penalties owed', fmt(dirSum(L, l => l.penaltyOutstanding))], ['Late borrowers', L.filter(l => l.daysLate > 0).length]])}
+      ${admTwoCharts(admChart('acc-ar-age', 'Owed by How Late (KES)', 'bar', bands.map(b => b[0]), [{ label: 'KES', data: bands.map(([, lo, hi]) => Math.round(dirSum(L.filter(l => l.daysLate >= lo && l.daysLate <= hi), l => l.outstanding))) }]),
+        admChart('acc-ar-b', 'Owed by Branch (KES)', 'bar', byB[0], [{ label: 'KES', data: byB[1] }], dirHoriz))}
+      ${dirTable('Accounts receivable', list, [['Borrower', l => `<strong>${escapeHtml(l.client || '—')}</strong><div class="hint">${escapeHtml(l.loanId)}</div>`], ['Branch', l => escapeHtml(l.branch)], ['Officer', l => escapeHtml(l.officer)], ['Product', l => escapeHtml(l.product)], ['Principal', l => fmt(l.principal)], ['Owed', l => fmt(l.outstanding)], ['Overdue', l => l.overdue ? `<span style="color:var(--red); font-weight:700;">${fmt(l.overdue)}</span>` : fmt(0)], ['Penalties', l => fmt(l.penaltyOutstanding)], ['Days late', l => l.daysLate ? admBadge(l.daysLate + ' d', l.daysLate > 30 ? 'red' : 'amber') : admBadge('Current', 'green')]], 'No open loans match.',
+        `<div class="pill-row adm-filters"><input placeholder="Search borrower, branch, officer" value="${escapeHtml(f.q)}" onchange="session.accArFilter.q=this.value; renderApp();"><select onchange="session.accArFilter.late=this.value; renderApp();">${[['','All open loans'],['late','Late'],['30','Over 30 days late'],['90','Over 90 days late']].map(([v, l]) => `<option value="${v}" ${f.late === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}`;
+  },
+  journal: () => {
+    const F = accFin(); const [f, E] = accJournal(); const g = accGuard(F, E); if(g) return g;
+    const groups = {}; E.forEach(e => { const k = (e.ref_type || 'manual') + ':' + (e.ref_id || e.id); (groups[k] = groups[k] || { refType: e.ref_type || 'manual', refId: e.ref_id, date: e.entry_date, branch: e.branch_id, lines: [] }).lines.push(e); });
+    const tx = Object.values(groups).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const types = [...new Set(tx.map(t => t.refType))];
+    const nameOf = id => F.nameOf[id] || id;
+    const filters = `<div class="pill-row adm-filters"><label class="hint">From</label><input type="date" value="${f.from}" onchange="session.accJrFilter.from=this.value; renderApp();"><label class="hint">To</label><input type="date" value="${f.to}" onchange="session.accJrFilter.to=this.value; renderApp();">
+      <select onchange="session.accJrFilter.account=this.value; renderApp();"><option value="">All accounts</option>${F.accounts.map(a => `<option value="${a.id}" ${f.account === a.id ? 'selected' : ''}>${escapeHtml(a.code + ' · ' + a.name)}</option>`).join('')}</select></div>`;
+    return `${dirTiles([['Transactions', tx.length], ['Journal lines', E.length], ['Total debits', fmt(dirSum(E, e => e.debit))], ['Total credits', fmt(dirSum(E, e => e.credit))], ['Unbalanced', tx.filter(t => Math.abs(dirSum(t.lines, l => l.debit - l.credit)) >= 0.01).length]])}
+      ${admChart('acc-jr', 'Transactions by Source', 'bar', types, [{ label: 'Transactions', data: types.map(t => tx.filter(x => x.refType === t).length) }])}
+      ${dirTable('Journal entries', E.slice().sort((a, b) => String(b.entry_date).localeCompare(String(a.entry_date)) || String(a.ref_id).localeCompare(String(b.ref_id))), [['Date', e => escapeHtml(String(e.entry_date).slice(0, 10))], ['Source', e => `<strong>${escapeHtml(e.ref_type || 'manual')}</strong><div class="hint">${escapeHtml(e.ref_id || '')}</div>`], ['Account', e => escapeHtml(nameOf(e.account_id))], ['Description', e => escapeHtml(e.description || '—')], ['Branch', e => escapeHtml(e.branch_id ? branchName(e.branch_id) : '—')], ['Debit', e => e.debit ? fmt(e.debit) : ''], ['Credit', e => e.credit ? fmt(e.credit) : '']], 'No journal entries in this period.', filters)}`;
+  },
+  bankAccounts: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const acc = ['cash','bank','mpesa'].includes(session.accBankAcc) ? session.accBankAcc : 'bank';
+    const qs = new URLSearchParams({ limit: 200, account_id: acc });
+    const E = admData('acc:jr:' + qs.toString(), '/api/journal-entries?' + qs.toString(), r => r.entries); const g2 = accGuard(E);
+    const bal = id => (F.accounts.find(a => a.id === id) || {}).balance || 0;
+    let run = bal(acc); const rows = (Array.isArray(E) ? E.slice() : []).sort((a, b) => String(b.entry_date).localeCompare(String(a.entry_date))).map(e => { const r = Object.assign({ balance: run }, e); run -= (e.debit - e.credit); return r; });
+    return `${dirTiles([['Cash at hand', accMoneyRed(bal('cash'))], ['Bank', accMoneyRed(bal('bank'))], ['M-Pesa', accMoneyRed(bal('mpesa'))], ['Total cash', accMoneyRed(F.cash.total)]])}
+      ${admChart('acc-ba', 'Balances (KES)', 'bar', ['Cash at hand','Bank','M-Pesa'], [{ label: 'KES', data: ['cash','bank','mpesa'].map(a => Math.round(bal(a))), backgroundColor: ['#2E5C8A','#3D8BD9','#2A9D8F'] }])}
+      ${g2 || dirTable(`${accAcctName[acc]} — recent movement`, rows, [['Date', e => escapeHtml(String(e.entry_date).slice(0, 10))], ['Description', e => escapeHtml(e.description || '—')], ['Source', e => escapeHtml(e.ref_type || 'manual')], ['Branch', e => escapeHtml(e.branch_id ? branchName(e.branch_id) : '—')], ['In', e => e.debit ? fmt(e.debit) : ''], ['Out', e => e.credit ? fmt(e.credit) : ''], ['Balance after', e => accMoneyRed(e.balance)]], 'No movement on this account yet.',
+        `<div class="pill-row adm-filters"><select onchange="session.accBankAcc=this.value; renderApp();">${['bank','mpesa','cash'].map(a => `<option value="${a}" ${acc === a ? 'selected' : ''}>${accAcctName[a]}</option>`).join('')}</select><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Bank Reconciliation')">Reconcile</button></div>`)}`;
+  },
+  bankRecon: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const R = accRecList('reconciliation').sort((a, b) => String(b.data.date).localeCompare(String(a.data.date)));
+    const last = a => R.find(r => r.category === a);
+    const fields = [hSel('category', 'Account', [{ v:'bank', l:'Bank' }, { v:'mpesa', l:'M-Pesa' }, { v:'cash', l:'Cash at hand' }]), hF('date', 'Statement date', 'date', { def: todayISO() }), hF('amount', 'Statement closing balance (KES)', 'number'), hF('details', 'Notes', 'textarea')];
+    return `${dirTiles(['bank','mpesa','cash'].map(a => { const l = last(a); return [`${accAcctName[a]} — last reconciled`, l ? escapeHtml(l.data.date) : 'Never', l ? (l.status === 'Reconciled' ? 'balanced' : 'difference ' + fmt(l.data.difference)) : ''];  }).concat([['Open differences', R.filter(r => r.status === 'Unreconciled').length]]))}
+      ${accCanWrite() ? accFormCard('acc-recon', 'New reconciliation', fields, 'accSaveRecon(event)', 'Reconcile') : ''}
+      ${admChart('acc-br', 'Statement vs Ledger (KES)', 'bar', R.slice(0, 12).reverse().map(r => `${accAcctName[r.category]} ${r.data.date}`), [{ label: 'Statement', data: R.slice(0, 12).reverse().map(r => Math.round(r.amount)) }, { label: 'Ledger', data: R.slice(0, 12).reverse().map(r => Math.round(r.data.ledgerBalance)) }])}
+      ${dirTable('Reconciliations', R, [['Account', r => `<strong>${escapeHtml(accAcctName[r.category] || r.category)}</strong>`], ['Statement date', r => escapeHtml(r.data.date)], ['Statement balance', r => accMoneyRed(r.amount)], ['Ledger balance', r => accMoneyRed(r.data.ledgerBalance)], ['Difference', r => Math.abs(r.data.difference) < 0.01 ? admBadge('None', 'green') : `<span style="color:var(--red); font-weight:700;">${fmt(r.data.difference)}</span>`], ['Status', r => accBadge(r.status) + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')], ['By', r => escapeHtml(r.createdByName || '—')],
+        ['', r => r.status === 'Unreconciled' && accCanWrite() ? `<button class="btn btn-sm btn-outline" onclick="accSetStatus('${r.id}','Resolved','How was the difference cleared?')">Mark resolved</button>` : '']], 'No reconciliations recorded yet.',
+        '<div class="hint" style="margin-bottom:8px;">The ledger balance is worked out by the system for the statement date; a difference means the books and the statement disagree.</div>')}`;
+  },
+  reconHub: () => {
+    const C = accCtl(); const recs = accRecs(); const M = admData('acc:mrec', '/api/mpesa/reconciliation/summary'); const g = accGuard(C, recs, M); if(g) return g;
+    const R = accRecList('reconciliation').sort((a, b) => String(b.data.date).localeCompare(String(a.data.date)));
+    const lastBank = R.find(r => r.category === 'bank');
+    const unposted = C.payments.filter(p => ['Posted','Overpayment'].includes(p.status)).filter(p => !C.transactions.some(t => t.refType === 'payment' && t.refId === p.id)).length;
+    const areas = [['Bank', lastBank ? (lastBank.status === 'Reconciled' ? 'Reconciled' : 'Difference ' + fmt(lastBank.data.difference)) : 'Not reconciled yet', lastBank ? lastBank.data.date : '—', 'Bank Reconciliation', lastBank && lastBank.status !== 'Unreconciled' ? 'green' : 'amber'],
+      ['M-Pesa', `${(M.unmatched || {}).count || 0} unmatched`, `${(M.matched || {}).count || 0} matched`, 'Suspense Accounts', (M.unmatched || {}).count ? 'amber' : 'green'],
+      ['Payments to ledger', C.payments.length ? `${unposted} not in the ledger` : 'No payments in 60 days', '', 'Payment Reconciliation', unposted ? 'red' : 'green'],
+      ['Suspense', fmt(C.suspense.overpaymentSuspense) + ' held', `${C.suspense.unposted.length} unposted payments`, 'Suspense Accounts', C.suspense.unposted.length ? 'amber' : 'green'],
+      ['Trial balance', Math.abs(C.trialBalance.debit - C.trialBalance.credit) < 0.01 ? 'Balanced' : 'Out by ' + fmt(C.trialBalance.debit - C.trialBalance.credit), '', 'Trial Balance', Math.abs(C.trialBalance.debit - C.trialBalance.credit) < 0.01 ? 'green' : 'red']];
+    const mrows = [['STK push matched', (M.stk || {}).matched], ['STK push unmatched', (M.stk || {}).unmatched], ['STK push failed', (M.stk || {}).exception], ['Paybill matched', (M.c2b || {}).matched], ['Paybill unmatched', (M.c2b || {}).unmatched]].map(r => [r[0], Number(r[1]) || 0]);
+    return `${dirTiles(areas.map(a => [a[0], admBadge(a[1], a[4]), a[2]]))}
+      ${admChart('acc-rh-m', 'M-Pesa Matching', 'bar', mrows.map(r => r[0]), [{ label: 'Transactions', data: mrows.map(r => r[1]) }], dirHoriz)}
+      ${dirTable('Reconciliation status', areas, [['Area', a => `<strong>${escapeHtml(a[0])}</strong>`], ['State', a => admBadge(a[1], a[4])], ['Detail', a => escapeHtml(a[2] || '—')], ['', a => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${a[3]}')">Open</button>`]], '—')}
+      ${dirTable('M-Pesa reconciliation', mrows, [['Item', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Transactions', r => fmtNum(r[1])]], '—')}`;
+  },
+  payRecon: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const tx = new Map(C.transactions.filter(t => t.refType === 'payment').map(t => [t.refId, t]));
+    const posted = C.payments.filter(p => ['Posted','Overpayment'].includes(p.status));
+    const rows = posted.map(p => { const t = tx.get(p.id); const state = !t ? 'Not in ledger' : !t.balanced ? 'Unbalanced' : Math.abs(t.debit - p.amount) >= 0.01 ? 'Amount differs' : 'Matched'; return { p, t, state }; });
+    const bad = rows.filter(r => r.state !== 'Matched');
+    const ch = [...new Set(posted.map(p => p.channel || 'Other'))];
+    const days = admLastDays(14);
+    return `${dirTiles([['Posted payments (60 days)', posted.length, fmt(dirSum(posted, p => p.amount))], ['Matched to the ledger', rows.filter(r => r.state === 'Matched').length], ['Problems', bad.length], ['Ledger total for payments', fmt(dirSum([...tx.values()], t => t.debit))]])}
+      ${admTwoCharts(admChart('acc-pr-c', 'Payments vs Ledger by Channel (KES)', 'bar', ch, [{ label: 'Payments', data: ch.map(c => Math.round(dirSum(posted.filter(p => (p.channel || 'Other') === c), p => p.amount))) }, { label: 'In the ledger', data: ch.map(c => Math.round(dirSum(rows.filter(r => (r.p.channel || 'Other') === c && r.t), r => r.t.debit))) }]),
+        admChart('acc-pr-d', 'Payments per Day (last 14 days, KES)', 'bar', days.map(admDayLabel), [{ label: 'Payments', data: days.map(d => Math.round(dirSum(posted.filter(p => String(p.createdAt).slice(0, 10) === d), p => p.amount))) }]))}
+      ${dirTable('Payments that do not match the ledger', bad, [['Date', r => escapeHtml(String(r.p.createdAt).slice(0, 10))], ['Client', r => `<strong>${escapeHtml(r.p.client || '—')}</strong>`], ['Amount', r => fmt(r.p.amount)], ['Ledger', r => r.t ? fmt(r.t.debit) : '—'], ['Reference', r => escapeHtml(r.p.reference || '—')], ['Problem', r => admBadge(r.state, 'red')]], 'Every posted payment reached the ledger with the right amount.')}
+      ${dirTable('All posted payments', rows, [['Date', r => escapeHtml(String(r.p.createdAt).slice(0, 10))], ['Client', r => escapeHtml(r.p.client || '—')], ['Channel', r => escapeHtml(r.p.channel || '—')], ['Amount', r => fmt(r.p.amount)], ['Ledger', r => r.t ? fmt(r.t.debit) : '—'], ['State', r => admBadge(r.state, r.state === 'Matched' ? 'green' : 'red')]], 'No posted payments in the last 60 days.')}`;
+  },
+  merged: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const posted = C.payments.filter(p => !['Reversed','Unposted'].includes(p.status));
+    const groups = {}; posted.forEach(p => { const k = (p.client || '—') + '|' + String(p.createdAt).slice(0, 10); (groups[k] = groups[k] || []).push(p); });
+    const merged = Object.entries(groups).filter(([, xs]) => xs.length > 1).map(([k, xs]) => ({ client: k.split('|')[0], date: k.split('|')[1], xs, total: dirSum(xs, p => p.amount), branch: xs[0].branch, channels: [...new Set(xs.map(p => p.channel))].join(', ') })).sort((a, b) => b.date.localeCompare(a.date));
+    const days = admLastDays(14);
+    return `${dirTiles([['Merged groups (60 days)', merged.length], ['Payments in them', dirSum(merged, m => m.xs.length)], ['Combined amount', fmt(dirSum(merged, m => m.total))]])}
+      ${admChart('acc-mg', 'Merged Payment Groups per Day', 'bar', days.map(admDayLabel), [{ label: 'Groups', data: days.map(d => merged.filter(m => m.date === d).length) }])}
+      ${dirTable('Merged payments', merged, [['Date', m => escapeHtml(m.date)], ['Client', m => `<strong>${escapeHtml(m.client)}</strong>`], ['Branch', m => escapeHtml(m.branch || '—')], ['Payments', m => m.xs.length], ['Channels', m => escapeHtml(m.channels)], ['References', m => m.xs.map(p => escapeHtml(p.reference || p.id)).join('<br>')], ['Amounts', m => m.xs.map(p => fmt(p.amount)).join('<br>')], ['Combined', m => `<strong>${fmt(m.total)}</strong>`]], 'No client paid more than once on the same day in the last 60 days.')}`;
+  },
+  payExceptions: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const P = C.payments.filter(p => p.flags.length);
+    const flagNames = ['Duplicate reference','Unusually large','Overpayment','Reversed','Unposted over 2 days'];
+    const mp = C.exceptions.filter(x => x.type === 'M-Pesa');
+    return `${dirTiles(flagNames.map(n => [n, P.filter(p => p.flags.includes(n)).length]).concat([['Unmatched M-Pesa (1 day+)', mp.length]]))}
+      ${admChart('acc-pe', 'Payment Exceptions by Type', 'bar', flagNames.concat(['Unmatched M-Pesa']), [{ label: 'Payments', data: flagNames.map(n => P.filter(p => p.flags.includes(n)).length).concat([mp.length]) }], dirHoriz)}
+      ${dirTable('Payment exceptions', P, [['Date', p => escapeHtml(String(p.createdAt).slice(0, 10))], ['Client', p => `<strong>${escapeHtml(p.client || '—')}</strong><div class="hint">${escapeHtml(p.branch || '')}</div>`], ['Amount', p => fmt(p.amount)], ['Reference', p => escapeHtml(p.reference || '—')], ['Status', p => accBadge(p.status)], ['Exception', p => p.flags.map(x => admBadge(x, 'red')).join(' ')], ['Check', p => accVerifyBtns('payment', p.id, p.verification)]], 'No payment exceptions in the last 60 days.')}
+      ${dirTable('Unmatched M-Pesa payments', mp, [['Problem', x => `<strong>${escapeHtml(x.title)}</strong>`], ['Details', x => escapeHtml(x.detail)]], 'Every M-Pesa payment is matched.', `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Unposted Payments')">Match payments</button></div>`)}`;
+  },
+  pending: () => {
+    const recs = accRecs(); const fr = accFinReqs(); const aging = admData('acc:aging', '/api/accounting/approval-aging', r => r.items); const g = accGuard(recs, fr, aging); if(g) return g;
+    const loans = (DB.loans || []).filter(l => l.status === 'Waiting for Accountant');
+    const AG = aging.filter(i => /accountant/i.test(i.awaitingRole || '') || ['Expense','Requisition','Adjustment','Utility Payment'].some(t => (i.type || '').includes(t)));
+    const toPay = accRecList('refund', r => r.status === 'Approved'); const toWO = accRecList('write_off', r => r.status === 'Approved'); const freq = fr.filter(r => r.status === 'Approved');
+    const types = [['Loans to approve', loans.length, 'Undisbursed Loans'], ['Accounting items', AG.length, 'Approval Aging'], ['Refunds to pay', toPay.length, 'Refunds'], ['Write-offs to execute', toWO.length, 'Write-Offs'], ['Financial requests to pay', freq.length, 'Financial Requests']];
+    const go = page => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${page}')">Open</button>`;
+    return `${dirTiles(types.map(t => [t[0], t[1]]).concat([['Total waiting', dirSum(types, t => t[1])]]))}
+      ${admChart('acc-pa2', 'Waiting for the Accountant', 'bar', types.map(t => t[0]), [{ label: 'Items', data: types.map(t => t[1]) }], dirHoriz)}
+      ${dirTable('Loans waiting for your approval', loans, [['Client', l => `<strong>${escapeHtml(clientName(l.clientId))}</strong>`], ['Branch', l => escapeHtml(branchName(l.branchId))], ['Amount', l => fmt(l.principal)], ['Officer', l => escapeHtml(staffName(l.officerId))], ['Applied', l => escapeHtml(String(l.createdAt).slice(0, 10))], ['', () => go('Undisbursed Loans')]], 'No loans are waiting for you.')}
+      ${dirTable('Accounting items waiting', AG, [['Type', i => escapeHtml(i.type)], ['Reference', i => escapeHtml(i.reference || '—')], ['Branch', i => escapeHtml(i.branchId ? branchName(i.branchId) : '—')], ['Waiting for', i => escapeHtml(i.awaitingRole || '—')], ['Age', i => i.overdue ? admBadge(Math.round(i.ageHours) + ' h', 'red') : Math.round(i.ageHours) + ' h'], ['', i => go(/Requisition/.test(i.type) ? 'Requisitions' : /Utility/.test(i.type) ? 'Utility Payments' : /Adjust/.test(i.type) ? 'Adjustments' : 'Expense Monitoring')]], 'No accounting items are waiting.')}
+      ${dirTable('Approved, waiting for you to act', toPay.map(r => ['Refund', r.refName || r.title, r.amount, 'Refunds']).concat(toWO.map(r => ['Write-off', r.refName || r.title, r.amount, 'Write-Offs'])).concat(freq.map(r => ['Financial request', r.title, r.amount, 'Financial Requests'])),
+        [['Type', x => escapeHtml(x[0])], ['Item', x => `<strong>${escapeHtml(x[1])}</strong>`], ['Amount', x => fmt(x[2])], ['', x => go(x[3])]], 'Nothing approved is waiting for you.')}`;
+  },
+  portfolioReport: () => {
+    const F = accFin(); const L = accRecv(); const g = accGuard(F, L); if(g) return g;
+    const R = F.receivables; const prods = F.products.filter(p => p.activeLoans);
+    const offs = [...new Set(L.map(l => l.officer || '—'))].map(o => { const xs = L.filter(l => (l.officer || '—') === o); const out = dirSum(xs, l => l.outstanding);
+      return { o, loans: xs.length, out, overdue: dirSum(xs, l => l.overdue), par30: out > 0 ? dirSum(xs.filter(l => l.daysLate > 30), l => l.outstanding) / out * 100 : 0 }; }).sort((a, b) => b.out - a.out);
+    return `${dirTiles([['Active loans', fmtNum(F.portfolio.activeLoans)], ['Loan book', fmt(F.portfolio.outstanding)], ['PAR30', accPct(F.portfolio.par30)], ['Overdue', fmt(R.overdue)], ['Average loan', L.length ? fmt(dirSum(L, l => l.principal) / L.length) : '—']])}
+      ${admTwoCharts(admChart('acc-lp-p', 'Loan Book by Product (KES)', 'bar', prods.map(p => p.name), [{ label: 'KES', data: prods.map(p => Math.round(p.outstanding)) }], dirHoriz),
+        admChart('acc-lp-a', 'Loan Book by How Late (KES)', 'bar', R.ageing.map(a => a.bucket), [{ label: 'KES', data: R.ageing.map(a => Math.round(a.amount)) }]))}
+      ${dirTable('By product', prods, [['Product', p => `<strong>${escapeHtml(p.name)}</strong>`], ['Active loans', p => fmtNum(p.activeLoans)], ['Loan book', p => fmt(p.outstanding)], ['Disbursed (12 months)', p => fmt(p.disbursed12)], ['Collected (12 months)', p => fmt(p.collected12)]], 'No active loans.')}
+      ${dirTable('By branch', F.branches.filter(b => b.activeLoans), [['Branch', b => `<strong>${escapeHtml(b.name)}</strong><div class="hint">${escapeHtml(b.region)}</div>`], ['Active loans', b => fmtNum(b.activeLoans)], ['Loan book', b => fmt(b.outstanding)], ['PAR30', b => rgPctBadge(b.par30, 5, 10, true)], ['Collection rate', b => rgPctBadge(b.collectionRate, 95, 85)]], 'No active loans.')}
+      ${dirTable('By loan officer', offs, [['Officer', x => `<strong>${escapeHtml(x.o)}</strong>`], ['Active loans', x => fmtNum(x.loans)], ['Loan book', x => fmt(x.out)], ['Overdue', x => fmt(x.overdue)], ['PAR30', x => rgPctBadge(x.par30, 5, 10, true)]], 'No active loans.')}
+      ${dirTable('Ageing', R.ageing, [['How late', a => `<strong>${escapeHtml(a.bucket)}</strong>`], ['Loans', a => fmtNum(a.loans)], ['Amount', a => fmt(a.amount)], ['Share', a => hrBar(Math.round(rgPct(a.amount, R.outstanding)))]], '—')}`;
+  },
+  investorLedger: () => {
+    const I = admData('acc:inv', '/api/investors?limit=200', r => r.investors); const P = admData('acc:invpay', '/api/investor-payouts', r => r.payouts); const g = accGuard(I, P); if(g) return g;
+    const rows = I.map(i => { const ps = P.filter(p => p.investor_id === i.id); const paid = dirSum(ps.filter(p => p.status === 'Paid'), p => p.investor_profit); const pend = dirSum(ps.filter(p => p.status !== 'Paid'), p => p.investor_profit);
+      return { i, ps, paid, pend, owed: Number(i.amount) + pend }; });
+    const entries = rows.flatMap(r => [{ date: r.i.start_date, inv: r.i.name, what: 'Capital received', cin: Number(r.i.amount), out: 0, status: r.i.status }].concat(r.ps.map(p => ({ date: p.paid_at ? String(p.paid_at).slice(0, 10) : p.period, inv: r.i.name, what: `Return for ${p.period}`, cin: 0, out: Number(p.investor_profit), status: p.status })))).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return `${dirTiles([['Investors', rows.length], ['Capital held', fmt(dirSum(rows, r => Number(r.i.amount)))], ['Returns paid', fmt(dirSum(rows, r => r.paid))], ['Returns owed', fmt(dirSum(rows, r => r.pend))], ['Owed to investors in total', fmt(dirSum(rows, r => r.owed))]])}
+      ${admChart('acc-il', 'Capital, Returns Paid and Owed by Investor (KES)', 'bar', rows.map(r => r.i.name), [{ label: 'Capital', data: rows.map(r => Math.round(r.i.amount)) }, { label: 'Returns paid', data: rows.map(r => Math.round(r.paid)) }, { label: 'Returns owed', data: rows.map(r => Math.round(r.pend)) }])}
+      ${dirTable('Investor balances', rows, [['Investor', r => `<strong>${escapeHtml(r.i.name)}</strong><div class="hint">${escapeHtml(r.i.email || '')}</div>`], ['Capital', r => fmt(r.i.amount)], ['Profit share', r => escapeHtml(r.i.profit_share_pct + '%')], ['Returns paid', r => fmt(r.paid)], ['Returns owed', r => fmt(r.pend)], ['Total owed to investor', r => `<strong>${fmt(r.owed)}</strong>`], ['Status', r => accBadge(r.i.status)]], 'No investors yet.')}
+      ${dirTable('Investor ledger', entries, [['Date', e => escapeHtml(e.date || '—')], ['Investor', e => `<strong>${escapeHtml(e.inv)}</strong>`], ['Entry', e => escapeHtml(e.what)], ['Money in', e => e.cin ? fmt(e.cin) : ''], ['Money out / owed', e => e.out ? fmt(e.out) : ''], ['Status', e => accBadge(e.status)]], 'No investor movements yet.')}`;
+  },
+  investorStatements: () => {
+    const I = admData('acc:inv', '/api/investors?limit=200', r => r.investors); const P = admData('acc:invpay', '/api/investor-payouts', r => r.payouts); const g = accGuard(I, P); if(g) return g;
+    const inv = I.find(i => i.id === session.accInvSel) || I[0];
+    const pick = `<div class="card"><div class="pill-row adm-filters"><label class="hint">Investor</label><select onchange="session.accInvSel=this.value; renderApp();">${I.map(i => `<option value="${i.id}" ${inv && inv.id === i.id ? 'selected' : ''}>${escapeHtml(i.name)}</option>`).join('')}</select></div></div>`;
+    if(!inv) return pick + admError('No investors yet.');
+    const ps = P.filter(p => p.investor_id === inv.id).sort((a, b) => String(a.period).localeCompare(String(b.period)));
+    const paid = dirSum(ps.filter(p => p.status === 'Paid'), p => p.investor_profit), pend = dirSum(ps.filter(p => p.status !== 'Paid'), p => p.investor_profit);
+    const end = new Date(inv.start_date + 'T00:00:00'); end.setMonth(end.getMonth() + Number(inv.term_months || 0));
+    return `${pick}
+      ${dirTiles([['Investor', escapeHtml(inv.name)], ['Capital', fmt(inv.amount)], ['Profit share', inv.profit_share_pct + '%'], ['Started', escapeHtml(inv.start_date)], ['Matures', end.toISOString().slice(0, 10)], ['Returns paid', fmt(paid)], ['Returns owed', fmt(pend)]])}
+      ${admChart('acc-is', 'Returns by Period (KES)', 'bar', ps.map(p => p.period), [{ label: 'Paid', data: ps.map(p => p.status === 'Paid' ? Math.round(p.investor_profit) : 0) }, { label: 'Owed', data: ps.map(p => p.status !== 'Paid' ? Math.round(p.investor_profit) : 0) }], dirStacked)}
+      ${dirTable(`Statement — ${inv.name}`, [{ period: inv.start_date, what: 'Capital invested', np: null, amt: Number(inv.amount), st: inv.status, ref: '' }].concat(ps.map(p => ({ period: p.period, what: 'Return', np: Number(p.company_net_profit), amt: Number(p.investor_profit), st: p.status, ref: p.reference || '' }))).concat([{ period: '', what: 'Total returns', np: null, amt: paid + pend, st: '', ref: '', b: 1 }]),
+        [['Period', x => escapeHtml(x.period)], ['Entry', x => x.b ? `<strong>${x.what}</strong>` : escapeHtml(x.what)], ['Company net profit', x => x.np == null ? '' : fmt(x.np)], ['Amount', x => x.b ? `<strong>${fmt(x.amt)}</strong>` : fmt(x.amt)], ['Status', x => x.st ? accBadge(x.st) : ''], ['Reference', x => escapeHtml(x.ref || '')]], '—')}`;
+  },
+});
 function renderPlaceholder(){
   return `
     <div class="section-note">This screen — <strong>${escapeHtml(session.placeholderLabel||"")}</strong> — is part of the navigation spec but isn't built out with real functionality in this prototype yet.</div>
