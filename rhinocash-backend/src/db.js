@@ -1786,6 +1786,49 @@ async function initSchema() {
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('lo-add-client-create-application') ON CONFLICT DO NOTHING`);
   }
+  // HR is a full structural role (system role 'hr'), but a deployment whose
+  // Admin created an "HR" role by hand before 'hr' existed holds it as a
+  // custom role — shown as "(Custom)" and missing HR's grants. Fold any such
+  // role into the system 'hr' role (its staff move with it), give 'hr' its
+  // full HR access, and remove leftover custom "Client…" roles (staff never
+  // hold client access; an unused one is deleted, a used one switched off).
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'roles-hr-system-client-cleanup'`))) {
+    const norm = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
+    const roles = await rawAll('SELECT id, name, is_system FROM roles');
+    const hrLike = roles.filter(r => r.id !== 'hr' && !r.is_system && ['hr', 'humanresources', 'humanresource', 'hrmanager', 'hrofficer', 'hrandpeoplemanagement'].includes(norm(r.name)));
+    if (!roles.some(r => r.id === 'hr')) {
+      await rawRun(`INSERT INTO roles (id, name, default_access_level, description, status, is_system, structural_template, dashboard_template)
+        VALUES ('hr', 'HR (system)', 'HR & People Management Access', 'Human Resources — manages staff records and holds company-wide visibility into employees across every branch.', 'Active', 1, 'hr', 'hr')`);
+    }
+    for (const r of hrLike) {
+      await rawRun(`UPDATE users SET role_id = 'hr' WHERE role_id = ?`, [r.id]);
+      await rawRun(`UPDATE approval_workflow_steps SET role_id = 'hr' WHERE role_id = ?`, [r.id]);
+      for (const t of ['role_modules', 'role_permissions', 'role_intelligence_access', 'role_menu_access', 'role_workspace_defaults']) await rawRun(`DELETE FROM ${t} WHERE role_id = ?`, [r.id]);
+      await rawRun('DELETE FROM roles WHERE id = ?', [r.id]);
+    }
+    await rawRun(`UPDATE roles SET name = 'HR', is_system = 1, status = 'Active', structural_template = 'hr', dashboard_template = 'hr', default_access_level = 'HR & People Management Access' WHERE id = 'hr'`);
+    await rawRun(`UPDATE users SET access_level = 'HR & People Management Access' WHERE role_id = 'hr'`);
+    for (const m of ['dashboard', 'staff', 'support', 'account', 'hr']) await rawRun(`INSERT INTO role_modules (role_id, module_id) SELECT 'hr', ? WHERE EXISTS (SELECT 1 FROM modules WHERE id = ?) ON CONFLICT DO NOTHING`, [m, m]);
+    for (const pm of ['manage_employees', 'manage_hr', 'manage_payroll']) await rawRun(`INSERT INTO role_permissions (role_id, permission_id, allowed) SELECT 'hr', ?, 1 WHERE EXISTS (SELECT 1 FROM permissions WHERE id = ?) ON CONFLICT (role_id, permission_id) DO UPDATE SET allowed = 1`, [pm, pm]);
+    for (const f of ['pred-staff-performance', 'pred-workforce-trends', 'pred-attendance-trends', 'pred-turnover-prediction', 'explain-performance-decisions', 'explain-hr-alerts',
+      'drill-organization', 'drill-department', 'drill-branch', 'drill-employee', 'fraud-staff-advance-pattern', 'whatif-headcount-change',
+      'workspace-dashboard-layout', 'workspace-saved-views', 'workspace-my-preferences']) {
+      await rawRun(`INSERT INTO role_intelligence_access (role_id, feature_id) SELECT 'hr', ? WHERE EXISTS (SELECT 1 FROM intelligence_features WHERE id = ?) ON CONFLICT DO NOTHING`, [f, f]);
+    }
+    for (const r of roles.filter(x => !x.is_system && norm(x.name).startsWith('client'))) {
+      const used = await rawGet('SELECT COUNT(*)::int AS n FROM users WHERE role_id = ?', [r.id]);
+      if (used && used.n > 0) { await rawRun(`UPDATE roles SET status = 'Inactive' WHERE id = ?`, [r.id]); continue; }
+      for (const t of ['role_modules', 'role_permissions', 'role_intelligence_access', 'role_menu_access', 'role_workspace_defaults']) await rawRun(`DELETE FROM ${t} WHERE role_id = ?`, [r.id]);
+      await rawRun('DELETE FROM approval_workflow_steps WHERE role_id = ?', [r.id]);
+      await rawRun('DELETE FROM roles WHERE id = ?', [r.id]);
+    }
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('roles-hr-system-client-cleanup') ON CONFLICT DO NOTHING`);
+  }
+  // History rows keep their place when the person they name is permanently
+  // deleted (POST /api/users/:id/permanent-delete): the reference becomes empty.
+  for (const [t, c] of [['loan_approvals', 'approver_id'], ['collection_activities', 'staff_id'], ['follow_ups', 'responsible_staff_id']]) {
+    await rawRun(`ALTER TABLE ${t} ALTER COLUMN ${c} DROP NOT NULL`);
+  }
   // Backs the single-active-session login block (see routes/auth.js /
   // routes/investors.js): a session only counts as "genuinely still in
   // use" — and so blocks a second login — while it has real, recent

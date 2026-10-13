@@ -371,6 +371,37 @@ tr.clickable:hover{background:#FAFAF8; cursor:pointer;}
    plain/uppercase th styling used by every other, non-calendar table. */
 tr.weekday-bar th{background:var(--blue-bg); color:var(--blue); text-transform:none; font-size:12.5px; font-weight:800; letter-spacing:0; border-bottom:none;}
 .table-wrap{overflow-x:auto;}
+/* Designed register tables (Admin: Roles, Role Permissions, Permission
+   Matrix, Create User): navy header, banded rows, action toolbar above. */
+.dt-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+.dt-head h3{color:var(--navy); margin:0; font-size:20px; font-weight:800;}
+.dt-toolbar{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+.dt-filters{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0;}
+.dt-filters input, .dt-filters select{padding:7px 10px; border:1px solid var(--line); border-radius:8px; font-size:13px; background:#fff;}
+.dt-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:12px;}
+table.dt{width:100%; border-collapse:separate; border-spacing:0; font-size:13.5px;}
+table.dt th{background:var(--navy); color:#fff; text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:700; padding:11px 12px; border-bottom:none; white-space:nowrap; position:sticky; top:0; z-index:1;}
+table.dt td{padding:11px 12px; border-bottom:1px solid #E6EBF2; vertical-align:middle;}
+table.dt tr:nth-child(even) td{background:#F7F9FC;}
+table.dt tr:hover td{background:#EEF4FB;}
+table.dt tr:last-child td{border-bottom:none;}
+table.dt .dt-desc{display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:320px; color:#6B7A90; font-size:12px; margin-top:2px;}
+table.dt .dt-act{white-space:nowrap; text-align:right;}
+table.dt .dt-act .btn{margin-left:4px; padding:5px 9px; font-size:12px;}
+table.dt .dt-act.wrap{white-space:normal; min-width:150px;}
+table.dt .dt-act.wrap .btn{margin:2px 0 2px 4px;}
+table.dt a{color:var(--navy); text-decoration:none;}
+table.dt a:hover{text-decoration:underline;}
+table.dt.matrix td:first-child{min-width:190px; white-space:nowrap;}
+table.dt.matrix th, table.dt.matrix td{text-align:center;}
+table.dt.matrix th:first-child, table.dt.matrix td:first-child{text-align:left; position:sticky; left:0; z-index:2;}
+table.dt.matrix td:first-child{background:#fff; font-weight:600;}
+table.dt.matrix tr:nth-child(even) td:first-child{background:#F7F9FC;}
+table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-weight:800; text-align:left; font-size:12.5px; text-transform:uppercase; letter-spacing:0.3px;}
+.dt-yes{display:inline-flex; width:24px; height:24px; border-radius:50%; align-items:center; justify-content:center; background:#DDF3EE; color:#1E7F6E; font-weight:900;}
+.dt-no{color:#C5CCD6; font-weight:700;}
+.dt-meter{display:flex; align-items:center; gap:6px; min-width:96px;}
+.dt-meter .bar-track{height:8px;}
 /* A filter/action row (date pickers, dropdowns, the Generate button) that
    sits directly above a .table-wrap gets this class added at render time
    (see wireFilterRowScrollSync()) so it scrolls horizontally in lockstep
@@ -705,7 +736,7 @@ const DEFAULT_PERMISSIONS_MATRIX = {
    "System Role + Access Level" model. */
 // Every structural role's access level is always offered on the Roles pages,
 // even before any role carries it (e.g. HR & People Management Access).
-const STANDARD_ACCESS_LEVELS = ['Portfolio Access','Branch Management Access','Operations & Branch Expansion Access','Regional Management Access','Accounting & Financial Access','Master System Administration Access','Executive Management Access','Strategic & Governance Access','HR & People Management Access'];
+const STANDARD_ACCESS_LEVELS = ['Portfolio Access','Branch Management Access','Operations & Branch Expansion Access','Regional Management Access','Accounting & Financial Access','Master System Administration Access','Executive Management Access','Strategic & Governance Access','HR & People Management Access','Investor Access'];
 const ACCESS_LEVEL_BY_ROLE = {
   "Loan Officer":"Portfolio Access", "Manager":"Branch Management Access", "Operational Manager":"Operations & Branch Expansion Access",
   "Regional Manager":"Regional Management Access", "Admin":"Full System Access", "Accountant":"Accounting & Financial Access",
@@ -4766,7 +4797,7 @@ const ADMIN_PAGE_SECTION = {};
 // Admin labels that should open an existing real page rather than a new one.
 const ADMIN_ROUTE_ALIASES = {
   "Permissions": {section:"staff", subtab:"Role Permissions"},
-  "Permission Matrix": {section:"staff", subtab:"Role Permissions"},
+  "Permission Matrix": {section:"staff", subtab:"Permission Matrix"},
   "M-Pesa / Daraja": {section:"account", subtab:"M-Pesa Configuration"},
   "Maintenance Mode": {section:"admin", subtab:"System Maintenance"},
 };
@@ -5238,7 +5269,8 @@ const ADMIN_VIEWS = {
       <span class="pill-row">${admExportBtn(() => exportCSV('users', ['Name','Code','Email','Role','Branch','Account','Last login'], list.map(s => [s.name, s.staffCode || '', s.email || '', s.role, admBranchName(s.branch), s.systemAccount || 'Not Created', s.lastLoginAt || ''])))}
       <button class="btn btn-sm btn-primary" onclick="goTo('staff','Create User')">+ Create User</button></span></div>
       ${admUserFilterBar('admUsersFilter')}
-      ${admTable(['User','Role','Branch','System account','Last sign-in'], list.map(s => [admUserCell(s), escapeHtml(s.role), escapeHtml(admBranchName(s.branch)), admBadge(s.systemAccount || 'Not Created', admAccountTone(s.systemAccount || 'Not Created')), s.lastLoginAt ? timeAgo(s.lastLoginAt) : 'Never']), 'No users match these filters.')}</div>`; },
+      ${admTable(['User','Role','Branch','System account','Last sign-in',''], list.map(s => [admUserCell(s), escapeHtml(s.role), escapeHtml(admBranchName(s.branch)), admBadge(s.systemAccount || 'Not Created', admAccountTone(s.systemAccount || 'Not Created')), s.lastLoginAt ? timeAgo(s.lastLoginAt) : 'Never',
+        admIsAdmin() && s.id !== session.userId ? `<button class="btn btn-sm btn-red" onclick="permanentlyDeleteUser('${s.id}')">Delete</button>` : '']), 'No users match these filters.')}</div>`; },
   userProfiles: () => { const list = admFilterUsers(DB.staff || [], 'admProfilesFilter');
     return `<div class="card"><div class="card-title">User Profiles <small>${list.length}</small></div>${admUserFilterBar('admProfilesFilter')}
       <div class="adm-cards">${list.map(s => `<div class="adm-user-card" onclick="admOpenUser('${s.id}')">
@@ -11796,6 +11828,7 @@ function renderStaffDetailPanel(id){
         <button class="btn btn-sm ${s.systemAccount==='Active'?'btn-outline':'btn-green'}" onclick="withRequest('staff-status-active', ()=>setStaffStatus('${s.id}','Active'))">Activate</button>
         <button class="btn btn-sm ${s.systemAccount==='Suspended'?'btn-outline':'btn-red'}" onclick="const r=prompt('Reason for suspending:'); if(r!==null) withRequest('staff-status-suspend', ()=>setStaffStatus('${s.id}','Suspended', r))">Suspend</button>
         <button class="btn btn-sm ${s.systemAccount==='Deactivated'?'btn-outline':'btn-red'}" onclick="const r=prompt('Reason for deactivating:'); if(r!==null) withRequest('staff-status-deactivate', ()=>setStaffStatus('${s.id}','Deactivated', r))">Deactivate</button>
+        ${session.role === 'Admin' && s.id !== session.userId ? `<button class="btn btn-sm btn-red" onclick="permanentlyDeleteUser('${s.id}')" title="Remove this user for good">Delete permanently</button>` : ''}
         <button class="btn btn-sm btn-outline" onclick="withRequest('staff-reset-pwd', ()=>resetStaffPassword('${s.id}'))">Reset Password</button>
         <button class="btn btn-sm btn-outline" onclick="if(confirm('Reset this user access to role defaults?')) withRequest('staff-reset-access', ()=>resetStaffAccess('${s.id}'))">Reset Access</button>
         <button class="btn btn-sm btn-outline" onclick="withRequest('staff-revoke', ()=>revokeSessions('${s.id}'))">Revoke Sessions</button>
@@ -19792,6 +19825,9 @@ function renderInvestorDirectoryPage(){
     </div></div></div>` : ""}
   `;
 }
+// Investors sign in to their own portal (a separate account type from
+// staff), so choosing "Investor" on Create User opens investor registration.
+function openInvestorRegistration(){ session.openForms = session.openForms || {}; session.openForms['f-submitNewInvestor'] = true; goTo('investors', 'Investor Directory'); }
 function submitNewInvestor(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
@@ -20653,9 +20689,8 @@ function renderRolesSummary(roles){
   const inactive = total - active;
   const system = roles.filter(r=>r.is_system).length;
   const custom = total - system;
-  const tile = (label, value) => `<div class="kpi"><div class="kpi-value" style="font-size:22px;">${value}</div><div class="kpi-label" style="margin-top:2px;">${label}</div></div>`;
-  return `<div class="kpi-tile-grid" style="margin-bottom:16px;">
-    ${tile('Total Roles', total)}${tile('Active Roles', active)}${tile('Inactive Roles', inactive)}${tile('System Roles', system)}${tile('Custom Roles', custom)}
+  return `<div class="adm-tiles" style="margin-bottom:6px;">
+    ${admTile('Total Roles', total)}${admTile('Active Roles', active)}${admTile('Inactive Roles', inactive)}${admTile('System Roles', system)}${admTile('Custom Roles', custom)}
   </div>`;
 }
 function renderRolesPage(){
@@ -20671,56 +20706,68 @@ function renderRolesPage(){
   if(f.status) rows = rows.filter(r => (r.status||'Active') === f.status);
   if(f.roleType) rows = rows.filter(r => (r.is_system ? 'System' : 'Custom') === f.roleType);
   const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level).concat(STANDARD_ACCESS_LEVELS))].sort();
+  const meter = (n, d) => `<div class="dt-meter" title="${n} of ${d}"><div class="bar-track"><div class="bar-fill" style="width:${d ? Math.round(n / d * 100) : 0}%"></div></div><strong>${n}</strong></div>`;
   const trs = rows.map(r => `<tr class="clickable" onclick="openRoleDetail('${r.id}')">
-      <td><strong>${escapeHtml(r.name)}</strong><br><span class="hint">${escapeHtml(r.id)}</span></td>
-      <td class="hint">${escapeHtml(r.description || ROLE_DESCRIPTIONS[r.name] || '—')}</td>
+      <td style="min-width:200px;"><strong style="font-size:14px;">${escapeHtml(r.name)}</strong> <span class="hint">${escapeHtml(r.id)}</span><div class="dt-desc">${escapeHtml(r.description || ROLE_DESCRIPTIONS[r.name] || '—')}</div></td>
       <td>${escapeHtml(r.default_access_level)}</td>
-      <td>${r.userCount} <span class="hint">(${r.activeUserCount} active)</span></td>
-      <td>${r.permissionCount} of ${state.permissionsTotal}</td>
-      <td>${r.moduleCount} of ${state.modulesTotal}</td>
-      <td><span class="badge blue">${r.is_system ? 'System' : 'Custom'}</span></td>
+      <td><strong>${r.userCount}</strong><div class="hint">${r.activeUserCount} active</div></td>
+      <td>${meter(r.permissionCount, state.permissionsTotal)}</td>
+      <td>${meter(r.moduleCount, state.modulesTotal)}</td>
+      <td><span class="badge ${r.is_system ? 'blue' : 'amber'}">${r.is_system ? 'System' : 'Custom'}</span></td>
       <td><span class="badge ${r.status==='Active'?'green':'grey'}">${escapeHtml(r.status||'Active')}</span></td>
-      <td class="hint">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
-      <td onclick="event.stopPropagation();" class="pill-row" style="gap:6px;">
+      <td onclick="event.stopPropagation();" class="dt-act wrap">
         <button class="btn btn-sm btn-outline" onclick="openRoleDetail('${r.id}')">View</button>
         <button class="btn btn-sm btn-outline" onclick="openModal('create-role', {editRoleId:'${r.id}'})">Edit</button>
-        <button class="btn btn-sm btn-outline" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false}; goTo('staff','Role Permissions');">Permissions</button>
+        <button class="btn btn-sm btn-primary" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; goTo('staff','Role Permissions');">Permissions</button>
+        ${!r.is_system && session.role === 'Admin' ? `<button class="btn btn-sm btn-red" onclick="deleteCustomRole('${r.id}')" ${r.userCount ? 'disabled title="Move its users to another role first"' : ''}>Delete</button>` : ''}
       </td>
     </tr>`).join("");
   return `
     <div class="card">
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:6px;">
+      <div class="dt-head">
         <div>
-          <h3 style="color:var(--navy); margin:0;">Roles</h3>
-          <div class="hint" style="margin-top:4px; max-width:640px;">Manage system and custom user roles and their access-control definitions. Investor is a separate, portal-only principal type and isn't a staff role, so it isn't listed here.</div>
+          <h3>Roles</h3>
+          <div class="hint" style="margin-top:4px; max-width:640px;">Every staff role, what it may do and who holds it. Investors sign in to their own portal, so they are registered under Investor Accounts rather than given a staff role.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="openModal('create-role')">+ Create Role</button>
+        <div class="dt-toolbar">
+          <button class="btn btn-primary btn-sm" onclick="openModal('create-role')">+ Create Role</button>
+          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Role Permissions')">Role Permissions</button>
+          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Permission Matrix')">Permission Matrix</button>
+          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Create User')">Create User</button>
+          ${generateMenuHtml('Roles', () => ({ headers: ['Role','Code','Access level','Users','Active users','Permissions','Modules','Type','Status'], rows: rows.map(r => [r.name, r.id, r.default_access_level, r.userCount, r.activeUserCount, r.permissionCount, r.moduleCount, r.is_system ? 'System' : 'Custom', r.status || 'Active']) }))}
+        </div>
       </div>
       ${renderRolesSummary(state.roles)}
-      <div class="pill-row" style="flex-wrap:wrap; gap:8px; margin:14px 0;">
-        <input placeholder="🔍 Search role or description" value="${escapeHtml(f.q)}" oninput="session.rolesFilters.q=this.value; renderApp();" class="btn btn-sm btn-outline" style="min-width:220px; flex-shrink:0;">
-        <select onchange="session.rolesFilters.status=this.value; renderApp();" class="btn btn-sm btn-outline">
+      <div class="dt-filters">
+        <input placeholder="🔍 Search role or description" value="${escapeHtml(f.q)}" oninput="session.rolesFilters.q=this.value; renderApp();" style="min-width:240px;">
+        <select onchange="session.rolesFilters.status=this.value; renderApp();">
           <option value="">All statuses</option>
           <option value="Active" ${f.status==='Active'?'selected':''}>Active</option>
           <option value="Inactive" ${f.status==='Inactive'?'selected':''}>Inactive</option>
         </select>
-        <select onchange="session.rolesFilters.roleType=this.value; renderApp();" class="btn btn-sm btn-outline">
+        <select onchange="session.rolesFilters.roleType=this.value; renderApp();">
           <option value="">All role types</option>
           <option value="System" ${f.roleType==='System'?'selected':''}>System</option>
           <option value="Custom" ${f.roleType==='Custom'?'selected':''}>Custom</option>
         </select>
-        <select onchange="session.rolesFilters.accessLevel=this.value; renderApp();" class="btn btn-sm btn-outline">
+        <select onchange="session.rolesFilters.accessLevel=this.value; renderApp();">
           <option value="">All access levels</option>
           ${accessLevels.map(a=>`<option value="${escapeHtml(a)}" ${f.accessLevel===a?'selected':''}>${escapeHtml(a)}</option>`).join("")}
         </select>
+        <span class="hint">${rows.length} of ${state.roles.length} roles</span>
       </div>
-      <div class="table-wrap"><table>
-        <tr><th>Role Name</th><th>Description</th><th>Default Access Level</th><th>Users</th><th>Permissions</th><th>Modules</th><th>Role Type</th><th>Status</th><th>Created Date</th><th>Actions</th></tr>
-        ${trs || `<tr><td colspan="10" class="empty">No roles match these filters.</td></tr>`}
+      <div class="dt-wrap"><table class="dt">
+        <tr><th>Role</th><th>Access Level</th><th>Users</th><th>Permissions <span style="font-weight:400; opacity:.8;">of ${state.permissionsTotal}</span></th><th>Modules <span style="font-weight:400; opacity:.8;">of ${state.modulesTotal}</span></th><th>Type</th><th>Status</th><th style="text-align:right;">Actions</th></tr>
+        ${trs || `<tr><td colspan="8" class="empty">No roles match these filters.</td></tr>`}
       </table></div>
     </div>
     ${session.selectedRoleId ? renderRoleDetailPanel(session.selectedRoleId) : ""}
   `;
+}
+async function deleteCustomRole(id){
+  const role = ((DB.acctPages.roles || {}).roles || []).find(r => r.id === id); if(!role) return;
+  if(typeof confirm === 'function' && !confirm(`Delete the custom role "${role.name}"? This cannot be undone.`)) return;
+  await withRequest('delete-role-' + id, async ()=>{ await api.post(`/api/roles/${id}/delete`, {}); DB.acctPages.roles = null; DB.acctPages.permMatrix = null; if(session.selectedRoleId === id) session.selectedRoleId = null; toast(`${role.name} deleted`); }, { mutates: true });
 }
 function openRoleDetail(id){ session.selectedRoleId = id; loadRoleDetail(id); renderApp(); }
 function closeRoleDetail(){ session.selectedRoleId = null; renderApp(); }
@@ -20861,10 +20908,15 @@ function renderCreateRoleModal(){
       <div class="form-grid">
         <div class="field">
           <label>Access Level</label>
-          <select name="access_level" required>
+          <select name="access_level" required onchange="const c=this.form.querySelector('[data-custom-level]'); if(c){ c.style.display = this.value==='__custom__' ? '' : 'none'; }">
             <option value="">— Select —</option>
             ${accessLevels.map(a=>`<option value="${escapeHtml(a)}" ${editRole && editRole.default_access_level===a?'selected':''}>${escapeHtml(a)}</option>`).join("")}
+            <option value="__custom__">+ New custom access level…</option>
           </select>
+        </div>
+        <div class="field" data-custom-level style="display:none;">
+          <label>New access level name</label>
+          <input name="custom_access_level_name" maxlength="80" placeholder="e.g. Field Audit Access">
         </div>
       </div>
 
@@ -20935,18 +20987,23 @@ function submitCreateRole(ev, editRoleId){
   const state = DB.acctPages.roles;
   const allPerms = (state && state.allPermissions) || [];
   const permissions = allPerms.filter(p=>fd['perm_'+p.id]).map(p=>p.id);
+  const customLevel = fd.access_level === '__custom__';
+  if(customLevel){
+    fd.access_level = String(fd.custom_access_level_name || '').trim();
+    if(fd.access_level.length < 3){ toast('Enter the new access level name (at least 3 characters).'); return false; }
+  }
   return withRequest('create-role', async ()=>{
     session.creatingRole = true;
     let res, created;
     try{
       if(editRoleId){
         res = await api.put(`/api/roles/${editRoleId}`, {
-          name: fd.name, access_level: fd.access_level, status: fd.status || 'Active',
+          name: fd.name, access_level: fd.access_level, custom_access_level: customLevel || undefined, status: fd.status || 'Active',
           description: fd.description, structural_template: fd.structural_template, dashboard_template: fd.dashboard_template,
         });
       } else {
         res = await api.post('/api/roles', {
-          name: fd.name, code: fd.code, access_level: fd.access_level, status: fd.status || 'Active',
+          name: fd.name, code: fd.code, access_level: fd.access_level, custom_access_level: customLevel || undefined, status: fd.status || 'Active',
           description: fd.description, structural_template: fd.structural_template, dashboard_template: fd.dashboard_template,
           permissions,
         });
@@ -20993,8 +21050,69 @@ function renderRoleCreatedModal(){
 // until "Save Changes" calls the real bulk PUT /api/roles/:id/permissions,
 // exactly like every other create/edit form in this app never writes to
 // the server on a mere checkbox click. ----
-function defaultRolePermissionsState(){ return { roleId:null, q:'', selection:null, dirty:false, moduleSelection:null, moduleDirty:false }; }
+// Every role's permissions and modules at once, for the matrix tables.
+function loadPermissionMatrix(){
+  const rs = DB.acctPages.roles; if(!rs) return;
+  const stamp = rs;
+  withRequest('load-perm-matrix', async ()=>{
+    const res = await Promise.all(rs.roles.map(r => Promise.all([api.get(`/api/roles/${r.id}/permissions`), api.get(`/api/roles/${r.id}/modules`)]).then(([p, m]) => [r.id, p.permissions, m.moduleIds])));
+    const perms = {}, mods = {};
+    res.forEach(([id, p, m]) => { perms[id] = new Set((p || []).filter(x => x.allowed).map(x => x.permission_id)); mods[id] = new Set(m || []); });
+    DB.acctPages.permMatrix = { stamp, perms, mods };
+  });
+}
+function permMatrixState(){
+  const rs = DB.acctPages.roles;
+  if(!rs){ loadRolesPage(); return null; }
+  const pm = DB.acctPages.permMatrix;
+  if(!pm || pm.stamp !== rs){ if(!inFlight.has('load-perm-matrix')) loadPermissionMatrix(); return null; }
+  return pm;
+}
+function rolePermToolbar(current){
+  const b = (label, sub, primary) => `<button class="btn btn-sm ${primary ? 'btn-primary' : 'btn-outline'}" onclick="goTo('staff','${sub}')" ${current === sub ? 'disabled' : ''}>${label}</button>`;
+  return `<div class="dt-toolbar">${b('Roles', 'Roles')}${b('Role Permissions', 'Role Permissions')}${b('Permission Matrix', 'Permission Matrix')}<button class="btn btn-sm btn-primary" onclick="openModal('create-role')">+ Create Role</button></div>`;
+}
+const dtTick = on => on ? '<span class="dt-yes">✓</span>' : '<span class="dt-no">—</span>';
 function renderRolePermissionsPage(){
+  const rs = DB.acctPages.roles; const pm = permMatrixState();
+  if(!rs || !pm) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const st = session.rolePermissionsState || (session.rolePermissionsState = defaultRolePermissionsState());
+  const roles = rs.roles.slice().sort((a, b) => (b.is_system - a.is_system) || a.name.localeCompare(b.name));
+  const perms = rs.allPermissions || [];
+  const cats = {}; perms.forEach(p => { const c = PERMISSION_CATEGORIES[p.id] || 'Other'; (cats[c] = cats[c] || []).push(p); });
+  const q = (session.rpMatrixQ || '').toLowerCase();
+  const head = `<tr><th>Permission</th>${roles.map(r => `<th title="${escapeHtml(r.default_access_level)}">${escapeHtml(r.name)}<div style="margin-top:4px;"><button class="btn btn-sm btn-outline" style="background:#fff; padding:2px 8px; font-size:11px;" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; renderApp(); setTimeout(()=>{ const e=document.getElementById('rp-editor'); if(e && e.scrollIntoView) e.scrollIntoView({behavior:'smooth'}); }, 50);">Edit</button></div></th>`).join('')}</tr>`;
+  const body = Object.entries(cats).map(([c, ps]) => { const shown = ps.filter(p => !q || (p.label || p.id).toLowerCase().includes(q) || c.toLowerCase().includes(q)); if(!shown.length) return '';
+    return `<tr class="dt-group"><td colspan="${roles.length + 1}">${escapeHtml(c)}</td></tr>` + shown.map(p => `<tr><td>${escapeHtml(p.label || p.id)}</td>${roles.map(r => `<td>${dtTick(pm.perms[r.id] && pm.perms[r.id].has(p.id))}</td>`).join('')}</tr>`).join(''); }).join('');
+  const totals = `<tr class="dt-group"><td>Granted</td>${roles.map(r => `<td style="text-align:center;">${(pm.perms[r.id] || new Set()).size} / ${perms.length}</td>`).join('')}</tr>`;
+  return `<div class="card">
+      <div class="dt-head"><div><h3>Role Permissions</h3><div class="hint" style="margin-top:4px; max-width:640px;">What every role may do, side by side. Click <b>Edit</b> under a role to change its permissions and module access.</div></div>${rolePermToolbar('Role Permissions')}</div>
+      <div class="adm-tiles">${admTile('Roles', roles.length)}${admTile('Permissions', perms.length)}${admTile('Grants in total', Object.values(pm.perms).reduce((n, x) => n + x.size, 0))}</div>
+      <div class="dt-filters"><input placeholder="🔍 Search permissions" value="${escapeHtml(session.rpMatrixQ || '')}" oninput="session.rpMatrixQ=this.value; renderApp();" style="min-width:240px;">
+        ${generateMenuHtml('Role Permissions', () => ({ headers: ['Category','Permission'].concat(roles.map(r => r.name)), rows: perms.map(p => [PERMISSION_CATEGORIES[p.id] || 'Other', p.label || p.id].concat(roles.map(r => pm.perms[r.id] && pm.perms[r.id].has(p.id) ? 'Yes' : 'No'))) }))}</div>
+      <div class="dt-wrap"><table class="dt matrix">${head}${body}${totals}</table></div>
+    </div>
+    ${st.editing && st.roleId ? `<div id="rp-editor">${renderRolePermissionEditor()}</div>` : ''}`;
+}
+function renderPermissionMatrixPage(){
+  const rs = DB.acctPages.roles; const pm = permMatrixState();
+  if(!rs || !pm) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const roles = rs.roles.slice().sort((a, b) => (b.is_system - a.is_system) || a.name.localeCompare(b.name));
+  const mods = rs.allModules || []; const perms = rs.allPermissions || [];
+  const userCount = r => r.userCount || 0;
+  return `<div class="card">
+      <div class="dt-head"><div><h3>Permission Matrix</h3><div class="hint" style="margin-top:4px; max-width:640px;">Each role's reach: which sections it can open (modules) and how many actions it may take. Open a role's permissions to change them.</div></div>${rolePermToolbar('Permission Matrix')}</div>
+      <div class="dt-filters">${generateMenuHtml('Permission Matrix', () => ({ headers: ['Role','Access level','Users'].concat(mods.map(m => m.label || m.id)).concat(['Permissions']), rows: roles.map(r => [r.name, r.default_access_level, userCount(r)].concat(mods.map(m => pm.mods[r.id] && pm.mods[r.id].has(m.id) ? 'Yes' : 'No')).concat([(pm.perms[r.id] || new Set()).size + ' / ' + perms.length])) }))}</div>
+      <div class="dt-wrap"><table class="dt matrix">
+        <tr><th>Role</th><th>Users</th>${mods.map(m => `<th>${escapeHtml(m.label || m.id)}</th>`).join('')}<th>Permissions</th><th></th></tr>
+        ${roles.map(r => `<tr><td><strong>${escapeHtml(r.name)}</strong><div class="hint">${escapeHtml(r.default_access_level)}</div></td><td>${userCount(r)}</td>${mods.map(m => `<td>${dtTick(pm.mods[r.id] && pm.mods[r.id].has(m.id))}</td>`).join('')}
+          <td><strong>${(pm.perms[r.id] || new Set()).size}</strong> <span class="hint">/ ${perms.length}</span></td>
+          <td class="dt-act"><button class="btn btn-sm btn-primary" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; goTo('staff','Role Permissions');">Edit</button></td></tr>`).join('')}
+      </table></div>
+    </div>`;
+}
+function defaultRolePermissionsState(){ return { roleId:null, q:'', selection:null, dirty:false, moduleSelection:null, moduleDirty:false, editing:false }; }
+function renderRolePermissionEditor(){
   const rolesState = DB.acctPages.roles;
   if(!rolesState){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   if(!rolesState.roles.length) return `<div class="card"><div class="card-title">Role Permissions</div><div class="empty">No roles exist yet.</div></div>`;
@@ -21026,11 +21144,11 @@ function renderRolePermissionsPage(){
   return `
     <div class="card">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-        <span class="btn btn-outline btn-sm" onclick="goTo('staff','Roles')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-        <div>
-          <h3 style="color:var(--navy); margin:0;">Role Permissions</h3>
-          <div class="hint" style="margin-top:2px;">Roles &amp; Access Control → Role Permissions. Grant or revoke the real permissions a role holds.</div>
+        <div style="flex:1;">
+          <h3 style="color:var(--navy); margin:0;">Edit Permissions — ${escapeHtml(role.name)}</h3>
+          <div class="hint" style="margin-top:2px;">Tick what this role may do, then save. Changes apply to everyone holding the role.</div>
         </div>
+        <button class="btn btn-outline btn-sm" onclick="session.rolePermissionsState.editing=false; renderApp();">✕ Close editor</button>
       </div>
 
       <div class="field" style="max-width:360px; margin:14px 0;">
@@ -21281,7 +21399,77 @@ function submitLinkUserAccount(ev, employeeId){
     alert(`System Account created for ${s.name}.\n\nTemporary password: ${res.tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
   });
 }
+// Create User: every staff member and their login in one table; the two
+// ways of giving someone a login open from the buttons above it.
 function renderCreateUserPage(){
+  const rolesState = DB.acctPages.roles;
+  if(!rolesState){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const staff = (DB.staff || []).slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const f = session.cuFilter || (session.cuFilter = { q:'', role:'', account:'' });
+  const q = f.q.toLowerCase();
+  const list = staff.filter(u => (!q || [u.name, u.email, u.staffCode, u.phone].some(x => (x || '').toLowerCase().includes(q))) && (!f.role || u.role === f.role) && (!f.account || (u.systemAccount || 'Not Created') === f.account));
+  const roles = [...new Set(staff.map(u => u.role))].sort();
+  const accts = ['Active','Suspended','Locked','Disabled','Not Created'];
+  const acc = u => u.systemAccount || 'Not Created';
+  const isAdmin = session.role === 'Admin';
+  const trs = list.map(u => `<tr>
+      <td><a href="#" onclick="admOpenUser('${u.id}'); return false;"><strong style="font-size:14px;">${escapeHtml(u.name)}</strong></a><div class="hint">${escapeHtml(u.email || '—')}${u.staffCode ? ' · ' + escapeHtml(u.staffCode) : ''}</div></td>
+      <td><span class="badge blue">${escapeHtml(u.role || '—')}</span></td>
+      <td>${escapeHtml(u.accessLevel || '—')}</td>
+      <td>${escapeHtml(u.branch ? branchName(u.branch) : 'Head office')}</td>
+      <td>${admBadge(acc(u), admAccountTone(acc(u)))}${u.mustChangePassword && acc(u) === 'Active' ? '<div class="hint">must set password</div>' : ''}</td>
+      <td class="hint">${u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'Never'}</td>
+      <td><span class="badge ${u.status === 'Active' ? 'green' : u.status === 'Suspended' ? 'amber' : 'red'}">${escapeHtml(u.status || '—')}</span></td>
+      <td class="dt-act">
+        <button class="btn btn-sm btn-outline" onclick="admOpenUser('${u.id}')">View</button>
+        ${!u.hasAccount && u.status !== 'Terminated' ? `<button class="btn btn-sm btn-primary" onclick="session.createUserLinkEmployeeId='${u.id}'; toggleForm('cu-link', true);">Create login</button>` : ''}
+        ${isAdmin && u.id !== session.userId ? `<button class="btn btn-sm btn-red" onclick="permanentlyDeleteUser('${u.id}')">Delete</button>` : ''}
+      </td></tr>`).join('');
+  return `<div class="card">
+      <div class="dt-head">
+        <div><h3>Create User</h3><div class="hint" style="margin-top:4px; max-width:640px;">Everyone on staff and the state of their login. Give a login to an existing employee, or register a new employee together with their login.</div></div>
+        <div class="dt-toolbar">
+          <button class="btn btn-primary btn-sm" onclick="session.createUserLinkEmployeeId=null; toggleForm('cu-link')">${isFormOpen('cu-link') ? '✕ Close' : '+ Login for Existing Employee'}</button>
+          <button class="btn btn-primary btn-sm" onclick="toggleForm('cu-new')">${isFormOpen('cu-new') ? '✕ Close' : '+ New Employee + Login'}</button>
+          <button class="btn btn-outline btn-sm" onclick="openInvestorRegistration()">+ Investor (portal login)</button>
+          <button class="btn btn-outline btn-sm" onclick="goTo('staff','Roles')">Roles</button>
+          ${generateMenuHtml('Users', () => ({ headers: ['Name','Email','Job No.','Role','Access level','Branch','Login','Last sign-in','Status'], rows: list.map(u => [u.name, u.email || '', u.staffCode || '', u.role, u.accessLevel || '', u.branch ? branchName(u.branch) : 'Head office', acc(u), u.lastLoginAt || 'Never', u.status || '']) }))}
+        </div>
+      </div>
+      <div class="adm-tiles">${admTile('Staff', staff.length)}${admTile('Active logins', staff.filter(u => acc(u) === 'Active').length)}${admTile('Without a login', staff.filter(u => !u.hasAccount && u.status !== 'Terminated').length)}${admTile('Suspended / locked', staff.filter(u => ['Suspended','Locked','Disabled'].includes(acc(u))).length)}</div>
+    </div>
+    ${isFormOpen('cu-link') ? renderLinkExistingEmployeeSection() : ''}
+    ${isFormOpen('cu-new') ? renderNewEmployeeAccountForm() : ''}
+    <div class="card">
+      <div class="dt-filters">
+        <input placeholder="🔍 Search name, email, job no. or phone" value="${escapeHtml(f.q)}" oninput="session.cuFilter.q=this.value; renderApp();" style="min-width:260px;">
+        <select onchange="session.cuFilter.role=this.value; renderApp();"><option value="">All roles</option>${roles.map(r => `<option ${f.role === r ? 'selected' : ''}>${escapeHtml(r)}</option>`).join('')}</select>
+        <select onchange="session.cuFilter.account=this.value; renderApp();"><option value="">All login states</option>${accts.map(a => `<option ${f.account === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
+        <span class="hint">${list.length} of ${staff.length} staff</span>
+      </div>
+      <div class="dt-wrap"><table class="dt">
+        <tr><th>Name</th><th>Role</th><th>Access Level</th><th>Branch</th><th>Login</th><th>Last Sign-in</th><th>Status</th><th style="text-align:right;">Actions</th></tr>
+        ${trs || '<tr><td colspan="8" class="empty">No staff match these filters.</td></tr>'}
+      </table></div>
+    </div>`;
+}
+// Permanently remove a user (System Administrator only). The full name must
+// be typed back; anyone still holding clients or open loans is refused by
+// the server until those are transferred.
+async function permanentlyDeleteUser(id){
+  const u = (DB.staff || []).find(x => x.id === id); if(!u) return;
+  const typed = typeof prompt === 'function' ? prompt(`Permanently delete ${u.name}?\n\nTheir login, access and personal records are removed for good; loans, payments and other history they worked on stay, without their name. This cannot be undone.\n\nType their full name to confirm:`) : null;
+  if(typed === null) return;
+  if(String(typed).trim() !== u.name){ toast('The name did not match — nothing was deleted.'); return; }
+  await withRequest('delete-user-' + id, async ()=>{
+    await api.post(`/api/users/${id}/permanent-delete`, { confirm: String(typed).trim() });
+    DB.staff = (DB.staff || []).filter(x => x.id !== id);
+    DB.acctPages.roles = null; DB.acctPages.staffdir = null; DB.acctPages.permMatrix = null;
+    if(session.selectedStaffId === id) session.selectedStaffId = null;
+    toast(`${u.name} was permanently deleted`);
+  }, { mutates: true });
+}
+function renderNewEmployeeAccountForm(){
   const rolesState = DB.acctPages.roles;
   if(!rolesState){ loadRolesPage(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const roles = rolesState.roles.slice().sort((a,b)=>a.name.localeCompare(b.name));
@@ -21290,14 +21478,13 @@ function renderCreateUserPage(){
   const activeManagers = (DB.staff||[]).filter(s=>s.status==='Active');
   const emailReady = DB.integrationsStatus && DB.integrationsStatus.email === 'CONFIGURED';
   return `
-    ${renderLinkExistingEmployeeSection()}
     <div class="card">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-        <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
-        <div>
-          <h3 style="color:var(--navy); margin:0;">Or Create a Brand-New Employee + Account Together</h3>
+        <div style="flex:1;">
+          <h3 style="color:var(--navy); margin:0;">New Employee + Login Account</h3>
           <div class="hint" style="margin-top:2px;">For a person who doesn't exist in Rhinocash yet and needs login access right away.</div>
         </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleForm('cu-new', false)">✕ Close</button>
       </div>
       <form onsubmit="return submitCreateUserForm(event)">
         <input type="hidden" name="name">
@@ -21335,9 +21522,10 @@ function renderCreateUserPage(){
         <div class="card-title" style="margin-top:20px;">Role &amp; Access</div>
         <div class="hint" style="margin-bottom:10px;">Access Level describes this user's organizational scope — it never grants a permission by itself. Permissions come entirely from the role selected below.</div>
         <div class="form-grid">
-          <div class="field"><label>Role</label><select name="roleId" required onchange="this.form.accessLevel.value=(${JSON.stringify(roleAccessMap).replace(/"/g,'&quot;')})[this.value]||''; previewRoleForCreateUser(this.value);">
+          <div class="field"><label>Role</label><select name="roleId" required onchange="if(this.value==='__investor__'){ this.value=''; openInvestorRegistration(); return; } this.form.accessLevel.value=(${JSON.stringify(roleAccessMap).replace(/"/g,'&quot;')})[this.value]||''; previewRoleForCreateUser(this.value);">
             <option value="">— Select —</option>
             ${roles.map(r=>`<option value="${r.id}">${escapeHtml(r.name)}${!r.is_system?' (Custom)':''}</option>`).join("")}
+            <option value="__investor__">Investor — portal access (register an investor)</option>
           </select></div>
           <div class="field"><label>Access Level</label><input name="accessLevel" placeholder="auto-filled from role, editable"></div>
         </div>
@@ -21563,6 +21751,7 @@ function renderStaff(){
   // register table every other Roles & Access Control entry point does.
   if(session.subtab === "Create Role") return renderRolesPage();
   if(session.subtab === "Role Permissions") return renderRolePermissionsPage();
+  if(session.subtab === "Permission Matrix") return renderPermissionMatrixPage();
   if(session.subtab === "Create User") return renderCreateUserPage();
   if(session.subtab === "Add Employee") return renderAddEmployeePage();
   const state = DB.acctPages.staffdir;

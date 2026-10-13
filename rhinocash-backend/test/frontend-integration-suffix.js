@@ -2408,7 +2408,7 @@ apiRequest = async function(method, path, body){
 
     session.loViewDetailsState.tab = 'Performance';
     renderApp();
-    await new Promise(r=>setTimeout(r,80)); renderApp();
+    for(let i=0; i<250 && !(DB.loPerformance && Array.isArray(DB.loPerformance.months)); i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Performance') && html.includes('New Loans') && html.includes('Repeat Loans') && html.includes('Performing') && html.includes('Arrears') && html.includes('Revenue'), "the real Performance tab genuinely renders with all 5 requested metric columns");
     __assert(Array.isArray(DB.loPerformance && DB.loPerformance.months) && DB.loPerformance.months.length===12, "the real performance data genuinely loaded from the real backend, not fabricated client-side");
@@ -4298,7 +4298,7 @@ apiRequest = async function(method, path, body){
     session.mgrAppOverviewState = { branchId:'', officerId:'', productId:'', status:'', cycle:'', from:'', to:'', minAmount:'', maxAmount:'', q:'[TEST] RM App Overview Client', page:1 };
     DB.applicationsOverview = null;
     goTo('loanbook','Loan Applications');
-    for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide application monitoring') && html.includes('Region:'), "Regional Manager's real Loan Applications page genuinely shows real region-wide framing and region context, not Manager's branch-level framing");
     __assert(html.includes('Branch Application Performance'), "Regional Manager's real page genuinely has the additional real Branch Application Performance section absent from Manager's version");
@@ -4311,7 +4311,7 @@ apiRequest = async function(method, path, body){
     // Real branch-click drill-down.
     session.mgrAppOverviewState.branchId = 'br_kisumu'; session.mgrAppOverviewState.page = 1; DB.applicationsOverview = null;
     renderApp();
-    for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     __assert(DB.applicationsOverview.rows.every(r=>r.branchId==='br_kisumu'), "clicking a real branch genuinely filters the real detailed table to only that real branch");
 
     // Real cross-region rejection via direct API manipulation.
@@ -4421,7 +4421,7 @@ apiRequest = async function(method, path, body){
     session.progressiveDisbState = null;
     DB.progressiveDisb = null;
     goTo('loanbook','Collection MTD');
-    for(let i=0; i<250 && !DB.progressiveDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.progressiveDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Progressive Disbursements'), "Manager's real Collection MTD genuinely shares the exact same real Progressive Disbursements page the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Collection MTD page genuinely has no subtab bar above it, per the requested chrome-free design");
@@ -4435,7 +4435,7 @@ apiRequest = async function(method, path, body){
     session.mgrMtdState = { branchId:'', officerId:'', productId:'' };
     DB.mtdBranch = null;
     goTo('loanbook','Collection MTD');
-    for(let i=0; i<250 && !DB.mtdBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.mtdBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide'), "Regional Manager's real restored Collection MTD genuinely shows region-wide framing");
     __assert(Array.isArray(DB.mtdBranch.byBranch), "the real branch breakdown genuinely returns a real array, ready to populate once real loans fall due within the current real MTD window");
@@ -4486,7 +4486,7 @@ apiRequest = async function(method, path, body){
     session.mgrDisbState = { from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10), to: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'' };
     DB.disbursementsOverview = null;
     goTo('loanbook','Disbursements');
-    for(let i=0; i<250 && !DB.disbursementsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.disbursementsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Disbursement Performance'), "Regional Manager's real restored Disbursements genuinely shows region-wide framing and the real Branch Disbursement Performance section");
     __assert(DB.disbursementsOverview.byBranch.some(b=>b.branchId==='br_kisumu'), "the real branch breakdown genuinely includes real Kisumu branch disbursement data");
@@ -4542,7 +4542,7 @@ apiRequest = async function(method, path, body){
     session.mgrSheetState = { date: sheetDueDate2, branchId:'', officerId:'', productId:'', status:'', q:'', expandedOfficers:{} };
     DB.sheetBranch = null;
     goTo('loanbook','Collection Sheet');
-    for(let i=0; i<250 && !DB.sheetBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.sheetBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Comparison'), "Regional Manager's real extended Collection Sheet genuinely shows region-wide framing and the real Branch Comparison section");
     __assert(DB.sheetBranch.byBranch.some(b=>b.branchId==='br_kisumu'), "the real branch breakdown genuinely includes real Kisumu branch collection sheet data");
@@ -4602,7 +4602,7 @@ apiRequest = async function(method, path, body){
     session.mgrReportState = { from: reportDueDate, to: reportDueDate, branchId:'', officerId:'', productId:'', status:'', q:'[TEST] Restored Report Client', page:1 };
     DB.collectionReport = null;
     goTo('loanbook','Collection Reports');
-    for(let i=0; i<250 && !DB.collectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Performance Report'), "Regional Manager's real restored Collection Report genuinely shows region-wide framing and the real Branch Performance Report section");
     __assert(DB.collectionReport.byBranch.some(b=>b.branchId==='br_kisumu'), "the real branch breakdown genuinely includes real Kisumu branch collection data");
@@ -4663,7 +4663,7 @@ apiRequest = async function(method, path, body){
     session.mgrRatesState = { from: ratesDueDate, to: ratesDueDate, branchId:'', officerId:'', productId:'', cycle:'', status:'', q:'[TEST] Restored Rates Client', page:1 };
     DB.collectionRatesBranch = null;
     goTo('loanbook','Collection Rates');
-    for(let i=0; i<250 && !DB.collectionRatesBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collectionRatesBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide'), "Regional Manager's real pre-existing Collection Rates genuinely shows region-wide framing");
     const kisumuRates = DB.collectionRatesBranch.byBranch.find(b=>b.branchId==='br_kisumu');
@@ -4714,7 +4714,7 @@ apiRequest = async function(method, path, body){
     session.mgrArrearsState = { asOf: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'', bucket:'', q:'[TEST] Restored Arrears Client', page:1 };
     DB.arrearsBranch = null;
     goTo('loanbook','Loan Arrears');
-    for(let i=0; i<250 && !DB.arrearsBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.arrearsBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Arrears Analysis'), "Regional Manager's real restored Loan Arrears genuinely shows region-wide framing and the real Branch Arrears Analysis section");
     const kisumuArr = DB.arrearsBranch.byBranch.find(b=>b.branchId==='br_kisumu');
@@ -4773,7 +4773,7 @@ apiRequest = async function(method, path, body){
     session.viewLoansState = { category:'Current Loans', branchId:'', productId:'', officerId:'', rating:'', cycles:'', disbursedFrom:'', disbursedTo:'', appliedFrom:'', appliedTo:'', riskStatus:'', minDpd:'', sort:'', q:'[TEST] Restored View Loans Client', page:1 };
     DB.viewLoans = null;
     goTo('loanbook','View Loans');
-    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Portfolio Comparison'), "Regional Manager's real restored View Loans genuinely shows region-wide framing and the real Branch Portfolio Comparison section");
     __assert(DB.viewLoans.byBranch.some(b=>b.branchId==='br_kisumu'), "the real branch breakdown genuinely includes real Kisumu branch portfolio data");
@@ -4828,7 +4828,7 @@ apiRequest = async function(method, path, body){
     sidebarNavigate('Regional Loan Portfolio');
     __assert(session.subtab === 'Regional Loan Portfolio', "the real 'Regional Loan Portfolio' sidebar item genuinely routes to the real dedicated page");
     goTo('loanbook','Regional Loan Portfolio');
-    for(let i=0; i<250 && !DB.branchPortfolio; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.branchPortfolio; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Regional Loan Portfolio') && html.includes('Region:'), "Regional Manager's real restored page genuinely shows the real distinct page title and region context, not Manager's Branch Loan Portfolio framing");
     __assert(html.includes('Branch Portfolio Comparison'), "the real page genuinely has the additional real Branch Portfolio Comparison section");
@@ -4886,7 +4886,7 @@ apiRequest = async function(method, path, body){
     session.mgrQualityState = { branchId:'', officerId:'', productId:'', riskStatus:'', q:'[TEST] Restored Quality Client', page:1 };
     DB.portfolioQualityBranch = null;
     goTo('loanbook','Regional Loan Portfolio Quality');
-    for(let i=0; i<250 && !DB.portfolioQualityBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.portfolioQualityBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Regional Loan Portfolio Quality') && html.includes('Region:'), "Regional Manager's real page genuinely shows the real distinct title and region context, not Manager's branch-level framing");
     __assert(html.includes('Branch Portfolio Quality Comparison'), "the real page genuinely has the additional real Branch Portfolio Quality Comparison section");
@@ -4926,7 +4926,7 @@ apiRequest = async function(method, path, body){
     session.mgrApprovalState = { branchId:'', officerId:'', productId:'', stage:'', minAmount:'', maxAmount:'', q:'[TEST] Restored Approval Client', page:1 };
     DB.approvalMonitoring = null;
     goTo('loanbook','Loan Approval Monitoring');
-    for(let i=0; i<250 && !DB.approvalMonitoring; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.approvalMonitoring; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Approval Performance'), "Regional Manager's real restored Loan Approval Monitoring genuinely shows region-wide framing and the real Branch Approval Performance section");
 
@@ -4982,7 +4982,7 @@ apiRequest = async function(method, path, body){
     session.mgrMaturityState = { branchId:'', officerId:'', productId:'', bucket:'', q:'[TEST] Restored Maturity Client', page:1 };
     DB.maturityPipeline = null;
     goTo('loanbook','Loan Maturity Pipeline');
-    for(let i=0; i<250 && !DB.maturityPipeline; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.maturityPipeline; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide') && html.includes('Branch Maturity Exposure'), "Regional Manager's real restored Loan Maturity Pipeline genuinely shows region-wide framing and the real Branch Maturity Exposure section");
 
@@ -5054,7 +5054,7 @@ apiRequest = async function(method, path, body){
     session.mgrApprovedState = { branchId:'', officerId:'', productId:'', disbursedStatus:'', q:'[TEST] OM Restored Approved Client', page:1 };
     DB.approvedLoans = null;
     goTo('loanbook','Approved Loans');
-    for(let i=0; i<250 && !DB.approvedLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.approvedLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Company-wide') && html.includes('Approval Turnaround Distribution'), "Operational Manager's real restored Approved Loans genuinely shows real company-wide framing and the real turnaround-analysis sections");
     const omApprRow = DB.approvedLoans.rows.find(r=>r.loanId===omApprLoan.id);
@@ -5075,7 +5075,7 @@ apiRequest = async function(method, path, body){
     session.viewLoansState = { category:'Current Loans', branchId:'', productId:'', officerId:'', rating:'', cycles:'', disbursedFrom:'', disbursedTo:'', appliedFrom:'', appliedTo:'', riskStatus:'', minDpd:'', sort:'', q:'[TEST] OM Restored Approved Client', page:1 };
     DB.viewLoans = null;
     goTo('loanbook','Active Loans');
-    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Current Loans') && html.includes('Company-wide'), "Operational Manager's real restored Active Loans genuinely shows the real Current Loans category with real company-wide framing, reusing the real View Loans infrastructure");
     const omActiveRow = DB.viewLoans.rows.find(r=>r.loanId===omApprLoan.id);
@@ -5158,7 +5158,7 @@ apiRequest = async function(method, path, body){
     session.viewLoansState = { category:'All Loans', branchId:'', productId:'', officerId:'', rating:'', cycles:'', disbursedFrom:'', disbursedTo:'', appliedFrom:'', appliedTo:'', riskStatus:'', minDpd:'', sort:'', q:'[TEST] OM View Loans Client', page:1 };
     DB.viewLoans = null;
     goTo('loanbook','View Loans');
-    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.viewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Company-wide') && html.includes('Branch Portfolio Comparison'), "Operational Manager's real View Loans genuinely shows real company-wide framing and the real Branch Portfolio Comparison section");
     __assert(html.includes('Largest Outstanding Loans') && html.includes('DPD Distribution'), "the real page genuinely includes the real new Top Exposures and DPD Distribution sections");
@@ -5218,7 +5218,7 @@ apiRequest = async function(method, path, body){
     session.opPortfolioState = { from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10), to: new Date().toISOString().slice(0,10), branchId:'', officerId:'', productId:'', q:'[TEST] OpLP Client', page:1 };
     DB.operationalPortfolio = null;
     goTo('loanbook','Operational Loan Portfolio');
-    for(let i=0; i<250 && !DB.operationalPortfolio; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.operationalPortfolio; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Company-wide') && html.includes('Loan Size Band Analysis') && html.includes('Loan Cycle Analysis'), "the real page genuinely shows real company-wide framing and real portfolio-composition sections distinct from other LoanBook pages");
     __assert(html.includes('Stock vs Flow') && html.includes('Concentration'), "the real page genuinely distinguishes real stock vs flow metrics and includes a real concentration section, matching its distinct operational-management focus");
@@ -5277,7 +5277,7 @@ apiRequest = async function(method, path, body){
     session.mgrQualityState = { branchId:'', officerId:'', productId:'', riskStatus:'', q:'[TEST] OM Quality Client', page:1 };
     DB.portfolioQualityBranch = null;
     goTo('loanbook','Regional Loan Portfolio Quality');
-    for(let i=0; i<250 && !DB.portfolioQualityBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.portfolioQualityBranch; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(/>\s*Loan Portfolio Quality\s*</.test(html) && !html.includes('Regional Loan Portfolio Quality <small>'), "Operational Manager's real page genuinely shows the real distinct 'Loan Portfolio Quality' title (not 'Regional Loan Portfolio Quality'), matching the document's exact naming");
     __assert(html.includes('Company-wide'), "the real page genuinely shows real company-wide framing for Operational Manager");
@@ -5316,7 +5316,7 @@ apiRequest = async function(method, path, body){
     session.mgrApprovalState = { branchId:'', officerId:'', productId:'', stage:'', minAmount:'', maxAmount:'', q:'' };
     DB.approvalMonitoring = null;
     goTo('loanbook','Loan Approval Monitoring');
-    for(let i=0; i<250 && !DB.approvalMonitoring; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.approvalMonitoring; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Approval Outcomes') && html.includes('SLA Monitoring'), "the real page genuinely shows the real new Approval Outcomes and SLA Monitoring sections");
     __assert(html.includes('Approval SLA is not configured'), "the real page genuinely states honestly that no approval SLA is configured, rather than fabricating one");
@@ -5370,7 +5370,7 @@ apiRequest = async function(method, path, body){
     session.mgrMaturityState = { branchId:'', officerId:'', productId:'', bucket:'', q:'[TEST] OM Matured Client', page:1 };
     DB.maturityPipeline = null;
     goTo('loanbook','Loan Maturity Pipeline');
-    for(let i=0; i<250 && !DB.maturityPipeline; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.maturityPipeline; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Company-wide') && html.includes('Due in 90 Days'), "Operational Manager's real page genuinely shows real company-wide framing and the real new 90-day maturity window");
     __assert(html.includes('Largest Upcoming Maturity Exposures'), "the real page genuinely includes the real new Largest Upcoming Maturity Exposures section");
@@ -5427,7 +5427,7 @@ apiRequest = async function(method, path, body){
     session.opExceptionsState = { branchId:'', officerId:'', category:'', q:'[TEST] Exception Client', page:1 };
     DB.loanExceptions = null;
     goTo('loanbook','Loan Exceptions & Escalations');
-    for(let i=0; i<250 && !DB.loanExceptions; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loanExceptions; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert((html.includes('Loan Exceptions &amp; Escalations') || html.includes('Loan Exceptions & Escalations')) && html.includes('Company-wide') && html.includes('SLA not configured'), "the real page genuinely shows real company-wide framing and honestly states no SLA is configured, rather than fabricating one");
     __assert(DB.loanExceptions.rows.length === 0, "a real freshly-disbursed, fully-current loan genuinely produces zero exceptions — nothing fabricated where no real condition exists");
@@ -6958,7 +6958,7 @@ apiRequest = async function(method, path, body){
     await doLogin({ preventDefault(){}, target:{} });
     session.dailyDisbState = null; DB.dailyDisb = null;
     goTo('loanbook','Disbursements');
-    for(let i=0; i<250 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Daily Disbursements'), "Manager's real Disbursements page genuinely shares the exact same real Daily Disbursements calendar the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Disbursements page genuinely has no subtab bar above it, per the requested chrome-free design");
@@ -6973,7 +6973,7 @@ apiRequest = async function(method, path, body){
     await doLogin({ preventDefault(){}, target:{} });
     session.dailyDisbState = null; DB.dailyDisb = null;
     goTo('loanbook','Disbursements');
-    for(let i=0; i<250 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.dailyDisb; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Loan Officer's own Disbursements page genuinely stays chrome-free, unchanged");
   }
@@ -7041,7 +7041,7 @@ apiRequest = async function(method, path, body){
     session.collSheetDayState = { month: csDueDate.slice(0,7), day: Number(csDueDate.slice(8,10)), portfolio:'', period:'', officerId:'' };
     DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
-    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Collection sheet for'), "the real Manager Collection Sheet page genuinely shares the exact same real single-day due-installment sheet the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Collection Sheet page genuinely has no subtab bar above it");
@@ -7051,14 +7051,14 @@ apiRequest = async function(method, path, body){
     session.collSheetDayState.officerId = 'usr_officer';
     DB.collSheetDay = null;
     renderApp();
-    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Collection Sheet Filter Test Client'), "filtering by this exact real Loan Officer genuinely still shows their own real due installment");
 
     session.collSheetDayState.officerId = 'usr_manager_kisumu';
     DB.collSheetDay = null;
     renderApp();
-    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('Collection Sheet Filter Test Client'), "filtering by a real different user's id genuinely excludes this officer's own real due installment — the filter is real, not decorative");
 
@@ -7070,7 +7070,7 @@ apiRequest = async function(method, path, body){
     session.collSheetDayState = { month: csDueDate.slice(0,7), day: Number(csDueDate.slice(8,10)), portfolio:'', period:'', officerId:'' };
     DB.collSheetDay = null;
     goTo('loanbook','Collection Sheet');
-    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collSheetDay; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Collection Sheet page genuinely has no Loan Officer filter — their own real installments need no picker");
     __assert(html.includes('Collection Sheet Filter Test Client'), "sanity: the real Loan Officer still sees their own real due installment, unfiltered");
@@ -7110,7 +7110,7 @@ apiRequest = async function(method, path, body){
     session.collectionReportState = { from: todayISO(), to: todayISO(), officerId:'' };
     DB.officerCollectionReport = null;
     goTo('loanbook','Collection Reports');
-    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Collection Report') && html.includes('Portfolio') && html.includes('Arrears') && html.includes('Balance'), "the real Manager Collection Report page genuinely shares the exact same real per-client date-range sheet the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Collection Report page genuinely has no subtab bar above it");
@@ -7123,7 +7123,7 @@ apiRequest = async function(method, path, body){
     session.collectionReportState.officerId = 'usr_officer';
     DB.officerCollectionReport = null;
     renderApp();
-    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('value="usr_officer" selected'), "selecting a real Loan Officer in the filter genuinely re-queries the real backend with that officer_id and keeps it reflected as the selected option");
 
@@ -7136,7 +7136,7 @@ apiRequest = async function(method, path, body){
     session.collectionReportState = { from: todayISO(), to: todayISO(), officerId:'' };
     DB.officerCollectionReport = null;
     goTo('loanbook','Collection Report');
-    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.officerCollectionReport; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Collection Report page genuinely has no Loan Officer filter — their own real report needs no picker");
     __assert(html.includes('Collection Report'), "sanity: the real Loan Officer still sees their own real Collection Report page, unaffected");
@@ -7163,7 +7163,7 @@ apiRequest = async function(method, path, body){
 
     session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
     goTo('loanbook','Collection Rates');
-    for(let i=0; i<250 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Collection Rates') && html.includes('Loan Officer') && html.includes('Disbursed Loan') && html.includes('Loan+Charges') && html.includes('OTC') && html.includes('OC') && html.includes('DD7') && html.includes('CG7') && html.includes('Arrears') && html.includes('GC%'), "the real Manager Collection Rates page genuinely shares the exact same real per-officer summary and full column set the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Collection Rates page genuinely has no subtab bar above it");
@@ -7181,7 +7181,7 @@ apiRequest = async function(method, path, body){
     await doLogin({ preventDefault(){}, target:{} });
     session.collectionRatesOfficerState = null; DB.collectionRatesOfficer = null;
     goTo('loanbook','Collection Rates');
-    for(let i=0; i<250 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.collectionRatesOfficer; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "a Loan Officer's own real Collection Rates page genuinely stays chrome-free, unchanged");
     __assert(html.includes('Collection Rates'), "sanity: the real Loan Officer still sees their own real Collection Rates page, unaffected");
@@ -7255,7 +7255,7 @@ apiRequest = async function(method, path, body){
     session.loanArrearsSheetState = { from: new Date(Date.now()-6*86400000).toISOString().slice(0,10), to: todayISO(), status: 'running', officerId: '' };
     DB.loanArrearsSheet = null;
     goTo('loanbook','Loan Arrears');
-    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Running Loans disbursed') && html.includes('Cycles') && html.includes('P.Arrears') && html.includes('Accumulated') && html.includes('Fall Date') && html.includes('T.Bal'), "the real Manager Loan Arrears page genuinely shares the exact same real per-loan sheet and full column set the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager Loan Arrears page genuinely has no subtab bar above it");
@@ -7275,14 +7275,14 @@ apiRequest = async function(method, path, body){
     session.loanArrearsSheetState.officerId = 'usr_officer';
     DB.loanArrearsSheet = null;
     renderApp();
-    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Loan Arrears Filter Test Client'), "filtering by this exact real Loan Officer genuinely still shows their own real running loan");
 
     session.loanArrearsSheetState.officerId = 'usr_manager_kisumu';
     DB.loanArrearsSheet = null;
     renderApp();
-    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('Loan Arrears Filter Test Client'), "filtering by a real different user's id genuinely excludes this officer's own real running loan — the filter is real, not decorative");
 
@@ -7295,7 +7295,7 @@ apiRequest = async function(method, path, body){
     session.loanArrearsSheetState = { from: new Date(Date.now()-6*86400000).toISOString().slice(0,10), to: todayISO(), status: 'running', officerId: '' };
     DB.loanArrearsSheet = null;
     goTo('loanbook','Loan Arrears');
-    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loanArrearsSheet; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real Loan Arrears page genuinely has no Loan Officer filter — their own real loans need no picker");
     __assert(html.includes('Loan Arrears Filter Test Client'), "sanity: the real Loan Officer still sees their own real running loan, unfiltered");
@@ -7366,7 +7366,7 @@ apiRequest = async function(method, path, body){
     session.loViewLoansState = null;
     DB.loViewLoans = null;
     goTo('loanbook','View Loans');
-    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Current Loans') && html.includes('Loan Officer') && html.includes('To-Pay') && html.includes('Percent') && html.includes('Balance') && html.includes('Status') && html.includes('Maturity'), "the real Manager View Loans page genuinely shares the exact same real per-loan sheet and full column set the Loan Officer uses");
     __assert(!html.includes('class="subtabs"'), "the real Manager View Loans page genuinely has no subtab bar above it");
@@ -7386,14 +7386,14 @@ apiRequest = async function(method, path, body){
     session.loViewLoansState.officerId = 'usr_officer';
     DB.loViewLoans = null;
     renderApp();
-    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('View Loans Filter Test Client'), "filtering by this exact real Loan Officer genuinely still shows their own real Current Loans row");
 
     session.loViewLoansState.officerId = 'usr_manager_kisumu';
     DB.loViewLoans = null;
     renderApp();
-    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('View Loans Filter Test Client'), "filtering by a real different user's id genuinely excludes this officer's own real Current Loans row — the filter is real, not decorative");
 
@@ -7406,7 +7406,7 @@ apiRequest = async function(method, path, body){
     session.loViewLoansState = null;
     DB.loViewLoans = null;
     goTo('loanbook','View Loans');
-    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp();
+    for(let i=0; i<250 && !DB.loViewLoans; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('-- Loan Officer --'), "a Loan Officer's own real View Loans page genuinely has no Loan Officer filter — their own real loans need no picker");
     __assert(html.includes('View Loans Filter Test Client'), "sanity: the real Loan Officer still sees their own real Current Loans row, unfiltered");
@@ -8046,6 +8046,49 @@ apiRequest = async function(method, path, body){
     toggleForm('rg-transfer', true); sidebarNavigate('Loan Transfers'); renderApp();
     __assert(rgForm('transfer').subject_type === 'loan' && document.getElementById('root').innerHTML.includes('New loan officer'), "the Loan Transfers form transfers a loan to a new officer");
     toggleForm('rg-transfer', false);
+  }
+
+  // ---- Admin: Roles / Role Permissions / Permission Matrix / Create User tables, permanent delete ----
+  {
+    const adForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    __assert(session.role === 'Admin', "setup: signed in as the System Administrator");
+    const waitFor = async (cond) => { for(let i=0; i<250 && !cond(); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); } renderApp(); };
+    DB.acctPages.roles = null; DB.acctPages.permMatrix = null;
+    sidebarNavigate('Roles'); renderApp();
+    await waitFor(() => DB.acctPages.roles);
+    let h = document.getElementById('root').innerHTML;
+    __assert(h.includes('class="dt"') && h.includes('+ Create Role') && h.includes(">Role Permissions</button>") && h.includes('>HR<'), "Roles is a designed table with page buttons above it");
+    __assert(!/HR[^<]*\(Custom\)/.test(h) && h.includes('HR &amp; People Management Access'), "HR shows as a system role with its own access level, not Custom");
+    sidebarNavigate('Role Permissions'); renderApp();
+    await waitFor(() => DB.acctPages.permMatrix);
+    h = document.getElementById('root').innerHTML;
+    __assert(h.includes('dt matrix') && h.includes('Approve Loans') && h.includes('Granted'), "Role Permissions shows every role's permissions in one table");
+    __assert(!h.includes('id="rp-editor"'), "the permission editor stays closed until a role is chosen");
+    session.rolePermissionsState = { roleId:'hr', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true };
+    renderApp(); await waitFor(() => DB.acctPages.roleDetail && DB.acctPages.roleDetail.roleId === 'hr');
+    h = document.getElementById('root').innerHTML;
+    __assert(h.includes('id="rp-editor"') && h.includes('Edit Permissions — HR'), "Edit on a role opens its permission editor below the table");
+    sidebarNavigate('Permission Matrix'); renderApp(); await waitFor(() => DB.acctPages.permMatrix);
+    h = document.getElementById('root').innerHTML;
+    __assert(session.subtab === 'Permission Matrix' && h.includes('<h3>Permission Matrix</h3>') && h.includes('Branches &amp; Regions'), "Permission Matrix is its own page: roles against modules");
+    sidebarNavigate('Create User'); renderApp(); await waitFor(() => DB.acctPages.roles);
+    h = document.getElementById('root').innerHTML;
+    __assert(h.includes('<h3>Create User</h3>') && h.includes('class="dt"') && h.includes('+ New Employee + Login') && !h.includes('New Employee + Login Account'), "Create User is a staff table with the forms closed behind buttons");
+    toggleForm('cu-new', true);
+    h = document.getElementById('root').innerHTML;
+    __assert(h.includes('New Employee + Login Account') && h.includes('Investor — portal access'), "the new-employee form opens from its button and offers Investor");
+    toggleForm('cu-new', false);
+    // Permanently delete a freshly created user from the table.
+    const victim = await api.post('/api/users', { name: 'Table Delete Test', email: 'tabledelete@rhinocash.co.ke', role_id: 'loan_officer', branch_id: 'br_kisumu' });
+    const vid = (victim.user || victim.employee).id;
+    const ur = await api.get('/api/users?limit=200'); DB.staff = ur.users.map(adaptStaff);
+    const realPrompt = global.prompt; global.prompt = () => 'Table Delete Test';
+    await permanentlyDeleteUser(vid);
+    global.prompt = realPrompt;
+    let gone = false; try { await api.get('/api/users/' + vid); } catch(e){ gone = e.status === 404; }
+    __assert(gone && !DB.staff.some(x => x.id === vid), "the Admin permanently deletes a user from the Create User table");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

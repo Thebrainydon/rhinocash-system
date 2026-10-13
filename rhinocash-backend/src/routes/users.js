@@ -68,7 +68,15 @@ function requireAdminOnly(action) {
 // carries it — e.g. HR & People Management Access) plus any level an
 // existing role already uses.
 const STANDARD_ACCESS_LEVELS = ['Portfolio Access', 'Branch Management Access', 'Operations & Branch Expansion Access', 'Regional Management Access',
-  'Accounting & Financial Access', 'Master System Administration Access', 'Executive Management Access', 'Strategic & Governance Access', 'HR & People Management Access'];
+  'Accounting & Financial Access', 'Master System Administration Access', 'Executive Management Access', 'Strategic & Governance Access', 'HR & People Management Access',
+  'Investor Access'];
+// A role may also carry a new, Admin-named access level (sent with
+// custom_access_level: true) — once a role uses it, it is a known level.
+function customAccessLevelError(level) {
+  if (level.length < 3 || level.length > 80) return 'A custom Access Level must be 3 to 80 characters';
+  if (!/^[A-Za-z][A-Za-z0-9 &/,.()'-]*$/.test(level)) return 'A custom Access Level may only use letters, numbers, spaces and & / , . ( ) \' -';
+  return null;
+}
 async function knownAccessLevels() {
   const used = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
   return [...new Set(STANDARD_ACCESS_LEVELS.concat(used))];
@@ -596,6 +604,67 @@ function register(router) {
     res.json({ ok: true });
   });
 
+  // ---- Permanently delete a user (System Administrator only) ----
+  // The person disappears from the system: their login, access grants and
+  // personal records (leave, workplans, attendance, payslips, wallet,
+  // notifications, HR records, targets) are deleted. Shared business history
+  // they touched (loans, payments, journal entries, approvals, audit trail)
+  // is kept, with their name removed from it. Anyone still holding clients
+  // or open loans must have them transferred first, so no borrower is left
+  // without an officer. The Admin must type the user's full name to confirm.
+  router.post('/api/users/:id/permanent-delete', requireAuth, requirePermission('manage_users'), requireAdminOnly('permanently delete a user'), async (req, res, next) => {
+    const user = await get('SELECT id, name, email, role_id, status FROM users WHERE id = ?', [req.params.id]);
+    if (!user) return next({ status: 404, message: 'User not found' });
+    if (user.id === req.user.id) return next({ status: 400, message: 'You cannot delete your own account' });
+    if (String((req.body || {}).confirm || '').trim() !== user.name) return next({ status: 400, message: `Type the user's full name (${user.name}) to confirm` });
+    if (user.role_id === 'admin') {
+      const admins = await get(`SELECT COUNT(*)::int AS n FROM users WHERE role_id = 'admin' AND status = 'Active' AND id <> ?`, [user.id]);
+      if (!admins || admins.n < 1) return next({ status: 400, message: 'This is the last active System Administrator — it cannot be deleted' });
+    }
+    const clients = await get('SELECT COUNT(*)::int AS n FROM clients WHERE officer_id = ?', [user.id]);
+    const openLoans = await get(`SELECT COUNT(*)::int AS n FROM loans WHERE officer_id = ? AND status NOT IN ('Completed','Closed','Rejected','Written Off','Cancelled')`, [user.id]);
+    if (clients.n || openLoans.n) {
+      return next({ status: 409, message: `${user.name} still holds ${clients.n} client(s) and ${openLoans.n} open loan(s). Transfer them to another loan officer first (Client Transfers / Loan Transfers).` });
+    }
+    // Every column that points at a user, read from the database itself so a
+    // new table can never be missed.
+    const refs = await all(`SELECT kcu.table_name AS t, kcu.column_name AS c, col.is_nullable AS n
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+      JOIN information_schema.columns col ON col.table_name = kcu.table_name AND col.column_name = kcu.column_name AND col.table_schema = kcu.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'users' AND ccu.column_name = 'id' AND tc.table_schema = current_schema()`);
+    // Records that belong to the person themselves — deleted with them.
+    const OWNED = new Set(['user_accounts.employee_id', 'user_intelligence_access.user_id', 'user_menu_access.user_id', 'user_module_access.user_id',
+      'user_permission_overrides.user_id', 'user_workspace_preferences.user_id', 'report_filter_presets.user_id', 'ticket_filter_presets.user_id',
+      'requisition_otps.user_id', 'salary_advance_otps.user_id', 'salary_advance_requests.user_id', 'leave_requests.user_id', 'daily_workplans.user_id',
+      'staff_interactions.user_id', 'hr_attendance.employee_id', 'payroll_lines.employee_id', 'notifications.user_id', 'hr_records.employee_id',
+      'targets.recipient_user_id', 'staff_accounts.user_id']);
+    const ident = x => /^[a-z_][a-z0-9_]*$/.test(x) ? x : null;
+    try {
+      await transaction(async () => {
+        await run('DELETE FROM sessions WHERE user_id = ?', [user.id]);
+        await run('DELETE FROM staff_account_transactions WHERE account_id IN (SELECT id FROM staff_accounts WHERE user_id = ?)', [user.id]);
+        for (const r of refs) {
+          const t = ident(r.t), c = ident(r.c); if (!t || !c || t === 'users' && c === 'id') continue;
+          if (OWNED.has(`${t}.${c}`)) await run(`DELETE FROM ${t} WHERE ${c} = ?`, [user.id]);
+        }
+        for (const r of refs) {
+          const t = ident(r.t), c = ident(r.c); if (!t || !c || OWNED.has(`${t}.${c}`)) continue;
+          if (r.n === 'YES') await run(`UPDATE ${t} SET ${c} = NULL WHERE ${c} = ?`, [user.id]);
+          else {
+            const left = await get(`SELECT COUNT(*)::int AS n FROM ${t} WHERE ${c} = ?`, [user.id]);
+            if (left && left.n) throw { status: 409, message: `${user.name} is still linked to ${left.n} ${t.replace(/_/g, ' ')} record(s) that cannot be cleared automatically` };
+          }
+        }
+        await run('DELETE FROM users WHERE id = ?', [user.id]);
+      });
+    } catch (e) { if (e && e.status) return next(e); throw e; }
+    await logAction(req, { action: 'Permanently deleted user', module: 'staff', recordType: 'User', recordId: user.id,
+      previousValue: { name: user.name, email: user.email, role: user.role_id, status: user.status } });
+    res.json({ ok: true, deleted: { id: user.id, name: user.name } });
+  });
+
   router.delete('/api/users/:id/permissions/:permissionId', requireAuth, requirePermission('manage_users'), requireAdminOnly('clear a user\'s permission overrides'), async (req, res) => {
     await run('DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_id = ?', [req.params.id, req.params.permissionId]);
     await logAction(req, { action: 'Cleared permission override', module: 'users', recordType: 'User', recordId: req.params.id, newValue: req.params.permissionId });
@@ -663,7 +732,8 @@ function register(router) {
     if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
     const knownLevels = await knownAccessLevels();
     if (!knownLevels.includes(accessLevel)) {
-      return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+      if (!b.custom_access_level) return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+      const err = customAccessLevelError(accessLevel); if (err) return next({ status: 400, message: err });
     }
 
     const status = b.status || 'Active';
@@ -730,6 +800,23 @@ function register(router) {
   // real sidebar tree/dashboard layout the role reuses; it never touches
   // role_permissions or role_modules, so a role's actually-assigned
   // access is preserved exactly across a template change, per spec.
+  // Remove a custom role nobody holds (system roles are part of the design
+  // and can never be removed).
+  router.post('/api/roles/:id/delete', requireAuth, requirePermission('manage_users'), requireAdminOnly('delete a role'), async (req, res, next) => {
+    const role = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
+    if (!role) return next({ status: 404, message: 'Role not found' });
+    if (role.is_system) return next({ status: 400, message: 'System roles cannot be deleted' });
+    const used = await get('SELECT COUNT(*)::int AS n FROM users WHERE role_id = ?', [role.id]);
+    if (used.n) return next({ status: 409, message: `${used.n} user(s) still hold the ${role.name} role — move them to another role first` });
+    await transaction(async () => {
+      for (const t of ['role_modules', 'role_permissions', 'role_intelligence_access', 'role_menu_access', 'role_workspace_defaults']) await run(`DELETE FROM ${t} WHERE role_id = ?`, [role.id]);
+      await run('DELETE FROM approval_workflow_steps WHERE role_id = ?', [role.id]);
+      await run('DELETE FROM roles WHERE id = ?', [role.id]);
+    });
+    await logAction(req, { action: 'Deleted role', module: 'staff', recordType: 'Role', recordId: role.id, previousValue: { name: role.name, accessLevel: role.default_access_level } });
+    res.json({ ok: true });
+  });
+
   router.put('/api/roles/:id', requireAuth, requirePermission('manage_users'), requireAdminOnly('edit a role'), async (req, res, next) => {
     const before = await get('SELECT * FROM roles WHERE id = ?', [req.params.id]);
     if (!before) return next({ status: 404, message: 'Role not found' });
@@ -742,7 +829,8 @@ function register(router) {
     if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
     const knownLevels = await knownAccessLevels();
     if (!knownLevels.includes(accessLevel)) {
-      return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+      if (!b.custom_access_level) return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
+      const err = customAccessLevelError(accessLevel); if (err) return next({ status: 400, message: err });
     }
 
     const status = b.status !== undefined ? b.status : before.status;
