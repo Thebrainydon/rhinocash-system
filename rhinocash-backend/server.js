@@ -302,6 +302,7 @@ router.delete('/api/users/me/avatar', async (req, res, next) => {
   './src/routes/hrOps',
   './src/routes/execOps',
   './src/routes/investorPortal',
+  './src/routes/acctOps',
   './src/routes/staffWallet',
   './src/routes/staffProfile',
   './src/routes/workplans',

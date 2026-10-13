@@ -665,13 +665,14 @@ const NAV = [
   {id:"hr", num:16, label:"Human Resources"},
   {id:"director", num:17, label:"Executive"},
   {id:"invest", num:18, label:"Investor"},
+  {id:"acct", num:19, label:"Finance"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
   "Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
-  "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
+  "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","acct"],
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Investor": ["dashboard","reports","notifications","support","account","invest"],
@@ -826,6 +827,8 @@ function isSectionAllowed(section){
   if(section==="director") return ["Director","CEO"].includes(session.role);
   // "invest" (the Investor's pages) — /api/investor/* accepts investor sessions only.
   if(section==="invest") return session.role==="Investor";
+  // "acct" (the Accountant's finance pages) — /api/acct/* checks the role itself.
+  if(section==="acct") return session.role==="Accountant";
   if(section==="hr"){ const m = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules; return Array.isArray(m) && DB.me.finalAccess.permissions ? m.includes("hr") : ["HR","Admin"].includes(session.role); }
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
@@ -3528,6 +3531,7 @@ function renderSection(){
     case "hr": return renderHrSection();
     case "director": return renderDirectorSection();
     case "invest": return renderInvestorSection();
+    case "acct": return renderAccountantSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -7597,6 +7601,7 @@ const DIR_VIEWS = {
     return `${dirTiles([['Financial requests pending', fr.length, fmt(dirSum(fr, r => r.amount))], ['Accounting items pending', aging.length], ['Overdue (accounting)', aging.filter(i => i.overdue).length]])}
       ${admChart('dir-fa', 'Pending Items by Type', 'bar', ['Financial requests'].concat([...new Set(aging.map(i => i.type))]), [{ label: 'Items', data: [fr.length].concat([...new Set(aging.map(i => i.type))].map(t => aging.filter(i => i.type === t).length)) }], dirHoriz)}
       ${dirTable('Financial requests', fr, DIR_KIND_UI.financial_request.cols.concat([['', dirActions]]), 'No financial requests are waiting.')}
+      ${accPendingDecisionsCard()}
       ${dirTable('Accounting approvals in progress', aging, [['Type', i => escapeHtml(i.type)], ['Reference', i => escapeHtml(i.reference || '—')], ['Branch', i => escapeHtml(i.branchId ? branchName(i.branchId) : '—')], ['Waiting for', i => escapeHtml(i.awaitingRole || '—')], ['Age', i => i.overdue ? admBadge(Math.round(i.ageHours) + ' h', 'red') : Math.round(i.ageHours) + ' h']], 'No accounting approvals are pending.',
         '<div class="hint" style="margin-bottom:8px;">These are decided by the Accountant and Managers; shown here so you can see what is held up.</div>')}`;
   },
@@ -8199,6 +8204,624 @@ async function invSaveSchedule(ev){
   await withRequest('inv-sched', async ()=>{ await api.put('/api/investor/report-preferences', { frequency }); admForget('inv:report'); }, { mutates: true });
   return false;
 }
+/* ================= Accountant finance pages =================
+   Analysis, control and planning pages for the Accountant. Figures come
+   from the live books (GET /api/acct/finance, /controls, /client-quality,
+   /daily); budgets, forecasts, refunds, write-off proposals, verifications
+   and exceptions are stored as accounting records (/api/acct/records).
+   Same chassis as the other roles: bold blue title, tables, charts (never
+   donuts) and Generate (PDF / Excel) on every table. */
+const accYear = () => session.accYear || new Date().getFullYear();
+const accFin = () => admData('acc:fin:' + accYear(), '/api/acct/finance?year=' + accYear());
+const accCtl = () => admData('acc:ctl', '/api/acct/controls');
+const accRecs = () => admData('acc:recs', '/api/acct/records', r => r.records);
+const accRecList = (kind, pred) => (Array.isArray(DB.adm && DB.adm['acc:recs']) ? DB.adm['acc:recs'] : []).filter(r => r.kind === kind && (!pred || pred(r)));
+const accForgetAll = () => admForget('acc:');
+const accCanWrite = () => serverCan('post_accounting_entries', 'Post Accounting Entries');
+const accM = m => rgMonthLabel(m);
+const accPct = v => v === null || v === undefined || !Number.isFinite(v) ? '—' : (Math.round(v * 10) / 10).toFixed(1) + '%';
+const accMoneyRed = v => v < 0 ? `<span style="color:var(--red); font-weight:700;">${fmt(v)}</span>` : fmt(v);
+const ACC_STATUS_TONE = { Pending:'amber', Approved:'green', Rejected:'red', Paid:'green', 'Written Off':'grey', Closed:'grey', Active:'green', Superseded:'grey', Verified:'green', Flagged:'red', Resolved:'green', Open:'amber', Investigating:'amber', Dismissed:'grey', High:'red', Medium:'amber', Low:'grey' };
+const accBadge = s => admBadge(s, ACC_STATUS_TONE[s] || 'grey');
+
+const ACC_PAGES = {
+  "Financial Requests": { view:'finReq', sub:'Money you need released, sent to the CEO and Director for a decision.' },
+  "Financial Statements": { view:'statements', sub:'Income statement, financial position and cash flow in one place.' },
+  "Accounting Reports": { view:'reportsHub', sub:'Every accounting report with its headline figure.' },
+  "Regional Performance": { view:'regions', sub:'Lending, collections and profit by region over the last 12 months.' },
+  "Branch Comparison": { view:'branchCompare', sub:'Branches side by side on the measure you choose.' },
+  "Branch Status": { view:'branchStatus', sub:'Every branch: status, age, people and loan book.' },
+  "Revenue Analysis": { view:'revenue', sub:'Where income comes from — interest, fees and penalties.' },
+  "Expense Analysis": { view:'expenses', sub:'What the company spends on, by account, month and branch.' },
+  "Cashflow Analysis": { view:'cashflow', sub:'Money in and out of cash, bank and M-Pesa each month.' },
+  "Collection Analysis": { view:'collection', sub:'Collections against what fell due, month by month.' },
+  "Disbursement Analysis": { view:'disbursement', sub:'Loans paid out by month, product and branch.' },
+  "Fees & Charges Analysis": { view:'fees', sub:'Processing fees and other fee income.' },
+  "Penalties Analysis": { view:'penalties', sub:'Penalties charged, paid and still owed.' },
+  "Financial Performance": { view:'performance', sub:'The key financial ratios and how they are moving.' },
+  "Transaction Verification": { view:'txVerify', sub:'Check every posted transaction in the last 60 days.' },
+  "Payment Verification": { view:'payVerify', sub:'Check client payments in the last 60 days and act on the flagged ones.' },
+  "Loan Financial Validation": { view:'loanValidate', sub:'Active loans whose figures do not add up.' },
+  "Variance Analysis": { view:'variance', sub:'How each account moved this month against last month and its usual level.' },
+  "Suspense Accounts": { view:'suspense', sub:'Money received but not yet placed: unmatched M-Pesa, unposted payments and client credits.' },
+  "Refunds": { view:'refunds', sub:'Refund client overpayments — approved by the CEO or Director, then paid.' },
+  "Write-Offs": { view:'writeOffs', sub:'Loans over 90 days late, write-off proposals and loans already written off.' },
+  "Control Exceptions": { view:'exceptions', sub:'Problems the system found in the books, plus exceptions you raise.' },
+  "Client Data Quality": { view:'clientQuality', sub:'Client records with missing or clashing details.' },
+  "Payment Adjustments": { view:'payAdjust', sub:'Reversed payments and ledger adjustments that touch client money.' },
+  "Daily Financial Report": { view:'daily', sub:'One day\'s disbursements, collections and ledger movement.' },
+  "Cashflow Report": { view:'cashReport', sub:'Cash in, cash out and net cash flow for the last 12 months.' },
+  "Receivables Report": { view:'receivables', sub:'What borrowers owe the company, and how late it is.' },
+  "Payables Report": { view:'payables', sub:'What the company owes and has not yet paid.' },
+  "Reconciliation Reports": { view:'reconReport', sub:'M-Pesa matching, suspense balances and verification progress.' },
+  "Annual Budget": { view:'annualBudget', sub:'The year\'s income and expense budget, approved by the CEO or Director.' },
+  "Budget Monitoring": { view:'budgetMonitor', sub:'How much of each budget has been used so far this year.' },
+  "Budget Variance": { view:'budgetVariance', sub:'Budget against actual for every budgeted account.' },
+  "Branch Budgets": { view:'branchBudgets', sub:'Budgets set for individual branches against their actual spending.' },
+  "Expense Budgets": { view:'expenseBudgets', sub:'Expense budgets against spending, month by month.' },
+  "Financial Forecasts": { view:'forecasts', sub:'Your forecasts for the coming months beside the trend of the last 12.' },
+};
+const ACC_SECTION_OF = {};
+(SIDEBAR_MENUS.Accountant || []).forEach(sec => sec.items.forEach(item => { if(ACC_PAGES[item] && !ACC_SECTION_OF[item]) ACC_SECTION_OF[item] = sec.section; }));
+ROLE_ROUTE_OVERRIDES.Accountant = Object.assign(ROLE_ROUTE_OVERRIDES.Accountant || {}, Object.fromEntries(Object.keys(ACC_PAGES).map(l => [l, { section:'acct', subtab:l }])));
+
+function renderAccountantSection(){
+  const label = session.subtab; const spec = ACC_PAGES[label];
+  if(!spec) return renderPlaceholder();
+  admExports = [];
+  let body;
+  try{ body = (ACC_VIEWS[spec.view] || (() => admError('This page is not available.')))(label, spec); }
+  catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
+  return `<div class="adm-page">
+    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(ACC_SECTION_OF[label] || 'Accounting')}</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2><div class="adm-sub">${escapeHtml(spec.sub || '')}</div></div>
+    ${body}</div>`;
+}
+const accGuard = (...v) => { if(admPending(...v)) return admLoading(); const f = admFailed(...v); return f ? admError(f.__error) : null; };
+function accYearPicker(){
+  const y = new Date().getFullYear();
+  return `<div class="pill-row adm-filters"><label class="hint">Budget year</label><select onchange="session.accYear=Number(this.value); renderApp();">${[y + 1, y, y - 1, y - 2].map(v => `<option value="${v}" ${v === accYear() ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
+}
+// A small "+ New" form; values survive re-renders until saved.
+function accFormCard(key, title, fields, submitJs, btn){
+  const vals = (session.accFormVals = session.accFormVals || {})[key] || {};
+  return `<div class="fp ${isFormOpen(key) ? 'fp-open' : ''}">${formToggleBtn(key, title)}<div class="fp-body"><div class="card">
+    <div class="card-title">${escapeHtml(title)}</div>
+    <form onsubmit="return ${submitJs}"><div class="form-grid">${fields.map(f => admFieldHtml(f, vals[f.k] !== undefined ? vals[f.k] : f.def, false)).join('')}</div>
+    <button class="btn btn-primary btn-sm" type="submit">${escapeHtml(btn || 'Save')}</button></form></div></div></div>`;
+}
+const accBranchOpts = (blank) => [{ v:'', l: blank || 'Whole company' }].concat((DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(b => ({ v: b.id, l: b.name })));
+const accAccountOpts = (F, type) => (F.accounts || []).filter(a => !type || a.type === type).filter(a => ['Revenue', 'Expense'].includes(a.type)).map(a => ({ v: a.id, l: `${a.code} · ${a.name}` }));
+async function accPost(key, body, okMsg){
+  await withRequest(key, async ()=>{ await api.post('/api/acct/records', body); if(session.accFormVals) session.accFormVals[key] = {}; accForgetAll(); if(okMsg) toast(okMsg); }, { mutates: true });
+}
+async function accSetStatus(id, status, needNote){
+  let outcome;
+  if(needNote){ outcome = prompt(needNote); if(outcome === null) return; }
+  await withRequest('acc-st-' + id, async ()=>{ await api.patch('/api/acct/records/' + id, Object.assign({ status }, outcome !== undefined ? { outcome } : {})); accForgetAll(); }, { mutates: true });
+}
+function accDecisionBtns(r, done){
+  const out = [];
+  if(r.status === 'Pending'){
+    if(['CEO','Director','Admin'].includes(session.role) && r.createdBy !== session.userId){
+      out.push(`<button class="btn btn-sm btn-primary" onclick="accSetStatus('${r.id}','Approved')">Approve</button>`, `<button class="btn btn-sm btn-red" onclick="accSetStatus('${r.id}','Rejected','Reason for rejecting')">Reject</button>`);
+    } else out.push('<span class="hint">Awaiting CEO / Director</span>');
+  }
+  if(r.status === 'Approved' && done && accCanWrite()) out.push(`<button class="btn btn-sm btn-primary" onclick="if(confirm('${done.confirm}')) accSetStatus('${r.id}','${done.status}')">${escapeHtml(done.label)}</button>`);
+  return out.length ? `<div class="pill-row" style="flex-wrap:nowrap;">${out.join('')}</div>` : '';
+}
+// Pending budgets, refunds and write-offs, for the CEO / Director approvals page.
+function accPendingDecisionsCard(){
+  const recs = accRecs(); if(recs === undefined) return admLoading('Accountant items waiting for you');
+  if(recs && recs.__error) return '';
+  const pend = recs.filter(r => ['budget','refund','write_off'].includes(r.kind) && r.status === 'Pending');
+  const kindName = { budget:'Budget', refund:'Refund', write_off:'Write-off' };
+  return dirTable('Accountant items waiting for you', pend, [['Type', r => escapeHtml(kindName[r.kind])], ['Item', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Amount', r => fmt(r.amount)], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Raised', r => escapeHtml(String(r.createdAt).slice(0, 10))], ['', r => accDecisionBtns(r)]], 'Nothing from the Accountant is waiting.');
+}
+
+/* ---- verification helpers (transactions, payments, loans) ---- */
+function accVerifyBtns(refType, refId, v){
+  const enc = encodeURIComponent(refId);
+  const state = v ? `${accBadge(v.status)}${v.note ? `<div class="hint">${escapeHtml(v.note)}</div>` : ''}${v.by ? `<div class="hint">by ${escapeHtml(v.by)}</div>` : ''}` : '<span class="hint">Not checked</span>';
+  if(!accCanWrite()) return state;
+  const btns = [];
+  if(!v || v.status !== 'Verified') btns.push(`<button class="btn btn-sm btn-primary" onclick="accVerify('${refType}','${enc}','Verified')">Verify</button>`);
+  if(!v || v.status === 'Verified') btns.push(`<button class="btn btn-sm btn-red" onclick="accVerify('${refType}','${enc}','Flagged')">Flag</button>`);
+  if(v && v.status === 'Flagged') btns.push(`<button class="btn btn-sm btn-outline" onclick="accVerify('${refType}','${enc}','Resolved')">Resolved</button>`);
+  return `${state}<div class="pill-row" style="flex-wrap:nowrap; margin-top:4px;">${btns.join('')}</div>`;
+}
+async function accVerify(refType, encId, status){
+  const refId = decodeURIComponent(encId);
+  let outcome = '';
+  if(status !== 'Verified'){ outcome = prompt(status === 'Flagged' ? 'What is wrong?' : 'How was it resolved?'); if(outcome === null) return; if(status === 'Flagged' && !outcome.trim()){ toast('Say why it is flagged.'); return; } }
+  await withRequest('acc-ver-' + refId, async ()=>{ await api.post('/api/acct/records', { kind:'verification', ref_type: refType, ref_id: refId, status, outcome }); admForget('acc:ctl'); admForget('acc:recs'); }, { mutates: true });
+}
+const accVerTiles = (list, getV) => [['Checked', list.filter(x => getV(x)).length + ' / ' + list.length], ['Verified', list.filter(x => (getV(x) || {}).status === 'Verified').length], ['Flagged', list.filter(x => (getV(x) || {}).status === 'Flagged').length]];
+
+/* ---- budgets ---- */
+const accBudgetFields = F => [hSel('category', 'Account', accAccountOpts(F)), hF('period', 'Year (YYYY) or month (YYYY-MM)', 'text', { def: String(accYear()) }), hSel('branch_id', 'Branch', accBranchOpts()), hF('amount', 'Budget amount (KES)', 'number', { min: 0 }), hF('details', 'Notes', 'textarea')];
+async function accSaveBudget(ev){
+  ev.preventDefault();
+  const F = accFin(); const fields = accBudgetFields(F);
+  const v = admCollect(new FormData(ev.target), fields); (session.accFormVals = session.accFormVals || {})['acc-budget'] = v;
+  if(!v.category){ toast('Choose the account.'); return false; }
+  if(!/^\d{4}(-(0[1-9]|1[0-2]))?$/.test(v.period)){ toast('Enter a year (YYYY) or a month (YYYY-MM).'); return false; }
+  if(!(v.amount > 0)){ toast('Enter the budget amount.'); return false; }
+  await accPost('acc-budget', { kind:'budget', category: v.category, period: v.period, branch_id: v.branch_id || null, amount: v.amount, details: v.details });
+  return false;
+}
+// Budgets that apply to the selected year (annual ones plus any monthly ones in it).
+function accYearBudgets(pred){ return accRecList('budget', r => r.status === 'Approved' && String(r.period || '').slice(0, 4) === String(accYear()) && (!pred || pred(r))); }
+// Actual for an account in the selected year, optionally limited to a branch and/or month.
+function accActual(F, account, branchId, month){ return dirSum(F.actuals.filter(a => a.account === account && (branchId === undefined || (a.branchId || null) === (branchId || null)) && (!month || a.month === month)), a => a.amount); }
+function accBudgetRows(F, pred){
+  const bs = accYearBudgets(pred);
+  const elapsed = accYear() < new Date().getFullYear() ? 12 : accYear() > new Date().getFullYear() ? 0 : new Date().getMonth() + 1;
+  return bs.map(b => {
+    const month = String(b.period).length === 7 ? b.period : null;
+    const actual = accActual(F, b.category, b.branchId ? b.branchId : undefined, month);
+    const type = (F.accounts.find(a => a.id === b.category) || {}).type;
+    const expectedSoFar = month ? b.amount : b.amount * elapsed / 12;
+    const variance = type === 'Revenue' ? actual - b.amount : b.amount - actual;
+    return { b, account: F.nameOf[b.category] || b.category, type, actual, used: b.amount > 0 ? actual / b.amount * 100 : 0, variance, pace: expectedSoFar > 0 ? actual / expectedSoFar * 100 : null, month };
+  });
+}
+const accBudgetCols = [['Account', x => `<strong>${escapeHtml(x.account)}</strong><div class="hint">${escapeHtml(x.type || '')}${x.b.branch ? ' · ' + escapeHtml(x.b.branch) : ''}</div>`], ['Period', x => escapeHtml(x.b.period)], ['Budget', x => fmt(x.b.amount)], ['Actual', x => fmt(x.actual)], ['Used', x => hrBar(Math.round(x.used))],
+  ['Variance', x => `${accMoneyRed(x.variance)} ${x.variance >= 0 ? admBadge('Favourable', 'green') : admBadge('Unfavourable', 'red')}`]];
+
+/* ---- forecasts ---- */
+const accForecastFields = () => [hSel('category', 'Line', ['Disbursements','Collections','Revenue','Expenses']), hF('period', 'Month (YYYY-MM)', 'month'), hF('amount', 'Forecast (KES)', 'number', { min: 0 }), hF('details', 'Basis / notes', 'textarea')];
+async function accSaveForecast(ev){
+  ev.preventDefault();
+  const fields = accForecastFields(); const v = admCollect(new FormData(ev.target), fields); (session.accFormVals = session.accFormVals || {})['acc-forecast'] = v;
+  if(!/^\d{4}-\d{2}$/.test(v.period)){ toast('Choose the month.'); return false; }
+  if(v.amount === null || !(v.amount >= 0)){ toast('Enter the forecast amount.'); return false; }
+  await accPost('acc-forecast', { kind:'forecast', category: v.category, period: v.period, amount: v.amount, details: v.details });
+  return false;
+}
+
+/* ---- refunds, write-offs, exceptions, financial requests ---- */
+async function accSaveRefund(ev, encClient){
+  ev.preventDefault();
+  const fd = new FormData(ev.target); const amount = Number(fd.get('amount'));
+  if(!(amount > 0)){ toast('Enter the refund amount.'); return false; }
+  await accPost('acc-refund', { kind:'refund', ref_type:'client', ref_id: decodeURIComponent(encClient), amount, details: String(fd.get('details') || ''), data: { method: fd.get('method') || 'M-Pesa' } }, 'Refund sent for approval.');
+  session.accRefundFor = null;
+  return false;
+}
+async function accProposeWriteOff(encLoan){
+  const reason = prompt('Why should this loan be written off?'); if(reason === null) return;
+  if(!reason.trim()){ toast('Give the reason for the write-off.'); return; }
+  await accPost('acc-wo-' + encLoan, { kind:'write_off', ref_type:'loan', ref_id: decodeURIComponent(encLoan), details: reason }, 'Write-off sent for approval.');
+}
+const accExceptionFields = () => [hF('title', 'What is wrong'), hSel('category', 'Area', ['Cash','Bank','M-Pesa','Payments','Loans','Expenses','Ledger','Other']), hF('amount', 'Amount involved (KES)', 'number', { min: 0 }), hSel('branch_id', 'Branch', accBranchOpts('Not branch-specific')), hF('details', 'Details', 'textarea')];
+async function accSaveException(ev){
+  ev.preventDefault();
+  const fields = accExceptionFields(); const v = admCollect(new FormData(ev.target), fields); (session.accFormVals = session.accFormVals || {})['acc-exc'] = v;
+  if(!v.title){ toast('Say what is wrong.'); return false; }
+  await accPost('acc-exc', { kind:'exception', title: v.title, category: v.category, amount: v.amount, branch_id: v.branch_id || null, details: v.details });
+  return false;
+}
+const accFinReqs = () => admData('acc:freq', '/api/exec/records?kind=financial_request', r => r.records);
+const accFinReqFields = () => [hF('title', 'What the money is for'), hF('category', 'Category'), hF('amount', 'Amount (KES)', 'number', { min: 0 }), hSel('branch_id', 'Branch', accBranchOpts('Head office')), hSel('priority', 'Priority', ['Normal','High','Critical','Low']), hF('due_date', 'Needed by', 'date'), hF('details', 'Details', 'textarea')];
+async function accSaveFinReq(ev){
+  ev.preventDefault();
+  const fields = accFinReqFields(); const v = admCollect(new FormData(ev.target), fields); (session.accFormVals = session.accFormVals || {})['acc-freq'] = v;
+  if(!v.title){ toast('Say what the money is for.'); return false; }
+  if(!(v.amount > 0)){ toast('Enter the amount.'); return false; }
+  const body = { kind:'financial_request' }; Object.entries(v).forEach(([k, x]) => { if(x !== '' && x !== null) body[k] = x; });
+  await withRequest('acc-freq', async ()=>{ await api.post('/api/exec/records', body); session.accFormVals['acc-freq'] = {}; admForget('acc:freq'); dirForget('recs'); }, { mutates: true });
+  return false;
+}
+async function accFinReqPaid(id){
+  const ref = prompt('Payment reference (optional)'); if(ref === null) return;
+  await withRequest('acc-freq-' + id, async ()=>{ await api.patch('/api/exec/records/' + id, { status:'Paid', outcome: ref || null }); admForget('acc:freq'); dirForget('recs'); }, { mutates: true });
+}
+
+/* ---- daily report ---- */
+const accDay = () => session.accDate || todayISO();
+
+const ACC_VIEWS = {
+  finReq: () => {
+    const recs = accFinReqs(); const g = accGuard(recs); if(g) return g;
+    const months = rgLastMonths(6);
+    const sts = ['Pending','Approved','Rejected','Paid'];
+    return `${dirTiles([['Requests', recs.length], ['Waiting for a decision', recs.filter(r => r.status === 'Pending').length, fmt(dirSum(recs.filter(r => r.status === 'Pending'), r => r.amount))], ['Approved, to pay', recs.filter(r => r.status === 'Approved').length, fmt(dirSum(recs.filter(r => r.status === 'Approved'), r => r.amount))], ['Paid', fmt(dirSum(recs.filter(r => r.status === 'Paid'), r => r.amount))]])}
+      ${accFormCard('acc-freq', 'New financial request', accFinReqFields(), 'accSaveFinReq(event)', 'Send for approval')}
+      ${admTwoCharts(admChart('acc-fr-st', 'Requests by Status (KES)', 'bar', sts, [{ label: 'KES', data: sts.map(s => Math.round(dirSum(recs.filter(r => r.status === s), r => r.amount))) }]),
+        admChart('acc-fr-m', 'Requested per Month (KES)', 'line', months.map(accM), [{ label: 'Requested', data: months.map(m => Math.round(dirSum(recs.filter(r => String(r.createdAt).slice(0, 7) === m), r => r.amount))), fill: true, tension: 0.3 }]))}
+      ${dirTable('Financial requests', recs, [['Request', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Category', r => escapeHtml(r.category || '—')], ['Amount', r => fmt(r.amount)], ['Branch', r => escapeHtml(r.branchId ? branchName(r.branchId) : 'Head office')], ['Needed by', r => escapeHtml(r.dueDate || '—')], ['Raised by', r => escapeHtml(r.createdByName || '—')],
+        ['Status', r => accBadge(r.status) + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '') + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')],
+        ['', r => r.status === 'Approved' ? `<button class="btn btn-sm btn-primary" onclick="accFinReqPaid('${r.id}')">Mark paid</button>` : r.status === 'Pending' ? '<span class="hint">Awaiting CEO / Director</span>' : '']], 'No financial requests yet.')}`;
+  },
+  statements: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const rev = F.glLines.filter(a => a.type === 'Revenue'), exp = F.glLines.filter(a => a.type === 'Expense');
+    const inc12 = dirSum(rev, a => a.total12), exp12 = dirSum(exp, a => a.total12);
+    const A = F.accounts; const bal = t => A.filter(a => a.type === t);
+    const assets = dirSum(bal('Asset'), a => a.balance), liab = dirSum(bal('Liability'), a => a.balance), eqAcc = dirSum(bal('Equity'), a => a.balance);
+    const retained = dirSum(bal('Revenue'), a => a.balance) - dirSum(bal('Expense'), a => a.balance);
+    const cin = dirSum(F.monthly, m => m.cashIn), cout = dirSum(F.monthly, m => m.cashOut);
+    const open = btn => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${btn}')">Open ${escapeHtml(btn)}</button>`;
+    return `${dirTiles([['Income (12 months)', fmt(inc12)], ['Expenses (12 months)', fmt(exp12)], ['Net profit (12 months)', accMoneyRed(inc12 - exp12)], ['Total assets', fmt(assets)], ['Total liabilities', fmt(liab)], ['Net cash flow (12 months)', accMoneyRed(cin - cout)]])}
+      ${admTwoCharts(admChart('acc-st-pl', 'Income vs Expenses by Month (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Income', data: F.monthly.map(m => Math.round(m.income)), backgroundColor: '#2A9D8F' }, { label: 'Expenses', data: F.monthly.map(m => Math.round(m.expenses)), backgroundColor: '#E76F51' }]),
+        admChart('acc-st-bs', 'Financial Position (KES)', 'bar', ['Assets','Liabilities','Equity + retained'], [{ label: 'KES', data: [assets, liab, eqAcc + retained].map(Math.round), backgroundColor: ['#2E5C8A','#E76F51','#2A9D8F'] }]))}
+      ${dirTable('Income statement — last 12 months', rev.concat([{ name: 'Total income', total12: inc12, ytd: dirSum(rev, a => a.ytd), b: 1 }]).concat(exp).concat([{ name: 'Total expenses', total12: exp12, ytd: dirSum(exp, a => a.ytd), b: 1 }, { name: 'Net profit', total12: inc12 - exp12, ytd: dirSum(rev, a => a.ytd) - dirSum(exp, a => a.ytd), b: 1 }]),
+        [['Line', a => a.b ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)], ['Last 12 months', a => accMoneyRed(a.total12)], [`${accYear()} to date`, a => accMoneyRed(a.ytd)]], '—', `<div class="pill-row" style="margin-bottom:8px;">${open('Income Statement')}</div>`)}
+      ${dirTable('Statement of financial position', bal('Asset').concat([{ name: 'Total assets', balance: assets, b: 1 }]).concat(bal('Liability')).concat([{ name: 'Total liabilities', balance: liab, b: 1 }]).concat(bal('Equity')).concat([{ name: 'Retained earnings (income less expenses)', balance: retained }, { name: 'Total equity', balance: eqAcc + retained, b: 1 }]),
+        [['Account', a => a.b ? `<strong>${escapeHtml(a.name)}</strong>` : `${a.code ? escapeHtml(a.code) + ' · ' : ''}${escapeHtml(a.name)}`], ['Balance', a => accMoneyRed(a.balance)]], '—', `<div class="pill-row" style="margin-bottom:8px;">${open('Balance Sheet')}${open('Trial Balance')}</div>`)}
+      ${dirTable('Cash flow — last 12 months', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Cash in', m => fmt(m.cashIn)], ['Cash out', m => fmt(m.cashOut)], ['Net', m => accMoneyRed(m.cashIn - m.cashOut)]], '—', `<div class="pill-row" style="margin-bottom:8px;">${open('Cashflow Report')}</div>`)}`;
+  },
+  reportsHub: () => {
+    const F = accFin(); const C = accCtl(); const g = accGuard(F, C); if(g) return g;
+    const inc12 = dirSum(F.monthly, m => m.income), exp12 = dirSum(F.monthly, m => m.expenses);
+    const pay = Object.values(F.payables).flat();
+    const reports = [['Income Statement', 'Net profit (12 months)', accMoneyRed(inc12 - exp12)], ['Balance Sheet', 'Total assets', fmt(dirSum(F.accounts.filter(a => a.type === 'Asset'), a => a.balance))], ['Trial Balance', 'Debits / credits', `${fmt(C.trialBalance.debit)} / ${fmt(C.trialBalance.credit)}`],
+      ['General Ledger Report', 'Accounts in use', F.accounts.filter(a => a.balance).length], ['Cashflow Report', 'Net cash (12 months)', accMoneyRed(dirSum(F.monthly, m => m.cashIn - m.cashOut))], ['Daily Financial Report', 'Collected this month', fmt((F.monthly[11] || {}).collected)],
+      ['Receivables Report', 'Owed by borrowers', fmt(F.receivables.outstanding)], ['Payables Report', 'Owed by the company', fmt(dirSum(pay, p => p.amount))], ['Loan Portfolio Report', 'Active loans', fmtNum(F.portfolio.activeLoans)],
+      ['Reconciliation Reports', 'Unmatched M-Pesa', C.suspense.unmatched.length], ['Approval Aging', 'Open control exceptions', C.exceptions.length], ['Budget Variance', 'Approved budgets this year', accRecs() && Array.isArray(accRecs()) ? accYearBudgets().length : '—']];
+    return `${dirTiles([['Reports', reports.length], ['Income (12 months)', fmt(inc12)], ['Expenses (12 months)', fmt(exp12)], ['Exceptions to look at', C.exceptions.length]])}
+      ${admChart('acc-rh', 'Income and Expenses (KES)', 'line', F.monthly.map(m => accM(m.month)), [{ label: 'Income', data: F.monthly.map(m => Math.round(m.income)), fill: false, tension: 0.25 }, { label: 'Expenses', data: F.monthly.map(m => Math.round(m.expenses)), fill: false, tension: 0.25 }])}
+      ${dirTable('Accounting reports', reports, [['Report', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Headline', r => escapeHtml(r[1])], ['Figure', r => String(r[2])], ['', r => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${r[0]}')">Open</button>`]], '—')}`;
+  },
+  regions: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const regs = [...new Set(F.branches.map(b => b.region || 'No region'))].sort().map(name => { const bs = F.branches.filter(b => (b.region || 'No region') === name); const o = dirSum(bs, b => b.outstanding); const due = dirSum(bs, b => b.due12);
+      return { name, branches: bs.length, active: bs.filter(b => b.status === 'Active').length, clients: dirSum(bs, b => b.clients), loans: dirSum(bs, b => b.activeLoans), outstanding: o, disbursed: dirSum(bs, b => b.disbursed12), collected: dirSum(bs, b => b.collected12), rate: due > 0 ? dirSum(bs, b => b.collected12) / due * 100 : null,
+        par: o > 0 ? dirSum(bs, b => b.par30 * b.outstanding) / o : 0, income: dirSum(bs, b => b.income12), expenses: dirSum(bs, b => b.expenses12), net: dirSum(bs, b => b.net12) }; });
+    return `${dirTiles([['Regions', regs.length], ['Branches', F.branches.length], ['Loan book', fmt(F.portfolio.outstanding)], ['Net profit (12 months)', accMoneyRed(dirSum(regs, r => r.net))]])}
+      ${admTwoCharts(admChart('acc-rg-v', 'Disbursed vs Collected by Region (KES, 12 months)', 'bar', regs.map(r => r.name), [{ label: 'Disbursed', data: regs.map(r => Math.round(r.disbursed)) }, { label: 'Collected', data: regs.map(r => Math.round(r.collected)) }]),
+        admChart('acc-rg-p', 'Income, Expenses and Profit by Region (KES)', 'bar', regs.map(r => r.name), [{ label: 'Income', data: regs.map(r => Math.round(r.income)) }, { label: 'Expenses', data: regs.map(r => Math.round(r.expenses)) }, { label: 'Net', data: regs.map(r => Math.round(r.net)) }]))}
+      ${dirTable('Regional performance — last 12 months', regs, [['Region', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Branches', r => `${r.active} / ${r.branches}`], ['Clients', r => fmtNum(r.clients)], ['Active loans', r => fmtNum(r.loans)], ['Loan book', r => fmt(r.outstanding)], ['Disbursed', r => fmt(r.disbursed)], ['Collected', r => fmt(r.collected)], ['Collection rate', r => rgPctBadge(r.rate, 95, 85)], ['PAR30', r => rgPctBadge(r.par, 5, 10, true)], ['Income', r => fmt(r.income)], ['Expenses', r => fmt(r.expenses)], ['Net', r => accMoneyRed(r.net)]], 'No regions.')}`;
+  },
+  branchCompare: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const METRICS = { outstanding:['Loan book (KES)', b => b.outstanding], disbursed12:['Disbursed, 12 months (KES)', b => b.disbursed12], collected12:['Collected, 12 months (KES)', b => b.collected12], collectionRate:['Collection rate (%)', b => b.collectionRate || 0], par30:['PAR30 (%)', b => b.par30], income12:['Income, 12 months (KES)', b => b.income12], expenses12:['Expenses, 12 months (KES)', b => b.expenses12], net12:['Net profit, 12 months (KES)', b => b.net12], clients:['Clients', b => b.clients] };
+    const k = METRICS[session.accMetric] ? session.accMetric : 'outstanding'; const [mLabel, mFn] = METRICS[k];
+    const rows = F.branches.slice().sort((a, b) => mFn(b) - mFn(a));
+    const top = rows.filter(b => mFn(b)).slice(0, 15);
+    const avg = rows.length ? dirSum(rows, mFn) / rows.length : 0;
+    return `<div class="card"><div class="pill-row adm-filters"><label class="hint">Compare on</label><select onchange="session.accMetric=this.value; renderApp();">${Object.entries(METRICS).map(([v, [l]]) => `<option value="${v}" ${v === k ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></div></div>
+      ${dirTiles([['Branches', rows.length], ['Best', rows[0] ? escapeHtml(rows[0].name) : '—'], ['Company average', /%/.test(mLabel) ? accPct(avg) : /KES/.test(mLabel) ? fmt(avg) : fmtNum(avg)]])}
+      ${admChart('acc-bc', mLabel + ' — top 15', 'bar', top.map(b => b.name), [{ label: mLabel, data: top.map(b => Math.round(mFn(b) * 10) / 10) }], dirHoriz)}
+      ${dirTable('Branch comparison', rows, [['#', b => rows.indexOf(b) + 1], ['Branch', b => `<strong>${escapeHtml(b.name)}</strong><div class="hint">${escapeHtml(b.region)}</div>`], ['Loan book', b => fmt(b.outstanding)], ['Disbursed', b => fmt(b.disbursed12)], ['Collected', b => fmt(b.collected12)], ['Collection rate', b => rgPctBadge(b.collectionRate, 95, 85)], ['PAR30', b => rgPctBadge(b.par30, 5, 10, true)], ['Income', b => fmt(b.income12)], ['Expenses', b => fmt(b.expenses12)], ['Net', b => accMoneyRed(b.net12)]], 'No branches.')}`;
+  },
+  branchStatus: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const sts = [...new Set(F.branches.map(b => b.status || 'Unknown'))];
+    const regs = [...new Set(F.branches.map(b => b.region || 'No region'))].sort();
+    const age = b => b.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(b.createdAt)) / (30.44 * 86400000))) : null;
+    return `${dirTiles(sts.map(s => [s, F.branches.filter(b => (b.status || 'Unknown') === s).length]).concat([['Branches with no loans', F.branches.filter(b => !b.activeLoans).length], ['Branches with no staff', F.branches.filter(b => !b.staff).length]]))}
+      ${admTwoCharts(admChart('acc-bs-s', 'Branches by Status', 'bar', sts, [{ label: 'Branches', data: sts.map(s => F.branches.filter(b => (b.status || 'Unknown') === s).length) }]),
+        admChart('acc-bs-r', 'Branches by Region and Status', 'bar', regs, sts.map(s => ({ label: s, data: regs.map(r => F.branches.filter(b => (b.region || 'No region') === r && (b.status || 'Unknown') === s).length) })), dirStacked))}
+      ${dirTable('Branch status', F.branches, [['Branch', b => `<strong>${escapeHtml(b.name)}</strong><div class="hint">${escapeHtml(b.code || '')}</div>`], ['Region', b => escapeHtml(b.region || '—')], ['Status', b => admBadge(b.status || 'Unknown', b.status === 'Active' ? 'green' : 'grey')], ['Open for', b => age(b) === null ? '—' : age(b) + ' months'], ['Staff', b => `${b.staff} (${b.officers} officers)`], ['Clients', b => fmtNum(b.clients)], ['Active loans', b => fmtNum(b.activeLoans)], ['Loan book', b => fmt(b.outstanding)], ['PAR30', b => rgPctBadge(b.par30, 5, 10, true)]], 'No branches.')}`;
+  },
+  revenue: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const tot = m => m.interestIncome + m.feeIncome + m.penaltyIncome;
+    const t12 = dirSum(F.monthly, tot); const first = F.monthly.slice(0, 6), last = F.monthly.slice(6);
+    const growth = dirSum(first, tot) > 0 ? (dirSum(last, tot) / dirSum(first, tot) - 1) * 100 : null;
+    const top = F.branches.filter(b => b.income12).sort((a, b) => b.income12 - a.income12).slice(0, 15);
+    return `${dirTiles([['Revenue (12 months)', fmt(t12)], ['Interest', fmt(dirSum(F.monthly, m => m.interestIncome))], ['Fees', fmt(dirSum(F.monthly, m => m.feeIncome))], ['Penalties', fmt(dirSum(F.monthly, m => m.penaltyIncome))], ['Last 6 vs first 6 months', accPct(growth)], ['Yield on loan book (12 months)', F.portfolio.outstanding > 0 ? accPct(t12 / F.portfolio.outstanding * 100) : '—']])}
+      ${admTwoCharts(admChart('acc-rv-m', 'Revenue by Month (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Interest', data: F.monthly.map(m => Math.round(m.interestIncome)) }, { label: 'Fees', data: F.monthly.map(m => Math.round(m.feeIncome)) }, { label: 'Penalties', data: F.monthly.map(m => Math.round(m.penaltyIncome)) }], dirStacked),
+        admChart('acc-rv-b', 'Revenue by Branch (top 15, KES)', 'bar', top.map(b => b.name), [{ label: 'Income', data: top.map(b => Math.round(b.income12)) }], dirHoriz))}
+      ${dirTable('Revenue by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Interest', m => fmt(m.interestIncome)], ['Fees', m => fmt(m.feeIncome)], ['Penalties', m => fmt(m.penaltyIncome)], ['Total', m => `<strong>${fmt(tot(m))}</strong>`]], '—')}
+      ${dirTable('Revenue by product — last 12 months', F.products.filter(p => p.collected12 || p.disbursed12), [['Product', p => `<strong>${escapeHtml(p.name)}</strong>`], ['Interest collected', p => fmt(p.interest12)], ['Penalties collected', p => fmt(p.penalty12)], ['Processing fees charged', p => fmt(p.processingFees12)]], 'No product income yet.')}`;
+  },
+  expenses: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const exp = F.glLines.filter(a => a.type === 'Expense' && (a.total12 || a.ytd)).sort((a, b) => b.total12 - a.total12);
+    const t12 = dirSum(F.monthly, m => m.expenses); const inc = dirSum(F.monthly, m => m.income);
+    const top = F.branches.filter(b => b.expenses12).sort((a, b) => b.expenses12 - a.expenses12).slice(0, 15);
+    return `${dirTiles([['Expenses (12 months)', fmt(t12)], ['Monthly average', fmt(t12 / 12)], ['Biggest account', exp[0] ? escapeHtml(exp[0].name) : '—'], ['Cost-to-income', inc > 0 ? accPct(t12 / inc * 100) : '—']])}
+      ${admTwoCharts(admChart('acc-ex-m', 'Expenses by Month (KES)', 'line', F.monthly.map(m => accM(m.month)), [{ label: 'Expenses', data: F.monthly.map(m => Math.round(m.expenses)), fill: true, tension: 0.3 }]),
+        admChart('acc-ex-a', 'Expenses by Account (12 months, KES)', 'bar', exp.slice(0, 15).map(a => a.name), [{ label: 'KES', data: exp.slice(0, 15).map(a => Math.round(a.total12)) }], dirHoriz))}
+      ${admChart('acc-ex-b', 'Expenses by Branch (top 15, KES)', 'bar', top.map(b => b.name), [{ label: 'Expenses', data: top.map(b => Math.round(b.expenses12)) }], dirHoriz)}
+      ${dirTable('Expenses by account', exp, [['Account', a => `<strong>${escapeHtml(a.code)} · ${escapeHtml(a.name)}</strong>`], ['Last 12 months', a => fmt(a.total12)], ['This month', a => fmt(a.byMonth[11])], [`${accYear()} to date`, a => fmt(a.ytd)], ['Share', a => hrBar(Math.round(rgPct(a.total12, t12)))]], 'No expenses posted yet.')}`;
+  },
+  cashflow: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const cin = dirSum(F.monthly, m => m.cashIn), cout = dirSum(F.monthly, m => m.cashOut);
+    let run = F.cash.total - (cin - cout); const bal = F.monthly.map(m => (run += m.cashIn - m.cashOut));
+    return `${dirTiles([['Cash held now', accMoneyRed(F.cash.total)], ['Cash in (12 months)', fmt(cin)], ['Cash out (12 months)', fmt(cout)], ['Net (12 months)', accMoneyRed(cin - cout)], ['Months with net outflow', F.monthly.filter(m => m.cashOut > m.cashIn).length]])}
+      ${admTwoCharts(admChart('acc-cf-io', 'Cash In vs Cash Out (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'In', data: F.monthly.map(m => Math.round(m.cashIn)), backgroundColor: '#2A9D8F' }, { label: 'Out', data: F.monthly.map(m => Math.round(m.cashOut)), backgroundColor: '#E76F51' }]),
+        admChart('acc-cf-b', 'Cash Balance at Month End (KES)', 'line', F.monthly.map(m => accM(m.month)), [{ label: 'Balance', data: bal.map(Math.round), fill: true, tension: 0.3 }], { scales: { y: { beginAtZero: false } } }))}
+      ${dirTable('Cash held by account', [['Cash at hand', F.cash.cash], ['Bank', F.cash.bank], ['M-Pesa', F.cash.mpesa], ['Total', F.cash.total]], [['Account', r => r[0] === 'Total' ? '<strong>Total</strong>' : r[0]], ['Balance', r => accMoneyRed(r[1])]], '—')}
+      ${dirTable('Cash flow by month', F.monthly.slice().reverse().map((m, i) => Object.assign({ bal: bal[11 - i] }, m)), [['Month', m => accM(m.month)], ['Cash in', m => fmt(m.cashIn)], ['Cash out', m => fmt(m.cashOut)], ['Net', m => accMoneyRed(m.cashIn - m.cashOut)], ['Month-end balance', m => accMoneyRed(m.bal)]], '—')}`;
+  },
+  collection: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const c12 = dirSum(F.monthly, m => m.collected), d12 = dirSum(F.monthly, m => m.due);
+    const bs = F.branches.filter(b => b.due12 > 0).sort((a, b) => (a.collectionRate || 0) - (b.collectionRate || 0));
+    return `${dirTiles([['Collected (12 months)', fmt(c12)], ['Fell due (12 months)', fmt(d12)], ['Collection rate', d12 > 0 ? accPct(c12 / d12 * 100) : '—'], ['Principal', fmt(dirSum(F.monthly, m => m.principalCollected))], ['Interest', fmt(dirSum(F.monthly, m => m.interestCollected))], ['Penalties', fmt(dirSum(F.monthly, m => m.penaltyCollected))]])}
+      ${admTwoCharts(admChart('acc-co-m', 'Collected vs Due (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Due', data: F.monthly.map(m => Math.round(m.due)), backgroundColor: '#E9C46A' }, { label: 'Collected', data: F.monthly.map(m => Math.round(m.collected)), backgroundColor: '#2A9D8F' }]),
+        admChart('acc-co-s', 'What Collections Paid Off (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Principal', data: F.monthly.map(m => Math.round(m.principalCollected)) }, { label: 'Interest', data: F.monthly.map(m => Math.round(m.interestCollected)) }, { label: 'Penalties', data: F.monthly.map(m => Math.round(m.penaltyCollected)) }], dirStacked))}
+      ${dirTable('Collections by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Payments', m => fmtNum(m.payments)], ['Due', m => fmt(m.due)], ['Collected', m => fmt(m.collected)], ['Rate', m => rgPctBadge(m.collectionRate, 95, 85)], ['Principal', m => fmt(m.principalCollected)], ['Interest', m => fmt(m.interestCollected)], ['Penalties', m => fmt(m.penaltyCollected)]], '—')}
+      ${dirTable('Collection rate by branch — weakest first', bs, [['Branch', b => `<strong>${escapeHtml(b.name)}</strong>`], ['Due', b => fmt(b.due12)], ['Collected', b => fmt(b.collected12)], ['Rate', b => rgPctBadge(b.collectionRate, 95, 85)]], 'Nothing has fallen due yet.')}`;
+  },
+  disbursement: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const v12 = dirSum(F.monthly, m => m.disbursed), n12 = dirSum(F.monthly, m => m.disbursedLoans);
+    const prods = F.products.filter(p => p.disbursed12).sort((a, b) => b.disbursed12 - a.disbursed12);
+    const top = F.branches.filter(b => b.disbursed12).sort((a, b) => b.disbursed12 - a.disbursed12).slice(0, 15);
+    return `${dirTiles([['Disbursed (12 months)', fmt(v12)], ['Loans', fmtNum(n12)], ['Average loan', n12 ? fmt(v12 / n12) : '—'], ['This month', fmt((F.monthly[11] || {}).disbursed)]])}
+      ${admTwoCharts(admChart('acc-di-m', 'Amount Disbursed (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Disbursed', data: F.monthly.map(m => Math.round(m.disbursed)) }]),
+        admChart('acc-di-n', 'Loans Disbursed and Average Size', 'line', F.monthly.map(m => accM(m.month)), [{ label: 'Loans', data: F.monthly.map(m => m.disbursedLoans), fill: false, tension: 0.25 }]))}
+      ${admTwoCharts(admChart('acc-di-p', 'Disbursed by Product (KES)', 'bar', prods.map(p => p.name), [{ label: 'KES', data: prods.map(p => Math.round(p.disbursed12)) }], dirHoriz),
+        admChart('acc-di-b', 'Disbursed by Branch (top 15, KES)', 'bar', top.map(b => b.name), [{ label: 'KES', data: top.map(b => Math.round(b.disbursed12)) }], dirHoriz))}
+      ${dirTable('Disbursements by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Loans', m => fmtNum(m.disbursedLoans)], ['Amount', m => fmt(m.disbursed)], ['Average', m => m.disbursedLoans ? fmt(m.disbursed / m.disbursedLoans) : '—']], '—')}
+      ${dirTable('Disbursements by product — last 12 months', prods, [['Product', p => `<strong>${escapeHtml(p.name)}</strong>`], ['Loans', p => fmtNum(p.loans12)], ['Amount', p => fmt(p.disbursed12)], ['Average', p => p.loans12 ? fmt(p.disbursed12 / p.loans12) : '—']], 'Nothing disbursed in the last 12 months.')}`;
+  },
+  fees: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const pf = dirSum(F.monthly, m => m.processingFees), fi = dirSum(F.monthly, m => m.feeIncome), v12 = dirSum(F.monthly, m => m.disbursed);
+    const prods = F.products.filter(p => p.processingFees12 || p.disbursed12);
+    return `${dirTiles([['Processing fees collected (12 months)', fmt(pf), fmtNum(dirSum(F.monthly, m => m.processingFeeCount)) + ' payments'], ['Fee income in the ledger', fmt(fi)], ['Fees as % of disbursed', v12 > 0 ? accPct(pf / v12 * 100) : '—'], ['Fee share of revenue', dirSum(F.monthly, m => m.income) > 0 ? accPct(fi / dirSum(F.monthly, m => m.income) * 100) : '—']])}
+      ${admTwoCharts(admChart('acc-fe-m', 'Processing Fees and Fee Income (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Processing fees collected', data: F.monthly.map(m => Math.round(m.processingFees)) }, { label: 'Fee income (ledger)', data: F.monthly.map(m => Math.round(m.feeIncome)) }]),
+        admChart('acc-fe-p', 'Processing Fees by Product (KES)', 'bar', prods.map(p => p.name), [{ label: 'KES', data: prods.map(p => Math.round(p.processingFees12)) }], dirHoriz))}
+      ${dirTable('Fees by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Fee payments', m => fmtNum(m.processingFeeCount)], ['Processing fees', m => fmt(m.processingFees)], ['Fee income (ledger)', m => fmt(m.feeIncome)], ['Disbursed', m => fmt(m.disbursed)]], '—')}
+      ${dirTable('Fees by product — last 12 months', prods, [['Product', p => `<strong>${escapeHtml(p.name)}</strong>`], ['Loans', p => fmtNum(p.loans12)], ['Processing fees', p => fmt(p.processingFees12)], ['% of disbursed', p => p.disbursed12 ? accPct(p.processingFees12 / p.disbursed12 * 100) : '—']], 'No fees yet.')}`;
+  },
+  penalties: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const P = F.penalties;
+    return `${dirTiles([['Penalties charged (all time)', fmt(P.accrued)], ['Paid', fmt(P.paid)], ['Still owed', fmt(P.outstanding)], ['Recovery rate', P.accrued > 0 ? accPct(P.paid / P.accrued * 100) : '—'], ['Penalty income (12 months)', fmt(dirSum(F.monthly, m => m.penaltyIncome))]])}
+      ${admTwoCharts(admChart('acc-pe-m', 'Penalties Collected by Month (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Collected', data: F.monthly.map(m => Math.round(m.penaltyCollected)) }]),
+        admChart('acc-pe-b', 'Penalties Owed by Branch (KES)', 'bar', P.byBranch.map(b => b.branch), [{ label: 'Owed', data: P.byBranch.map(b => Math.round(b.outstanding)) }], dirHoriz))}
+      ${dirTable('Penalties by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Collected', m => fmt(m.penaltyCollected)], ['Penalty income (ledger)', m => fmt(m.penaltyIncome)]], '—')}
+      ${dirTable('Penalties owed by branch', P.byBranch.slice().sort((a, b) => b.outstanding - a.outstanding), [['Branch', b => `<strong>${escapeHtml(b.branch)}</strong>`], ['Owed', b => fmt(b.outstanding)], ['Share', b => hrBar(Math.round(rgPct(b.outstanding, P.outstanding)))]], 'No penalties are owed.')}`;
+  },
+  performance: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const inc = dirSum(F.monthly, m => m.income), exp = dirSum(F.monthly, m => m.expenses), c = dirSum(F.monthly, m => m.collected), d = dirSum(F.monthly, m => m.due);
+    const ratio = [['Net profit (12 months)', accMoneyRed(inc - exp)], ['Profit margin', inc > 0 ? accPct((inc - exp) / inc * 100) : '—'], ['Cost-to-income', inc > 0 ? accPct(exp / inc * 100) : '—'], ['Portfolio yield', F.portfolio.outstanding > 0 ? accPct(inc / F.portfolio.outstanding * 100) : '—'],
+      ['Collection rate', d > 0 ? accPct(c / d * 100) : '—'], ['PAR30', accPct(F.portfolio.par30)], ['Cash held', accMoneyRed(F.cash.total)], ['Loan book', fmt(F.portfolio.outstanding)]];
+    const margin = F.monthly.map(m => m.income > 0 ? Math.round((m.income - m.expenses) / m.income * 1000) / 10 : 0);
+    return `<div class="card"><div class="card-title"><span>Key ratios</span>${dirGen('Financial performance', ['Measure','Value'], ratio.map(r => [r[0], dirPlain(r[1])]))}</div><div class="adm-tiles">${ratio.map(r => admTile(r[0], r[1])).join('')}</div></div>
+      ${admTwoCharts(admChart('acc-pf-np', 'Net Profit by Month (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Net profit', data: F.monthly.map(m => Math.round(m.netProfit)), backgroundColor: F.monthly.map(m => m.netProfit >= 0 ? '#2A9D8F' : '#E76F51') }]),
+        admChart('acc-pf-mg', 'Profit Margin by Month (%)', 'line', F.monthly.map(m => accM(m.month)), [{ label: 'Margin %', data: margin, fill: false, tension: 0.25 }], { scales: { y: { beginAtZero: false } } }))}
+      ${dirTable('Performance by month', F.monthly.slice().reverse(), [['Month', m => accM(m.month)], ['Income', m => fmt(m.income)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => accMoneyRed(m.netProfit)], ['Margin', m => m.income > 0 ? accPct((m.income - m.expenses) / m.income * 100) : '—'], ['Collection rate', m => rgPctBadge(m.collectionRate, 95, 85)]], '—')}`;
+  },
+  txVerify: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const T = C.transactions; const f = session.accTxFilter || 'all';
+    const list = T.filter(x => f === 'all' || (f === 'unchecked' ? !x.verification : f === 'unbalanced' ? !x.balanced : x.verification && x.verification.status === 'Flagged'));
+    const types = [...new Set(T.map(x => x.refType))];
+    return `${dirTiles(accVerTiles(T, x => x.verification).concat([['Unbalanced', T.filter(x => !x.balanced).length], ['Trial balance', Math.abs(C.trialBalance.debit - C.trialBalance.credit) < 0.01 ? admBadge('Balanced', 'green') : admBadge('Out by ' + fmt(C.trialBalance.debit - C.trialBalance.credit), 'red')]]))}
+      ${admChart('acc-tv', 'Transactions by Source (last 60 days)', 'bar', types, [{ label: 'Checked', data: types.map(t => T.filter(x => x.refType === t && x.verification).length) }, { label: 'Not checked', data: types.map(t => T.filter(x => x.refType === t && !x.verification).length) }], dirStacked)}
+      ${dirTable('Transactions', list, [['Date', x => escapeHtml(String(x.date).slice(0, 10))], ['Source', x => `<strong>${escapeHtml(x.refType)}</strong><div class="hint">${escapeHtml(x.refId || '')}</div>`], ['Description', x => escapeHtml(x.description || '—')], ['Branch', x => escapeHtml(x.branch || '—')], ['Debit', x => fmt(x.debit)], ['Credit', x => fmt(x.credit)], ['Balanced', x => x.balanced ? admBadge('Yes', 'green') : admBadge('No', 'red')], ['Posted by', x => escapeHtml(x.postedBy || '—')], ['Check', x => accVerifyBtns('journal', x.refType + ':' + x.refId, x.verification)]], 'No transactions in the last 60 days.',
+        `<div class="pill-row adm-filters"><select onchange="session.accTxFilter=this.value; renderApp();">${[['all','All'],['unchecked','Not checked'],['flagged','Flagged'],['unbalanced','Unbalanced']].map(([v, l]) => `<option value="${v}" ${f === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}`;
+  },
+  payVerify: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const P = C.payments; const f = session.accPayFilter || 'flagged';
+    const list = P.filter(p => f === 'all' || (f === 'flagged' ? p.flags.length : f === 'unchecked' ? !p.verification : p.verification && p.verification.status === 'Flagged'));
+    const flagNames = ['Duplicate reference','Unusually large','Overpayment','Reversed','Unposted over 2 days'];
+    const ch = admGroup(P, p => p.channel || 'Other', p => p.amount);
+    return `${dirTiles(accVerTiles(P, p => p.verification).concat([['Payments (60 days)', P.length, fmt(dirSum(P, p => p.amount))], ['With a warning', P.filter(p => p.flags.length).length]]))}
+      ${admTwoCharts(admChart('acc-pv-f', 'Warnings', 'bar', flagNames, [{ label: 'Payments', data: flagNames.map(n => P.filter(p => p.flags.includes(n)).length) }], dirHoriz),
+        admChart('acc-pv-c', 'Payments by Channel (KES)', 'bar', ch[0], [{ label: 'KES', data: ch[1] }]))}
+      ${dirTable('Payments', list, [['Date', p => escapeHtml(String(p.createdAt).slice(0, 10))], ['Client', p => `<strong>${escapeHtml(p.client || '—')}</strong><div class="hint">${escapeHtml(p.branch || '')}</div>`], ['Amount', p => fmt(p.amount)], ['Channel', p => escapeHtml(p.channel || '—')], ['Reference', p => escapeHtml(p.reference || '—')], ['Status', p => accBadge(p.status)], ['Warnings', p => p.flags.length ? p.flags.map(x => admBadge(x, 'amber')).join(' ') : '<span class="hint">None</span>'], ['Recorded by', p => escapeHtml(p.recordedBy || '—')], ['Check', p => accVerifyBtns('payment', p.id, p.verification)]], 'No payments match.',
+        `<div class="pill-row adm-filters"><select onchange="session.accPayFilter=this.value; renderApp();">${[['flagged','With a warning'],['unchecked','Not checked'],['rejected','Flagged by you'],['all','All']].map(([v, l]) => `<option value="${v}" ${f === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}`;
+  },
+  loanValidate: () => {
+    const C = accCtl(); const F = accFin(); const g = accGuard(C, F); if(g) return g;
+    const L = C.loanIssues; const kinds = [...new Set(L.flatMap(l => l.issues.map(i => i.replace(/\s*\(.*\)/, ''))))];
+    return `${dirTiles([['Active loans checked', fmtNum(F.portfolio.activeLoans)], ['Loans with a problem', L.length], ['Reviewed', L.filter(l => l.verification).length], ['Clean', accPct(F.portfolio.activeLoans ? (F.portfolio.activeLoans - L.length) / F.portfolio.activeLoans * 100 : 100)]])}
+      ${admChart('acc-lv', 'Problems Found', 'bar', kinds, [{ label: 'Loans', data: kinds.map(k => L.filter(l => l.issues.some(i => i.startsWith(k))).length) }], dirHoriz)}
+      ${dirTable('Loans that need checking', L, [['Loan', l => `<strong>${escapeHtml(l.client || '—')}</strong><div class="hint">${escapeHtml(l.loanId)}</div>`], ['Branch', l => escapeHtml(l.branch || '—')], ['Principal', l => fmt(l.principal)], ['Outstanding', l => fmt(l.outstanding)], ['Problems', l => l.issues.map(i => `<div>${admBadge(i, 'amber')}</div>`).join('')], ['Review', l => accVerifyBtns('loan', l.loanId, l.verification)]], 'Every active loan adds up.')}`;
+  },
+  variance: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const rows = F.glLines.filter(a => a.byMonth.some(v => v)).map(a => { const cur = a.byMonth[11], prev = a.byMonth[10], avg3 = (a.byMonth[8] + a.byMonth[9] + a.byMonth[10]) / 3;
+      return { a, cur, prev, avg3, mom: cur - prev, vsAvg: avg3 ? (cur - avg3) / avg3 * 100 : null }; }).sort((x, y) => Math.abs(y.mom) - Math.abs(x.mom));
+    const big = rows.filter(r => r.vsAvg !== null && Math.abs(r.vsAvg) >= 25);
+    const recs = accRecs(); const fc = Array.isArray(recs) ? accRecList('forecast', r => r.status === 'Active') : [];
+    const lineVal = { Disbursements: m => m.disbursed, Collections: m => m.collected, Revenue: m => m.income, Expenses: m => m.expenses };
+    const fcRows = fc.map(r => { const m = F.monthly.find(x => x.month === r.period); return { r, actual: m ? lineVal[r.category](m) : null }; }).filter(x => x.actual !== null);
+    return `${dirTiles([['Accounts moving', rows.length], ['Moved 25%+ from their 3-month average', big.length], ['Forecasts with an actual', fcRows.length]])}
+      ${admChart('acc-va', 'This Month vs Last Month — biggest moves (KES)', 'bar', rows.slice(0, 12).map(r => r.a.name), [{ label: 'Last month', data: rows.slice(0, 12).map(r => Math.round(r.prev)) }, { label: 'This month', data: rows.slice(0, 12).map(r => Math.round(r.cur)) }], dirHoriz)}
+      ${dirTable('Account variance', rows, [['Account', r => `<strong>${escapeHtml(r.a.name)}</strong><div class="hint">${escapeHtml(r.a.type)}</div>`], ['3-month average', r => fmt(r.avg3)], ['Last month', r => fmt(r.prev)], ['This month', r => fmt(r.cur)], ['Change', r => accMoneyRed(r.mom)], ['vs average', r => r.vsAvg === null ? '—' : admBadge(accPct(r.vsAvg), Math.abs(r.vsAvg) >= 25 ? 'red' : 'grey')]], 'No ledger movement in the last 12 months.')}
+      ${dirTable('Forecast variance', fcRows, [['Month', x => accM(x.r.period)], ['Line', x => escapeHtml(x.r.category)], ['Forecast', x => fmt(x.r.amount)], ['Actual', x => fmt(x.actual)], ['Variance', x => accMoneyRed(x.actual - x.r.amount)], ['Accuracy', x => x.r.amount ? accPct(x.actual / x.r.amount * 100) : '—']], 'No forecast months have an actual yet — add forecasts on Financial Forecasts.')}`;
+  },
+  suspense: () => {
+    const C = accCtl(); const g = accGuard(C); if(g) return g;
+    const S = C.suspense;
+    return `${dirTiles([['Overpayment suspense', fmt(S.overpaymentSuspense)], ['Loan overpayments', fmt(S.loanOverpayments)], ['Clients wallet', fmt(S.clientsWallet)], ['Unmatched M-Pesa', S.unmatched.length, fmt(dirSum(S.unmatched, u => u.amount))], ['Unposted payments', S.unposted.length, fmt(dirSum(S.unposted, p => p.amount))], ['Client credits to refund', S.credits.filter(c => c.available > 0).length, fmt(dirSum(S.credits, c => Math.max(0, c.available)))]])}
+      ${admChart('acc-su', 'Money Waiting to be Placed (KES)', 'bar', ['Overpayment suspense','Unmatched M-Pesa','Unposted payments','Client credits'], [{ label: 'KES', data: [S.overpaymentSuspense, dirSum(S.unmatched, u => u.amount), dirSum(S.unposted, p => p.amount), dirSum(S.credits, c => Math.max(0, c.available))].map(Math.round) }])}
+      ${dirTable('Unmatched M-Pesa payments', S.unmatched, [['Received', u => escapeHtml(String(u.created_at).slice(0, 10))], ['M-Pesa code', u => `<strong>${escapeHtml(u.trans_id)}</strong>`], ['Amount', u => fmt(u.amount)], ['Phone', u => escapeHtml(u.msisdn || '—')], ['Account entered', u => escapeHtml(u.bill_ref_number || '—')], ['Age', u => admBadge(u.ageDays + ' d', u.ageDays > 2 ? 'red' : 'amber')]], 'Every M-Pesa payment is matched.',
+        `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Unposted Payments')">Match on Unposted Payments</button></div>`)}
+      ${dirTable('Unposted payments', S.unposted, [['Date', p => escapeHtml(String(p.createdAt).slice(0, 10))], ['Client', p => escapeHtml(p.client || '—')], ['Amount', p => fmt(p.amount)], ['Channel', p => escapeHtml(p.channel || '—')], ['Reference', p => escapeHtml(p.reference || '—')], ['Warnings', p => p.flags.map(x => admBadge(x, 'amber')).join(' ') || '—']], 'No unposted payments.')}
+      ${dirTable('Client credit balances', S.credits, [['Client', c => `<strong>${escapeHtml(c.client || '—')}</strong><div class="hint">${escapeHtml(c.branch || '')}</div>`], ['Overpaid', c => fmt(c.overpaid)], ['Refunded', c => fmt(c.refunded)], ['Refund in progress', c => fmt(c.pendingRefund)], ['Available', c => `<strong>${fmt(c.available)}</strong>`], ['', c => c.available > 0 ? `<button class="btn btn-sm btn-outline" onclick="session.accRefundFor='${c.clientId}'; sidebarNavigate('Refunds')">Refund</button>` : '']], 'No client holds a credit balance.')}`;
+  },
+  refunds: () => {
+    const C = accCtl(); const recs = accRecs(); const g = accGuard(C, recs); if(g) return g;
+    const R = accRecList('refund'); const credits = C.suspense.credits.filter(c => c.available > 0);
+    const forC = session.accRefundFor ? credits.find(c => c.clientId === session.accRefundFor) : null;
+    const form = forC ? `<div class="card"><div class="card-title"><span>Refund ${escapeHtml(forC.client || '')} <small>available ${fmt(forC.available)}</small></span><button class="btn btn-sm btn-outline" onclick="session.accRefundFor=null; renderApp();">✕ Close</button></div>
+      <form onsubmit="return accSaveRefund(event,'${encodeURIComponent(forC.clientId)}')"><div class="form-grid">${[hF('amount', 'Amount (KES)', 'number', { min: 0, max: forC.available, def: forC.available }), hSel('method', 'Pay by', ['M-Pesa','Bank','Cash']), hF('details', 'Reason / notes', 'textarea')].map(f => admFieldHtml(f, f.def, false)).join('')}</div>
+      <button class="btn btn-primary btn-sm" type="submit">Send for approval</button></form></div>` : '';
+    const sts = ['Pending','Approved','Rejected','Paid'];
+    return `${dirTiles([['Clients with credit', credits.length, fmt(dirSum(credits, c => c.available))], ['Waiting for approval', R.filter(r => r.status === 'Pending').length, fmt(dirSum(R.filter(r => r.status === 'Pending'), r => r.amount))], ['Approved, to pay', R.filter(r => r.status === 'Approved').length], ['Refunded', fmt(dirSum(R.filter(r => r.status === 'Paid'), r => r.amount))]])}
+      ${form}
+      ${admChart('acc-rf', 'Refunds by Status (KES)', 'bar', sts, [{ label: 'KES', data: sts.map(s => Math.round(dirSum(R.filter(r => r.status === s), r => r.amount))) }])}
+      ${dirTable('Clients who can be refunded', credits, [['Client', c => `<strong>${escapeHtml(c.client || '—')}</strong><div class="hint">${escapeHtml(c.branch || '')}</div>`], ['Overpaid', c => fmt(c.overpaid)], ['Already refunded', c => fmt(c.refunded + c.pendingRefund)], ['Available', c => `<strong>${fmt(c.available)}</strong>`], ['', c => accCanWrite() ? `<button class="btn btn-sm btn-primary" onclick="session.accRefundFor='${c.clientId}'; renderApp();">Refund</button>` : '']], 'No client has an overpayment to refund.')}
+      ${dirTable('Refunds', R, [['Client', r => `<strong>${escapeHtml(r.refName || r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Amount', r => fmt(r.amount)], ['Pay by', r => escapeHtml(r.data.method || '—')], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Raised', r => escapeHtml(String(r.createdAt).slice(0, 10))], ['Status', r => accBadge(r.status) + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '') + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')],
+        ['', r => accDecisionBtns(r, { status:'Paid', label:'Pay refund', confirm:'Pay this refund? It is posted to the ledger.' })]], 'No refunds yet.')}`;
+  },
+  writeOffs: () => {
+    const C = accCtl(); const recs = accRecs(); const g = accGuard(C, recs); if(g) return g;
+    const W = accRecList('write_off'); const inProg = new Set(W.filter(r => ['Pending','Approved'].includes(r.status)).map(r => r.refId));
+    const cand = C.writeOffCandidates;
+    const sts = ['Pending','Approved','Rejected','Written Off'];
+    return `${dirTiles([['Loans over 90 days late', cand.length, fmt(dirSum(cand, l => l.outstanding))], ['Proposals waiting', W.filter(r => r.status === 'Pending').length], ['Approved, to execute', W.filter(r => r.status === 'Approved').length], ['Written off (all time)', C.writtenOff.length, fmt(dirSum(C.writtenOff, l => l.principal))]])}
+      ${admTwoCharts(admChart('acc-wo-c', 'Late Loans by Branch (KES outstanding)', 'bar', ...(() => { const gp = admGroup(cand, l => l.branch, l => l.outstanding); return [gp[0], [{ label: 'KES', data: gp[1] }]]; })(), dirHoriz),
+        admChart('acc-wo-s', 'Write-off Proposals by Status (KES)', 'bar', sts, [{ label: 'KES', data: sts.map(s => Math.round(dirSum(W.filter(r => r.status === s), r => r.amount))) }]))}
+      ${dirTable('Loans over 90 days late', cand, [['Client', l => `<strong>${escapeHtml(l.client || '—')}</strong><div class="hint">${escapeHtml(l.loanId)}</div>`], ['Branch', l => escapeHtml(l.branch)], ['Principal', l => fmt(l.principal)], ['Outstanding', l => fmt(l.outstanding)], ['Principal still owed', l => fmt(l.principalOutstanding)], ['Days late', l => admBadge(l.daysLate + ' d', 'red')],
+        ['', l => inProg.has(l.loanId) ? '<span class="hint">Write-off in progress</span>' : accCanWrite() ? `<button class="btn btn-sm btn-red" onclick="accProposeWriteOff('${encodeURIComponent(l.loanId)}')">Propose write-off</button>` : '']], 'No loan is more than 90 days late.')}
+      ${dirTable('Write-off proposals', W, [['Loan', r => `<strong>${escapeHtml(r.refName || r.title)}</strong><div class="hint">${escapeHtml(r.refId)}</div>`], ['Amount to write off', r => fmt(r.amount)], ['Reason', r => escapeHtml(r.details || '—')], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Status', r => accBadge(r.status) + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '') + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')],
+        ['', r => accDecisionBtns(r, { status:'Written Off', label:'Write off now', confirm:'Write this loan off? The loan closes and the ledger is updated.' })]], 'No write-offs proposed yet.')}
+      ${dirTable('Loans written off', C.writtenOff, [['Client', l => `<strong>${escapeHtml(l.client || '—')}</strong><div class="hint">${escapeHtml(l.id)}</div>`], ['Branch', l => escapeHtml(l.branch || '—')], ['Principal', l => fmt(l.principal)], ['Written off', l => escapeHtml(String(l.written_off_at || '').slice(0, 10))]], 'No loans have been written off.')}`;
+  },
+  exceptions: () => {
+    const C = accCtl(); const recs = accRecs(); const g = accGuard(C, recs); if(g) return g;
+    const X = C.exceptions; const M = accRecList('exception');
+    const types = [...new Set(X.map(x => x.type))];
+    const next = { Open:['Investigating','Resolved','Dismissed'], Investigating:['Resolved','Dismissed'], Resolved:['Open'], Dismissed:['Open'] };
+    return `${dirTiles([['Found by the system', X.length], ['High severity', X.filter(x => x.severity === 'High').length], ['Raised by staff', M.length], ['Open (raised)', M.filter(r => ['Open','Investigating'].includes(r.status)).length]])}
+      ${accCanWrite() ? accFormCard('acc-exc', 'New exception', accExceptionFields(), 'accSaveException(event)', 'Raise exception') : ''}
+      ${admChart('acc-xc', 'Exceptions Found by Area', 'bar', types, ['High','Medium','Low'].map(s => ({ label: s, data: types.map(t => X.filter(x => x.type === t && x.severity === s).length) })), dirStacked)}
+      ${dirTable('Found by the system', X, [['Severity', x => accBadge(x.severity)], ['Area', x => escapeHtml(x.type)], ['Problem', x => `<strong>${escapeHtml(x.title)}</strong>`], ['Details', x => escapeHtml(x.detail || '—')]], 'The system found no problems in the books.',
+        '<div class="hint" style="margin-bottom:8px;">These clear themselves once the underlying problem is fixed (post the payment, match the M-Pesa code, correct the loan).</div>')}
+      ${dirTable('Raised by staff', M, [['Exception', r => `<strong>${escapeHtml(r.title)}</strong>${r.details ? `<div class="hint">${escapeHtml(r.details)}</div>` : ''}`], ['Area', r => escapeHtml(r.category || '—')], ['Amount', r => r.amount != null ? fmt(r.amount) : '—'], ['Branch', r => escapeHtml(r.branch || '—')], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Status', r => accBadge(r.status) + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')],
+        ['', r => accCanWrite() ? `<div class="pill-row" style="flex-wrap:nowrap;">${(next[r.status] || []).map(s => `<button class="btn btn-sm ${s === 'Resolved' ? 'btn-primary' : 'btn-outline'}" onclick="accSetStatus('${r.id}','${s}'${['Resolved','Dismissed'].includes(s) ? ",'What was done?'" : ''})">${s}</button>`).join('')}</div>` : '']], 'No exceptions raised.')}`;
+  },
+  clientQuality: () => {
+    const Q = admData('acc:cq', '/api/acct/client-quality'); const g = accGuard(Q); if(g) return g;
+    const f = session.accCqFilter || '';
+    const list = Q.clients.filter(c => !f || c.issues.includes(f));
+    return `${dirTiles([['Clients', fmtNum(Q.total)], ['Complete records', fmtNum(Q.complete), accPct(Q.total ? Q.complete / Q.total * 100 : 100)], ['Records with a gap', fmtNum(Q.clients.length)], ['Duplicates', Q.checks.filter(c => /Duplicate/.test(c.check)).reduce((s, c) => s + c.clients, 0)]])}
+      ${admChart('acc-cq', 'Clients Failing Each Check', 'bar', Q.checks.map(c => c.check), [{ label: 'Clients', data: Q.checks.map(c => c.clients) }], dirHoriz)}
+      ${dirTable('Data checks', Q.checks, [['Check', c => `<strong>${escapeHtml(c.check)}</strong>`], ['Clients failing', c => fmtNum(c.clients)], ['Share', c => hrBar(Math.round(rgPct(c.clients, Q.total)))]], '—')}
+      ${dirTable('Clients to fix', list, [['Client', c => `<strong>${escapeHtml(c.name)}</strong><div class="hint">${escapeHtml(c.code || '')}</div>`], ['Branch', c => escapeHtml(c.branch || '—')], ['Officer', c => escapeHtml(c.officer || '—')], ['Status', c => escapeHtml(c.status || '—')], ['Gaps', c => c.issues.map(i => admBadge(i, /Duplicate/.test(i) ? 'red' : 'amber')).join(' ')]], 'Every client record is complete.',
+        `<div class="pill-row adm-filters"><select onchange="session.accCqFilter=this.value; renderApp();"><option value="">All gaps</option>${Q.checks.map(c => `<option value="${escapeHtml(c.check)}" ${f === c.check ? 'selected' : ''}>${escapeHtml(c.check)}</option>`).join('')}</select></div>`)}`;
+  },
+  payAdjust: () => {
+    const C = accCtl(); const adj = admData('acc:adj', '/api/adjustments', r => r.adjustments); const g = accGuard(C, adj); if(g) return g;
+    const PAY_ACC = ['cash','bank','mpesa','loans_receivable','overpayment_suspense','loan_overpayments','clients_wallet','interest_income','penalty_income'];
+    const A = adj.filter(a => PAY_ACC.includes(a.debit_account) || PAY_ACC.includes(a.credit_account));
+    const rev = C.payments.filter(p => p.status === 'Reversed');
+    const sts = [...new Set(A.map(a => a.status))];
+    return `${dirTiles([['Reversed payments (60 days)', rev.length, fmt(dirSum(rev, p => p.amount))], ['Payment-related adjustments', A.length, fmt(dirSum(A, a => a.amount))], ['Waiting for approval', A.filter(a => ['Pending','Submitted'].includes(a.status)).length]])}
+      <div class="card"><div class="pill-row"><button class="btn btn-sm btn-primary" onclick="sidebarNavigate('Adjustments')">+ New adjustment</button><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Processed Payments')">Reverse a payment</button></div><div class="hint" style="margin-top:6px;">Adjustments go through the maker-checker approval on the Adjustments page; reversals are made from the payment itself.</div></div>
+      ${admChart('acc-pa', 'Adjustments by Status (KES)', 'bar', sts, [{ label: 'KES', data: sts.map(s => Math.round(dirSum(A.filter(a => a.status === s), a => a.amount))) }])}
+      ${dirTable('Reversed payments', rev, [['Date', p => escapeHtml(String(p.createdAt).slice(0, 10))], ['Client', p => `<strong>${escapeHtml(p.client || '—')}</strong>`], ['Amount', p => fmt(p.amount)], ['Channel', p => escapeHtml(p.channel || '—')], ['Reference', p => escapeHtml(p.reference || '—')], ['Branch', p => escapeHtml(p.branch || '—')]], 'No payments were reversed in the last 60 days.')}
+      ${dirTable('Payment-related adjustments', A, [['Reference', a => `<strong>${escapeHtml(a.reference || a.id)}</strong>`], ['Reason', a => escapeHtml(a.reason || '—')], ['Debit', a => escapeHtml(a.debit_account)], ['Credit', a => escapeHtml(a.credit_account)], ['Amount', a => fmt(a.amount)], ['Status', a => accBadge(a.status)], ['Date', a => escapeHtml(String(a.created_at || '').slice(0, 10))]], 'No adjustments touch client money.')}`;
+  },
+  daily: () => {
+    const d = accDay(); const D = admData('acc:day:' + d, '/api/acct/daily?date=' + d);
+    const picker = `<div class="card"><div class="pill-row adm-filters"><label class="hint">Day</label><input type="date" value="${d}" max="${todayISO()}" onchange="session.accDate=this.value; renderApp();"></div></div>`;
+    const g = accGuard(D); if(g) return picker + g;
+    const T = D.totals; const ch = admGroup(D.collections.filter(c => !['Unposted','Reversed'].includes(c.status)), c => c.channel || 'Other', c => c.amount);
+    return `${picker}${dirTiles([['Disbursed', fmt(T.disbursed), fmtNum(T.loans) + ' loans'], ['Collected', fmt(T.collected), fmtNum(T.payments) + ' payments'], ['Unposted', fmt(T.unposted)], ['Income posted', fmt(T.income)], ['Expenses posted', fmt(T.expenses)], ['Cash: opening → closing', `${accMoneyRed(T.cashOpening)} → ${accMoneyRed(T.cashClosing)}`]])}
+      ${admTwoCharts(admChart('acc-dy-c', 'Collections by Channel (KES)', 'bar', ch[0], [{ label: 'KES', data: ch[1] }]),
+        admChart('acc-dy-j', 'Ledger Movement (KES)', 'bar', D.journal.map(j => j.name), [{ label: 'Debit', data: D.journal.map(j => Math.round(j.debit)) }, { label: 'Credit', data: D.journal.map(j => Math.round(j.credit)) }], dirHoriz))}
+      ${dirTable('Disbursements', D.disbursements, [['Client', x => `<strong>${escapeHtml(x.client || '—')}</strong>`], ['Branch', x => escapeHtml(x.branch || '—')], ['Product', x => escapeHtml(x.product || '—')], ['Amount', x => fmt(x.principal)], ['Processing fee', x => fmt(x.processing_fee)]], 'No loans were disbursed on this day.')}
+      ${dirTable('Collections', D.collections, [['Client', x => `<strong>${escapeHtml(x.client || '—')}</strong>`], ['Branch', x => escapeHtml(x.branch || '—')], ['Amount', x => fmt(x.amount)], ['Channel', x => escapeHtml(x.channel || '—')], ['Reference', x => escapeHtml(x.reference || '—')], ['Status', x => accBadge(x.status)]], 'No payments on this day.')}
+      ${dirTable('Ledger summary', D.journal, [['Account', j => `<strong>${escapeHtml(j.name || j.account)}</strong>`], ['Type', j => escapeHtml(j.type || '—')], ['Debit', j => fmt(j.debit)], ['Credit', j => fmt(j.credit)]], 'Nothing was posted on this day.')}`;
+  },
+  cashReport: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const rows = F.monthly.slice().reverse();
+    return `${dirTiles([['Cash in (12 months)', fmt(dirSum(F.monthly, m => m.cashIn))], ['Cash out (12 months)', fmt(dirSum(F.monthly, m => m.cashOut))], ['Net', accMoneyRed(dirSum(F.monthly, m => m.cashIn - m.cashOut))], ['Cash held now', accMoneyRed(F.cash.total)]])}
+      ${admChart('acc-cr', 'Net Cash Flow by Month (KES)', 'bar', F.monthly.map(m => accM(m.month)), [{ label: 'Net', data: F.monthly.map(m => Math.round(m.cashIn - m.cashOut)), backgroundColor: F.monthly.map(m => m.cashIn >= m.cashOut ? '#2A9D8F' : '#E76F51') }])}
+      ${dirTable('Cashflow report', rows, [['Month', m => accM(m.month)], ['Collections received', m => fmt(m.collected)], ['Loans disbursed', m => fmt(m.disbursed)], ['Expenses (ledger)', m => fmt(m.expenses)], ['All cash in', m => fmt(m.cashIn)], ['All cash out', m => fmt(m.cashOut)], ['Net', m => accMoneyRed(m.cashIn - m.cashOut)]], '—')}`;
+  },
+  receivables: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const R = F.receivables;
+    return `${dirTiles([['Owed by borrowers', fmt(R.outstanding)], ['Already overdue', fmt(R.overdue)], ['Principal still owed', fmt(R.principalOutstanding)], ['Overdue interest', fmt(R.interestOverdue)], ['Penalties owed', fmt(R.penaltiesOutstanding)], ['Loans receivable (ledger)', fmt(R.ledgerLoansReceivable)]])}
+      ${admTwoCharts(admChart('acc-rc-a', 'Receivables by How Late (KES)', 'bar', R.ageing.map(a => a.bucket), [{ label: 'KES', data: R.ageing.map(a => Math.round(a.amount)), backgroundColor: ['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E'] }]),
+        admChart('acc-rc-b', 'Receivables by Branch (top 15, KES)', 'bar', R.byBranch.slice().sort((a, b) => b.outstanding - a.outstanding).slice(0, 15).map(b => b.branch), [{ label: 'Outstanding', data: R.byBranch.slice().sort((a, b) => b.outstanding - a.outstanding).slice(0, 15).map(b => Math.round(b.outstanding)) }], dirHoriz))}
+      ${dirTable('Receivables ageing', R.ageing, [['How late', a => `<strong>${escapeHtml(a.bucket)}</strong>`], ['Loans', a => fmtNum(a.loans)], ['Amount', a => fmt(a.amount)], ['Share', a => hrBar(Math.round(rgPct(a.amount, R.outstanding)))]], '—')}
+      ${dirTable('Receivables by branch', R.byBranch, [['Branch', b => `<strong>${escapeHtml(b.branch)}</strong><div class="hint">${escapeHtml(b.region || '')}</div>`], ['Loans', b => fmtNum(b.loans)], ['Outstanding', b => fmt(b.outstanding)], ['Overdue', b => fmt(b.overdue)], ['Overdue share', b => rgPctBadge(rgPct(b.overdue, b.outstanding), 5, 15, true)]], 'No active loans.')}`;
+  },
+  payables: () => {
+    const F = accFin(); const g = accGuard(F); if(g) return g;
+    const P = F.payables;
+    const groups = [['Expenses', P.expenses], ['Requisitions', P.requisitions], ['Utility payments', P.utilities], ['Investor returns', P.investorPayouts], ['Client refunds', P.refunds]];
+    const all = groups.flatMap(([t, xs]) => xs.map(x => Object.assign({ type: t }, x)));
+    const bands = [['Under 7 days', 0, 6], ['7-30 days', 7, 30], ['Over 30 days', 31, 1e9]];
+    return `${dirTiles(groups.map(([t, xs]) => [t, xs.length, fmt(dirSum(xs, x => x.amount))]).concat([['Total owed', fmt(dirSum(all, x => x.amount))]]))}
+      ${admTwoCharts(admChart('acc-py-t', 'Owed by Type (KES)', 'bar', groups.map(g => g[0]), [{ label: 'KES', data: groups.map(([, xs]) => Math.round(dirSum(xs, x => x.amount))) }]),
+        admChart('acc-py-a', 'How Long it has Waited (KES)', 'bar', bands.map(b => b[0]), [{ label: 'KES', data: bands.map(([, lo, hi]) => Math.round(dirSum(all.filter(x => x.ageDays !== null && x.ageDays >= lo && x.ageDays <= hi), x => x.amount))) }]))}
+      ${dirTable('Payables', all, [['Type', x => escapeHtml(x.type)], ['Item', x => `<strong>${escapeHtml(x.item || '—')}</strong>`], ['Branch', x => escapeHtml(x.branch || '—')], ['Amount', x => fmt(x.amount)], ['Status', x => accBadge(x.status)], ['Waiting', x => x.ageDays === null ? '—' : admBadge(x.ageDays + ' d', x.ageDays > 30 ? 'red' : x.ageDays > 7 ? 'amber' : 'grey')]], 'Nothing is waiting to be paid.')}`;
+  },
+  reconReport: () => {
+    const C = accCtl(); const M = admData('acc:mrec', '/api/mpesa/reconciliation/summary'); const g = accGuard(C, M); if(g) return g;
+    const S = C.suspense; const T = C.transactions, P = C.payments;
+    const mrows = [['Matched (STK + Paybill)', (M.matched || {}).count, (M.matched || {}).amount], ['STK push matched', (M.stk || {}).matched], ['STK push unmatched', (M.stk || {}).unmatched], ['STK push failed', (M.stk || {}).exception], ['Paybill matched', (M.c2b || {}).matched], ['Paybill unmatched', (M.c2b || {}).unmatched]].map(r => [r[0], Number(r[1]) || 0, Number(r[2]) || 0]);
+    return `${dirTiles([['Unmatched M-Pesa', S.unmatched.length, fmt(dirSum(S.unmatched, u => u.amount))], ['Unposted payments', S.unposted.length], ['Overpayment suspense', fmt(S.overpaymentSuspense)], ['Transactions checked', `${T.filter(x => x.verification).length} / ${T.length}`], ['Payments checked', `${P.filter(x => x.verification).length} / ${P.length}`], ['Trial balance', Math.abs(C.trialBalance.debit - C.trialBalance.credit) < 0.01 ? admBadge('Balanced', 'green') : admBadge('Not balanced', 'red')]])}
+      ${admChart('acc-rr', 'Verification Progress (last 60 days)', 'bar', ['Transactions','Payments'], [{ label: 'Verified', data: [T.filter(x => (x.verification || {}).status === 'Verified').length, P.filter(x => (x.verification || {}).status === 'Verified').length] }, { label: 'Flagged', data: [T.filter(x => (x.verification || {}).status === 'Flagged').length, P.filter(x => (x.verification || {}).status === 'Flagged').length] }, { label: 'Not checked', data: [T.filter(x => !x.verification).length, P.filter(x => !x.verification).length] }], dirStacked)}
+      ${dirTable('M-Pesa reconciliation', mrows, [['Item', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Count', r => fmtNum(r[1])], ['Amount', r => r[2] ? fmt(r[2]) : '—']], 'No M-Pesa activity yet.')}
+      ${dirTable('Ledger control totals', [['Total debits', C.trialBalance.debit], ['Total credits', C.trialBalance.credit], ['Difference', C.trialBalance.debit - C.trialBalance.credit], ['Overpayment suspense', S.overpaymentSuspense], ['Loan overpayments', S.loanOverpayments], ['Clients wallet', S.clientsWallet]], [['Control', r => `<strong>${r[0]}</strong>`], ['Amount', r => accMoneyRed(r[1])]], '—',
+        `<div class="pill-row" style="margin-bottom:8px;"><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Bank Reconciliation')">Bank Reconciliation</button><button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Payment Reconciliation')">Payment Reconciliation</button></div>`)}`;
+  },
+  annualBudget: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const B = accRecList('budget', r => String(r.period || '').slice(0, 4) === String(accYear()));
+    const appr = B.filter(r => r.status === 'Approved'); const typ = r => (F.accounts.find(a => a.id === r.category) || {}).type;
+    const incB = dirSum(appr.filter(r => typ(r) === 'Revenue'), r => r.amount), expB = dirSum(appr.filter(r => typ(r) === 'Expense'), r => r.amount);
+    const byAcc = admGroup(appr, r => F.nameOf[r.category] || r.category, r => r.amount);
+    return `<div class="card">${accYearPicker()}</div>
+      ${dirTiles([['Budget lines', B.length], ['Approved', appr.length], ['Waiting for approval', B.filter(r => r.status === 'Pending').length], ['Income budget', fmt(incB)], ['Expense budget', fmt(expB)], ['Budgeted profit', accMoneyRed(incB - expB)]])}
+      ${accCanWrite() ? accFormCard('acc-budget', 'New budget line', accBudgetFields(F), 'accSaveBudget(event)', 'Send for approval') : ''}
+      ${admChart('acc-ab', `Approved ${accYear()} Budget by Account (KES)`, 'bar', byAcc[0], [{ label: 'KES', data: byAcc[1] }], dirHoriz)}
+      ${dirTable(`${accYear()} budget`, B, [['Account', r => `<strong>${escapeHtml(F.nameOf[r.category] || r.category)}</strong><div class="hint">${escapeHtml(typ(r) || '')}</div>`], ['Period', r => escapeHtml(r.period)], ['Branch', r => escapeHtml(r.branch || 'Whole company')], ['Amount', r => fmt(r.amount)], ['Notes', r => escapeHtml(r.details || '—')], ['Status', r => accBadge(r.status) + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '') + (r.outcome ? `<div class="hint">${escapeHtml(r.outcome)}</div>` : '')], ['', r => accDecisionBtns(r)]], `No budget lines for ${accYear()} yet.`)}`;
+  },
+  budgetMonitor: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const rows = accBudgetRows(F);
+    const over = rows.filter(x => x.type === 'Expense' && x.used > 100);
+    return `<div class="card">${accYearPicker()}</div>
+      ${dirTiles([['Approved budget lines', rows.length], ['Expense budgets used', accPct(rgPct(dirSum(rows.filter(x => x.type === 'Expense'), x => x.actual), dirSum(rows.filter(x => x.type === 'Expense'), x => x.b.amount)))], ['Over budget', over.length], ['Income achieved', accPct(rgPct(dirSum(rows.filter(x => x.type === 'Revenue'), x => x.actual), dirSum(rows.filter(x => x.type === 'Revenue'), x => x.b.amount)))]])}
+      ${admChart('acc-bm', 'Budget Used (%)', 'bar', rows.map(x => x.account + (x.b.branch ? ' · ' + x.b.branch : '')), [{ label: '% used', data: rows.map(x => Math.round(x.used)) }], dirHoriz)}
+      ${dirTable('Budget monitoring', rows, accBudgetCols.concat([['On pace?', x => x.pace === null ? '—' : x.type === 'Expense' ? rgPctBadge(x.pace, 100, 115, true) : rgPctBadge(x.pace, 100, 85)]]), `No approved budgets for ${accYear()} — add them on Annual Budget.`)}`;
+  },
+  budgetVariance: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const rows = accBudgetRows(F).sort((a, b) => a.variance - b.variance);
+    return `<div class="card">${accYearPicker()}</div>
+      ${dirTiles([['Favourable', rows.filter(x => x.variance >= 0).length, fmt(dirSum(rows.filter(x => x.variance >= 0), x => x.variance))], ['Unfavourable', rows.filter(x => x.variance < 0).length, fmt(dirSum(rows.filter(x => x.variance < 0), x => x.variance))], ['Net variance', accMoneyRed(dirSum(rows, x => x.variance))]])}
+      ${admChart('acc-bv', 'Budget vs Actual (KES)', 'bar', rows.map(x => x.account), [{ label: 'Budget', data: rows.map(x => Math.round(x.b.amount)) }, { label: 'Actual', data: rows.map(x => Math.round(x.actual)) }], dirHoriz)}
+      ${dirTable('Budget variance', rows, accBudgetCols, `No approved budgets for ${accYear()} — add them on Annual Budget.`, '<div class="hint" style="margin-bottom:8px;">Favourable means spending under budget or income above budget.</div>')}`;
+  },
+  branchBudgets: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const rows = accBudgetRows(F, r => !!r.branchId);
+    const pend = accRecList('budget', r => !!r.branchId && r.status === 'Pending' && String(r.period).slice(0, 4) === String(accYear()));
+    const byB = [...new Set(rows.map(x => x.b.branch))].map(b => ({ b, budget: dirSum(rows.filter(x => x.b.branch === b), x => x.b.amount), actual: dirSum(rows.filter(x => x.b.branch === b), x => x.actual) }));
+    const noBudget = F.branches.filter(b => b.status === 'Active' && !rows.some(x => x.b.branchId === b.id));
+    return `<div class="card">${accYearPicker()}</div>
+      ${dirTiles([['Branches with a budget', byB.length], ['Active branches without one', noBudget.length], ['Waiting for approval', pend.length], ['Branch budgets total', fmt(dirSum(byB, x => x.budget))], ['Spent / earned so far', fmt(dirSum(byB, x => x.actual))]])}
+      ${accCanWrite() ? accFormCard('acc-budget', 'New branch budget line', accBudgetFields(F), 'accSaveBudget(event)', 'Send for approval') : ''}
+      ${admChart('acc-bb', 'Branch Budget vs Actual (KES)', 'bar', byB.map(x => x.b), [{ label: 'Budget', data: byB.map(x => Math.round(x.budget)) }, { label: 'Actual', data: byB.map(x => Math.round(x.actual)) }], dirHoriz)}
+      ${dirTable('Branch budgets', rows, [['Branch', x => `<strong>${escapeHtml(x.b.branch || '—')}</strong>`]].concat(accBudgetCols), `No approved branch budgets for ${accYear()}.`)}
+      ${dirTable('Waiting for approval', pend, [['Branch', r => escapeHtml(r.branch || '—')], ['Account', r => escapeHtml(F.nameOf[r.category] || r.category)], ['Period', r => escapeHtml(r.period)], ['Amount', r => fmt(r.amount)], ['', r => accDecisionBtns(r)]], 'Nothing is waiting.')}`;
+  },
+  expenseBudgets: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const rows = accBudgetRows(F, r => (F.accounts.find(a => a.id === r.category) || {}).type === 'Expense');
+    const ms = Array.from({ length: 12 }, (_, i) => `${accYear()}-${String(i + 1).padStart(2, '0')}`);
+    const accs = [...new Set(rows.map(x => x.b.category))];
+    const annual = dirSum(rows.filter(x => !x.month), x => x.b.amount);
+    const actualM = ms.map(m => dirSum(accs, a => accActual(F, a, undefined, m)));
+    return `<div class="card">${accYearPicker()}</div>
+      ${dirTiles([['Expense budget', fmt(dirSum(rows, x => x.b.amount))], ['Spent', fmt(dirSum(rows, x => x.actual))], ['Remaining', accMoneyRed(dirSum(rows, x => x.b.amount - x.actual))], ['Accounts over budget', rows.filter(x => x.used > 100).length]])}
+      ${admChart('acc-eb', 'Spending vs Even Monthly Budget (KES)', 'bar', ms.map(accM), [{ label: 'Budget (annual ÷ 12)', data: ms.map(() => Math.round(annual / 12)), type: 'line', fill: false }, { label: 'Spent', data: actualM.map(Math.round) }])}
+      ${dirTable('Expense budgets', rows, accBudgetCols.concat([['Left', x => accMoneyRed(x.b.amount - x.actual)]]), `No approved expense budgets for ${accYear()}.`)}`;
+  },
+  forecasts: () => {
+    const F = accFin(); const recs = accRecs(); const g = accGuard(F, recs); if(g) return g;
+    const FC = accRecList('forecast', r => r.status === 'Active');
+    const next = Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + i + 1); return d.toISOString().slice(0, 7); });
+    const lineVal = { Disbursements: m => m.disbursed, Collections: m => m.collected, Revenue: m => m.income, Expenses: m => m.expenses };
+    const trend = line => { const xs = F.monthly.slice(-6).map(lineVal[line]); const n = xs.length; const mx = (n - 1) / 2, my = dirSum(xs) / n;
+      const slope = dirSum(xs.map((y, i) => (i - mx) * (y - my))) / (dirSum(xs.map((_, i) => (i - mx) ** 2)) || 1); return k => Math.max(0, my + slope * (n - 1 - mx + k)); };
+    const lines = ['Disbursements','Collections','Revenue','Expenses'];
+    const proj = Object.fromEntries(lines.map(l => [l, trend(l)]));
+    const sel = lines.includes(session.accFcLine) ? session.accFcLine : 'Collections';
+    const hist = F.monthly.map(m => accM(m.month)), fut = next.map(accM);
+    const fcVal = (l, m) => (FC.find(r => r.category === l && r.period === m) || {}).amount;
+    return `<div class="card"><div class="pill-row adm-filters"><label class="hint">Line</label><select onchange="session.accFcLine=this.value; renderApp();">${lines.map(l => `<option ${l === sel ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      ${dirTiles(lines.map(l => [`${l} — next 6 months (trend)`, fmt(dirSum(next.map((_, k) => proj[l](k + 1))))]).concat([['Forecasts entered', FC.length]]))}
+      ${accCanWrite() ? accFormCard('acc-forecast', 'New forecast', accForecastFields(), 'accSaveForecast(event)', 'Save forecast') : ''}
+      ${admChart('acc-fc', `${sel}: Actual, Trend and Your Forecast (KES)`, 'line', hist.concat(fut), [{ label: 'Actual', data: F.monthly.map(m => Math.round(lineVal[sel](m))).concat(next.map(() => null)), fill: false, tension: 0.25 },
+        { label: 'Trend', data: F.monthly.map(() => null).concat(next.map((_, k) => Math.round(proj[sel](k + 1)))), borderDash: [6, 4], fill: false }, { label: 'Your forecast', data: F.monthly.map(m => fcVal(sel, m.month) ?? null).concat(next.map(m => fcVal(sel, m) ?? null)), fill: false, showLine: true, pointRadius: 5 }])}
+      ${dirTable('Next 6 months', next, [['Month', m => accM(m)]].concat(lines.map(l => [l, m => `${fcVal(l, m) != null ? `<strong>${fmt(fcVal(l, m))}</strong>` : '<span class="hint">no forecast</span>'}<div class="hint">trend ${fmt(proj[l](next.indexOf(m) + 1))}</div>`])), '—')}
+      ${dirTable('Forecasts entered', FC.slice().sort((a, b) => String(a.period).localeCompare(String(b.period))), [['Month', r => accM(r.period)], ['Line', r => escapeHtml(r.category)], ['Forecast', r => fmt(r.amount)], ['Basis', r => escapeHtml(r.details || '—')], ['Entered by', r => escapeHtml(r.createdByName || '—')]], 'No forecasts entered yet.')}`;
+  },
+};
 function renderPlaceholder(){
   return `
     <div class="section-note">This screen — <strong>${escapeHtml(session.placeholderLabel||"")}</strong> — is part of the navigation spec but isn't built out with real functionality in this prototype yet.</div>

@@ -8,6 +8,8 @@
 //   - record: Director, CEO
 //   - decide a request (financial / company / special approval): Director
 //     or CEO — never the person who raised it.
+//   - the Accountant sees, raises and pays financial requests only (they
+//     reach the Director and CEO for a decision like any other request).
 'use strict';
 const crypto = require('node:crypto');
 const { all, get, run } = require('./../db');
@@ -53,8 +55,10 @@ const clean = (v, max) => { if (v === undefined || v === null) return null; cons
 const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const parseJson = t => { try { return JSON.parse(t); } catch { return null; } };
 
-function requireView(req, res, next) { return VIEW.includes(req.user.role_id) ? next() : next({ status: 403, message: 'Executive records are for the Director, CEO and System Administrator' }); }
-function requireWrite(req, res, next) { return WRITE.includes(req.user.role_id) ? next() : next({ status: 403, message: 'Only the Director or CEO can change executive records' }); }
+const ACCOUNTANT_KINDS = ['financial_request'];
+const isAccountant = req => req.user.role_id === 'accountant';
+function requireView(req, res, next) { return VIEW.includes(req.user.role_id) || isAccountant(req) ? next() : next({ status: 403, message: 'Executive records are for the Director, CEO and System Administrator' }); }
+function requireWrite(req, res, next) { return WRITE.includes(req.user.role_id) || isAccountant(req) ? next() : next({ status: 403, message: 'Only the Director or CEO can change executive records' }); }
 
 function recOut(r) {
   return { id: r.id, kind: r.kind, title: r.title, details: r.details, category: r.category, priority: r.priority, status: r.status,
@@ -71,6 +75,7 @@ const SELECT = `SELECT r.*, o.name AS owner_name, c.name AS created_name, d.name
 function register(router) {
   router.get('/api/exec/records', requireAuth, requireView, async (req, res, next) => {
     const clauses = ['1=1']; const params = [];
+    if (isAccountant(req) && (!req.query.kind || String(req.query.kind).split(',').some(k => !ACCOUNTANT_KINDS.includes(k)))) return next({ status: 403, message: 'The Accountant sees financial requests only' });
     if (req.query.kind) {
       const kinds = String(req.query.kind).split(',');
       if (kinds.some(k => !KINDS[k])) return next({ status: 400, message: 'Unknown record type' });
@@ -85,6 +90,7 @@ function register(router) {
     const b = req.body || {};
     const def = KINDS[b.kind];
     if (!def) return next({ status: 400, message: 'Unknown record type' });
+    if (isAccountant(req) && !ACCOUNTANT_KINDS.includes(b.kind)) return next({ status: 403, message: 'The Accountant can raise financial requests only' });
     const title = clean(b.title, 200);
     if (!title) return next({ status: 400, message: 'A title is required' });
     for (const f of ['due_date', 'start_date']) if (b[f] && !isDate(b[f])) return next({ status: 400, message: `${f.replace('_', ' ')} must be YYYY-MM-DD` });
@@ -117,6 +123,10 @@ function register(router) {
     const row = await get('SELECT * FROM exec_records WHERE id = ?', [req.params.id]);
     if (!row) return next({ status: 404, message: 'Record not found' });
     const def = KINDS[row.kind]; const b = req.body || {};
+    if (isAccountant(req)) {
+      if (!ACCOUNTANT_KINDS.includes(row.kind)) return next({ status: 403, message: 'The Accountant can change financial requests only' });
+      if (Object.keys(b).some(k => !['status', 'outcome'].includes(k)) || (b.status !== undefined && b.status !== 'Paid')) return next({ status: 403, message: 'The Accountant can only mark an approved request as paid' });
+    }
     const sets = []; const params = [];
     if (b.status !== undefined) {
       if (!def.statuses.includes(b.status)) return next({ status: 400, message: `Status must be one of: ${def.statuses.join(', ')}` });

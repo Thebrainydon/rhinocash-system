@@ -7957,6 +7957,55 @@ apiRequest = async function(method, path, body){
     __assert(DB.adm['inv:report'].investment.reportFrequency === 'Monthly', "the investor chooses a statement schedule");
   }
 
+  // ---- Accountant: finance analysis, controls and planning pages ----
+  {
+    const aForm = new Map([['username','accountant@rhinocash.co.ke'],['password', process.env.SEEDED_ACCOUNTANT_PASSWORD]]);
+    global.FormData = class { constructor(){ return aForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    if(session.mustChangePassword){ const rf = new Map([['newPassword', process.env.SEEDED_ACCOUNTANT_PASSWORD], ['confirmPassword', process.env.SEEDED_ACCOUNTANT_PASSWORD]]); global.FormData = class { constructor(){ return rf; } }; await submitForcedPasswordReset({ preventDefault(){}, target:{} }); closeModal(); }
+    __assert(session.role === 'Accountant', "setup: signed in as the Accountant");
+    const QUICK = ['Leave Application','Create Ticket','Create a Lead'];
+    const items = SIDEBAR_MENUS.Accountant.flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every Accountant submenu opens a real page: " + dead.join(', '));
+    const broken = [], noGen = [];
+    for(const label of Object.keys(ACC_PAGES)){
+      if(!items.includes(label)) continue;
+      window.__pendingCharts = [];
+      sidebarNavigate(label); renderApp();
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || window.__pendingCharts.some(c => c.config.type === 'doughnut')) broken.push(label);
+      if(!h.includes('-- Generate --')) noGen.push(label);
+    }
+    __assert(broken.length === 0, "every Accountant finance page renders cleanly with no donut charts: " + broken.join(', '));
+    __assert(noGen.length === 0, "every Accountant finance page offers Generate (PDF / Excel): " + noGen.join(', '));
+
+    // A budget line raised from the Annual Budget page waits for the CEO.
+    sidebarNavigate('Annual Budget'); renderApp();
+    const bf = new Map([['category','exp_marketing'],['period', String(new Date().getFullYear())],['branch_id',''],['amount','90000'],['details','[TEST] marketing plan']]);
+    global.FormData = class { constructor(){ return bf; } };
+    await accSaveBudget({ preventDefault(){}, target:{} });
+    for(let i=0; i<250 && !Array.isArray(DB.adm['acc:recs']); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    const mine = accRecList('budget', r => r.category === 'exp_marketing' && r.details === '[TEST] marketing plan');
+    __assert(mine.length === 1 && mine[0].status === 'Pending', "the Accountant raises a budget line that waits for approval");
+    renderApp();
+    for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    __assert(document.getElementById('root').innerHTML.includes('Awaiting CEO / Director'), "the budget shows it is awaiting the CEO / Director");
+
+    // The CEO sees it on Financial Approvals and approves it.
+    const cForm = new Map([['username','ceo@rhinocash.co.ke'],['password', process.env.SEEDED_CEO_PASSWORD]]);
+    global.FormData = class { constructor(){ return cForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    sidebarNavigate('Financial Approvals'); renderApp();
+    for(let i=0; i<250 && (document.getElementById('root').innerHTML.includes('dots-spinner') || !Array.isArray(DB.adm && DB.adm['acc:recs'])); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    let ch = document.getElementById('root').innerHTML;
+    __assert(ch.includes('Accountant items waiting for you') && ch.includes('[TEST] marketing plan'), "the CEO sees the Accountant's budget on Financial Approvals");
+    await accSetStatus(mine[0].id, 'Approved');
+    for(let i=0; i<250 && !Array.isArray(DB.adm['acc:recs']); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+    __assert(accRecList('budget', r => r.id === mine[0].id)[0].status === 'Approved', "the CEO approves the budget");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

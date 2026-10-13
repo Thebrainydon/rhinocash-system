@@ -45,8 +45,13 @@ async function buildReport(investor) {
   // ---- Month by month ----
   const disb = await all(`SELECT to_char(disbursed_at::timestamptz, 'YYYY-MM') AS m, COUNT(*)::int AS n, COALESCE(SUM(principal),0) AS v FROM loans WHERE disbursed_at IS NOT NULL AND disbursed_at >= ? GROUP BY 1`, [from]);
   const coll = await all(`SELECT to_char(created_at::timestamptz, 'YYYY-MM') AS m, COALESCE(SUM(amount),0) AS v FROM payments WHERE status NOT IN ('Unposted','Reversed') AND created_at >= ? GROUP BY 1`, [from]);
-  const led = await all(`SELECT to_char(entry_date::timestamptz, 'YYYY-MM') AS m, account_id, COALESCE(SUM(debit),0) AS d, COALESCE(SUM(credit),0) AS c FROM journal_entries
-    WHERE account_id IN ('interest_income','fee_income','operating_expense') AND entry_date >= ? GROUP BY 1, 2`, [from]);
+  // Income is every Revenue account (interest, fees, penalties); expenses are
+  // every Expense account (operating expenses plus the itemised exp_* ones).
+  const led = await all(`SELECT to_char(j.entry_date::timestamptz, 'YYYY-MM') AS m,
+      CASE WHEN j.account_id = 'interest_income' THEN 'interest_income' WHEN a.account_type = 'Revenue' THEN 'fee_income' ELSE 'operating_expense' END AS account_id,
+      COALESCE(SUM(j.debit),0) AS d, COALESCE(SUM(j.credit),0) AS c
+    FROM journal_entries j JOIN gl_accounts a ON a.id = j.account_id
+    WHERE a.account_type IN ('Revenue','Expense') AND j.entry_date >= ? GROUP BY 1, 2`, [from]);
   const clientsM = await all(`SELECT to_char(created_at::timestamptz, 'YYYY-MM') AS m, COUNT(*)::int AS n FROM clients WHERE created_at >= ? GROUP BY 1`, [from]);
   const L = (m, a, debitNormal) => { const r = led.find(x => x.m === m && x.account_id === a); return r ? (debitNormal ? num(r.d) - num(r.c) : num(r.c) - num(r.d)) : 0; };
   const monthly = months.map(m => {
@@ -57,9 +62,13 @@ async function buildReport(investor) {
   });
 
   // ---- Company finances (all time) ----
+  const glTotals = await get(`SELECT
+      COALESCE(SUM(CASE WHEN a.account_type = 'Revenue' AND j.account_id <> 'interest_income' THEN j.credit - j.debit ELSE 0 END),0) AS other_income,
+      COALESCE(SUM(CASE WHEN a.account_type = 'Expense' THEN j.debit - j.credit ELSE 0 END),0) AS expenses
+    FROM journal_entries j JOIN gl_accounts a ON a.id = j.account_id`);
   const interestIncome = await ledgerBalance('interest_income', null);
-  const feeIncome = await ledgerBalance('fee_income', null);
-  const expenses = await ledgerBalance('operating_expense', null);
+  const feeIncome = num(glTotals.other_income);
+  const expenses = num(glTotals.expenses);
   const cash = { cash: await ledgerBalance('cash', null), bank: await ledgerBalance('bank', null), mpesa: await ledgerBalance('mpesa', null) };
   const loansReceivable = await ledgerBalance('loans_receivable', null);
 

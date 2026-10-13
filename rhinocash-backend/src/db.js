@@ -1190,6 +1190,31 @@ CREATE TABLE IF NOT EXISTS exec_records (
 );
 CREATE INDEX IF NOT EXISTS idx_exec_records_kind ON exec_records(kind, status);
 
+-- Accountant working records: budgets, forecasts, refunds, write-off
+-- proposals, verifications and control exceptions. See routes/acctOps.js.
+CREATE TABLE IF NOT EXISTS acct_records (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  details TEXT,
+  category TEXT,
+  status TEXT NOT NULL,
+  branch_id TEXT REFERENCES branches(id),
+  period TEXT,
+  amount NUMERIC,
+  ref_type TEXT,
+  ref_id TEXT,
+  data_json TEXT,
+  outcome TEXT,
+  created_by TEXT REFERENCES users(id),
+  decided_by TEXT REFERENCES users(id),
+  decided_at TEXT,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_at TEXT NOT NULL DEFAULT iso_now()
+);
+CREATE INDEX IF NOT EXISTS idx_acct_records_kind ON acct_records(kind, status);
+CREATE INDEX IF NOT EXISTS idx_acct_records_ref ON acct_records(ref_type, ref_id);
+
 CREATE TABLE IF NOT EXISTS integration_configs (
   kind TEXT PRIMARY KEY,
   provider TEXT,
