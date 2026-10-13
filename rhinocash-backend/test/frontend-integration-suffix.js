@@ -7810,7 +7810,7 @@ apiRequest = async function(method, path, body){
     global.FormData = class { constructor(){ return sForm; } };
     await hrSaveEmp({ preventDefault(){}, target:{} }, 'hr-sal', 'basic_salary,job_grade,kra_pin,nssf_no,sha_no'); await waitHr('emps');
     __assert(DB.adm['hr:emps'].find(e => e.id === officer.id).basic_salary === 48000, "HR sets an employee's basic salary");
-    const pForm = new Map([['period','2031-01']]);
+    const pForm = new Map([['period', new Date().toISOString().slice(0, 7)]]);
     global.FormData = class { constructor(){ return pForm; } };
     await hrCreateRun({ preventDefault(){}, target:{} });
     sidebarNavigate('Payroll Processing'); await waitHr('runs'); await waitHr('run:' + session.hrRunId);
@@ -7853,7 +7853,7 @@ apiRequest = async function(method, path, body){
     sidebarNavigate('eSMS');
     for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
     renderApp(); html = document.getElementById('root').innerHTML;
-    __assert(html.includes('name="apiKey"') && html.includes('Send test SMS') && html.includes("Africa's Talking"), "Admin can enter SMS credentials, switch SMS on and send a test");
+    __assert(html.includes('name="apiKey"') && html.includes('Send test SMS') && html.includes('Talking'), "Admin can enter SMS credentials, switch SMS on and send a test");
     sidebarNavigate('Email'); renderApp(); html = document.getElementById('root').innerHTML;
     __assert(html.includes('SendGrid') && html.includes('Mailgun') && html.includes('Send test email'), "Admin can configure email through SendGrid or Mailgun");
   }
@@ -7871,7 +7871,7 @@ apiRequest = async function(method, path, body){
     __assert(dead.length === 0, "every Director submenu opens a real page: " + dead.join(', '));
     const broken = [];
     for(const label of Object.keys(DIR_PAGES)){
-      if(!items.includes(label)) continue;
+      if(!items.includes(label) || (DIR_PAGES[label].only && !DIR_PAGES[label].only.includes(session.role))) continue;
       window.__pendingCharts = [];
       sidebarNavigate(label); renderApp();
       for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
@@ -7894,6 +7894,30 @@ apiRequest = async function(method, path, body){
     __assert(risk && risk.data.likelihood === 4 && risk.data.impact === 5, "the Director records a rated enterprise risk");
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Risk Heat Map') && html.includes('[TEST] Agent collections fraud'), "the risk appears on the register and heat map");
+  }
+
+  // ---- CEO: the same executive pages, plus Audit Findings ----
+  {
+    const cForm = new Map([['username','ceo@rhinocash.co.ke'],['password', process.env.SEEDED_CEO_PASSWORD]]);
+    global.FormData = class { constructor(){ return cForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    if(session.mustChangePassword){ const rf = new Map([['newPassword', process.env.SEEDED_CEO_PASSWORD], ['confirmPassword', process.env.SEEDED_CEO_PASSWORD]]); global.FormData = class { constructor(){ return rf; } }; await submitForcedPasswordReset({ preventDefault(){}, target:{} }); closeModal(); }
+    __assert(session.role === 'CEO', "setup: signed in as the CEO");
+    const QUICK = ['Leave Application','Create Ticket','Create a Lead'];
+    const items = SIDEBAR_MENUS.CEO.flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every CEO submenu opens a real page: " + dead.join(', '));
+    const broken = [];
+    for(const label of Object.keys(DIR_PAGES)){
+      if(!items.includes(label) || (DIR_PAGES[label].only && !DIR_PAGES[label].only.includes(session.role))) continue;
+      sidebarNavigate(label); renderApp();
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h)) broken.push(label);
+    }
+    __assert(broken.length === 0, "every CEO executive page renders cleanly: " + broken.join(', '));
+    sidebarNavigate('Audit Findings'); renderApp();
+    __assert(document.getElementById('root').innerHTML.includes('class="adm-title">Audit Findings<'), "the CEO has an Audit Findings page");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

@@ -235,7 +235,7 @@ function register(router) {
       rows = await all(`SELECT a.*, u.branch_id FROM audit_logs a JOIN users u ON u.id = a.user_id
         WHERE (u.branch_id IN (${ph})${regionClause}) ORDER BY a.created_at DESC LIMIT ${limit}`, [...scope.branchIds, ...(scope.regionId ? [scope.regionId] : [])]);
     }
-    res.json({ activity: rows.map(a => ({ id: a.id, at: a.created_at, user: a.user_name, roleId: a.role_id, branchId: a.branch_id, action: a.action, module: a.module, recordType: a.record_type, recordId: a.record_id, reason: a.reason })) });
+    res.json({ activity: rows.map(a => ({ id: a.id, at: a.created_at, user: a.user_name, userId: a.user_id, roleId: a.role_id, branchId: a.branch_id, action: a.action, module: a.module, recordType: a.record_type, recordId: a.record_id, reason: a.reason })) });
   });
 }
 

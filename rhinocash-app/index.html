@@ -663,7 +663,7 @@ const NAV = [
   {id:"admin", num:14, label:"System Administration"},
   {id:"regional", num:15, label:"Regional Management"},
   {id:"hr", num:16, label:"Human Resources"},
-  {id:"director", num:17, label:"Director"},
+  {id:"director", num:17, label:"Executive"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
@@ -671,7 +671,7 @@ const NAV_PERMISSIONS = {
   "Operational Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
-  "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
+  "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
   // HR has no lending/accounting/branch authority — just company-wide
@@ -822,7 +822,7 @@ function isSectionAllowed(section){
   // "hr" (Human Resources pages) is not a backend module either; every HR
   // endpoint checks the HR role itself.
   // "director" (the Director's executive pages) — every endpoint they use checks the role itself.
-  if(section==="director") return session.role==="Director";
+  if(section==="director") return ["Director","CEO"].includes(session.role);
   if(section==="hr"){ const m = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules; return Array.isArray(m) && DB.me.finalAccess.permissions ? m.includes("hr") : ["HR","Admin"].includes(session.role); }
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
@@ -7319,6 +7319,7 @@ const DIR_PAGES = {
   // Risk & Compliance
   "Enterprise Risk": { exec:'risk', sub:'The company risk register, rated by likelihood and impact.' },
   "Compliance Monitoring": { view:'compliance', sub:'Compliance checks, regulatory matters and data quality.' },
+  "Audit Findings": { view:'auditFindings', only:['CEO'], sub:'Failed compliance checks, overdue regulatory matters and open escalations that need follow-up.' },
   "Regulatory Matters": { exec:'regulatory', sub:'Matters with regulators and their deadlines.' },
   "Risk Reports": { view:'riskReport', sub:'Credit, operational and enterprise risk in one report.' },
   "Compliance Reports": { view:'compliance', sub:'Compliance checks, regulatory matters and data quality.' },
@@ -7364,14 +7365,20 @@ const DIR_PAGES = {
   "Loan Transfers": { ops:'transfer', sub:'Loans and clients moved between officers.' },
 };
 DIR_REPORTS.push('Investment report');
+// The same executive pages serve the Director and the CEO (their menus
+// overlap almost entirely); a page marked "only" is for those roles alone.
+const DIR_ROLES = ['Director','CEO'];
 const DIR_SECTION_OF = {};
-(SIDEBAR_MENUS.Director || []).forEach(sec => sec.items.forEach(item => { if(DIR_PAGES[item] && !DIR_SECTION_OF[item]) DIR_SECTION_OF[item] = sec.section; }));
-ROLE_ROUTE_OVERRIDES.Director = Object.assign(ROLE_ROUTE_OVERRIDES.Director || {}, Object.fromEntries(Object.keys(DIR_PAGES).map(l => [l, { section:'director', subtab:l }])),
-  { "Disbursements": { section:'loanbook', subtab:'Disbursements' } });
+DIR_ROLES.forEach(role => (SIDEBAR_MENUS[role] || []).forEach(sec => sec.items.forEach(item => { if(DIR_PAGES[item] && !DIR_SECTION_OF[item]) DIR_SECTION_OF[item] = sec.section; })));
+DIR_ROLES.forEach(role => {
+  ROLE_ROUTE_OVERRIDES[role] = Object.assign(ROLE_ROUTE_OVERRIDES[role] || {},
+    Object.fromEntries(Object.keys(DIR_PAGES).filter(l => !DIR_PAGES[l].only || DIR_PAGES[l].only.includes(role)).map(l => [l, { section:'director', subtab:l }])),
+    { "Disbursements": { section:'loanbook', subtab:'Disbursements' } });
+});
 
 function renderDirectorSection(){
   const label = session.subtab; const spec = DIR_PAGES[label];
-  if(!spec) return renderPlaceholder();
+  if(!spec || (spec.only && !spec.only.includes(session.role))) return renderPlaceholder();
   admExports = [];
   let body;
   try{
@@ -7381,7 +7388,7 @@ function renderDirectorSection(){
     else body = (DIR_VIEWS[spec.view] || (() => admError('This page is not available.')))(spec, label);
   }catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
   return `<div class="adm-page">
-    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(DIR_SECTION_OF[label] || 'Director')} · Company-wide</div>
+    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(DIR_SECTION_OF[label] || session.role)} · Company-wide</div>
       <h2 class="adm-title">${escapeHtml(label)}</h2><div class="adm-sub">${escapeHtml(spec.sub || '')}</div></div>
     ${body}</div>`;
 }
@@ -7792,6 +7799,20 @@ const DIR_VIEWS = {
         admChart('dir-ceo-tg', 'Company Targets — Achievement %', 'bar', tg.slice(0, 15).map(t => (TARGET_METRIC_LABELS[t.metric] || t.metric) + ' ' + t.period), [{ label: 'Achievement %', data: tg.slice(0, 15).map(t => Math.round(Number(t.achievementPct || 0))) }], dirHoriz))}
       ${dirTable('Strategic plans', plans, DIR_KIND_UI.strategic_plan.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No strategic plans recorded yet.')}`;
   },
+  auditFindings: () => {
+    const recs = dirRecords(); const ops = rgData('ops', '/api/regional-ops', r => r.records); const g = dirGuard(recs, ops); if(g) return g;
+    const today = todayISO();
+    const items = [].concat(
+      dirRecs('compliance_check', r => r.status === 'Failed').map(r => ({ src: 'Failed compliance check', title: r.title, cat: r.category, branch: r.branchId, when: r.dueDate || String(r.createdAt).slice(0, 10), sev: 'High', go: 'Compliance Checks' })),
+      dirRecs('regulatory', r => r.isOpen && r.dueDate && r.dueDate < today).map(r => ({ src: 'Overdue regulatory matter', title: r.title, cat: r.category, branch: null, when: r.dueDate, sev: 'High', go: 'Regulatory Matters' })),
+      dirRecs('risk', r => r.isOpen && dRiskScore(r) >= 15).map(r => ({ src: 'High enterprise risk', title: r.title, cat: r.category, branch: null, when: String(r.createdAt).slice(0, 10), sev: 'High', go: 'Enterprise Risk' })),
+      ops.filter(r => r.kind === 'escalation' && r.isOpen).map(r => ({ src: 'Open escalation', title: r.title, cat: r.category, branch: r.branchId, when: String(r.createdAt).slice(0, 10), sev: r.priority === 'Critical' ? 'High' : 'Medium', go: 'Escalations' })),
+      ops.filter(r => r.kind === 'issue' && r.isOpen && ['High','Critical'].includes(r.priority)).map(r => ({ src: 'Serious operational issue', title: r.title, cat: r.category, branch: r.branchId, when: String(r.createdAt).slice(0, 10), sev: 'Medium', go: 'Operational Issues' })));
+    const srcs = [...new Set(items.map(i => i.src))];
+    return `${dirTiles([['Findings to follow up', items.length], ['High severity', items.filter(i => i.sev === 'High').length]].concat(srcs.slice(0, 4).map(x => [x, items.filter(i => i.src === x).length])))}
+      ${admChart('dir-af', 'Findings by Source', 'bar', srcs, [{ label: 'Findings', data: srcs.map(x => items.filter(i => i.src === x).length) }], dirHoriz)}
+      ${dirTable('Findings', items.sort((a, b) => String(a.when).localeCompare(String(b.when))), [['Finding', i => admBadge(i.src, i.sev === 'High' ? 'red' : 'amber')], ['Subject', i => `<strong>${escapeHtml(i.title)}</strong><div class="hint">${escapeHtml(i.cat || '')}</div>`], ['Branch', i => escapeHtml(i.branch ? branchName(i.branch) : 'Whole company')], ['Date', i => escapeHtml(i.when || '—')], ['', i => `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('${i.go}')">Open</button>`]], 'No open findings — nothing failed, overdue or escalated.')}`;
+  },
   dataQuality: () => {
     const clients = DB.clients || []; const ids = {}; clients.forEach(c => { if(c.idNumber) (ids[c.idNumber] = ids[c.idNumber] || []).push(c); });
     const phones = {}; clients.forEach(c => { if(c.phone) (phones[c.phone] = phones[c.phone] || []).push(c); });
@@ -7838,8 +7859,8 @@ function dirEquityPage(byType){
       'No ownership recorded yet — the official register is maintained under Governance Responsibilities.')}`;
 }
 function dirAuditPage(which, pred){
-  const logs = which === 'mine' ? dirData('audit:mine', '/api/audit-logs?limit=200&user_id=' + encodeURIComponent(session.userId || ''), r => r.auditLogs) : dirData('audit:all', '/api/audit-logs?limit=200', r => r.auditLogs); const g = dirGuard(logs); if(g) return g;
-  const list = logs.map(a => ({ when: a.created_at, user: a.user_name, userId: a.user_id, roleId: a.role_id, action: a.action, module: a.module, record: a.record_type, reason: a.reason })).filter(pred);
+  const logs = rgData('activity', '/api/regional-ops/activity?limit=500', r => r.activity); const g = dirGuard(logs); if(g) return g;
+  const list = logs.map(a => ({ when: a.at, user: a.user, userId: a.userId, roleId: a.roleId, action: a.action, module: a.module, record: a.recordType, reason: a.reason })).filter(e => which !== 'mine' || e.userId === session.userId).filter(pred);
   const days = admLastDays(30); const byAct = admGroup(list, e => e.action); const top = byAct[0].map((k, i) => [k, byAct[1][i]]).sort((a, b) => b[1] - a[1]).slice(0, 10);
   return `${dirTiles([['Actions', list.length], ['Last 7 days', list.filter(e => String(e.when).slice(0, 10) >= admLastDays(7)[0]).length], ['People', new Set(list.map(e => e.user)).size]])}
     ${admTwoCharts(admChart('dir-aud-d', 'Actions per Day (30 days)', 'line', days.map(admDayLabel), [{ label: 'Actions', data: days.map(d => list.filter(e => String(e.when).slice(0, 10) === d).length), fill: true, tension: 0.3 }]), admChart('dir-aud-a', 'Most Common Actions', 'bar', top.map(t => t[0]), [{ label: 'Times', data: top.map(t => t[1]) }], dirHoriz))}
