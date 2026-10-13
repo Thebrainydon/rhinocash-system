@@ -47,7 +47,7 @@ async function seedModules() {
   const modules = [
     ['dashboard', 'Dashboard'], ['clients', 'Clients'], ['loanbook', 'LoanBook'], ['payments', 'Payments'],
     ['accounting', 'Accounting'], ['branches', 'Branches & Regions'], ['investors', 'Investor Management'], ['reports', 'Reports'], ['staff', 'Staff Management'], ['audit', 'Audit'],
-    ['support', 'System & Help'], ['account', 'My Account'],
+    ['support', 'System & Help'], ['account', 'My Account'], ['hr', 'Human Resources'],
   ];
   for (const [id, label] of modules) {
     await run('INSERT INTO modules (id, label) VALUES (?,?) ON CONFLICT DO NOTHING', [id, label]);
@@ -75,7 +75,7 @@ async function seedModules() {
     // submenus too, same read/visibility-only reasoning: no
     // manage_branches/manage_users action permission accompanies it.
     accountant: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'investors', 'reports', 'staff', 'support', 'account'],
-    admin: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'investors', 'reports', 'audit', 'staff', 'support', 'account'],
+    admin: ['dashboard', 'clients', 'loanbook', 'payments', 'accounting', 'branches', 'investors', 'reports', 'audit', 'staff', 'support', 'account', 'hr'],
     // CEO/Director get read visibility into 'accounting' (cash position,
     // P&L, ledger) — the original spec explicitly lists Cashflow/Revenue/
     // Profitability as executive KPIs for both roles, and without this
@@ -91,13 +91,13 @@ async function seedModules() {
     // which are read-only visibility for the CEO: no approve_loans/
     // disburse_loans/record_payments action permission is granted here,
     // same "visibility vs. authority to act" separation as accounting.
-    ceo: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account'],
+    ceo: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'support', 'account', 'hr'],
     // 'loanbook'/'payments'/'staff' added alongside the existing grant —
     // the Director sidebar now includes real LoanBook/Payments/Employees
     // submenus too, same real/visibility-only reasoning as the CEO grant
     // above: no approve_loans/disburse_loans/record_payments/manage_users
     // action permission accompanies it.
-    director: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'audit', 'support', 'account'],
+    director: ['dashboard', 'clients', 'loanbook', 'payments', 'reports', 'accounting', 'branches', 'investors', 'staff', 'audit', 'support', 'account', 'hr'],
     // HR has no lending/accounting/branch authority — just the Staff
     // Management module it shares (read-level, same as every other
     // operational role) with the universal dashboard/support/account
@@ -105,7 +105,7 @@ async function seedModules() {
     // financial/system audit trail, out of HR's intended scope (see
     // ROLE_ROUTE_OVERRIDES["HR"] in index.html, which redirects HR's own
     // "Login Activity" sidebar item rather than granting this module).
-    hr: ['dashboard', 'staff', 'support', 'account'],
+    hr: ['dashboard', 'staff', 'support', 'account', 'hr'],
   };
   for (const [role, mods] of Object.entries(roleModules)) {
     for (const m of mods) {
@@ -131,6 +131,8 @@ async function seedPermissions() {
     // granting this to HR adds a real new capability without touching any
     // existing role's access.
     ['manage_employees', 'Manage Employees'],
+    // Human Resources: HR records/attendance/departments, payroll preparation, payroll approval.
+    ['manage_hr', 'Manage HR Records'], ['manage_payroll', 'Prepare & Pay Payroll'], ['approve_payroll', 'Approve Payroll'],
   ];
   for (const [id, label] of perms) {
     await run('INSERT INTO permissions (id, label) VALUES (?,?) ON CONFLICT DO NOTHING', [id, label]);
@@ -138,7 +140,7 @@ async function seedPermissions() {
 
   // role_id -> { permission_id: allowed }
   const matrix = {
-    admin: { approve_loans: 1, disburse_loans: 1, record_payments: 1, reverse_payment: 1, post_accounting_entries: 1, manage_users: 1, manage_branches: 1, open_new_branch: 1, write_off_loans: 1, manage_system_settings: 1, manage_employees: 1 },
+    admin: { approve_loans: 1, disburse_loans: 1, record_payments: 1, reverse_payment: 1, post_accounting_entries: 1, manage_users: 1, manage_branches: 1, open_new_branch: 1, write_off_loans: 1, manage_system_settings: 1, manage_employees: 1, manage_hr: 1, manage_payroll: 1, approve_payroll: 1 },
     manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1 },
     operational_manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1, manage_branches: 1, open_new_branch: 1 },
     regional_manager: { approve_loans: 1, disburse_loans: 1, record_payments: 1 },
@@ -151,8 +153,8 @@ async function seedPermissions() {
     // to role_id === 'admin' in code (see users.js / auth.js), because a
     // single boolean permission can't express "yes, but not on Admin
     // accounts, and not the really dangerous sub-actions."
-    ceo: { manage_users: 1 },
-    director: { manage_users: 1 },
+    ceo: { manage_users: 1, approve_payroll: 1 },
+    director: { manage_users: 1, approve_payroll: 1 },
     // HR holds no action permission yet: its one real, structural route
     // (Employees > View Employees) is gated by module access only
     // (requireModule('staff')), not by any of these 10 action
@@ -167,7 +169,7 @@ async function seedPermissions() {
     // from manage_users (System Account creation/suspension/role changes,
     // still Admin/CEO/Director only). Revisit manage_users itself when
     // HR's own User & Access Management submenu is built out.
-    hr: { manage_employees: 1 },
+    hr: { manage_employees: 1, manage_hr: 1, manage_payroll: 1 },
   };
   for (const [role, perms2] of Object.entries(matrix)) {
     for (const [pid] of perms) {

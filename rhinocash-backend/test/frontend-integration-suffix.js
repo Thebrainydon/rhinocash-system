@@ -7738,6 +7738,104 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('+ New branch request') && html.includes('<div class="fp ">'), "Regional Operations forms are closed behind a button too");
   }
 
+  // ---- Human Resources: every HR menu/submenu is a real page; no donut charts ----
+  {
+    const adminForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
+    global.FormData = class { constructor(){ return adminForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const hrEmail = `hr.fe${Date.now()}@rhinocash.co.ke`;
+    const created = await api.post('/api/users', { name:'Mercy Atieno', email: hrEmail, role_id:'hr', branch_id:'br_nairobi' });
+    const hrPass = 'HrTest#' + Date.now();
+    const hrForm = new Map([['username', hrEmail],['password', created.tempPassword]]);
+    global.FormData = class { constructor(){ return hrForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    const resetForm = new Map([['newPassword', hrPass], ['confirmPassword', hrPass]]);
+    global.FormData = class { constructor(){ return resetForm; } };
+    await submitForcedPasswordReset({ preventDefault(){}, target:{} }); closeModal();
+    __assert(session.role === 'HR' && session.mustChangePassword === false, "setup: signed in as a new HR officer");
+    const waitHr = async (...keys) => { for(let i=0; i<250 && keys.some(k => !DB.adm || DB.adm['hr:' + k] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp(); };
+
+    const QUICK = ['Leave Application','Create Ticket'];
+    const items = SIDEBAR_MENUS.HR.flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every HR submenu opens a real page: " + dead.join(', '));
+    __assert(isSectionAllowed('hr'), "HR can open the Human Resources pages");
+    __assert(items.filter(it => HR_PAGES[it]).length >= 90, "the HR engine covers the HR sidebar's submenus");
+
+    // Seed a little real HR data through the API so pages have something to draw.
+    hrEmployees(); hrRecords(); await waitHr('emps', 'records');
+    const officer = DB.adm['hr:emps'].find(e => e.role_id === 'loan_officer');
+    await api.post('/api/hr/records', { kind:'review', title:'[TEST] Q3 review', employee_id: officer.id, score: 81, data: { period:'Q3 2026' } });
+    await api.post('/api/hr/attendance', { date: todayISO(), entries: [{ employee_id: officer.id, status:'Late', minutes_late: 20 }] });
+    hrForget('');
+
+    const broken = [], donut = [];
+    for(const label of Object.keys(HR_PAGES)){
+      if(!items.includes(label)) continue;
+      window.__pendingCharts = [];
+      sidebarNavigate(label); renderApp();
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || h.includes('[object Object]')) broken.push(label);
+      if(window.__pendingCharts.some(c => c.config.type === 'doughnut')) donut.push(label);
+    }
+    __assert(broken.length === 0, "every HR page renders with its bold blue title and no errors: " + broken.join(', '));
+    __assert(donut.length === 0, "no HR page draws a donut chart: " + donut.join(', '));
+    __assert(!/type:\s*['"]doughnut['"]/.test(__rawIndexHtml), "no page in the system is configured as a donut chart");
+
+    // Records: forms start closed; creating one lists it with its next steps.
+    sidebarNavigate('Complaints'); await waitHr('records', 'emps');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('+ New complaint') && html.includes('<div class="fp ">'), "the complaint form is closed behind a '+ New complaint' button");
+    __assert(html.includes('-- Generate --') && html.includes('>PDF Printout<') && html.includes('>Excel File<'), "HR pages offer Generate → PDF / Excel");
+    const cForm = new Map([['title','[TEST] Unsafe premises'],['employee_id', officer.id],['category','Working conditions'],['data.priority','High'],['start_date', todayISO()],['data.details','Broken door']]);
+    global.FormData = class { constructor(){ return cForm; } };
+    await hrCreate({ preventDefault(){}, target:{} }, 'case_complaint', '');
+    await waitHr('records');
+    const complaint = DB.adm['hr:records'].find(r => r.title === '[TEST] Unsafe premises');
+    __assert(complaint && complaint.status === 'Open' && complaint.data.priority === 'High', "HR records a complaint through the page's form");
+    await hrSetStatus(complaint.id, 'Under Investigation'); await waitHr('records');
+    __assert(DB.adm['hr:records'].find(r => r.id === complaint.id).status === 'Under Investigation', "HR moves a complaint to its next step");
+
+    // Attendance register saves real attendance.
+    sidebarNavigate('Daily Attendance'); await waitHr('emps');
+    const attForm = new Map([['st_' + officer.id, 'Absent']]);
+    global.FormData = class { constructor(){ return attForm; } };
+    await hrSaveAttendance({ preventDefault(){}, target:{} }, todayISO()); await waitHr(`att:${todayISO()}:${todayISO()}`);
+    __assert(DB.adm[`hr:att:${todayISO()}:${todayISO()}`].find(a => a.employeeId === officer.id).status === 'Absent', "the Daily Attendance register saves real attendance");
+
+    // Payroll: HR prepares, cannot approve.
+    const sForm = new Map([['basic_salary','48000'],['job_grade',''],['kra_pin','A001234567Z'],['nssf_no','N1'],['sha_no','S1']]);
+    hrFilter('edit:hr-sal', {}).emp = officer.id;
+    global.FormData = class { constructor(){ return sForm; } };
+    await hrSaveEmp({ preventDefault(){}, target:{} }, 'hr-sal', 'basic_salary,job_grade,kra_pin,nssf_no,sha_no'); await waitHr('emps');
+    __assert(DB.adm['hr:emps'].find(e => e.id === officer.id).basic_salary === 48000, "HR sets an employee's basic salary");
+    const pForm = new Map([['period','2031-01']]);
+    global.FormData = class { constructor(){ return pForm; } };
+    await hrCreateRun({ preventDefault(){}, target:{} });
+    sidebarNavigate('Payroll Processing'); await waitHr('runs'); await waitHr('run:' + session.hrRunId);
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Waiting for CEO / Director approval') && !html.includes(`hrRunStatus('${session.hrRunId}','Approved')`), "HR prepares payroll but the approval is left to the CEO / Director");
+
+    // Reference lists HR keeps.
+    sidebarNavigate('Leave Types'); for(let i=0; i<200 && DB.adm['lookup:leave-types'] === undefined; i++){ await new Promise(r=>setTimeout(r,20)); } renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('+ Add leave type') || html.includes('+ Add'), "HR can add to its own reference lists (Leave Types)");
+
+    // Access requests go to the System Administrator.
+    await api.post('/api/hr/records', { kind:'access_request', title:'[TEST] Left the company', employee_id: officer.id, data: { action:'Suspend account' } });
+    hrForget('records'); sidebarNavigate('Access Approvals'); await waitHr('records');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('[TEST] Left the company') && html.includes('Awaiting decision'), "HR sees its access request waiting for the System Administrator");
+    global.FormData = class { constructor(){ return adminForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    sidebarNavigate('Access Approvals'); await waitHr('records');
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Requests from HR') && html.includes('[TEST] Left the company'), "the System Administrator sees HR's request on Access Approvals");
+    const req = DB.adm['hr:records'].find(r => r.title === '[TEST] Left the company');
+    await api.patch('/api/hr/records/' + req.id, { status:'Rejected' });
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

@@ -319,7 +319,9 @@ if (require.main === module) {
   // same "fail loudly at boot, not on a user's first login" principle
   // src/db.js's startup self-test exists for.
   require('./src/db').ready
-    .then(() => {
+    .then(async () => {
+      // Admin-configured SMS/email settings, so health checks see them at once.
+      await require('./src/integrations/store').loadAll().catch(() => {});
       server.listen(PORT, () => console.log(`Rhinocash API listening on http://localhost:${PORT}`));
     })
     .catch((e) => {

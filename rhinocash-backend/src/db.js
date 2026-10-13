@@ -1160,6 +1160,21 @@ CREATE TABLE IF NOT EXISTS report_filter_presets (
   created_at TEXT NOT NULL DEFAULT iso_now()
 );
 
+-- Outbound integrations (SMS, email) the System Administrator configures
+-- from Admin > Integrations; the API key is AES-256-GCM encrypted.
+CREATE TABLE IF NOT EXISTS integration_configs (
+  kind TEXT PRIMARY KEY,
+  provider TEXT,
+  settings_json TEXT,
+  secret_enc TEXT,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  last_test_status TEXT,
+  last_test_at TEXT,
+  last_test_message TEXT,
+  updated_by TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS communication_log (
   id TEXT PRIMARY KEY,
   channel TEXT NOT NULL,
@@ -1667,6 +1682,51 @@ async function initSchema() {
     SELECT 'manager', 'branches'
     WHERE EXISTS (SELECT 1 FROM roles WHERE id = 'manager') AND EXISTS (SELECT 1 FROM modules WHERE id = 'branches')
     ON CONFLICT DO NOTHING`);
+  // Human Resources access, controllable by the System Administrator on
+  // Role Permissions like every other module/permission: the "hr" module
+  // (seeing the HR pages) and three HR action permissions. Added once to an
+  // already-seeded database with the standard grants; after that, whatever
+  // Admin sets is kept (nothing is re-granted on later boots).
+  if (await rawGet(`SELECT 1 FROM modules WHERE id = 'staff'`)) {
+    if (!(await rawGet(`SELECT 1 FROM modules WHERE id = 'hr'`))) {
+      await rawRun(`INSERT INTO modules (id, label) VALUES ('hr', 'Human Resources') ON CONFLICT DO NOTHING`);
+      for (const r of ['hr', 'admin', 'ceo', 'director']) {
+        await rawRun(`INSERT INTO role_modules (role_id, module_id) SELECT ?, 'hr' WHERE EXISTS (SELECT 1 FROM roles WHERE id = ?) ON CONFLICT DO NOTHING`, [r, r]);
+      }
+    }
+    const HR_PERMS = { manage_hr: ['Manage HR Records', ['hr', 'admin']], manage_payroll: ['Prepare & Pay Payroll', ['hr', 'admin']], approve_payroll: ['Approve Payroll', ['admin', 'ceo', 'director']] };
+    for (const [pid, [label, holders]] of Object.entries(HR_PERMS)) {
+      if (await rawGet('SELECT 1 FROM permissions WHERE id = ?', [pid])) continue;
+      await rawRun('INSERT INTO permissions (id, label) VALUES (?, ?) ON CONFLICT DO NOTHING', [pid, label]);
+      const roles = await rawAll('SELECT id FROM roles');
+      for (const r of roles) await rawRun('INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [r.id, pid, holders.includes(r.id) ? 1 : 0]);
+    }
+  }
+  // One-time data fixes, each applied exactly once per database.
+  await rawRun(`CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT iso_now())`);
+  // Loan Officers must be able to register clients and create loan
+  // applications. Some deployments ended up without these menu grants (the
+  // server then answered 403), so grant them to the role and to any officer
+  // who has a personal menu restriction. Applied once; Admin can still
+  // change it afterwards on Menu Access.
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'lo-add-client-create-application'`))
+      && (await rawGet(`SELECT 1 FROM roles WHERE id = 'loan_officer'`))
+      && (await rawGet(`SELECT 1 FROM menu_features WHERE id = 'menu-add-client'`))) {
+    for (const f of ['menu-add-client', 'menu-create-loan-application']) {
+      if (!(await rawGet('SELECT 1 FROM menu_features WHERE id = ?', [f]))) continue;
+      await rawRun(`INSERT INTO role_menu_access (role_id, feature_id) VALUES ('loan_officer', ?) ON CONFLICT DO NOTHING`, [f]);
+      await rawRun(`INSERT INTO user_menu_access (user_id, feature_id)
+        SELECT DISTINCT m.user_id, ? FROM user_menu_access m JOIN users u ON u.id = m.user_id WHERE u.role_id = 'loan_officer'
+        ON CONFLICT DO NOTHING`, [f]);
+    }
+    for (const mod of ['clients', 'loanbook']) {
+      await rawRun(`INSERT INTO role_modules (role_id, module_id) SELECT 'loan_officer', ? WHERE EXISTS (SELECT 1 FROM modules WHERE id = ?) ON CONFLICT DO NOTHING`, [mod, mod]);
+      await rawRun(`INSERT INTO user_module_access (user_id, module_id)
+        SELECT DISTINCT x.user_id, ? FROM user_module_access x JOIN users u ON u.id = x.user_id WHERE u.role_id = 'loan_officer'
+        ON CONFLICT DO NOTHING`, [mod]);
+    }
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('lo-add-client-create-application') ON CONFLICT DO NOTHING`);
+  }
   // Backs the single-active-session login block (see routes/auth.js /
   // routes/investors.js): a session only counts as "genuinely still in
   // use" — and so blocks a second login — while it has real, recent

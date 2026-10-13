@@ -12,7 +12,7 @@
 // which this code can manufacture.
 'use strict';
 const { get, run, all, transaction } = require('./../db');
-const { encryptSecret, decryptSecret, maskSecret } = require('./../crypto');
+const { encryptSecret, decryptSecret, tryDecryptSecret, maskSecret } = require('./../crypto');
 
 const OAUTH_URL = {
   sandbox: 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
@@ -43,6 +43,11 @@ async function getActiveEnvironment() {
 async function getDecryptedConfig(environment) {
   const row = await get('SELECT * FROM mpesa_environment_configs WHERE environment = ?', [environment]);
   if (!row) return null;
+  for (const f of ['consumer_key_enc', 'consumer_secret_enc', 'passkey_enc', 'security_credential_enc']) {
+    if (row[f] && !tryDecryptSecret(row[f]).ok) {
+      throw Object.assign(new Error(`The saved ${environment} M-Pesa credentials can no longer be read (the server's encryption key changed). Re-enter them under M-Pesa Configuration.`), { status: 409 });
+    }
+  }
   return {
     environment,
     consumerKey: decryptSecret(row.consumer_key_enc),
@@ -62,15 +67,21 @@ async function getDecryptedConfig(environment) {
 // go through this function.
 async function getMaskedConfig(environment) {
   const row = (await get('SELECT * FROM mpesa_environment_configs WHERE environment = ?', [environment])) || {};
+  // A stored secret that can't be decrypted any more (the server's
+  // encryption key changed) must not take every M-Pesa page down: it is
+  // shown as missing and flagged so the Admin can re-enter it.
+  let unreadable = false;
+  const mask = enc => { if (!enc) return null; const r = tryDecryptSecret(enc); if (!r.ok) { unreadable = true; return null; } return maskSecret(r.value); };
   return {
     environment,
-    consumerKey: row.consumer_key_enc ? maskSecret(decryptSecret(row.consumer_key_enc)) : null,
-    consumerSecret: row.consumer_secret_enc ? maskSecret(decryptSecret(row.consumer_secret_enc)) : null,
+    consumerKey: mask(row.consumer_key_enc),
+    consumerSecret: mask(row.consumer_secret_enc),
     shortcode: row.shortcode || null,
-    passkey: row.passkey_enc ? maskSecret(decryptSecret(row.passkey_enc)) : null,
+    passkey: mask(row.passkey_enc),
     callbackUrl: row.callback_url || null,
     initiatorName: row.initiator_name || null,   // not secret — safe to show in full
-    securityCredential: row.security_credential_enc ? maskSecret(decryptSecret(row.security_credential_enc)) : null,
+    securityCredential: mask(row.security_credential_enc),
+    get credentialsUnreadable() { return unreadable; },
     b2cShortcode: row.b2c_shortcode || null,
     b2cConfigured: !!row.b2c_configured,
     configured: !!row.configured,

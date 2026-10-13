@@ -9,9 +9,47 @@
 //   SMS_PROVIDER            — e.g. 'africastalking' | 'twilio' (selects the adapter below)
 //   SMS_API_KEY / SMS_API_SECRET / SMS_SENDER_ID  — provider-specific
 'use strict';
+const store = require('./store');
 
+// Configured either by the System Administrator (Admin > Integrations >
+// eSMS, stored encrypted in the database) or, as a fallback, by the
+// SMS_PROVIDER / SMS_API_KEY / SMS_USERNAME / SMS_SENDER_ID env variables.
+function envConfig() {
+  if (!(process.env.SMS_PROVIDER && process.env.SMS_API_KEY)) return null;
+  return { provider: process.env.SMS_PROVIDER, apiKey: process.env.SMS_API_KEY, username: process.env.SMS_USERNAME || '', senderId: process.env.SMS_SENDER_ID || '' };
+}
 function isConfigured() {
-  return !!(process.env.SMS_PROVIDER && process.env.SMS_API_KEY);
+  const c = store.cached('sms');
+  return !!envConfig() || !!(c && c.enabled && c.secret);
+}
+async function resolveConfig() {
+  const db = await store.active('sms').catch(() => null);
+  if (db) return { provider: db.provider, apiKey: db.secret, username: db.settings.username || '', senderId: db.settings.senderId || '' };
+  return envConfig();
+}
+// Kenyan numbers in the international format providers expect (+2547…).
+function normalizePhone(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.startsWith('254')) return '+' + d;
+  if (d.startsWith('0')) return '+254' + d.slice(1);
+  if (d.length === 9) return '+254' + d;
+  return d ? '+' + d : '';
+}
+// Africa's Talking bulk SMS API. Username "sandbox" uses their sandbox.
+async function sendAfricasTalking(cfg, to, message) {
+  const base = String(cfg.username).toLowerCase() === 'sandbox' ? 'https://api.sandbox.africastalking.com' : 'https://api.africastalking.com';
+  const form = new URLSearchParams({ username: cfg.username, to, message });
+  if (cfg.senderId) form.set('from', cfg.senderId);
+  const res = await fetch(base + '/version1/messaging', {
+    method: 'POST', headers: { apiKey: cfg.apiKey, Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString(),
+    signal: AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  let json = null; try { json = JSON.parse(text); } catch { /* not JSON */ }
+  const rec = json && json.SMSMessageData && json.SMSMessageData.Recipients && json.SMSMessageData.Recipients[0];
+  if (res.ok && rec && /success/i.test(rec.status)) return { ok: true, providerRef: rec.messageId, detail: rec.status };
+  const why = (rec && rec.status) || (json && json.SMSMessageData && json.SMSMessageData.Message) || text.slice(0, 160) || `HTTP ${res.status}`;
+  return { ok: false, detail: why };
 }
 
 const TEMPLATES = {
@@ -27,19 +65,27 @@ const TEMPLATES = {
   system_notification: (ctx) => ctx.body,
 };
 
-// send() never throws for "not configured" — that's an expected state
-// during development, not an error condition the caller needs to handle
-// specially every time. It DOES throw if called with an unknown template.
-async function send(templateName, phone, ctx) {
+// send() never throws for "not configured" — that's an expected state, not
+// an error the caller must handle every time. It DOES throw for an unknown
+// template. Every attempt is written to the communication log.
+async function send(templateName, phone, ctx, meta) {
   if (!TEMPLATES[templateName]) throw new Error(`Unknown SMS template: ${templateName}`);
   const message = TEMPLATES[templateName](ctx);
-  if (!isConfigured()) {
-    return { status: 'NOT_CONFIGURED', provider: null, phone, message, note: 'Set SMS_PROVIDER and SMS_API_KEY to enable real delivery.' };
+  const cfg = await resolveConfig();
+  const to = normalizePhone(phone);
+  if (!cfg) {
+    await store.logAttempt('sms', templateName, to || phone, null, 'NOT_CONFIGURED', meta);
+    return { status: 'NOT_CONFIGURED', provider: null, phone, message, note: 'Switch on SMS under Admin > Integrations > eSMS to enable real delivery.' };
   }
-  // Real implementation would branch on process.env.SMS_PROVIDER and call
-  // that provider's API (e.g. Africa's Talking /messaging endpoint). Not
-  // implemented — no provider account/credentials available to build against.
-  throw new Error(`SMS provider "${process.env.SMS_PROVIDER}" adapter is not implemented yet.`);
+  let out;
+  try {
+    if (!to) out = { ok: false, detail: 'No phone number' };
+    else if (cfg.provider === 'africastalking') out = await sendAfricasTalking(cfg, to, message);
+    else out = { ok: false, detail: `SMS provider "${cfg.provider}" is not supported` };
+  } catch (e) { out = { ok: false, detail: e && e.name === 'TimeoutError' ? 'The SMS provider did not respond in time' : (e && e.message) || 'Could not reach the SMS provider' }; }
+  const status = out.ok ? 'Sent' : 'FAILED';
+  await store.logAttempt('sms', templateName, to, null, status, meta);
+  return { status, provider: cfg.provider, phone: to, message, providerRef: out.providerRef || null, detail: out.detail || null };
 }
 
-module.exports = { isConfigured, send, TEMPLATES };
+module.exports = { isConfigured, send, TEMPLATES, normalizePhone };

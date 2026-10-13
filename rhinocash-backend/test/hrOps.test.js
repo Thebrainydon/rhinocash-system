@@ -187,6 +187,19 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
     assert((await api('GET', '/api/hr/login-activity', { token: officerToken })).status === 403, '7: other staff cannot see it');
   }
 
+  // 8. Staff targets: HR reads every target (for reviews) but cannot set one.
+  {
+    const emps = (await api('GET', '/api/hr/employees', { token: hrToken })).json.employees;
+    const officer = emps.find(e => e.role_id === 'loan_officer');
+    const period = '2031-02';
+    const set = await api('POST', '/api/targets', { token: adminToken, body: { metric: 'disbursement', recipient_user_id: officer.id, target_value: 500000, period } });
+    const seen = await api('GET', '/api/targets', { token: hrToken });
+    assert(set.status === 201, '8: setup: a target is set for a loan officer (' + set.status + ' ' + JSON.stringify(set.json) + ')');
+    assert(seen.status === 200 && set.json.target && seen.json.targets.some(t => t.id === set.json.target.id), '8: HR sees staff targets');
+    const hrSet = await api('POST', '/api/targets', { token: hrToken, body: { metric: 'disbursement', recipient_user_id: officer.id, target_value: 1, period } });
+    assert(hrSet.status === 403 || hrSet.status === 400, '8: HR cannot set a target');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

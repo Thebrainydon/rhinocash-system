@@ -335,6 +335,8 @@ function register(router) {
     clauses.push('set_by = ?'); params.push(actor.id);
     if (['admin', 'ceo', 'director', 'operational_manager'].includes(actor.role_id)) {
       clauses.push('1=1'); // org-wide visibility for these roles, matches their setting authority
+    } else if (actor.role_id === 'hr') {
+      clauses.push('1=1'); // HR reads every staff target for performance management (it cannot set them)
     } else if (actor.role_id === 'manager') {
       clauses.push('branch_id = ?'); params.push(actor.branch_id);
     } else if (actor.role_id === 'regional_manager') {

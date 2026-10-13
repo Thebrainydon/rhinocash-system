@@ -17,6 +17,7 @@ const crypto = require('node:crypto');
 const { all, get, run } = require('./../db');
 const { requireAuth, requirePermission } = require('./../middleware');
 const { logAction } = require('./../audit');
+const { hasPermission } = require('./../rbac');
 const { recentErrors } = require('./../errorLog');
 
 const KEY_RE = /^[a-z0-9][a-z0-9_.-]{1,79}$/;
@@ -36,7 +37,9 @@ const canWrite = [requireAuth, requirePermission('manage_system_settings'), requ
 // stays with the System Administrator.
 const HR_LISTS = ['job-titles', 'job-grades', 'employment-types', 'leave-types', 'allowances', 'deductions', 'salary-components', 'training-categories', 'benefit-types'];
 async function requireListWriter(req, res, next) {
-  if (req.user.role_id === 'hr' && HR_LISTS.includes(req.params.listKey)) return next();
+  if (req.user.role_id !== 'admin' && HR_LISTS.includes(req.params.listKey)) {
+    return (await hasPermission(req.user, 'manage_hr')) ? next() : next({ status: 403, message: 'Your role is not allowed to change HR lists' });
+  }
   if (req.user.role_id !== 'admin') return next({ status: 403, message: 'Only the System Administrator can change system configuration' });
   return requirePermission('manage_system_settings')(req, res, next);
 }
@@ -56,6 +59,44 @@ function lookupOut(r) {
 }
 
 function register(router) {
+  // ==================== Outbound integrations (SMS, email) ====================
+  // The System Administrator turns real SMS / email delivery on from here.
+  const integ = require('./../integrations/store');
+  const validKind = (req, res, next) => (integ.KINDS[req.params.kind] ? next() : next({ status: 404, message: 'Unknown integration' }));
+  router.get('/api/admin/integrations', requireAuth, requireAdminOnly, async (req, res) => {
+    const out = {};
+    for (const k of Object.keys(integ.KINDS)) out[k] = integ.masked(await integ.load(k), k);
+    out.sms.envFallback = !!(process.env.SMS_PROVIDER && process.env.SMS_API_KEY);
+    out.email.envFallback = !!(process.env.EMAIL_PROVIDER && process.env.EMAIL_API_KEY && process.env.EMAIL_FROM_ADDRESS);
+    res.json(out);
+  });
+  router.put('/api/admin/integrations/:kind', ...canWrite, validKind, async (req, res, next) => {
+    let cfg;
+    try { cfg = await integ.save(req.params.kind, req.body || {}, req.user.id); } catch (e) { if (e.status) return next(e); throw e; }
+    await logAction(req, { action: `Updated ${req.params.kind.toUpperCase()} integration`, module: 'admin', recordType: 'Integration', recordId: req.params.kind,
+      newValue: { provider: cfg.provider, enabled: cfg.enabled, settings: cfg.settings, apiKeyChanged: !!(req.body && req.body.apiKey) } });
+    res.json({ integration: integ.masked(cfg, req.params.kind) });
+  });
+  router.delete('/api/admin/integrations/:kind', ...canWrite, validKind, async (req, res) => {
+    await integ.clear(req.params.kind);
+    await logAction(req, { action: `Cleared ${req.params.kind.toUpperCase()} integration`, module: 'admin', recordType: 'Integration', recordId: req.params.kind });
+    res.json({ ok: true });
+  });
+  // Sends a real test message through the configured provider.
+  router.post('/api/admin/integrations/:kind/test', ...canWrite, validKind, async (req, res, next) => {
+    const kind = req.params.kind; const to = String((req.body || {}).to || '').trim();
+    if (!to) return next({ status: 400, message: kind === 'sms' ? 'Enter the phone number to send the test SMS to' : 'Enter the email address to send the test to' });
+    const meta = { relatedType: 'IntegrationTest', relatedId: kind, sentBy: req.user.id };
+    const result = kind === 'sms'
+      ? await require('./../integrations/sms').send('system_notification', to, { body: 'Rhinocash: this is a test SMS from your System Administrator. SMS delivery is working.' }, meta)
+      : await require('./../integrations/email').send('system_notification', to, { subject: 'Rhinocash test email', body: 'This is a test email from your Rhinocash System Administrator. Email delivery is working.' }, meta);
+    const ok = result.status === 'Sent';
+    const message = ok ? `Test sent to ${to}` : result.status === 'NOT_CONFIGURED' ? 'Not switched on — save the settings with the integration enabled first' : (result.detail || 'Sending failed');
+    if (result.status !== 'NOT_CONFIGURED') await integ.recordTest(kind, ok ? 'Success' : 'Failed', message);
+    await logAction(req, { action: `Tested ${kind.toUpperCase()} integration`, module: 'admin', recordType: 'Integration', recordId: kind, newValue: { to, status: result.status } });
+    res.json({ status: result.status, ok, message });
+  });
+
   // ==================== Settings documents ====================
   router.get('/api/admin/settings', requireAuth, requireAdminView, async (req, res) => {
     const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : '';

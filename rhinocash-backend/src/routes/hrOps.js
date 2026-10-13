@@ -17,7 +17,7 @@ const crypto = require('node:crypto');
 const { all, get, run, transaction } = require('./../db');
 const { requireAuth } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { canActOnStaffRecord } = require('./../rbac');
+const { canActOnStaffRecord, hasModuleAccess, hasPermission } = require('./../rbac');
 const { computePayslip } = require('./staffProfile');
 
 const KINDS = {
@@ -48,12 +48,17 @@ const KINDS = {
 };
 const ACCESS_ACTIONS = ['Activate account', 'Suspend account', 'Deactivate account', 'Change role', 'Grant extra access', 'Reset password'];
 const ATTENDANCE_STATUSES = ['Present', 'Late', 'Absent', 'On Leave', 'Half Day', 'Remote'];
-const HR_WRITE = ['hr', 'admin'];
-const HR_VIEW = ['hr', 'admin', 'ceo', 'director'];
 const MAX_DATA = 20000;
 
-function requireHrView(req, res, next) { return HR_VIEW.includes(req.user.role_id) ? next() : next({ status: 403, message: 'Your role does not have HR access' }); }
-function requireHrWrite(req, res, next) { return HR_WRITE.includes(req.user.role_id) ? next() : next({ status: 403, message: 'Only HR or the System Administrator can change HR records' }); }
+// Access comes from the "hr" module and the HR permissions, which the
+// System Administrator grants or revokes per role on Role Permissions.
+async function requireHrView(req, res, next) { return (await hasModuleAccess(req.user, 'hr')) ? next() : next({ status: 403, message: 'Your role does not have HR access' }); }
+async function requireHrWrite(req, res, next) {
+  return (await hasModuleAccess(req.user, 'hr')) && (await hasPermission(req.user, 'manage_hr')) ? next() : next({ status: 403, message: 'Your role is not allowed to change HR records' });
+}
+async function requirePayrollPrep(req, res, next) {
+  return (await hasModuleAccess(req.user, 'hr')) && (await hasPermission(req.user, 'manage_payroll')) ? next() : next({ status: 403, message: 'Your role is not allowed to prepare payroll' });
+}
 const clean = (v, max) => { if (v === undefined || v === null) return null; const s = String(v).trim(); return s ? s.slice(0, max) : null; };
 const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const parseJson = t => { try { return JSON.parse(t); } catch { return null; } };
@@ -256,7 +261,7 @@ function register(router) {
   router.get('/api/hr/payroll/runs', requireAuth, requireHrView, async (req, res) => {
     res.json({ runs: (await all(`${RUN_SELECT} ORDER BY r.period DESC`)).map(runOut) });
   });
-  router.post('/api/hr/payroll/runs', requireAuth, requireHrWrite, async (req, res, next) => {
+  router.post('/api/hr/payroll/runs', requireAuth, requirePayrollPrep, async (req, res, next) => {
     const period = String((req.body || {}).period || '');
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return next({ status: 400, message: 'Choose a month (YYYY-MM)' });
     const thisMonth = new Date().toISOString().slice(0, 7);
@@ -276,7 +281,7 @@ function register(router) {
       kraPin: l.kra_pin, nssfNo: l.nssf_no, shaNo: l.sha_no, basic: Number(l.basic), allowances: Number(l.allowances), gross: Number(l.gross), nssf: Number(l.nssf), shif: Number(l.shif),
       paye: Number(l.paye), salaryAdvance: Number(l.salary_advance), otherDeductions: Number(l.other_deductions), totalDeductions: Number(l.total_deductions), net: Number(l.net), payslipRef: l.payslip_ref })) });
   });
-  router.post('/api/hr/payroll/runs/:id/recompute', requireAuth, requireHrWrite, async (req, res, next) => {
+  router.post('/api/hr/payroll/runs/:id/recompute', requireAuth, requirePayrollPrep, async (req, res, next) => {
     const r = await get('SELECT * FROM payroll_runs WHERE id = ?', [req.params.id]);
     if (!r) return next({ status: 404, message: 'Payroll run not found' });
     if (r.status !== 'Draft') return next({ status: 400, message: `A ${r.status.toLowerCase()} payroll can no longer be recomputed` });
@@ -291,12 +296,12 @@ function register(router) {
     if (!r) return next({ status: 404, message: 'Payroll run not found' });
     const to = (req.body || {}).status;
     if (to === 'Approved') {
-      if (!['ceo', 'director', 'admin'].includes(req.user.role_id)) return next({ status: 403, message: 'Payroll is approved by the CEO, Director or System Administrator' });
+      if (!(await hasPermission(req.user, 'approve_payroll'))) return next({ status: 403, message: 'Your role is not allowed to approve payroll' });
       if (r.status !== 'Draft') return next({ status: 400, message: `Only a draft payroll can be approved (this one is ${r.status.toLowerCase()})` });
       if (r.created_by === req.user.id) return next({ status: 403, message: 'The person who prepared a payroll cannot approve it' });
       await run('UPDATE payroll_runs SET status = ?, approved_by = ?, approved_at = iso_now() WHERE id = ?', ['Approved', req.user.id, r.id]);
     } else if (to === 'Paid') {
-      if (!HR_WRITE.includes(req.user.role_id)) return next({ status: 403, message: 'Only HR or the System Administrator marks payroll as paid' });
+      if (!(await hasPermission(req.user, 'manage_payroll'))) return next({ status: 403, message: 'Your role is not allowed to mark payroll as paid' });
       if (r.status !== 'Approved') return next({ status: 400, message: 'Payroll must be approved before it is paid' });
       await run('UPDATE payroll_runs SET status = ?, paid_at = iso_now() WHERE id = ?', ['Paid', r.id]);
     } else return next({ status: 400, message: 'status must be Approved or Paid' });

@@ -186,6 +186,13 @@ async function resolveWriteBranchId(user, requestedBranchId) {
   return scope[0]; // silently pin to their own (single-branch roles) or first-in-region branch — never the client's arbitrary value
 }
 
+async function effectivePermissions(user) {
+  const ids = (await all('SELECT id FROM permissions ORDER BY id')).map(p => p.id);
+  const out = [];
+  for (const id of ids) if (await hasPermission(user, id)) out.push(id);
+  return out;
+}
+
 async function computeFinalAccess(user) {
   const role = await get('SELECT * FROM roles WHERE id = ?', [user.role_id]);
   const branch = user.branch_id ? await get('SELECT name FROM branches WHERE id = ?', [user.branch_id]) : null;
@@ -196,6 +203,8 @@ async function computeFinalAccess(user) {
     branch: branch ? branch.name : null,
     region: region ? region.name : null,
     modules: await effectiveModules(user),
+    // Action permissions this user actually holds (role default, or a personal override).
+    permissions: await effectivePermissions(user),
     intelligence: await effectiveIntelligenceFeatures(user),
     menus: await effectiveMenuFeatures(user),
     finalLine: `${role ? role.name : user.role_id} — ${user.access_level}`,
@@ -235,5 +244,5 @@ module.exports = {
   INVESTOR_INTELLIGENCE_FEATURES, hasInvestorIntelligenceAccess,
   roleMenuFeatures, effectiveMenuFeatures, hasMenuAccess,
   branchScopeSQL, branchIdsInScope, isBranchAllowed, assertRecordInScope, resolveWriteBranchId,
-  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES,
+  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES, effectivePermissions,
 };

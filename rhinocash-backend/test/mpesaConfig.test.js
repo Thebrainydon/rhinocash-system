@@ -157,6 +157,24 @@ async function login(email, password) {
     assert(guide.status === 200 && Array.isArray(guide.json.steps) && guide.json.steps.length >= 5, 'setup guide returns real step-by-step instructions');
   }
 
+  // ---- Credentials saved under a different encryption key (e.g. before a redeploy) ----
+  {
+    const { get, run } = require('../src/db');
+    await api('PUT', '/api/admin/mpesa/config/sandbox', { token: adminToken, body: { consumerKey: 'reKEY12345678', consumerSecret: 'reSECRET987654', shortcode: '174379', passkey: 'rePASS55555', callbackUrl: 'https://example.com/api/mpesa/callback/sandbox' } });
+    const row = await get('SELECT consumer_key_enc FROM mpesa_environment_configs WHERE environment = ?', ['sandbox']);
+    assert(row && row.consumer_key_enc, 'setup: sandbox credentials saved again');
+    if (row && row.consumer_key_enc) {
+      const [iv, , data] = row.consumer_key_enc.split(':');
+      await run('UPDATE mpesa_environment_configs SET consumer_key_enc = ? WHERE environment = ?', [[iv, Buffer.alloc(16, 7).toString('base64'), data].join(':'), 'sandbox']);
+      const cfg = await api('GET', '/api/admin/mpesa/config', { token: adminToken });
+      assert(cfg.status === 200 && cfg.json.sandbox.credentialsUnreadable === true && cfg.json.sandbox.consumerKey === null, 'unreadable saved credentials no longer break M-Pesa Configuration — they are flagged for re-entry');
+      const st = await api('GET', '/api/mpesa/status', { token: adminToken });
+      assert(st.status === 200, 'M-Pesa status still loads when saved credentials are unreadable');
+      const c2b = await api('GET', '/api/mpesa/c2b/transactions?limit=1', { token: adminToken });
+      assert(c2b.status === 200, 'Unposted Payments (C2B list) still loads when saved credentials are unreadable');
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();

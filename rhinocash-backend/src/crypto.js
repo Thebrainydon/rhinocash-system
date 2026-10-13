@@ -85,6 +85,10 @@ function tokenHash(token) {
 const ENC_KEY_PATH = path.join(__dirname, '..', 'data', '.mpesa_encryption_key');
 function loadOrCreateEncKey() {
   if (process.env.MPESA_ENCRYPTION_KEY) return Buffer.from(process.env.MPESA_ENCRYPTION_KEY, 'hex');
+  // Hosts with a throwaway disk (e.g. Render) lose the generated key file on
+  // every deploy, which made credentials saved before a deploy unreadable.
+  // When a fixed SESSION_SECRET is configured, derive a stable key from it.
+  if (process.env.SESSION_SECRET) return Buffer.from(crypto.hkdfSync('sha256', process.env.SESSION_SECRET, 'rhinocash', 'mpesa-encryption-key', 32));
   if (fs.existsSync(ENC_KEY_PATH)) return Buffer.from(fs.readFileSync(ENC_KEY_PATH, 'utf8').trim(), 'hex');
   const key = crypto.randomBytes(32);
   fs.mkdirSync(path.dirname(ENC_KEY_PATH), { recursive: true });
@@ -110,6 +114,11 @@ function decryptSecret(stored) {
   const plaintext = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
   return plaintext.toString('utf8');
 }
+// Same as decryptSecret, but a value that can no longer be read (it was
+// encrypted under a different key) gives { ok: false } instead of throwing.
+function tryDecryptSecret(stored) {
+  try { return { ok: true, value: decryptSecret(stored) }; } catch { return { ok: false, value: null }; }
+}
 // Never returned in full through any API — only the last 4 characters,
 // so an admin can recognize "yes, that's the right key" without the
 // value ever being reconstructable from a response body.
@@ -120,4 +129,4 @@ function maskSecret(plaintext) {
   return '••••••••' + s.slice(-4);
 }
 
-module.exports = { hashPassword, verifyPassword, generateTempPassword, signToken, verifyToken, tokenHash, encryptSecret, decryptSecret, maskSecret };
+module.exports = { hashPassword, verifyPassword, generateTempPassword, signToken, verifyToken, tokenHash, encryptSecret, decryptSecret, tryDecryptSecret, maskSecret };

@@ -77,13 +77,10 @@ async function notifyTicketParticipant(userId, subject, body, relatedId, actorId
   const email = require('./../integrations/email');
   let result;
   try {
-    result = await email.send('system_notification', user.email, { subject, body });
+    result = await email.send('system_notification', user.email, { subject, body }, { relatedType: 'Ticket', relatedId, sentBy: actorId || null });
   } catch (e) {
     result = { status: 'FAILED', to: user.email, subject };
   }
-  const id = 'cml_' + crypto.randomUUID();
-  await run('INSERT INTO communication_log (id, channel, template, recipient, subject, status, related_type, related_id, sent_by) VALUES (?,?,?,?,?,?,?,?,?)',
-    [id, 'email', 'system_notification', user.email, subject, result.status, 'Ticket', relatedId, actorId || null]);
 }
 
 function register(router) {

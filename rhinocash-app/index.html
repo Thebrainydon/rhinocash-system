@@ -662,6 +662,7 @@ const NAV = [
   {id:"account", num:13, label:"My Account"},
   {id:"admin", num:14, label:"System Administration"},
   {id:"regional", num:15, label:"Regional Management"},
+  {id:"hr", num:16, label:"Human Resources"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
@@ -677,7 +678,7 @@ const NAV_PERMISSIONS = {
   // every other operational role, plus the universal notifications/
   // support/account baseline. No "reports" grant: nothing in HR's sidebar
   // currently resolves to it (see ROLE_ROUTE_OVERRIDES/LABEL_ROUTES).
-  "HR": ["dashboard","staff","notifications","support","account"],
+  "HR": ["dashboard","staff","notifications","support","account","hr"],
   "Loan Officer": ["dashboard","clients","loanbook","payments","accounting","reports","notifications","support","account"],
 };
 /* Permission matrix backing the Admin "Role & Permission Management" screen.
@@ -699,6 +700,9 @@ const DEFAULT_PERMISSIONS_MATRIX = {
 };
 /* Access level shown/suggested per role — editable per-user, per the spec's
    "System Role + Access Level" model. */
+// Every structural role's access level is always offered on the Roles pages,
+// even before any role carries it (e.g. HR & People Management Access).
+const STANDARD_ACCESS_LEVELS = ['Portfolio Access','Branch Management Access','Operations & Branch Expansion Access','Regional Management Access','Accounting & Financial Access','Master System Administration Access','Executive Management Access','Strategic & Governance Access','HR & People Management Access'];
 const ACCESS_LEVEL_BY_ROLE = {
   "Loan Officer":"Portfolio Access", "Manager":"Branch Management Access", "Operational Manager":"Operations & Branch Expansion Access",
   "Regional Manager":"Regional Management Access", "Admin":"Full System Access", "Accountant":"Accounting & Financial Access",
@@ -744,6 +748,7 @@ const MODULE_LIST = [
   {key:"dashboard", label:"Dashboard"}, {key:"clients", label:"Clients"}, {key:"loanbook", label:"LoanBook (incl. Collections, Disbursements)"},
   {key:"payments", label:"Payments"}, {key:"accounting", label:"Accounting"}, {key:"reports", label:"Reports"},
   {key:"staff", label:"Staff Management"}, {key:"audit", label:"Audit"}, {key:"support", label:"System & Help"}, {key:"account", label:"My Account"},
+  {key:"hr", label:"Human Resources"},
 ];
 function hasPermission(role, perm){
   // Personal, per-user overrides (set via Admin's Access & Permissions screen) win first.
@@ -813,6 +818,9 @@ function isSectionAllowed(section){
   // "regional" (Regional Management pages) is likewise not a backend module;
   // the regional-ops endpoints scope every record to the viewer's region.
   if(section==="regional") return ["Regional Manager","Operational Manager"].includes(session.role);
+  // "hr" (Human Resources pages) is not a backend module either; every HR
+  // endpoint checks the HR role itself.
+  if(section==="hr"){ const m = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules; return Array.isArray(m) && DB.me.finalAccess.permissions ? m.includes("hr") : ["HR","Admin"].includes(session.role); }
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
   // after any per-user Admin-set restriction. This is a UI hint only;
@@ -860,7 +868,7 @@ const SIDEBAR_MENUS = {
     {section:"Branches & Regions", icon:"🏢", items:["Loan Summary","View Regions","View Branches"]},
     {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Business Performance"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
@@ -873,7 +881,7 @@ const SIDEBAR_MENUS = {
     {section:"Regional Operations", icon:"🗺️", items:["Regional Action Plans","Branch Requests","Branch Transfers","Operational Issues","Escalations","Regional Alerts","Regional Activity Log"]},
     {section:"Operations", icon:"⚙️", items:["Branch Opening","Branch Setup","Branch Requests","Operational Approvals","Operational Tasks","Process Monitoring","Compliance Checks","Operational Issues","Escalations","Operations Activity Log"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","M-Pesa Transactions"]},
     {section:"My Account", icon:"🪪", items:["View Details","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
@@ -885,7 +893,7 @@ const SIDEBAR_MENUS = {
     {section:"Business Analytics", icon:"📈", items:["Loan Sizes","Portfolio Breakdown","Targets & Accruals","Portfolio Quality","Efficiency & Productivity","Personnel Productivity","Financial Management","Profitability","Dormancy Analysis","Regional Collection","Disbursement Analysis","Regional PAR & Risk Analysis"]},
     {section:"Regional Operations", icon:"🗺️", items:["Regional Action Plans","Branch Requests","Branch Transfers","Operational Issues","Escalations","Regional Alerts","Regional Activity Log"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"My Account", icon:"🪪", items:["View Details","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
@@ -923,7 +931,7 @@ const SIDEBAR_MENUS = {
     {section:"Financial Analytics", icon:"📈", items:["Revenue Analysis","Expense Analysis","Profitability Analysis","Cashflow Analysis","Portfolio Financial Analysis","Collection Analysis","Disbursement Analysis","Fees & Charges Analysis","Penalties Analysis","Financial Performance"]},
     {section:"Financial Controls", icon:"🛡️", items:["Transaction Verification","Payment Verification","Loan Financial Validation","Reconciliation","Variance Analysis","Suspense Accounts","Adjustments","Refunds","Write-Offs","Control Exceptions"]},
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Data Quality","View Client"]},
-    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Financial Validation","Loan Portfolio Monitoring","View Loans"]},
+    {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Financial Validation","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","Refunds","Payment Adjustments","M-Pesa Transactions","M-Pesa B2C Requests"]},
     {section:"Financial Reports", icon:"📑", items:["Daily Financial Report","Cashflow Report","Income Statement","Balance Sheet","Trial Balance","General Ledger Report","Receivables Report","Payables Report","Loan Portfolio Report","Reconciliation Reports"]},
     {section:"Investor Accounts", icon:"💼", items:["Investor Directory","Investor Statements","Investor Ledger","Obligations"]},
@@ -1012,6 +1020,7 @@ const SIDEBAR_MENUS = {
    prototype doesn't implement yet, it opens an honestly-labeled
    placeholder instead of pretending or crashing. */
 const LABEL_ROUTES = {
+  "Undisbursed Loans": {section:"loanbook", subtab:"Undisbursed Loans"},
   // Pages that used to be reachable only through a module's top tab bar.
   // The tab bars are gone (every page is its own sidebar item), so each of
   // these sidebar labels now opens its real page directly.
@@ -3510,6 +3519,7 @@ function renderSection(){
     case "intelligence": return renderIntelligence();
     case "admin": return renderAdminSection();
     case "regional": return renderRegionalSection();
+    case "hr": return renderHrSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -4931,7 +4941,7 @@ function admListBody(spec, label){
   const items = admData('lookup:' + spec.key, '/api/admin/lookups/' + spec.key, r => r.items);
   if(items === undefined) return admLoading();
   if(items.__error) return admError(items.__error);
-  const canEdit = admIsAdmin();
+  const canEdit = admCanEditList(spec);
   const editing = session.admEdit && session.admEdit.key === spec.key ? items.find(i => i.id === session.admEdit.id) : null;
   const sing = spec.singular || 'item';
   const ev = editing ? Object.assign({ name: editing.name, code: editing.code, description: editing.description }, editing.attrs) : admDefaults(spec.cols);
@@ -4954,7 +4964,7 @@ function admListBody(spec, label){
       </form>
     </div></div></div>` : ''}
     <div class="card">
-      <div class="card-title"><span>${escapeHtml(label)} <small>${items.length} total · ${active} active</small></span>${items.length ? admExportBtn(exportFn) : ''}</div>
+      <div class="card-title"><span>${escapeHtml(label)} <small>${items.length} total · ${active} active</small></span>${admExportBtn(exportFn)}</div>
       ${admTable(['Name','Code'].concat(spec.cols.filter(c => c.type !== 'textarea').map(c => c.label), ['Description','Status'], canEdit ? [''] : []),
         items.map(it => [`<strong>${escapeHtml(it.name)}</strong>`, escapeHtml(it.code || '')]
           .concat(spec.cols.filter(c => c.type !== 'textarea').map(c => colVal(it, c)),
@@ -4967,12 +4977,19 @@ function admListBody(spec, label){
         `No ${sing}s added yet.${canEdit ? ` Add the first one above.` : ''}`)}
     </div>`;
 }
-function admListSpec(){ const s = ADMIN_PAGES[session.subtab]; return s && s.type === 'list' ? s : null; }
+// Reference lists HR keeps (the server allows HR to write exactly these).
+const HR_LIST_KEYS = ['job-titles','job-grades','employment-types','leave-types','allowances','deductions','salary-components','training-categories','benefit-types'];
+const admCanEditList = spec => admIsAdmin() || (HR_LIST_KEYS.includes(spec.key) && typeof hrHas === 'function' && hrHas('manage_hr'));
+function admListSpec(){
+  const s = ADMIN_PAGES[session.subtab]; if(s && s.type === 'list') return s;
+  const h = session.section === 'hr' && typeof HR_PAGES !== 'undefined' && HR_PAGES[session.subtab];
+  return h && h.list ? (Object.values(ADMIN_PAGES).find(p => p.type === 'list' && p.key === h.list) || null) : null;
+}
 function admEditItem(id){ const s = admListSpec(); if(!s) return; session.admEdit = { key: s.key, id }; renderApp(); }
 function admCancelEdit(){ session.admEdit = null; if(session.openForms) Object.keys(session.openForms).forEach(k => { if(k.startsWith('adm-')) delete session.openForms[k]; }); renderApp(); }
 async function admSaveItem(ev){
   ev.preventDefault();
-  const spec = admListSpec(); if(!spec || !admIsAdmin()) return false;
+  const spec = admListSpec(); if(!spec || !admCanEditList(spec)) return false;
   const fd = new FormData(ev.target);
   const name = String(fd.get('name') || '').trim();
   if(!name){ toast('Name is required.'); return false; }
@@ -4985,7 +5002,7 @@ async function admSaveItem(ev){
     if(editing) await api.put(`/api/admin/lookups/${spec.key}/${editing}`, body);
     else await api.post(`/api/admin/lookups/${spec.key}`, body);
     session.admEdit = null;
-    admForget('lookup:' + spec.key);
+    admForget('lookup:' + spec.key); admForget('hr:list:' + spec.key);
   }, { mutates: true });
   return false;
 }
@@ -4994,7 +5011,7 @@ async function admToggleItem(id){
   const it = ((DB.adm || {})['lookup:' + spec.key] || []).find(i => i.id === id); if(!it) return;
   await withRequest('adm-toggle-' + id, async ()=>{
     await api.put(`/api/admin/lookups/${spec.key}/${id}`, { status: it.status === 'Active' ? 'Inactive' : 'Active' });
-    admForget('lookup:' + spec.key);
+    admForget('lookup:' + spec.key); admForget('hr:list:' + spec.key);
   });
 }
 async function admDeleteItem(id){
@@ -5004,7 +5021,7 @@ async function admDeleteItem(id){
   await withRequest('adm-del-' + id, async ()=>{
     await api.del(`/api/admin/lookups/${spec.key}/${id}`);
     if(session.admEdit && session.admEdit.id === id) session.admEdit = null;
-    admForget('lookup:' + spec.key);
+    admForget('lookup:' + spec.key); admForget('hr:list:' + spec.key);
   });
 }
 
@@ -5211,7 +5228,7 @@ const ADMIN_VIEWS = {
   accessApprovals: () => { const items = admData('lookup:access-requests', '/api/admin/lookups/access-requests', r => r.items);
     if(items === undefined) return admLoading(); if(items.__error) return admError(items.__error);
     const pending = items.filter(i => (i.attrs.decision || 'Pending') === 'Pending'); const decided = items.filter(i => (i.attrs.decision || 'Pending') !== 'Pending');
-    return `<div class="card"><div class="card-title">Pending <small>${pending.length}</small></div>
+    return `${hrAdminAccessCard()}<div class="card"><div class="card-title">Pending <small>${pending.length}</small></div>
       ${admTable(['Request','For','Access',''], pending.map(i => [`<strong>${escapeHtml(i.name)}</strong><div class="hint">${escapeHtml(i.description || '')}</div>`, escapeHtml(i.attrs.user || '—'), escapeHtml(i.attrs.access || '—'),
         admIsAdmin() ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="admDecideAccess('${i.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="admDecideAccess('${i.id}','Rejected')">Reject</button></div>` : '']), 'No access requests are waiting.')}
       <div class="hint" style="margin-top:8px;">Log new requests under Access Requests. Approving records the decision; grant the access itself under Role Permissions or the user's profile.</div></div>
@@ -5850,6 +5867,1225 @@ const RG_BIZ_PERF_ITEMS = ["Portfolio Quality","Efficiency & Productivity","Pers
 // Business Performance's six sections are separate sidebar items for the
 // Regional Manager rather than a menu inside one page.
 Object.assign(ROLE_ROUTE_OVERRIDES["Regional Manager"], Object.fromEntries(RG_BIZ_PERF_ITEMS.map(k => [k, {section:"business-analytics", subtab:k}])));
+
+/* ================= Human Resources pages =================
+   Every HR sidebar submenu is one of these pages, built on the same chassis
+   as the Admin and Regional pages: section eyebrow, bold blue title and
+   subtitle, create forms behind a "+ New …" button, tables, charts (never
+   donuts) and a Generate (PDF / Excel) control on every table. */
+const HR_KINDS = {
+  vacancy:            { statuses:['Open','On Hold','Filled','Closed'], open:['Open','On Hold'] },
+  application:        { statuses:['Received','Shortlisted','Interview','Offered','Hired','Rejected','Withdrawn'], open:['Received','Shortlisted','Interview','Offered'] },
+  interview:          { statuses:['Scheduled','Completed','Cancelled','No-show'], open:['Scheduled'] },
+  review:             { statuses:['Draft','Submitted','Acknowledged','Closed'], open:['Draft','Submitted'] },
+  appraisal:          { statuses:['Draft','Submitted','Acknowledged','Closed'], open:['Draft','Submitted'] },
+  perf_plan:          { statuses:['Active','Completed','Cancelled'], open:['Active'] },
+  pip:                { statuses:['Active','Extended','Successful','Unsuccessful','Cancelled'], open:['Active','Extended'] },
+  benefit:            { statuses:['Active','Suspended','Ended'], open:['Active','Suspended'] },
+  welfare:            { statuses:['Requested','Approved','Paid','Rejected'], open:['Requested','Approved'] },
+  training_program:   { statuses:['Planned','Ongoing','Completed','Cancelled'], open:['Planned','Ongoing'] },
+  training_request:   { statuses:['Pending','Approved','Rejected','Completed'], open:['Pending','Approved'] },
+  training_enrolment: { statuses:['Enrolled','Completed','Failed','Withdrawn'], open:['Enrolled'] },
+  skill:              { statuses:['Active','Archived'], open:['Active'] },
+  case_request:       { statuses:['Open','In Progress','Resolved','Closed','Withdrawn'], open:['Open','In Progress'] },
+  case_complaint:     { statuses:['Open','Under Investigation','Resolved','Closed','Withdrawn'], open:['Open','Under Investigation'] },
+  case_grievance:     { statuses:['Open','Under Investigation','Hearing','Resolved','Closed','Withdrawn'], open:['Open','Under Investigation','Hearing'] },
+  case_disciplinary:  { statuses:['Open','Under Investigation','Hearing','Resolved','Closed'], open:['Open','Under Investigation','Hearing'] },
+  employee_document:  { statuses:['Valid','Expired','Missing'], open:['Valid'] },
+  compliance_item:    { statuses:['Pending','Done','Missed'], open:['Pending'] },
+  policy:             { statuses:['Draft','Active','Retired'], open:['Draft','Active'] },
+  hr_document:        { statuses:['Current','Archived'], open:['Current'] },
+  transfer:           { statuses:['Requested','Approved','Rejected','Completed'], open:['Requested','Approved'] },
+  access_request:     { statuses:['Pending','Approved','Rejected'], open:['Pending'] },
+};
+// Which statuses each workflow can move to next (shown as buttons).
+const HR_NEXT = {
+  vacancy: { Open:['On Hold','Filled','Closed'], 'On Hold':['Open','Closed'] },
+  application: { Received:['Shortlisted','Rejected'], Shortlisted:['Interview','Rejected'], Interview:['Offered','Rejected'], Offered:['Hired','Withdrawn'] },
+  interview: { Scheduled:['Completed','No-show','Cancelled'] },
+  review: { Draft:['Submitted'], Submitted:['Acknowledged'], Acknowledged:['Closed'] },
+  appraisal: { Draft:['Submitted'], Submitted:['Acknowledged'], Acknowledged:['Closed'] },
+  perf_plan: { Active:['Completed','Cancelled'] },
+  pip: { Active:['Extended','Successful','Unsuccessful','Cancelled'], Extended:['Successful','Unsuccessful'] },
+  benefit: { Active:['Suspended','Ended'], Suspended:['Active','Ended'] },
+  welfare: { Requested:['Approved','Rejected'], Approved:['Paid'] },
+  training_program: { Planned:['Ongoing','Cancelled'], Ongoing:['Completed'] },
+  training_request: { Pending:['Approved','Rejected'], Approved:['Completed'] },
+  training_enrolment: { Enrolled:['Completed','Failed','Withdrawn'] },
+  skill: { Active:['Archived'] },
+  case_request: { Open:['In Progress','Resolved','Withdrawn'], 'In Progress':['Resolved'], Resolved:['Closed'] },
+  case_complaint: { Open:['Under Investigation','Resolved','Withdrawn'], 'Under Investigation':['Resolved'], Resolved:['Closed'] },
+  case_grievance: { Open:['Under Investigation','Withdrawn'], 'Under Investigation':['Hearing','Resolved'], Hearing:['Resolved'], Resolved:['Closed'] },
+  case_disciplinary: { Open:['Under Investigation'], 'Under Investigation':['Hearing','Resolved'], Hearing:['Resolved'], Resolved:['Closed'] },
+  employee_document: { Valid:['Expired'], Expired:['Valid'], Missing:['Valid'] },
+  compliance_item: { Pending:['Done','Missed'] },
+  policy: { Draft:['Active'], Active:['Retired'] },
+  hr_document: { Current:['Archived'] },
+  transfer: { Requested:['Approved','Rejected'], Approved:['Completed'] },
+  access_request: {},
+};
+const HR_TONE = { Open:'blue', 'On Hold':'amber', Filled:'green', Closed:'grey', Received:'blue', Shortlisted:'amber', Interview:'amber', Offered:'blue', Hired:'green', Rejected:'red', Withdrawn:'grey',
+  Scheduled:'blue', Completed:'green', Cancelled:'grey', 'No-show':'red', Draft:'grey', Submitted:'amber', Acknowledged:'blue', Active:'green', Extended:'amber', Successful:'green', Unsuccessful:'red',
+  Suspended:'amber', Ended:'grey', Requested:'amber', Approved:'blue', Paid:'green', Planned:'blue', Ongoing:'amber', Pending:'amber', Enrolled:'blue', Failed:'red', Archived:'grey',
+  'In Progress':'amber', Resolved:'green', 'Under Investigation':'amber', Hearing:'red', Valid:'green', Expired:'red', Missing:'red', Done:'green', Missed:'red', Retired:'grey', Current:'green' };
+const HR_PRIORITY = ['Low','Normal','High','Urgent'];
+const HR_CASE_CATEGORIES = ['Workplace conduct','Pay & benefits','Working conditions','Harassment','Discrimination','Supervisor relations','Policy breach','Other'];
+const HR_SANCTIONS = ['None','Verbal warning','Written warning','Final warning','Suspension','Dismissal'];
+const HR_BENEFIT_TYPES = ['Medical','Life insurance','Pension','Transport','Airtime','Meals','Education','Other'];
+const HR_DOC_TYPES = ['National ID','KRA PIN certificate','NSSF card','SHA/SHIF card','Academic certificate','Employment contract','Good conduct certificate','CV','Bank details','Other'];
+const HR_ACCESS_ACTIONS = ['Activate account','Suspend account','Deactivate account','Change role','Grant extra access','Reset password'];
+const HR_ATT_STATUSES = ['Present','Late','Absent','On Leave','Half Day','Remote'];
+
+/* ---- field helpers for HR forms ---- */
+const hF = (k, label, type, extra) => Object.assign({ k, label, type: type || 'text' }, extra || {});
+const hEmp = (label) => hF('employee_id', label || 'Employee', 'employee');
+const hSel = (k, label, opts, extra) => hF(k, label, 'select', Object.assign({ opts }, extra || {}));
+
+/* Record kinds as HR works with them: form fields and table columns. */
+const HR_KIND_UI = {
+  vacancy: { singular:'vacancy', titleLabel:'Job title', fields:[hSel('category','Department',()=>hrDeptNames()), hSel('data.branchId','Branch',()=>hrBranchOpts()), hF('data.positions','Positions','number',{def:1}), hSel('data.employmentType','Employment type',()=>hrListNames('employment-types',['Permanent','Contract','Casual','Internship'])), hF('end_date','Closing date','date'), hF('data.requirements','Requirements','textarea')],
+    cols:[['Vacancy',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Branch',r=>escapeHtml(r.data.branchId?branchName(r.data.branchId):'Any')],['Positions',r=>r.data.positions||1],['Applications',r=>hrCount('application',x=>x.relatedId===r.id)],['Closes',r=>escapeHtml(r.endDate||'—')]] },
+  application: { singular:'application', titleLabel:'Candidate name', fields:[hSel('related_id','Vacancy',()=>hrRecOpts('vacancy')), hF('data.phone','Phone','tel'), hF('data.email','Email','email'), hF('data.source','Source',null,{def:'Walk-in'}), hF('score','Screening score (0–100)','number'), hF('data.notes','Notes','textarea')],
+    cols:[['Candidate',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml([r.data.phone,r.data.email].filter(Boolean).join(' · '))}</div>`],['Vacancy',r=>escapeHtml(hrRecTitle(r.relatedId))],['Score',r=>r.score!=null?r.score:'—'],['Received',r=>escapeHtml(String(r.createdAt).slice(0,10))]] },
+  interview: { singular:'interview', titleLabel:'Interview (e.g. Panel interview)', fields:[hSel('related_id','Candidate',()=>hrRecOpts('application',x=>['Shortlisted','Interview'].includes(x.status))), hF('start_date','Date','date'), hF('data.time','Time','time'), hF('data.panel','Panel'), hF('score','Score (0–100)','number'), hF('data.feedback','Feedback','textarea')],
+    cols:[['Candidate',r=>`<strong>${escapeHtml(hrRecTitle(r.relatedId))}</strong><div class="hint">${escapeHtml(r.title)}</div>`],['Date',r=>escapeHtml((r.startDate||'—')+' '+(r.data.time||''))],['Panel',r=>escapeHtml(r.data.panel||'—')],['Score',r=>r.score!=null?r.score:'—']] },
+  review: { singular:'review', titleLabel:'Review (e.g. Q3 2026 review)', fields:[hEmp(), hF('data.period','Period',null,{def:'Q'+(Math.floor(new Date().getMonth()/3)+1)+' '+new Date().getFullYear()}), hF('score','Rating score (0–100)','number'), hF('data.strengths','Strengths','textarea'), hF('data.improvements','Areas to improve','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Review',r=>escapeHtml(r.title)],['Period',r=>escapeHtml(r.data.period||'—')],['Score',r=>hrScore(r.score)]] },
+  appraisal: { singular:'appraisal', titleLabel:'Appraisal (e.g. Annual appraisal 2026)', fields:[hEmp(), hF('data.period','Year',null,{def:String(new Date().getFullYear())}), hF('score','Overall score (0–100)','number'), hSel('data.recommendation','Recommendation',['Confirm','Promote','Salary increment','Training','Performance plan','No change']), hF('data.comments','Comments','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Appraisal',r=>escapeHtml(r.title)],['Score',r=>hrScore(r.score)],['Recommendation',r=>escapeHtml(r.data.recommendation||'—')]] },
+  perf_plan: { singular:'performance plan', titleLabel:'Objective', fields:[hEmp(), hF('start_date','Start','date'), hF('end_date','Due','date'), hF('data.measure','How it is measured'), hF('data.target','Target')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Objective',r=>escapeHtml(r.title)],['Measure / target',r=>escapeHtml([r.data.measure,r.data.target].filter(Boolean).join(' — ')||'—')],['Due',r=>hrDue(r)]] },
+  pip: { singular:'improvement plan', titleLabel:'Improvement area', fields:[hEmp(), hF('start_date','Start','date'), hF('end_date','Review date','date'), hF('data.expectations','Expected improvement','textarea'), hF('data.support','Support provided','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Area',r=>escapeHtml(r.title)],['Started',r=>escapeHtml(r.startDate||'—')],['Review',r=>hrDue(r)]] },
+  benefit: { singular:'benefit', titleLabel:'Benefit (e.g. Staff medical cover)', fields:[hEmp(), hSel('category','Benefit type',HR_BENEFIT_TYPES), hF('data.provider','Provider'), hF('amount','Monthly value (KES)','number'), hF('start_date','Start','date'), hF('end_date','End','date')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Benefit',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Provider',r=>escapeHtml(r.data.provider||'—')],['Monthly value',r=>r.amount!=null?fmt(r.amount):'—']] },
+  welfare: { singular:'welfare case', titleLabel:'Reason (e.g. Bereavement support)', fields:[hEmp(), hSel('category','Type',['Bereavement','Medical emergency','Wedding','New baby','Hardship','Other']), hF('amount','Amount (KES)','number'), hF('data.notes','Notes','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Welfare',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Amount',r=>r.amount!=null?fmt(r.amount):'—'],['Raised',r=>escapeHtml(String(r.createdAt).slice(0,10))]] },
+  training_program: { singular:'training program', titleLabel:'Program name', fields:[hSel('category','Category',()=>hrListNames('training-categories',['Credit & lending','Customer service','Compliance','Leadership','Systems','Health & safety'])), hF('data.provider','Trainer / provider'), hF('start_date','Starts','date'), hF('end_date','Ends','date'), hF('amount','Cost (KES)','number'), hF('data.capacity','Capacity','number')],
+    cols:[['Program',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Provider',r=>escapeHtml(r.data.provider||'—')],['Dates',r=>escapeHtml(`${r.startDate||'—'} → ${r.endDate||'—'}`)],['Enrolled',r=>hrCount('training_enrolment',x=>x.relatedId===r.id)+(r.data.capacity?' / '+r.data.capacity:'')],['Cost',r=>r.amount!=null?fmt(r.amount):'—']] },
+  training_request: { singular:'training request', titleLabel:'Training needed', fields:[hEmp(), hSel('category','Category',()=>hrListNames('training-categories',['Credit & lending','Customer service','Compliance','Leadership','Systems','Health & safety'])), hF('amount','Estimated cost (KES)','number'), hF('data.reason','Why it is needed','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Request',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Cost',r=>r.amount!=null?fmt(r.amount):'—'],['Raised',r=>escapeHtml(String(r.createdAt).slice(0,10))]] },
+  training_enrolment: { singular:'enrolment', titleLabel:'Enrolment note', fields:[hEmp(), hSel('related_id','Program',()=>hrRecOpts('training_program',x=>x.isOpen)), hF('score','Assessment score (0–100)','number')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Program',r=>escapeHtml(hrRecTitle(r.relatedId))],['Score',r=>hrScore(r.score)],['Enrolled',r=>escapeHtml(String(r.createdAt).slice(0,10))]] },
+  skill: { singular:'skill', titleLabel:'Skill / competency', fields:[hEmp(), hSel('category','Area',['Credit analysis','Collections','Customer service','Sales','Leadership','Systems','Compliance','Communication']), hF('score','Proficiency (0–100)','number'), hF('end_date','Certified until','date')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Skill',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Proficiency',r=>hrScore(r.score)],['Certified until',r=>escapeHtml(r.endDate||'—')]] },
+  employee_document: { singular:'employee document', titleLabel:'Document name', fields:[hEmp(), hSel('category','Document type',HR_DOC_TYPES), hF('data.number','Document number'), hF('end_date','Expiry date','date'), hF('data.location','Stored at / link')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Document',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Number',r=>escapeHtml(r.data.number||'—')],['Expires',r=>hrExpiry(r.endDate)]] },
+  compliance_item: { singular:'compliance task', titleLabel:'Obligation (e.g. File PAYE returns)', fields:[hSel('category','Area',['PAYE (KRA)','NSSF','SHIF','Housing levy','NITA','Work permits','Contracts','Policies','Other']), hF('end_date','Due date','date'), hF('data.owner','Responsible person'), hF('data.notes','Notes','textarea')],
+    cols:[['Obligation',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Due',r=>hrDue(r)],['Owner',r=>escapeHtml(r.data.owner||'—')]] },
+  policy: { singular:'policy', titleLabel:'Policy name', fields:[hSel('category','Area',['Conduct','Leave','Recruitment','Pay & benefits','Health & safety','Data protection','Anti-fraud','Other']), hF('data.version','Version',null,{def:'1.0'}), hF('start_date','Effective from','date'), hF('data.summary','Summary','textarea')],
+    cols:[['Policy',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')} · v${escapeHtml(r.data.version||'1.0')}</div>`],['Effective',r=>escapeHtml(r.startDate||'—')],['Acknowledged',r=>hrPolicyAck(r)]] },
+  hr_document: { singular:'HR document', titleLabel:'Document name', fields:[hSel('category','Type',['Handbook','Form','Template','Procedure','Org chart','Other']), hF('data.version','Version',null,{def:'1.0'}), hF('data.location','Stored at / link'), hF('data.summary','Description','textarea')],
+    cols:[['Document',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')} · v${escapeHtml(r.data.version||'1.0')}</div>`],['Location',r=>escapeHtml(r.data.location||'—')],['Added',r=>escapeHtml(String(r.createdAt).slice(0,10))]] },
+  transfer: { singular:'transfer', titleLabel:'Reason', fields:[hEmp(), hSel('data.toBranchId','Move to branch',()=>hrBranchOpts()), hF('start_date','Effective date','date')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['From → to',r=>`${escapeHtml(branchName(r.data.fromBranchId))} → <strong>${escapeHtml(branchName(r.data.toBranchId))}</strong>`],['Reason',r=>escapeHtml(r.title)],['Effective',r=>escapeHtml(r.startDate||'—')]] },
+  access_request: { singular:'access request', titleLabel:'Reason', fields:[hEmp(), hSel('data.action','Change needed',HR_ACCESS_ACTIONS), hF('data.details','Details','textarea')],
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Change',r=>`<strong>${escapeHtml(r.data.action||'—')}</strong>`],['Reason',r=>escapeHtml(r.title)],['Raised by',r=>escapeHtml(r.createdByName||'—')]] },
+};
+['case_request','case_complaint','case_grievance','case_disciplinary'].forEach(k => {
+  HR_KIND_UI[k] = { singular: { case_request:'employee request', case_complaint:'complaint', case_grievance:'grievance', case_disciplinary:'disciplinary case' }[k], titleLabel:'Subject',
+    fields:[hEmp(k === 'case_disciplinary' ? 'Employee concerned' : 'Raised by (employee)'), hSel('category','Category', k === 'case_request' ? ['Letter / certificate','Payslip copy','Schedule change','Equipment','Information','Other'] : HR_CASE_CATEGORIES), hSel('data.priority','Priority',HR_PRIORITY,{def:'Normal'}), hF('start_date','Date raised','date'), hF('data.details','Details','textarea')]
+      .concat(k === 'case_disciplinary' ? [hSel('data.sanction','Sanction',HR_SANCTIONS,{def:'None'})] : []),
+    cols:[['Employee',r=>hrEmpCell(r.employeeId)],['Subject',r=>`<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category||'')}</div>`],['Priority',r=>admBadge(r.data.priority||'Normal', {Urgent:'red',High:'amber',Normal:'blue',Low:'grey'}[r.data.priority||'Normal'])],['Raised',r=>escapeHtml(r.startDate||String(r.createdAt).slice(0,10))]]
+      .concat(k === 'case_disciplinary' ? [['Sanction',r=>escapeHtml(r.data.sanction||'None')]] : []) };
+});
+
+/* ---- data (lazy, shared with the Admin engine's loader) ---- */
+const hrData = (key, path, pick) => admData('hr:' + key, path, pick);
+const hrForget = key => admForget('hr:' + key);
+function hrRecords(){ return hrData('records', '/api/hr/records', r => r.records); }
+function hrEmployees(){ return hrData('emps', '/api/hr/employees', r => r.employees); }
+function hrList(key){ return hrData('list:' + key, '/api/admin/lookups/' + key, r => r.items); }
+// What this user may do in HR, from the permissions Admin grants on Role Permissions.
+const hrHas = perm => { const p = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.permissions; return Array.isArray(p) ? p.includes(perm) : (perm === 'approve_payroll' ? ['CEO','Director','Admin'].includes(session.role) : ['HR','Admin'].includes(session.role)); };
+const hrCanWrite = () => hrHas('manage_hr');
+const hrEmpName = id => { const e = (DB.adm && Array.isArray(DB.adm['hr:emps']) ? DB.adm['hr:emps'] : []).find(x => x.id === id); return e ? e.name : staffName(id); };
+const hrEmpCell = id => `<a href="#" onclick="admOpenUser('${id}'); return false;"><strong>${escapeHtml(hrEmpName(id))}</strong></a>`;
+const hrScore = s => s == null ? '—' : `<span class="badge ${s >= 75 ? 'green' : s >= 50 ? 'amber' : 'red'}">${Math.round(s)}</span>`;
+const hrDaysTo = d => d ? Math.round((new Date(d + 'T00:00:00') - new Date(todayISO() + 'T00:00:00')) / 86400000) : null;
+const hrDue = r => { if(!r.endDate) return '—'; const n = hrDaysTo(r.endDate); return `${escapeHtml(r.endDate)} ${r.isOpen && n < 0 ? admBadge(`${-n}d overdue`, 'red') : r.isOpen && n <= 7 ? admBadge(`${n}d left`, 'amber') : ''}`; };
+const hrExpiry = d => { if(!d) return '—'; const n = hrDaysTo(d); return `${escapeHtml(d)} ${n < 0 ? admBadge('Expired', 'red') : n <= 30 ? admBadge(`${n}d left`, 'amber') : ''}`; };
+function hrRecs(kind, pred){ const r = DB.adm && Array.isArray(DB.adm['hr:records']) ? DB.adm['hr:records'] : []; return r.filter(x => (!kind || (Array.isArray(kind) ? kind.includes(x.kind) : x.kind === kind)) && (!pred || pred(x))); }
+const hrCount = (kind, pred) => hrRecs(kind, pred).length;
+const hrRecTitle = id => { const r = hrRecs(null, x => x.id === id)[0]; return r ? r.title : '—'; };
+const hrRecOpts = (kind, pred) => [{ v:'', l:'Choose…' }].concat(hrRecs(kind, pred).map(r => ({ v: r.id, l: r.title + (r.kind === 'application' ? ` (${hrRecTitle(r.relatedId)})` : '') })));
+const hrDeptNames = () => (DB.departments || []).map(d => d.name).concat(['Other']);
+const hrBranchOpts = () => [{ v:'', l:'Choose…' }].concat((DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(b => ({ v: b.id, l: b.name })));
+const hrListNames = (key, defs) => { const l = DB.adm && Array.isArray(DB.adm['hr:list:' + key]) ? DB.adm['hr:list:' + key].filter(i => i.status === 'Active').map(i => i.name) : []; return l.length ? l : defs; };
+function hrPolicyAck(p){ const active = (hrEmployees() || []).filter ? (hrEmployees() || []).filter(e => e.status === 'Active').length : 0; const n = hrCount('policy_ack', x => x.relatedId === p.id); return `${n}${active ? ' / ' + active : ''}`; }
+function hrActiveEmps(){ const e = hrEmployees(); return Array.isArray(e) ? e.filter(x => x.status !== 'Terminated') : []; }
+function hrGen(title, headers, rows){ return generateMenuHtml(title, () => ({ headers, rows })); }
+const hrLeaveDays = (a, b) => { let n = 0; const d = new Date(a + 'T00:00:00'), e = new Date(b + 'T00:00:00'); for(; d <= e; d.setDate(d.getDate() + 1)) if(d.getDay() !== 0) n++; return n; };
+
+/* ---- page registry ---- */
+const HR_SECTION_OF = {};
+const HR_PAGES = {
+  // Employees
+  "Employee Profiles": { view:'profiles', sub:"Every employee's profile at a glance." },
+  "Employee Transfers": { records:'transfer', sub:'Move staff between branches; completing a transfer updates their branch.' },
+  "Employee Documents": { records:'employee_document', sub:'Statutory and personal documents held for each employee, with expiry tracking.' },
+  "Employee Status": { view:'empStatus', sub:'Employment standing of every employee — active, on leave, suspended or terminated.' },
+  "Employee Directory": { view:'directory', sub:'Contacts and placement of every employee.' },
+  "Employee History": { view:'empHistory', sub:'Every change made to employee records, newest first.' },
+  // User & Access Management
+  "User Accounts": { view:'accounts', sub:'Each employee\'s system login and its state.' },
+  "User Profiles": { view:'profiles', sub:'Profile cards for every user.' },
+  "Roles & Permissions": { view:'roles', sub:'The roles in the system and what each one can reach.' },
+  "Role Assignments": { view:'roleAssign', sub:'Who holds which role.' },
+  "Access Requests": { records:'access_request', sub:'Ask the System Administrator to activate, suspend or change an account.' },
+  "Access Approvals": { view:'accessApprovals', sub:'Decisions on HR\'s access requests. The System Administrator decides; approved account changes take effect immediately.' },
+  "Account Activation": { view:'accountAct', sub:'Accounts that are not active, and requests to activate them.' },
+  "Account Suspension": { view:'accountSusp', sub:'Request an account suspension; suspended accounts are listed here.' },
+  "Password & Security": { view:'pwSecurity', sub:'Password rules and accounts that need attention.' },
+  "Login Activity": { view:'logins', sub:'Every staff sign-in attempt.' },
+  "Access Audit Log": { view:'peopleAudit', modules:['users','auth'], sub:'Changes to accounts, roles and access.' },
+  "User Access Reports": { view:'accessReport', sub:'Accounts and access by role and branch.' },
+  // Recruitment
+  "Job Vacancies": { records:'vacancy', sub:'Open positions and how many applications each has.' },
+  "Create Vacancy": { records:'vacancy', openForm:true, sub:'Advertise a new position.' },
+  "Applications": { records:'application', sub:'Candidates who applied, by vacancy.' },
+  "Shortlisted Candidates": { records:'application', filter: r => ['Shortlisted','Interview'].includes(r.status), noForm:true, sub:'Candidates moved forward for interview.' },
+  "Interviews": { records:'interview', sub:'Scheduled and completed interviews.' },
+  "Recruitment Pipeline": { view:'pipeline', sub:'How candidates move from application to hire.' },
+  "Hiring Decisions": { records:'application', filter: r => ['Interview','Offered','Hired','Rejected'].includes(r.status), noForm:true, sub:'Offer, hire or reject interviewed candidates.' },
+  // Attendance
+  "Attendance Overview": { view:'attOverview', sub:'Today\'s attendance and the last two weeks.' },
+  "Daily Attendance": { view:'attDaily', sub:'Record who is in, late, absent or on leave for a day.' },
+  "Attendance Records": { view:'attRecords', sub:'All recorded attendance, filterable by date and employee.' },
+  "Late Arrivals": { view:'attRecords', status:'Late', sub:'Employees who reported late.' },
+  "Absence Tracking": { view:'attAbsence', sub:'Absences by employee this month.' },
+  "Attendance Exceptions": { view:'attExceptions', sub:'Absences without approved leave and incomplete records.' },
+  "Attendance Reports": { view:'attReport', sub:'Monthly attendance summary per employee.' },
+  // Leave Management
+  "Leave Applications": { view:'leave', filter:'all', sub:'Every leave application.' },
+  "Pending Leave Requests": { view:'leave', filter:'Pending', sub:'Leave waiting for a decision.' },
+  "Approved Leave": { view:'leave', filter:'Approved', sub:'Leave that has been approved.' },
+  "Leave Calendar": { view:'leaveCalendar', sub:'Who is away on each day of the month.' },
+  "Leave Balances": { view:'leaveBalances', sub:'Entitlement, days taken and balance for each employee.' },
+  "Leave Types": { list:'leave-types', sub:'Leave entitlements under the Employment Act.' },
+  "Leave Reports": { view:'leaveReport', sub:'Leave taken by type and month.' },
+  // Payroll
+  "Payroll Overview": { view:'payOverview', sub:'The latest payroll and the trend of recent months.' },
+  "Employee Salaries": { view:'salaries', sub:'Basic salary and statutory numbers for each employee.' },
+  "Payroll Processing": { view:'payProcessing', sub:'Run a month\'s payroll, review it, send it for approval and mark it paid.' },
+  "Salary Advances": { view:'advances', sub:'Salary advance requests and their recovery through payroll.' },
+  "Allowances": { list:'allowances', sub:'Allowances paid on top of basic salary.' },
+  "Deductions": { list:'deductions', sub:'Statutory and voluntary deductions.' },
+  "Payslips": { view:'payslips', sub:'Each employee\'s payslip for a payroll month.' },
+  "Payroll History": { view:'payHistory', sub:'Every payroll run.' },
+  "Payroll Reports": { view:'payReport', sub:'Statutory remittances (PAYE, NSSF, SHIF) and totals per month.' },
+  // Performance Management
+  "Performance Reviews": { records:'review', sub:'Periodic reviews and ratings.' },
+  "Staff Targets": { view:'staffTargets', sub:'Lending targets set for staff and how far each has got.' },
+  "Performance Plans": { records:'perf_plan', sub:'Objectives agreed with each employee.' },
+  "Performance Tracking": { view:'perfTracking', sub:'Targets, achievement and ratings per employee.' },
+  "Appraisals": { records:'appraisal', sub:'Annual appraisals and recommendations.' },
+  "Performance Improvement Plans": { records:'pip', sub:'Structured plans for employees below expectations.' },
+  "Performance Reports": { view:'perfReport', sub:'Rating distribution and averages.' },
+  // Employee Benefits
+  "Benefits Overview": { view:'benefitsOverview', sub:'Benefits in place and what they cost each month.' },
+  "Employee Benefits": { records:'benefit', sub:'Benefits each employee is enrolled in.' },
+  "Medical Benefits": { records:'benefit', filter: r => r.category === 'Medical', category:'Medical', sub:'Medical cover per employee.' },
+  "Staff Welfare": { records:'welfare', sub:'Welfare support requested and paid.' },
+  "Benefits Reports": { view:'benefitsReport', sub:'Benefit cost by type and month.' },
+  // Training & Development
+  "Training Programs": { records:'training_program', sub:'Programs offered to staff.' },
+  "Training Requests": { records:'training_request', sub:'Training staff have asked for.' },
+  "Training Calendar": { view:'trainingCalendar', sub:'Programs by month.' },
+  "Employee Training": { records:'training_enrolment', sub:'Who is enrolled on which program, and results.' },
+  "Skills & Competencies": { records:'skill', sub:'Skills held by each employee and their proficiency.' },
+  "Training Reports": { view:'trainingReport', sub:'Training activity, completion and cost.' },
+  // Employee Relations
+  "Employee Requests": { records:'case_request', sub:'Requests staff raise with HR.' },
+  "Complaints": { records:'case_complaint', sub:'Complaints raised by staff.' },
+  "Grievances": { records:'case_grievance', sub:'Formal grievances and their hearings.' },
+  "Disciplinary Cases": { records:'case_disciplinary', sub:'Disciplinary matters and sanctions.' },
+  "Employee Relations": { view:'relations', sub:'All employee relations cases at a glance.' },
+  "Resolutions": { view:'caseList', closed:true, sub:'Cases that have been resolved, with outcomes.' },
+  "Case History": { view:'caseList', sub:'Every employee relations case.' },
+  // HR Administration
+  "Departments": { view:'departments', sub:'Departments and their headcount.' },
+  "Job Titles": { list:'job-titles', sub:'Recognised job titles.' },
+  "Job Grades": { list:'job-grades', sub:'Grades and salary bands.' },
+  "Employment Types": { list:'employment-types', sub:'Contract types and their terms.' },
+  "Branch Assignments": { view:'branchAssign', sub:'Where every employee is posted.' },
+  "HR Policies": { records:'policy', sub:'The HR policy register and staff acknowledgements.' },
+  "HR Documents": { records:'hr_document', sub:'Handbooks, forms and templates.' },
+  // HR Analytics
+  "Workforce Analytics": { view:'workforce', sub:'The shape of the workforce.' },
+  "Headcount Analysis": { view:'headcount', sub:'Headcount by branch, department and role, and growth over time.' },
+  "Staff Turnover": { view:'turnover', sub:'Joiners and leavers by month.' },
+  "Attendance Analytics": { view:'attAnalytics', sub:'Attendance rates and lateness trends.' },
+  "Leave Analytics": { view:'leaveReport', sub:'Leave patterns across the company.' },
+  "Payroll Analytics": { view:'payReport', sub:'Payroll cost trends.' },
+  "Performance Analytics": { view:'perfReport', sub:'Performance ratings across the company.' },
+  "HR Dashboard Reports": { view:'hrSummary', sub:'One-page HR summary.' },
+  // HR Compliance
+  "Employment Compliance": { view:'empCompliance', sub:'Missing statutory details, expiring contracts and probation reviews.' },
+  "Contract Tracking": { view:'contracts', sub:'Contract start and end dates, soonest first.' },
+  "Policy Compliance": { view:'policyCompliance', sub:'Which employees have acknowledged each policy.' },
+  "Compliance Calendar": { records:'compliance_item', sub:'Statutory deadlines and HR compliance tasks.' },
+  "Compliance Reports": { view:'complianceReport', sub:'Compliance status in one report.' },
+};
+(SIDEBAR_MENUS.HR || []).forEach(sec => sec.items.forEach(item => { if(HR_PAGES[item] && !HR_SECTION_OF[item]) HR_SECTION_OF[item] = sec.section; }));
+ROLE_ROUTE_OVERRIDES.HR = Object.assign(ROLE_ROUTE_OVERRIDES.HR || {}, Object.fromEntries(Object.keys(HR_PAGES).map(l => [l, { section:'hr', subtab:l }])));
+
+/* ---- chassis ---- */
+function renderHrSection(){
+  const label = session.subtab; const spec = HR_PAGES[label];
+  if(!spec) return renderPlaceholder();
+  admExports = [];
+  hrEmployees(); hrRecords();
+  let body;
+  try{ body = spec.records ? hrRecordsPage(label, spec) : spec.list ? hrListPage(label, spec) : (HR_VIEWS[spec.view] || (() => ''))(spec, label); }
+  catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
+  return `<div class="adm-page">
+    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(HR_SECTION_OF[label] || 'Human Resources')}</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2><div class="adm-sub">${escapeHtml(spec.sub || '')}</div></div>
+    ${body}</div>`;
+}
+function hrResolveField(f){
+  if(f.type === 'employee') return Object.assign({}, f, { type:'select', opts: [{ v:'', l:'Choose…' }].concat(hrActiveEmps().map(e => ({ v: e.id, l: `${e.name} — ${ROLE_ID_TO_DISPLAY[e.role_id] || e.role_id}` }))) });
+  return typeof f.opts === 'function' ? Object.assign({}, f, { opts: f.opts() }) : f;
+}
+
+/* ---- generic record pages ---- */
+function hrRecordsPage(label, spec){
+  const kind = spec.records; const ui = HR_KIND_UI[kind];
+  const recs = hrRecords(); const emps = hrEmployees();
+  if(admPending(recs, emps)) return admLoading();
+  const failed = admFailed(recs, emps); if(failed) return admError(failed.__error);
+  let all = hrRecs(kind, spec.filter);
+  const f = (session.hrFilters = session.hrFilters || {})[label] || (session.hrFilters[label] = { status:'', q:'' });
+  const q = (f.q || '').toLowerCase();
+  const list = all.filter(r => (!f.status || r.status === f.status) && (!q || [r.title, r.employeeName, r.category].some(x => (x || '').toLowerCase().includes(q))));
+  const statuses = HR_KINDS[kind].statuses.filter(s => all.some(r => r.status === s));
+  const cols = ui.cols.concat([['Status', r => admBadge(r.status, HR_TONE[r.status] || 'grey')]]);
+  const headers = cols.map(c => c[0]);
+  const data = list.map(r => cols.map(c => String(c[1](r)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/&amp;/g, '&').trim()));
+  const byMonth = (() => { const m = {}; all.forEach(r => { const k = String(r.startDate || r.createdAt).slice(0, 7); m[k] = (m[k] || 0) + 1; }); const keys = Object.keys(m).sort().slice(-12); return [keys, keys.map(k => m[k])]; })();
+  const byCat = admGroup(all, r => r.category || (r.employeeId ? hrEmpName(r.employeeId) : r.title));
+  const formKey = 'hr-' + kind + (spec.category ? '-' + spec.category : '');
+  if(spec.openForm && !session.openForms?.[formKey] && !session.hrFormAutoOpened?.[formKey]){ session.openForms = Object.assign(session.openForms || {}, { [formKey]: true }); session.hrFormAutoOpened = Object.assign(session.hrFormAutoOpened || {}, { [formKey]: true }); }
+  return `<div class="card"><div class="card-title">Overview</div><div class="adm-tiles">
+      ${admTile('Total', all.length)}${admTile('Open', all.filter(r => r.isOpen).length)}${admTile('Closed', all.filter(r => !r.isOpen).length)}
+      ${all.some(r => r.endDate) ? admTile('Overdue / expired', all.filter(r => r.endDate && hrDaysTo(r.endDate) < 0 && (r.isOpen || kind === 'employee_document')).length) : ''}
+      ${all.some(r => r.amount != null) ? admTile('Total value', fmt(all.reduce((s, r) => s + (Number(r.amount) || 0), 0))) : ''}</div></div>
+    ${hrCanWrite() && !spec.noForm ? hrRecordForm(kind, formKey, spec) : ''}
+    ${admTwoCharts(admChart('hr-st-' + kind, 'By Status', 'pie', statuses, [{ data: statuses.map(s => all.filter(r => r.status === s).length) }]),
+      byMonth[0].length > 1 ? admChart('hr-mo-' + kind, 'By Month', 'line', byMonth[0].map(k => rgMonthLabel(k)), [{ label: 'Records', data: byMonth[1], fill: false, tension: 0.25 }]) : admChart('hr-cat-' + kind, 'By ' + (all.some(r => r.category) ? 'Category' : 'Employee'), 'bar', byCat[0].slice(0, 12), [{ label: 'Records', data: byCat[1].slice(0, 12) }]))}
+    <div class="card"><div class="card-title"><span>${escapeHtml(label)} <small>${list.length} of ${all.length}</small></span>${hrGen(label, headers, data)}</div>
+      <div class="pill-row adm-filters"><input placeholder="Search" value="${escapeHtml(f.q)}" onchange="session.hrFilters['${label.replace(/'/g, "\\'")}'].q=this.value; renderApp();">
+        <select onchange="session.hrFilters['${label.replace(/'/g, "\\'")}'].status=this.value; renderApp();"><option value="">All statuses</option>${HR_KINDS[kind].statuses.map(s => `<option ${f.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      ${admTable(headers.concat(hrCanWrite() ? [''] : []), list.map(r => cols.map(c => c[1](r)).concat(hrCanWrite() ? [hrActions(r)] : [])), `No ${ui.singular}s yet.`)}</div>`;
+}
+function hrActions(r){
+  const next = (HR_NEXT[r.kind] || {})[r.status] || [];
+  const btns = next.map(s => `<button class="btn btn-sm ${['Rejected','Cancelled','Unsuccessful','Failed','Missed','Withdrawn','Suspended','Ended'].includes(s) ? 'btn-red' : 'btn-outline'}" onclick="hrSetStatus('${r.id}','${s}')">${escapeHtml(r.kind === 'transfer' && s === 'Completed' ? 'Complete transfer' : s)}</button>`);
+  if(r.kind === 'application' && r.status === 'Hired') btns.push(`<button class="btn btn-sm btn-primary" onclick="goTo('staff','Add Employee')">Add as employee</button>`);
+  if(r.kind === 'policy' && r.status === 'Active') btns.push(`<button class="btn btn-sm btn-outline" onclick="hrAckPolicy('${r.id}')">Record acknowledgement</button>`);
+  return btns.length ? `<div class="pill-row" style="flex-wrap:nowrap;">${btns.join('')}</div>` : '';
+}
+function hrForm(kind){ session.hrForms = session.hrForms || {}; return session.hrForms[kind] || (session.hrForms[kind] = {}); }
+function hrRecordForm(kind, formKey, spec){
+  const ui = HR_KIND_UI[kind]; const v = hrForm(kind);
+  const fields = [hF('title', ui.titleLabel)].concat(ui.fields).map(hrResolveField).filter(f => !(spec.category && f.k === 'category'));
+  return `<div class="fp ${isFormOpen(formKey) ? 'fp-open' : ''}">${formToggleBtn(formKey, 'New ' + ui.singular)}<div class="fp-body"><div class="card">
+    <div class="card-title">New ${escapeHtml(ui.singular)}</div>
+    <form onsubmit="return hrCreate(event,'${kind}','${spec.category || ''}')"><div class="form-grid">${fields.map(f => admFieldHtml(f, v[f.k] !== undefined ? v[f.k] : f.def, false)).join('')}</div>
+    <button class="btn btn-primary btn-sm" type="submit">Save ${escapeHtml(ui.singular)}</button></form></div></div></div>`;
+}
+async function hrCreate(ev, kind, fixedCategory){
+  ev.preventDefault();
+  const ui = HR_KIND_UI[kind];
+  const fields = [hF('title', ui.titleLabel)].concat(ui.fields).map(hrResolveField);
+  const vals = admCollect(new FormData(ev.target), fields);
+  if(!vals.title){ toast(`${ui.titleLabel} is required.`); return false; }
+  const bad = admInvalidNumber(fields, vals); if(bad){ toast(`${bad.label}: enter a valid number.`); return false; }
+  const body = { kind, data: {} };
+  Object.entries(vals).forEach(([k, val]) => { if(k.startsWith('data.')) body.data[k.slice(5)] = val; else if(val !== '' && val !== null) body[k] = val; });
+  if(fixedCategory) body.category = fixedCategory;
+  if(ui.fields.some(f => f.type === 'employee') && !body.employee_id){ toast('Choose the employee.'); return false; }
+  await withRequest('hr-create-' + kind, async ()=>{ await api.post('/api/hr/records', body); session.hrForms[kind] = {}; hrForget('records'); }, { mutates: true });
+  return false;
+}
+async function hrSetStatus(id, status){
+  const r = hrRecs(null, x => x.id === id)[0]; if(!r) return;
+  if(r.kind === 'transfer' && status === 'Completed' && typeof confirm === 'function' && !confirm(`Move ${hrEmpName(r.employeeId)} to ${branchName(r.data.toBranchId)} now?`)) return;
+  await withRequest('hr-status-' + id, async ()=>{
+    await api.patch('/api/hr/records/' + id, { status }); hrForget('records');
+    if(r.kind === 'access_request' && status === 'Approved'){ hrForget('emps'); if(session.role === 'Admin'){ await admRefreshStaff().catch(()=>{}); admForget('stats'); } }
+    if(r.kind === 'transfer' && status === 'Completed'){ hrForget('emps'); const u = await api.get('/api/users?limit=200').catch(()=>null); if(u) DB.staff = u.users.map(adaptStaff); }
+  }, { mutates: true });
+}
+async function hrAckPolicy(policyId){
+  const name = typeof prompt === 'function' ? prompt('Employee name or staff code who acknowledged this policy:') : null;
+  if(!name) return;
+  const e = hrActiveEmps().find(x => x.name.toLowerCase() === name.trim().toLowerCase() || (x.staff_code || '').toLowerCase() === name.trim().toLowerCase());
+  if(!e){ toast('No active employee with that name or staff code.'); return; }
+  await withRequest('hr-ack-' + policyId, async ()=>{ await api.post('/api/hr/records', { kind:'policy_ack', title:'Policy acknowledged', employee_id: e.id, related_id: policyId }); hrForget('records'); }, { mutates: true });
+}
+
+/* ---- reference lists HR maintains (reuses the Admin list engine) ---- */
+function hrListPage(label, spec){
+  const adminSpec = Object.values(ADMIN_PAGES).find(p => p.type === 'list' && p.key === spec.list) || { key: spec.list, singular: 'item', cols: [] };
+  return admListBody(Object.assign({}, adminSpec, { key: spec.list }), label);
+}
+
+
+/* ---- more data sources ---- */
+const hrAtt = (from, to) => hrData(`att:${from}:${to}`, `/api/hr/attendance?from=${from}&to=${to}`, r => r.records);
+const hrLeave = () => hrData('leave', '/api/leave-requests', r => r.leaveRequests);
+const hrAdv = () => hrData('adv', '/api/salary-advances', r => r.salaryAdvances);
+const hrRuns = () => hrData('runs', '/api/hr/payroll/runs', r => r.runs);
+const hrRun = id => hrData('run:' + id, '/api/hr/payroll/runs/' + id);
+const hrDepts = () => hrData('depts', '/api/hr/departments', r => r.departments);
+const hrLogins = () => hrData('logins', '/api/hr/login-activity', r => r.events);
+const hrAudit = () => hrData('audit', '/api/hr/people-audit', r => r.entries);
+const hrRoles = () => hrData('roles', '/api/roles?with_counts=1', r => r.roles);
+// One loading / error guard for any number of sources: null when all are ready.
+function hrGuard(...vals){ if(admPending(...vals)) return admLoading(); const f = admFailed(...vals); return f ? admError(f.__error) : null; }
+const hrRole = e => ROLE_ID_TO_DISPLAY[e.role_id] || e.role_id || '—';
+const hrDeptName = id => { const d = (DB.departments || []).find(x => x.id === id) || (Array.isArray(DB.adm && DB.adm['hr:depts']) ? DB.adm['hr:depts'] : []).find(x => x.id === id); return d ? d.name : '—'; };
+const hrPlain = v => String(v == null ? '' : v).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+// A table card with its Generate control: cols = [[heading, row => html], …].
+function hrTableCard(title, list, cols, emptyText, extraHead){
+  const headers = cols.map(c => c[0]);
+  return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${list.length}</small></span>${hrGen(title, headers, list.map(r => cols.map(c => hrPlain(c[1](r)))))}</div>
+    ${extraHead || ''}${admTable(headers, list.map(r => cols.map(c => c[1](r))), emptyText)}</div>`;
+}
+const hrTiles = tiles => `<div class="card"><div class="card-title">Overview</div><div class="adm-tiles">${tiles.map(t => admTile(t[0], t[1], t[2])).join('')}</div></div>`;
+const hrMonthKeys = n => { const out = []; const d = new Date(); d.setDate(1); for(let i = n - 1; i >= 0; i--){ const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`); } return out; };
+const hrMonthStart = (k) => k + '-01';
+const hrMonthEnd = (k) => { const [y, m] = k.split('-').map(Number); return `${k}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
+const hrThisMonth = () => todayISO().slice(0, 7);
+const hrDaysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const hrFilter = (key, defs) => { session.hrFilters = session.hrFilters || {}; return session.hrFilters[key] || (session.hrFilters[key] = Object.assign({}, defs)); };
+const hrSetFilter = (key, field, val) => { hrFilter(key, {})[field] = val; renderApp(); };
+const hrSearchBox = (key, f, ph) => `<input placeholder="${escapeHtml(ph || 'Search')}" value="${escapeHtml(f.q || '')}" onchange="hrSetFilter('${key}','q',this.value)">`;
+const hrSelectBox = (key, field, f, opts, allLabel) => `<select onchange="hrSetFilter('${key}','${field}',this.value)"><option value="">${escapeHtml(allLabel)}</option>${opts.map(o => typeof o === 'object' ? o : { v: o, l: o }).map(o => `<option value="${escapeHtml(o.v)}" ${String(f[field] || '') === String(o.v) ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}</select>`;
+const hrDateBox = (key, field, f) => `<input type="date" value="${escapeHtml(f[field] || '')}" max="${todayISO()}" onchange="hrSetFilter('${key}','${field}',this.value)" style="flex:0 0 auto;">`;
+const hrMonthBox = (key, field, f) => `<input type="month" value="${escapeHtml(f[field] || '')}" onchange="hrSetFilter('${key}','${field}',this.value)" style="flex:0 0 auto;">`;
+const hrBranchList = () => (DB.branches || []).map(b => ({ v: b.id, l: b.name }));
+const hrEmpMatch = (e, q) => !q || [e.name, e.staff_code, e.email, e.phone, e.job_title, hrRole(e), branchName(e.branch_id)].some(x => (x || '').toLowerCase().includes(q.toLowerCase()));
+const hrInitials = n => String(n || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const hrTenureYears = e => e.created_at ? (Date.now() - new Date(e.created_at).getTime()) / (365.25 * 86400000) : 0;
+const hrAge = e => e.date_of_birth ? Math.floor((Date.now() - new Date(e.date_of_birth + 'T00:00:00').getTime()) / (365.25 * 86400000)) : null;
+const hrStatusTone = s => ({ Active:'green', 'On Leave':'blue', Suspended:'amber', Terminated:'red' })[s] || 'grey';
+const hrPct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const hrBar = pct => `<div style="display:flex; align-items:center; gap:8px;"><div class="adm-bar" style="flex:1;"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></div><strong>${pct}%</strong></div>`;
+const hrStacked = { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } };
+const hrHorizontal = { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } };
+const HR_ATT_TONE = { Present:'green', Late:'amber', Absent:'red', 'On Leave':'blue', 'Half Day':'amber', Remote:'blue' };
+const HR_ATT_COLOR = { Present:'#2A9D8F', Late:'#E9C46A', Absent:'#E76F51', 'On Leave':'#3D8BD9', 'Half Day':'#F4A261', Remote:'#7B5EA7' };
+// Working days (Mon–Sat) between two dates, inclusive.
+const hrWorkDays = (a, b) => { const out = []; const d = new Date(a + 'T00:00:00'), e = new Date(b + 'T00:00:00'); for(; d <= e; d.setDate(d.getDate() + 1)) if(d.getDay() !== 0) out.push(d.toISOString().slice(0, 10)); return out; };
+// Approved leave that covers a given day for an employee.
+const hrOnLeave = (leave, empId, day) => (Array.isArray(leave) ? leave : []).some(l => l.user_id === empId && l.status === 'Approved' && l.start_date <= day && l.end_date >= day);
+const hrLeaveRowDays = l => hrLeaveDays(l.start_date, l.end_date);
+
+/* ---- employee HR details form (salary, contract, statutory numbers…) ---- */
+const HR_EMP_FIELDS = {
+  job_title: () => hSel('job_title', 'Job title', [{ v:'', l:'—' }].concat(hrListNames('job-titles', ['Loan Officer','Branch Manager','Accountant','HR Officer','Teller','Driver','Cleaner']).map(n => ({ v: n, l: n })))),
+  department_id: () => hSel('department_id', 'Department', [{ v:'', l:'—' }].concat((DB.departments || []).map(d => ({ v: d.id, l: d.name })))),
+  job_grade: () => hSel('job_grade', 'Job grade', [{ v:'', l:'—' }].concat(hrListNames('job-grades', ['Grade 1','Grade 2','Grade 3','Grade 4','Grade 5']).map(n => ({ v: n, l: n })))),
+  employment_type: () => hSel('employment_type', 'Employment type', [{ v:'', l:'—' }].concat(hrListNames('employment-types', ['Permanent','Contract','Casual','Internship']).map(n => ({ v: n, l: n })))),
+  basic_salary: () => hF('basic_salary', 'Basic salary (KES)', 'number', { min: 0 }),
+  contract_start: () => hF('contract_start', 'Contract start', 'date'),
+  contract_end: () => hF('contract_end', 'Contract end', 'date'),
+  probation_end: () => hF('probation_end', 'Probation ends', 'date'),
+  kra_pin: () => hF('kra_pin', 'KRA PIN'),
+  nssf_no: () => hF('nssf_no', 'NSSF number'),
+  sha_no: () => hF('sha_no', 'SHA / SHIF number'),
+  leave_days_balance: () => hF('leave_days_balance', 'Leave days balance', 'number', { min: 0, max: 365 }),
+};
+// Staff HR cannot edit (the System Administrator, CEO and Directors).
+const hrEditable = e => !['admin','ceo','director'].includes(e.role_id) || session.role === 'Admin';
+function hrEmpEditForm(formKey, title, keys){
+  if(!hrCanWrite()) return '';
+  hrList('job-titles'); hrList('job-grades'); hrList('employment-types');
+  const st = hrFilter('edit:' + formKey, { emp: '' });
+  const emps = hrActiveEmps().filter(hrEditable);
+  const e = emps.find(x => x.id === st.emp);
+  const fields = keys.map(k => HR_EMP_FIELDS[k]());
+  return `<div class="fp ${isFormOpen(formKey) ? 'fp-open' : ''}">${formToggleBtn(formKey, title)}<div class="fp-body"><div class="card">
+    <div class="card-title">${escapeHtml(title)}</div>
+    <form onsubmit="return hrSaveEmp(event,'${formKey}','${keys.join(',')}')"><div class="form-grid">
+      <div class="field"><label>Employee</label><select name="employee" onchange="hrFilter('edit:${formKey}',{}).emp=this.value; renderApp();"><option value="">Choose…</option>${emps.map(x => `<option value="${x.id}" ${x.id === st.emp ? 'selected' : ''}>${escapeHtml(x.name)} — ${escapeHtml(hrRole(x))}</option>`).join('')}</select></div>
+      ${e ? fields.map(f => admFieldHtml(f, e[f.k], false)).join('') : '<div class="field full hint">Choose an employee to see and change their details.</div>'}
+    </div>${e ? `<button class="btn btn-primary btn-sm" type="submit">Save changes</button>` : ''}</form></div></div></div>`;
+}
+async function hrSaveEmp(ev, formKey, keyList){
+  ev.preventDefault();
+  const st = hrFilter('edit:' + formKey, {}); if(!st.emp){ toast('Choose the employee.'); return false; }
+  const fields = keyList.split(',').map(k => HR_EMP_FIELDS[k]());
+  const vals = admCollect(new FormData(ev.target), fields);
+  const bad = admInvalidNumber(fields, vals); if(bad){ toast(`${bad.label}: enter a valid number.`); return false; }
+  const body = {}; fields.forEach(f => { body[f.k] = vals[f.k] === null ? '' : vals[f.k]; });
+  await withRequest('hr-emp-' + st.emp, async ()=>{ await api.patch('/api/hr/employees/' + st.emp, body); st.emp = ''; hrForget('emps'); hrForget('depts'); }, { mutates: true });
+  return false;
+}
+
+/* ---- quick access requests raised from account pages ---- */
+async function hrRequestAccess(empId, action){
+  const e = hrActiveEmps().concat(hrEmployees() || []).find(x => x.id === empId); if(!e) return;
+  const reason = typeof prompt === 'function' ? prompt(`Reason to ${action.toLowerCase()} for ${e.name}:`) : action;
+  if(!reason) return;
+  await withRequest('hr-access-' + empId, async ()=>{ await api.post('/api/hr/records', { kind:'access_request', title: reason, employee_id: empId, data: { action } }); hrForget('records'); }, { mutates: true });
+}
+const hrPendingAccess = (empId, action) => hrRecs('access_request', r => r.employeeId === empId && r.status === 'Pending' && (!action || r.data.action === action)).length > 0;
+function hrAccessBtn(e, action, label, tone){
+  if(!hrCanWrite()) return '';
+  if(hrPendingAccess(e.id, action)) return admBadge('Request pending', 'amber');
+  return `<button class="btn btn-sm ${tone || 'btn-outline'}" onclick="hrRequestAccess('${e.id}','${action}')">${escapeHtml(label)}</button>`;
+}
+
+/* ---- leave & advances decisions ---- */
+async function hrDecideLeave(id, decision){
+  await withRequest('hr-leave-' + id, async ()=>{ const r = await api.post(`/api/leave-requests/${id}/decide`, { decision }); const i = (DB.leaveRequests || []).findIndex(l => l.id === id); if(i >= 0) DB.leaveRequests[i] = r.leaveRequest; hrForget('leave'); }, { mutates: true });
+}
+async function hrDecideAdvance(id, decision){
+  await withRequest('hr-adv-' + id, async ()=>{ const r = await api.post(`/api/salary-advances/${id}/decide`, { decision }); const i = (DB.salaryAdvances || []).findIndex(a => a.id === id); if(i >= 0) DB.salaryAdvances[i] = r.salaryAdvance; hrForget('adv'); }, { mutates: true });
+}
+
+/* ---- attendance register ---- */
+async function hrSaveAttendance(ev, date){
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const entries = hrActiveEmps().filter(e => fd.get('st_' + e.id)).map(e => ({ employee_id: e.id, status: fd.get('st_' + e.id), check_in: fd.get('in_' + e.id) || null, check_out: fd.get('out_' + e.id) || null,
+    minutes_late: Number(fd.get('late_' + e.id) || 0), note: fd.get('note_' + e.id) || null }));
+  if(!entries.length){ toast('Mark at least one employee.'); return false; }
+  await withRequest('hr-att-' + date, async ()=>{ await api.post('/api/hr/attendance', { date, entries }); hrForget('att:'); }, { mutates: true });
+  return false;
+}
+function hrMarkAll(status){ document.querySelectorAll('select[data-att]').forEach(s => { if(!s.value) s.value = status; }); }
+
+/* ---- payroll actions ---- */
+async function hrCreateRun(ev){
+  ev.preventDefault();
+  const period = new FormData(ev.target).get('period');
+  if(!/^\d{4}-\d{2}$/.test(period || '')){ toast('Choose the payroll month.'); return false; }
+  await withRequest('hr-run-new', async ()=>{ const r = await api.post('/api/hr/payroll/runs', { period }); hrForget('runs'); session.hrRunId = r.run.id; }, { mutates: true });
+  return false;
+}
+async function hrRecompute(id){ await withRequest('hr-run-re-' + id, async ()=>{ await api.post(`/api/hr/payroll/runs/${id}/recompute`, {}); hrForget('run'); }, { mutates: true }); }
+async function hrRunStatus(id, status){
+  if(typeof confirm === 'function' && !confirm(status === 'Paid' ? 'Mark this payroll as paid? Salaries should already have been sent.' : 'Approve this payroll?')) return;
+  await withRequest('hr-run-st-' + id, async ()=>{ await api.post(`/api/hr/payroll/runs/${id}/status`, { status }); hrForget('run'); }, { mutates: true });
+}
+const hrRunTone = s => ({ Draft:'grey', Approved:'blue', Paid:'green' })[s] || 'grey';
+
+/* ---- departments ---- */
+async function hrCreateDept(ev){
+  ev.preventDefault();
+  const name = String(new FormData(ev.target).get('name') || '').trim(); if(!name){ toast('Enter the department name.'); return false; }
+  await withRequest('hr-dept-new', async ()=>{ await api.post('/api/hr/departments', { name }); hrForget('depts'); const d = await api.get('/api/departments').catch(()=>null); if(d) DB.departments = d.departments; }, { mutates: true });
+  return false;
+}
+async function hrRenameDept(id){
+  const d = (hrDepts() || []).find(x => x.id === id); if(!d) return;
+  const name = typeof prompt === 'function' ? prompt('New name for ' + d.name + ':', d.name) : null; if(!name || name.trim() === d.name) return;
+  await withRequest('hr-dept-' + id, async ()=>{ await api.put('/api/hr/departments/' + id, { name: name.trim() }); hrForget('depts'); const r = await api.get('/api/departments').catch(()=>null); if(r) DB.departments = r.departments; }, { mutates: true });
+}
+
+/* ---- the views ---- */
+const HR_VIEWS = {
+  /* Employees */
+  profiles: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const f = hrFilter(label, { q:'', branch:'', role:'' });
+    const list = emps.filter(e => hrEmpMatch(e, f.q) && (!f.branch || e.branch_id === f.branch) && (!f.role || e.role_id === f.role));
+    const roles = [...new Set(emps.map(e => e.role_id))].map(r => ({ v: r, l: ROLE_ID_TO_DISPLAY[r] || r }));
+    const byRole = admGroup(emps.filter(e => e.status !== 'Terminated'), hrRole);
+    const cols = [['Name', e => e.name], ['Staff code', e => e.staff_code || '—'], ['Role', hrRole], ['Job title', e => e.job_title || '—'], ['Branch', e => branchName(e.branch_id)], ['Phone', e => e.phone || '—'], ['Email', e => e.email || '—'], ['Status', e => e.status]];
+    return `${hrTiles([['Employees', emps.length], ['Active', emps.filter(e => e.status === 'Active').length], ['On leave', emps.filter(e => e.status === 'On Leave').length], ['With system account', emps.filter(e => e.account_status !== 'Not Created').length]])}
+      ${admChart('hr-prof-role', 'Employees by Role', 'bar', byRole[0], [{ label: 'Employees', data: byRole[1] }])}
+      <div class="card"><div class="card-title"><span>Profiles <small>${list.length}</small></span>${hrGen(label, cols.map(c => c[0]), list.map(e => cols.map(c => hrPlain(c[1](e)))))}</div>
+        <div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search name, code, phone…')}${hrSelectBox(label, 'branch', f, hrBranchList(), 'All branches')}${hrSelectBox(label, 'role', f, roles, 'All roles')}</div>
+        ${list.length ? `<div class="adm-cards">${list.map(e => `<div class="adm-user-card" onclick="admOpenUser('${e.id}')"><div class="adm-avatar">${escapeHtml(hrInitials(e.name))}</div>
+          <div style="min-width:0;"><div class="adm-user-name">${escapeHtml(e.name)}</div><div class="hint">${escapeHtml(hrRole(e))}${e.job_title ? ' · ' + escapeHtml(e.job_title) : ''}</div>
+          <div class="hint">${escapeHtml(branchName(e.branch_id))} · ${escapeHtml(hrDeptName(e.department_id))}</div><div class="hint">${escapeHtml(e.phone || '')} ${escapeHtml(e.email || '')}</div>
+          <div style="margin-top:4px;">${admBadge(e.status, hrStatusTone(e.status))} ${admBadge('Account: ' + e.account_status, admAccountTone(e.account_status))}</div></div></div>`).join('')}</div>` : '<div class="empty">No employees match.</div>'}</div>`;
+  },
+  empStatus: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const f = hrFilter(label, { q:'', status:'' });
+    const list = emps.filter(e => hrEmpMatch(e, f.q) && (!f.status || e.status === f.status));
+    const st = admGroup(emps, e => e.status); const br = {}; emps.forEach(e => { const b = branchName(e.branch_id); br[b] = br[b] || {}; br[b][e.status] = (br[b][e.status] || 0) + 1; });
+    const brKeys = Object.keys(br).sort(); const statuses = ['Active','On Leave','Suspended','Terminated'];
+    return `${hrTiles(statuses.map(s => [s, emps.filter(e => e.status === s).length]))}
+      ${admTwoCharts(admChart('hr-st-pie', 'Employment Status', 'pie', st[0], [{ data: st[1] }]),
+        admChart('hr-st-br', 'Status by Branch', 'bar', brKeys, statuses.map((s, i) => ({ label: s, data: brKeys.map(b => br[b][s] || 0), backgroundColor: ['#2A9D8F','#3D8BD9','#E9C46A','#E76F51'][i] })), hrStacked))}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Role', hrRole], ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Employment', e => escapeHtml(e.employment_type || '—')],
+        ['Standing', e => admBadge(e.status, hrStatusTone(e.status))], ['Account', e => admBadge(e.account_status, admAccountTone(e.account_status))], ['Joined', e => escapeHtml(String(e.created_at || '').slice(0, 10))]], 'No employees match.',
+        `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'status', f, statuses, 'All standings')}</div><div class="hint" style="margin-bottom:8px;">Change an employee's standing from their profile (click the name).</div>`)}`;
+  },
+  directory: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const f = hrFilter(label, { q:'', branch:'' });
+    const list = emps.filter(e => e.status !== 'Terminated' && hrEmpMatch(e, f.q) && (!f.branch || e.branch_id === f.branch));
+    const byBranch = admGroup(emps.filter(e => e.status !== 'Terminated'), e => branchName(e.branch_id));
+    return `${admChart('hr-dir-br', 'Staff per Branch', 'bar', byBranch[0], [{ label: 'Staff', data: byBranch[1] }])}
+      ${hrTableCard(label, list, [['Name', e => hrEmpCell(e.id)], ['Staff code', e => escapeHtml(e.staff_code || '—')], ['Role', e => escapeHtml(hrRole(e))], ['Department', e => escapeHtml(hrDeptName(e.department_id))],
+        ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Phone', e => e.phone ? `<a href="tel:${escapeHtml(e.phone)}">${escapeHtml(e.phone)}</a>` : '—'], ['Email', e => e.email ? `<a href="mailto:${escapeHtml(e.email)}">${escapeHtml(e.email)}</a>` : '—'],
+        ['Reports to', e => escapeHtml(e.reporting_manager_id ? hrEmpName(e.reporting_manager_id) : '—')]], 'No employees match.',
+        `<div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search name, phone, email…')}${hrSelectBox(label, 'branch', f, hrBranchList(), 'All branches')}</div>`)}`;
+  },
+  empHistory: (spec, label) => hrAuditPage(label, e => ['hr','staff','users'].includes(e.module) || ['Employee','User','Leave','SalaryAdvance'].includes(e.record_type) || String(e.record_type || '').startsWith('HrRecord')),
+  peopleAudit: (spec, label) => hrAuditPage(label, e => ['users','auth'].includes(e.module) || ['User','Role'].includes(e.record_type) || String(e.record_type || '') === 'HrRecord:access_request'),
+
+  /* User & Access */
+  accounts: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const g = hrGuard(emps, recs); if(g) return g;
+    const f = hrFilter(label, { q:'', status:'' });
+    const list = emps.filter(e => e.status !== 'Terminated' && hrEmpMatch(e, f.q) && (!f.status || e.account_status === f.status));
+    const st = admGroup(emps.filter(e => e.status !== 'Terminated'), e => e.account_status);
+    const byRole = {}; emps.filter(e => e.account_status === 'Active').forEach(e => { byRole[hrRole(e)] = (byRole[hrRole(e)] || 0) + 1; });
+    return `${hrTiles([['Active accounts', emps.filter(e => e.account_status === 'Active').length], ['Suspended', emps.filter(e => e.account_status === 'Suspended').length], ['No account yet', emps.filter(e => e.account_status === 'Not Created' && e.status !== 'Terminated').length], ['Must change password', emps.filter(e => e.must_change_password).length]])}
+      ${admTwoCharts(admChart('hr-acc-st', 'Accounts by State', 'pie', st[0], [{ data: st[1] }]), admChart('hr-acc-role', 'Active Accounts by Role', 'bar', Object.keys(byRole), [{ label: 'Accounts', data: Object.values(byRole) }]))}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Login', e => escapeHtml(e.email || '—')], ['Role', e => escapeHtml(hrRole(e))], ['Account', e => admBadge(e.account_status, admAccountTone(e.account_status))],
+        ['Last sign-in', e => e.last_login_at ? timeAgo(e.last_login_at) : 'Never'], ['', e => e.account_status === 'Active' ? hrAccessBtn(e, 'Suspend account', 'Request suspension', 'btn-red') : e.account_status === 'Not Created' ? '<span class="hint">Created by the System Administrator</span>' : hrAccessBtn(e, 'Activate account', 'Request activation')]],
+        'No accounts match.', `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'status', f, ['Active','Suspended','Deactivated','Not Created'], 'All account states')}</div>`)}`;
+  },
+  roles: (spec, label) => {
+    const roles = hrRoles(); const g = hrGuard(roles); if(g) return g;
+    return `${admChart('hr-roles-users', 'People per Role', 'bar', roles.map(r => r.name), [{ label: 'Employees', data: roles.map(r => r.userCount || 0) }, { label: 'Active', data: roles.map(r => r.activeUserCount || 0) }])}
+      ${hrTableCard(label, roles, [['Role', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Access level', r => escapeHtml(r.default_access_level || '—')], ['Employees', r => r.userCount || 0], ['Active', r => r.activeUserCount || 0], ['Permissions', r => r.permissionCount || 0], ['Modules', r => r.moduleCount || 0]], 'No roles.',
+        '<div class="hint" style="margin-bottom:8px;">Roles and their permissions are configured by the System Administrator. Use Access Requests to ask for a change.</div>')}`;
+  },
+  roleAssign: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const f = hrFilter(label, { q:'', role:'' });
+    const live = emps.filter(e => e.status !== 'Terminated');
+    const list = live.filter(e => hrEmpMatch(e, f.q) && (!f.role || e.role_id === f.role));
+    const roles = [...new Set(live.map(e => e.role_id))]; const brs = [...new Set(live.map(e => branchName(e.branch_id)))].sort();
+    return `${admChart('hr-ra', 'Role Holders by Branch', 'bar', brs, roles.map((r, i) => ({ label: ROLE_ID_TO_DISPLAY[r] || r, data: brs.map(b => live.filter(e => e.role_id === r && branchName(e.branch_id) === b).length), backgroundColor: ADM_PALETTE[i % ADM_PALETTE.length] })), hrStacked)}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Role', e => `<strong>${escapeHtml(hrRole(e))}</strong>`], ['Job title', e => escapeHtml(e.job_title || '—')], ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Account', e => admBadge(e.account_status, admAccountTone(e.account_status))],
+        ['', e => hrAccessBtn(e, 'Change role', 'Request role change')]], 'No employees match.', `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'role', f, roles.map(r => ({ v: r, l: ROLE_ID_TO_DISPLAY[r] || r })), 'All roles')}</div>`)}`;
+  },
+  accessApprovals: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const all = hrRecs('access_request'); const pending = all.filter(r => r.status === 'Pending'); const decided = all.filter(r => r.status !== 'Pending');
+    const byAction = admGroup(all, r => r.data.action); const byMonth = admGroup(all, r => String(r.createdAt).slice(0, 7));
+    const canDecide = session.role === 'Admin';
+    return `${hrTiles([['Waiting', pending.length], ['Approved', all.filter(r => r.status === 'Approved').length], ['Rejected', all.filter(r => r.status === 'Rejected').length]])}
+      ${admTwoCharts(admChart('hr-aa-act', 'Requests by Change', 'bar', byAction[0], [{ label: 'Requests', data: byAction[1] }]), admChart('hr-aa-mo', 'Requests by Month', 'line', byMonth[0].sort().map(rgMonthLabel), [{ label: 'Requests', data: byMonth[0].sort().map(k => all.filter(r => String(r.createdAt).slice(0, 7) === k).length), fill: false, tension: 0.25 }]))}
+      ${hrTableCard('Waiting for the System Administrator', pending, [['Employee', r => hrEmpCell(r.employeeId)], ['Change', r => `<strong>${escapeHtml(r.data.action || '—')}</strong>`], ['Reason', r => escapeHtml(r.title)], ['Raised by', r => escapeHtml(r.createdByName || '—')], ['Raised', r => timeAgo(r.createdAt)],
+        ['', r => canDecide && r.createdBy !== session.userId ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="hrSetStatus('${r.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="hrSetStatus('${r.id}','Rejected')">Reject</button></div>` : '<span class="hint">Awaiting decision</span>']], 'Nothing is waiting.')}
+      ${hrTableCard('Decided', decided, [['Employee', r => hrEmpCell(r.employeeId)], ['Change', r => escapeHtml(r.data.action || '—')], ['Reason', r => escapeHtml(r.title)], ['Decision', r => admBadge(r.status, HR_TONE[r.status])], ['Decided', r => r.closedAt ? timeAgo(r.closedAt) : '—']], 'No decisions yet.')}`;
+  },
+  accountAct: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const g = hrGuard(emps, recs); if(g) return g;
+    const list = emps.filter(e => e.status !== 'Terminated' && e.account_status !== 'Active');
+    const reqs = hrRecs('access_request', r => r.data.action === 'Activate account');
+    const st = admGroup(list, e => e.account_status);
+    return `${hrTiles([['Not active', list.length], ['Activation requests pending', reqs.filter(r => r.status === 'Pending').length], ['Activated through HR', reqs.filter(r => r.status === 'Approved').length]])}
+      ${admChart('hr-act-st', 'Inactive Accounts by State', 'bar', st[0], [{ label: 'Accounts', data: st[1] }])}
+      ${hrTableCard('Accounts not active', list, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Account', e => admBadge(e.account_status, admAccountTone(e.account_status))],
+        ['', e => e.account_status === 'Not Created' ? hrAccessBtn(e, 'Activate account', 'Ask Admin to create & activate') : hrAccessBtn(e, 'Activate account', 'Request activation', 'btn-primary')]], 'Every employee\'s account is active.')}
+      ${hrTableCard('Activation requests', reqs, [['Employee', r => hrEmpCell(r.employeeId)], ['Reason', r => escapeHtml(r.title)], ['Status', r => admBadge(r.status, HR_TONE[r.status])], ['Raised', r => timeAgo(r.createdAt)]], 'No activation requests yet.')}`;
+  },
+  accountSusp: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const g = hrGuard(emps, recs); if(g) return g;
+    const susp = emps.filter(e => ['Suspended','Deactivated'].includes(e.account_status));
+    const reqs = hrRecs('access_request', r => ['Suspend account','Deactivate account'].includes(r.data.action));
+    const active = emps.filter(e => e.account_status === 'Active' && e.status !== 'Terminated' && e.id !== session.userId);
+    const byMonth = admGroup(reqs, r => String(r.createdAt).slice(0, 7)); const mk = byMonth[0].sort();
+    return `${hrTiles([['Suspended', emps.filter(e => e.account_status === 'Suspended').length], ['Deactivated', emps.filter(e => e.account_status === 'Deactivated').length], ['Requests pending', reqs.filter(r => r.status === 'Pending').length]])}
+      ${hrCanWrite() ? `<div class="fp ${isFormOpen('hr-susp') ? 'fp-open' : ''}">${formToggleBtn('hr-susp', 'Request suspension')}<div class="fp-body"><div class="card"><div class="card-title">Request an account suspension</div>
+        <form onsubmit="return hrSuspendForm(event)"><div class="form-grid">
+          <div class="field"><label>Employee</label><select name="employee_id"><option value="">Choose…</option>${active.map(e => `<option value="${e.id}">${escapeHtml(e.name)} — ${escapeHtml(hrRole(e))}</option>`).join('')}</select></div>
+          <div class="field"><label>Change</label><select name="action"><option>Suspend account</option><option>Deactivate account</option></select></div>
+          <div class="field full"><label>Reason</label><textarea name="reason" rows="3"></textarea></div></div>
+        <button class="btn btn-red btn-sm" type="submit">Send to System Administrator</button></form></div></div></div>` : ''}
+      ${admChart('hr-susp-mo', 'Suspension Requests by Month', 'line', mk.map(rgMonthLabel), [{ label: 'Requests', data: mk.map(k => reqs.filter(r => String(r.createdAt).slice(0, 7) === k).length), fill: false, tension: 0.25 }])}
+      ${hrTableCard('Suspended & deactivated accounts', susp, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Account', e => admBadge(e.account_status, admAccountTone(e.account_status))], ['', e => hrAccessBtn(e, 'Activate account', 'Request reactivation')]], 'No suspended accounts.')}
+      ${hrTableCard('Suspension requests', reqs, [['Employee', r => hrEmpCell(r.employeeId)], ['Change', r => escapeHtml(r.data.action)], ['Reason', r => escapeHtml(r.title)], ['Status', r => admBadge(r.status, HR_TONE[r.status])]], 'No suspension requests yet.')}`;
+  },
+  pwSecurity: (spec, label) => {
+    const emps = hrEmployees(); const logins = hrLogins(); const recs = hrRecords(); const g = hrGuard(emps, logins, recs); if(g) return g;
+    const live = emps.filter(e => e.status !== 'Terminated' && e.account_status === 'Active');
+    const stale = live.filter(e => !e.last_login_at || (Date.now() - new Date(e.last_login_at).getTime()) > 30 * 86400000);
+    const fails = {}; logins.filter(l => !l.success && l.created_at >= hrDaysAgo(7)).forEach(l => { const k = l.name || l.email; fails[k] = (fails[k] || 0) + 1; });
+    const failKeys = Object.keys(fails).sort((a, b) => fails[b] - fails[a]).slice(0, 10);
+    const attention = live.filter(e => e.must_change_password || stale.includes(e));
+    return `${hrTiles([['Must change password', live.filter(e => e.must_change_password).length], ['No sign-in for 30+ days', stale.length], ['Failed sign-ins (7 days)', logins.filter(l => !l.success && l.created_at >= hrDaysAgo(7)).length]])}
+      <div class="card"><div class="card-title">Password rules</div>
+        <div class="adm-kv"><span>Minimum length</span>8 characters, with letters and numbers</div>
+        <div class="adm-kv"><span>Temporary passwords</span>Must be changed at first sign-in</div>
+        <div class="adm-kv"><span>Lockout</span>Repeated failed sign-ins lock the account until the System Administrator unlocks it</div>
+        <div class="adm-kv"><span>Sessions</span>One active session per account; idle sessions sign out automatically</div>
+        <div class="hint" style="margin-top:8px;">Password resets are done by the System Administrator — request one below.</div></div>
+      ${admChart('hr-pw-fails', 'Failed Sign-ins by Person (7 days)', 'bar', failKeys, [{ label: 'Failed attempts', data: failKeys.map(k => fails[k]) }], hrHorizontal)}
+      ${hrTableCard('Accounts needing attention', attention, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Issue', e => [e.must_change_password ? admBadge('Must change password', 'amber') : '', stale.includes(e) ? admBadge(e.last_login_at ? 'Idle 30+ days' : 'Never signed in', 'grey') : ''].join(' ')],
+        ['Last sign-in', e => e.last_login_at ? timeAgo(e.last_login_at) : 'Never'], ['', e => hrAccessBtn(e, 'Reset password', 'Request password reset')]], 'All accounts are in good order.')}`;
+  },
+  logins: (spec, label) => {
+    const ev = hrLogins(); const g = hrGuard(ev); if(g) return g;
+    const f = hrFilter(label, { q:'', result:'' });
+    const list = ev.filter(l => (!f.result || (f.result === 'ok' ? l.success : !l.success)) && (!f.q || [l.name, l.email, l.ip].some(x => (x || '').toLowerCase().includes(f.q.toLowerCase()))));
+    const days = admLastDays(14);
+    const ok = days.map(d => ev.filter(l => l.success && String(l.created_at).slice(0, 10) === d).length), bad = days.map(d => ev.filter(l => !l.success && String(l.created_at).slice(0, 10) === d).length);
+    const hours = Array.from({ length: 24 }, (_, h) => ev.filter(l => new Date(l.created_at).getHours() === h).length);
+    return `${hrTiles([['Sign-ins (14 days)', ok.reduce((a, b) => a + b, 0)], ['Failed (14 days)', bad.reduce((a, b) => a + b, 0)], ['People', new Set(ev.filter(l => l.success).map(l => l.email)).size]])}
+      ${admTwoCharts(admChart('hr-log-days', 'Sign-ins per Day', 'bar', days.map(admDayLabel), [{ label: 'Successful', data: ok, backgroundColor: '#2A9D8F' }, { label: 'Failed', data: bad, backgroundColor: '#E76F51' }], hrStacked),
+        admChart('hr-log-hours', 'Sign-ins by Hour of Day', 'line', hours.map((_, h) => String(h).padStart(2, '0') + ':00'), [{ label: 'Attempts', data: hours, fill: true, tension: 0.3 }]))}
+      ${hrTableCard(label, list, [['When', l => admWhen(l.created_at)], ['Person', l => l.employee_id ? hrEmpCell(l.employee_id) : escapeHtml(l.email)], ['Role', l => escapeHtml(ROLE_ID_TO_DISPLAY[l.role_id] || l.role_id || '—')], ['Result', l => l.success ? admBadge('Signed in', 'green') : admBadge(l.reason || 'Failed', 'red')], ['IP address', l => escapeHtml(l.ip || '—')]],
+        'No sign-in activity.', `<div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search name, email, IP…')}${hrSelectBox(label, 'result', f, [{ v:'ok', l:'Successful' }, { v:'fail', l:'Failed' }], 'All results')}</div>`)}`;
+  },
+  accessReport: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const live = emps.filter(e => e.status !== 'Terminated');
+    const roles = [...new Set(live.map(e => e.role_id))]; const states = ['Active','Suspended','Deactivated','Not Created'];
+    const rows = roles.map(r => { const xs = live.filter(e => e.role_id === r); return { role: ROLE_ID_TO_DISPLAY[r] || r, total: xs.length, counts: states.map(s => xs.filter(e => e.account_status === s).length), branches: new Set(xs.map(e => e.branch_id)).size }; });
+    return `${admChart('hr-ar', 'Account State by Role', 'bar', rows.map(r => r.role), states.map((s, i) => ({ label: s, data: rows.map(r => r.counts[i]), backgroundColor: ['#2A9D8F','#E9C46A','#E76F51','#6C757D'][i] })), hrStacked)}
+      ${hrTableCard(label, rows, [['Role', r => `<strong>${escapeHtml(r.role)}</strong>`], ['Employees', r => r.total]].concat(states.map((s, i) => [s, r => r.counts[i]])).concat([['Branches', r => r.branches], ['Coverage', r => hrBar(hrPct(r.counts[0], r.total))]]), 'No data.')}`;
+  },
+
+  /* Recruitment */
+  pipeline: (spec, label) => {
+    const recs = hrRecords(); const g = hrGuard(recs); if(g) return g;
+    const apps = hrRecs('application'); const vac = hrRecs('vacancy');
+    const stages = ['Received','Shortlisted','Interview','Offered','Hired'];
+    const reached = stages.map((s, i) => apps.filter(a => stages.indexOf(a.status) >= i).length);
+    const months = hrMonthKeys(6);
+    return `${hrTiles([['Open vacancies', vac.filter(v => v.isOpen).length], ['Applications', apps.length], ['In process', apps.filter(a => a.isOpen).length], ['Hired', apps.filter(a => a.status === 'Hired').length], ['Conversion', hrPct(apps.filter(a => a.status === 'Hired').length, apps.length) + '%']])}
+      ${admTwoCharts(admChart('hr-pipe', 'Candidates Reaching Each Stage', 'bar', stages, [{ label: 'Candidates', data: reached }], hrHorizontal),
+        admChart('hr-pipe-mo', 'Applications per Month', 'line', months.map(rgMonthLabel), [{ label: 'Applications', data: months.map(k => apps.filter(a => String(a.createdAt).slice(0, 7) === k).length), fill: false, tension: 0.25 }]))}
+      ${hrTableCard('Pipeline by vacancy', vac, [['Vacancy', v => `<strong>${escapeHtml(v.title)}</strong>`], ['Status', v => admBadge(v.status, HR_TONE[v.status])]].concat(stages.concat(['Rejected']).map(s => [s, v => apps.filter(a => a.relatedId === v.id && a.status === s).length])), 'No vacancies yet.')}`;
+  },
+
+  /* Attendance */
+  attOverview: (spec, label) => {
+    const from = hrDaysAgo(13), to = todayISO(); const att = hrAtt(from, to); const emps = hrEmployees(); const g = hrGuard(att, emps); if(g) return g;
+    const active = hrActiveEmps(); const today = att.filter(a => a.date === to); const days = admLastDays(14);
+    const present = s => ['Present','Late','Remote','Half Day'].includes(s);
+    const rate = days.map(d => { const xs = att.filter(a => a.date === d); return xs.length ? hrPct(xs.filter(a => present(a.status)).length, xs.length) : null; });
+    return `${hrTiles([['Staff', active.length], ['Recorded today', today.length], ['Present today', today.filter(a => present(a.status)).length], ['Late today', today.filter(a => a.status === 'Late').length], ['Absent today', today.filter(a => a.status === 'Absent').length], ['On leave today', today.filter(a => a.status === 'On Leave').length]])}
+      ${today.length < active.length && hrCanWrite() ? `<div class="card"><div class="empty">${active.length - today.length} employee(s) have no attendance recorded today. <button class="btn btn-sm btn-primary" onclick="sidebarNavigate('Daily Attendance')">Open Daily Attendance</button></div></div>` : ''}
+      ${admTwoCharts(admChart('hr-ao-days', 'Last 14 Days', 'bar', days.map(admDayLabel), HR_ATT_STATUSES.map(s => ({ label: s, data: days.map(d => att.filter(a => a.date === d && a.status === s).length), backgroundColor: HR_ATT_COLOR[s] })), hrStacked),
+        admChart('hr-ao-rate', 'Attendance Rate %', 'line', days.map(admDayLabel), [{ label: 'Rate %', data: rate, fill: false, tension: 0.25 }]))}
+      ${hrTableCard('Today', today, [['Employee', a => hrEmpCell(a.employeeId)], ['Branch', a => escapeHtml(branchName(a.branchId))], ['Status', a => admBadge(a.status, HR_ATT_TONE[a.status])], ['In', a => escapeHtml(a.checkIn || '—')], ['Out', a => escapeHtml(a.checkOut || '—')], ['Note', a => escapeHtml(a.note || '')]], 'Nothing recorded for today yet.')}`;
+  },
+  attDaily: (spec, label) => {
+    const f = hrFilter(label, { date: todayISO(), branch: '' });
+    const att = hrAtt(f.date, f.date); const emps = hrEmployees(); const g = hrGuard(att, emps); if(g) return g;
+    const list = hrActiveEmps().filter(e => (!f.branch || e.branch_id === f.branch));
+    const byEmp = {}; att.forEach(a => { byEmp[a.employeeId] = a; });
+    const st = admGroup(att, a => a.status);
+    const w = hrCanWrite();
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><label class="hint" style="align-self:center;">Day</label>${hrDateBox(label, 'date', f)}${hrSelectBox(label, 'branch', f, hrBranchList(), 'All branches')}
+        ${w ? `<button class="btn btn-sm btn-outline" type="button" onclick="hrMarkAll('Present')">Mark unmarked as Present</button>` : ''}</div></div>
+      ${admChart('hr-ad-st', 'Status for ' + f.date, 'bar', st[0], [{ label: 'Employees', data: st[1] }])}
+      <div class="card"><div class="card-title"><span>Register for ${escapeHtml(f.date)} <small>${list.length}</small></span>${hrGen('Daily Attendance ' + f.date, ['Employee','Branch','Status','In','Out','Minutes late','Note'], list.map(e => { const a = byEmp[e.id] || {}; return [e.name, branchName(e.branch_id), a.status || 'Not recorded', a.checkIn || '', a.checkOut || '', a.minutesLate || 0, a.note || '']; }))}</div>
+        <form onsubmit="return hrSaveAttendance(event,'${f.date}')"><div class="table-wrap"><table><tr><th>Employee</th><th>Branch</th><th>Status</th><th>In</th><th>Out</th><th>Min. late</th><th>Note</th></tr>
+        ${list.map(e => { const a = byEmp[e.id] || {}; const dis = w ? '' : ' disabled'; return `<tr><td>${hrEmpCell(e.id)}</td><td>${escapeHtml(branchName(e.branch_id))}</td>
+          <td><select name="st_${e.id}" data-att="1"${dis}><option value="">—</option>${HR_ATT_STATUSES.map(s => `<option ${a.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
+          <td><input type="time" name="in_${e.id}" value="${escapeHtml(a.checkIn || '')}"${dis}></td><td><input type="time" name="out_${e.id}" value="${escapeHtml(a.checkOut || '')}"${dis}></td>
+          <td><input type="number" min="0" name="late_${e.id}" value="${a.minutesLate || ''}" style="width:70px;"${dis}></td><td><input name="note_${e.id}" value="${escapeHtml(a.note || '')}"${dis}></td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">No employees.</td></tr>'}
+        </table></div>${w ? `<button class="btn btn-primary btn-sm" type="submit" style="margin-top:10px;">Save attendance</button>` : ''}</form></div>`;
+  },
+  attRecords: (spec, label) => {
+    const f = hrFilter(label, { from: hrDaysAgo(30), to: todayISO(), status: spec.status || '', emp: '' });
+    const att = hrAtt(f.from, f.to); const emps = hrEmployees(); const g = hrGuard(att, emps); if(g) return g;
+    const list = att.filter(a => (!f.status || a.status === f.status) && (!f.emp || a.employeeId === f.emp));
+    const byEmp = admGroup(list, a => a.employeeName); const order = byEmp[0].map((k, i) => [k, byEmp[1][i]]).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    const days = [...new Set(list.map(a => a.date))].sort();
+    return `${hrTiles([['Records', list.length], ['Employees', new Set(list.map(a => a.employeeId)).size], spec.status === 'Late' ? ['Average minutes late', list.length ? Math.round(list.reduce((s, a) => s + (a.minutesLate || 0), 0) / list.length) : 0] : ['Days covered', days.length]])}
+      <div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><label class="hint" style="align-self:center;">From</label>${hrDateBox(label, 'from', f)}<label class="hint" style="align-self:center;">To</label>${hrDateBox(label, 'to', f)}
+        ${spec.status ? '' : hrSelectBox(label, 'status', f, HR_ATT_STATUSES, 'All statuses')}${hrSelectBox(label, 'emp', f, hrActiveEmps().map(e => ({ v: e.id, l: e.name })), 'All employees')}</div></div>
+      ${admTwoCharts(admChart('hr-ar-emp-' + (spec.status || 'all'), spec.status === 'Late' ? 'Late Arrivals by Employee' : 'Records by Employee', 'bar', order.map(o => o[0]), [{ label: 'Days', data: order.map(o => o[1]) }], hrHorizontal),
+        admChart('hr-ar-day-' + (spec.status || 'all'), 'Per Day', 'line', days.map(admDayLabel), [{ label: spec.status || 'Records', data: days.map(d => list.filter(a => a.date === d).length), fill: false, tension: 0.25 }]))}
+      ${hrTableCard(label, list, [['Date', a => escapeHtml(a.date)], ['Employee', a => hrEmpCell(a.employeeId)], ['Branch', a => escapeHtml(branchName(a.branchId))], ['Status', a => admBadge(a.status, HR_ATT_TONE[a.status])], ['In', a => escapeHtml(a.checkIn || '—')], ['Out', a => escapeHtml(a.checkOut || '—')], ['Min. late', a => a.minutesLate || 0], ['Note', a => escapeHtml(a.note || '')]], 'No attendance in this range.')}`;
+  },
+  attAbsence: (spec, label) => {
+    const f = hrFilter(label, { month: hrThisMonth() });
+    const from = hrMonthStart(f.month), to = hrMonthEnd(f.month) > todayISO() ? todayISO() : hrMonthEnd(f.month);
+    const att = hrAtt(from, to); const emps = hrEmployees(); const leave = hrLeave(); const g = hrGuard(att, emps, leave); if(g) return g;
+    const rows = hrActiveEmps().map(e => { const xs = att.filter(a => a.employeeId === e.id); const abs = xs.filter(a => a.status === 'Absent');
+      return { e, absent: abs.length, unauth: abs.filter(a => !hrOnLeave(leave, e.id, a.date)).length, leave: xs.filter(a => a.status === 'On Leave').length, recorded: xs.length }; }).filter(r => r.absent || r.leave).sort((a, b) => b.absent - a.absent);
+    const top = rows.slice(0, 12);
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><label class="hint" style="align-self:center;">Month</label>${hrMonthBox(label, 'month', f)}</div></div>
+      ${hrTiles([['Absent days', rows.reduce((s, r) => s + r.absent, 0)], ['Without approved leave', rows.reduce((s, r) => s + r.unauth, 0)], ['Days on leave', rows.reduce((s, r) => s + r.leave, 0)], ['Employees affected', rows.length]])}
+      ${admChart('hr-abs', 'Absent vs On Leave', 'bar', top.map(r => r.e.name), [{ label: 'Absent', data: top.map(r => r.absent), backgroundColor: '#E76F51' }, { label: 'On leave', data: top.map(r => r.leave), backgroundColor: '#3D8BD9' }], hrStacked)}
+      ${hrTableCard(label + ' — ' + rgMonthLabel(f.month), rows, [['Employee', r => hrEmpCell(r.e.id)], ['Branch', r => escapeHtml(branchName(r.e.branch_id))], ['Absent', r => r.absent], ['Without approved leave', r => r.unauth ? admBadge(r.unauth, 'red') : 0], ['On leave', r => r.leave], ['Days recorded', r => r.recorded]], 'No absences this month.')}`;
+  },
+  attExceptions: (spec, label) => {
+    const from = hrDaysAgo(30), to = todayISO(); const att = hrAtt(from, to); const emps = hrEmployees(); const leave = hrLeave(); const g = hrGuard(att, emps, leave); if(g) return g;
+    const issues = [];
+    att.forEach(a => {
+      if(a.status === 'Absent' && !hrOnLeave(leave, a.employeeId, a.date)) issues.push({ date: a.date, emp: a.employeeId, type: 'Absent without approved leave', detail: a.note || '' });
+      if(a.status === 'On Leave' && !hrOnLeave(leave, a.employeeId, a.date)) issues.push({ date: a.date, emp: a.employeeId, type: 'Marked on leave with no approved leave', detail: '' });
+      if(a.status === 'Late' && (a.minutesLate || 0) >= 60) issues.push({ date: a.date, emp: a.employeeId, type: 'Late by an hour or more', detail: a.minutesLate + ' minutes' });
+      if(['Present','Late'].includes(a.status) && a.checkIn && !a.checkOut && a.date < to) issues.push({ date: a.date, emp: a.employeeId, type: 'No check-out time', detail: 'In at ' + a.checkIn });
+    });
+    const week = hrWorkDays(hrDaysAgo(7), hrDaysAgo(1));
+    hrActiveEmps().forEach(e => { const miss = week.filter(d => !att.some(a => a.employeeId === e.id && a.date === d)); if(miss.length) issues.push({ date: miss[miss.length - 1], emp: e.id, type: 'Days not recorded (last 7 days)', detail: miss.length + ' day(s)' }); });
+    issues.sort((a, b) => b.date.localeCompare(a.date));
+    const byType = admGroup(issues, i => i.type);
+    return `${hrTiles(byType[0].map((k, i) => [k, byType[1][i]]).concat(issues.length ? [] : [['Exceptions', 0]]))}
+      ${admChart('hr-exc', 'Exceptions by Type', 'bar', byType[0], [{ label: 'Exceptions', data: byType[1] }], hrHorizontal)}
+      ${hrTableCard(label, issues, [['Date', i => escapeHtml(i.date)], ['Employee', i => hrEmpCell(i.emp)], ['Exception', i => admBadge(i.type, /without|no approved/.test(i.type) ? 'red' : 'amber')], ['Detail', i => escapeHtml(i.detail)]], 'No attendance exceptions in the last 30 days.')}`;
+  },
+  attReport: (spec, label) => {
+    const f = hrFilter(label, { month: hrThisMonth() });
+    const from = hrMonthStart(f.month), to = hrMonthEnd(f.month) > todayISO() ? todayISO() : hrMonthEnd(f.month);
+    const att = hrAtt(from, to); const emps = hrEmployees(); const g = hrGuard(att, emps); if(g) return g;
+    const rows = hrActiveEmps().map(e => { const xs = att.filter(a => a.employeeId === e.id); const c = {}; HR_ATT_STATUSES.forEach(s => { c[s] = xs.filter(a => a.status === s).length; });
+      return { e, c, total: xs.length, rate: hrPct(c.Present + c.Late + c.Remote + c['Half Day'], xs.length), late: xs.reduce((s, a) => s + (a.minutesLate || 0), 0) }; });
+    const br = [...new Set(rows.map(r => branchName(r.e.branch_id)))].sort();
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><label class="hint" style="align-self:center;">Month</label>${hrMonthBox(label, 'month', f)}</div></div>
+      ${hrTiles([['Working days so far', hrWorkDays(from, to).length], ['Records', att.length], ['Overall attendance', hrPct(att.filter(a => ['Present','Late','Remote','Half Day'].includes(a.status)).length, att.length) + '%'], ['Minutes late (total)', fmtNum(rows.reduce((s, r) => s + r.late, 0))]])}
+      ${admChart('hr-arep', 'Attendance by Branch', 'bar', br, HR_ATT_STATUSES.map(s => ({ label: s, data: br.map(b => rows.filter(r => branchName(r.e.branch_id) === b).reduce((n, r) => n + r.c[s], 0)), backgroundColor: HR_ATT_COLOR[s] })), hrStacked)}
+      ${hrTableCard(label + ' — ' + rgMonthLabel(f.month), rows, [['Employee', r => hrEmpCell(r.e.id)], ['Branch', r => escapeHtml(branchName(r.e.branch_id))]].concat(HR_ATT_STATUSES.map(s => [s, r => r.c[s]])).concat([['Recorded', r => r.total], ['Attendance', r => r.total ? hrBar(r.rate) : '—']]), 'No employees.')}`;
+  },
+  attAnalytics: (spec, label) => {
+    const from = hrDaysAgo(180), to = todayISO(); const att = hrAtt(from, to); const g = hrGuard(att); if(g) return g;
+    const months = hrMonthKeys(6); const ok = a => ['Present','Late','Remote','Half Day'].includes(a.status);
+    const monthRate = months.map(k => { const xs = att.filter(a => a.date.slice(0, 7) === k); return xs.length ? hrPct(xs.filter(ok).length, xs.length) : null; });
+    const wd = ['Mon','Tue','Wed','Thu','Fri','Sat']; const lateBy = wd.map((_, i) => att.filter(a => a.status === 'Late' && new Date(a.date + 'T00:00:00').getDay() === i + 1).length);
+    const br = [...new Set(att.map(a => branchName(a.branchId)))].sort(); const brRate = br.map(b => { const xs = att.filter(a => branchName(a.branchId) === b); return hrPct(xs.filter(ok).length, xs.length); });
+    return `${hrTiles([['Records (6 months)', fmtNum(att.length)], ['Attendance rate', hrPct(att.filter(ok).length, att.length) + '%'], ['Late arrivals', att.filter(a => a.status === 'Late').length], ['Absences', att.filter(a => a.status === 'Absent').length]])}
+      ${admTwoCharts(admChart('hr-aa-rate', 'Attendance Rate by Month %', 'line', months.map(rgMonthLabel), [{ label: 'Rate %', data: monthRate, fill: true, tension: 0.3 }]),
+        admChart('hr-aa-wd', 'Late Arrivals by Weekday', 'bar', wd, [{ label: 'Late arrivals', data: lateBy }]))}
+      ${admTwoCharts(admChart('hr-aa-br', 'Attendance Rate by Branch %', 'bar', br, [{ label: 'Rate %', data: brRate }], hrHorizontal),
+        admChart('hr-aa-mix', 'Status Mix by Month', 'bar', months.map(rgMonthLabel), HR_ATT_STATUSES.map(s => ({ label: s, data: months.map(k => att.filter(a => a.date.slice(0, 7) === k && a.status === s).length), backgroundColor: HR_ATT_COLOR[s] })), hrStacked))}
+      ${hrTableCard('Monthly summary', months.slice().reverse(), [['Month', k => rgMonthLabel(k)], ['Records', k => att.filter(a => a.date.slice(0, 7) === k).length]].concat(HR_ATT_STATUSES.map(s => [s, k => att.filter(a => a.date.slice(0, 7) === k && a.status === s).length])).concat([['Rate', k => monthRate[months.indexOf(k)] == null ? '—' : monthRate[months.indexOf(k)] + '%']]), 'No attendance recorded yet.')}`;
+  },
+
+  /* Leave */
+  leave: (spec, label) => {
+    const leave = hrLeave(); const emps = hrEmployees(); const g = hrGuard(leave, emps); if(g) return g;
+    const f = hrFilter(label, { q:'', type:'' });
+    const base = spec.filter === 'all' ? leave : leave.filter(l => l.status === spec.filter);
+    const list = base.filter(l => (!f.type || l.leave_type === f.type) && (!f.q || hrEmpName(l.user_id).toLowerCase().includes(f.q.toLowerCase())));
+    const types = [...new Set(leave.map(l => l.leave_type))]; const bt = admGroup(base, l => l.leave_type, hrLeaveRowDays);
+    const months = hrMonthKeys(6);
+    return `${hrTiles([['Requests', base.length], ['Days', base.reduce((s, l) => s + hrLeaveRowDays(l), 0)], spec.filter === 'all' ? ['Pending', leave.filter(l => l.status === 'Pending').length] : ['Employees', new Set(base.map(l => l.user_id)).size], ['Away today', leave.filter(l => l.status === 'Approved' && l.start_date <= todayISO() && l.end_date >= todayISO()).length]])}
+      ${admTwoCharts(admChart('hr-lv-type-' + spec.filter, 'Days by Leave Type', 'pie', bt[0], [{ data: bt[1] }]),
+        admChart('hr-lv-mo-' + spec.filter, 'Requests per Month', 'bar', months.map(rgMonthLabel), [{ label: 'Requests', data: months.map(k => base.filter(l => l.start_date.slice(0, 7) === k).length) }]))}
+      ${hrTableCard(label, list, [['Employee', l => hrEmpCell(l.user_id)], ['Type', l => escapeHtml(l.leave_type)], ['From', l => escapeHtml(l.start_date)], ['To', l => escapeHtml(l.end_date)], ['Days', l => hrLeaveRowDays(l)], ['Reason', l => escapeHtml(l.reason || '—')],
+        ['Status', l => admBadge(l.status, l.status === 'Approved' ? 'green' : l.status === 'Rejected' ? 'red' : 'amber')], ['', l => l.status === 'Pending' && l.user_id !== session.userId ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="hrDecideLeave('${l.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="hrDecideLeave('${l.id}','Rejected')">Reject</button></div>` : '']],
+        'No leave here.', `<div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search employee…')}${hrSelectBox(label, 'type', f, types, 'All leave types')}</div>`)}`;
+  },
+  leaveCalendar: (spec, label) => {
+    const leave = hrLeave(); const emps = hrEmployees(); const g = hrGuard(leave, emps); if(g) return g;
+    const f = hrFilter(label, { month: hrThisMonth() });
+    const [y, m] = f.month.split('-').map(Number); const last = new Date(y, m, 0).getDate(); const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+    const days = Array.from({ length: last }, (_, i) => `${f.month}-${String(i + 1).padStart(2, '0')}`);
+    const away = d => leave.filter(l => l.status === 'Approved' && l.start_date <= d && l.end_date >= d);
+    const cells = Array(firstDow).fill('<td></td>').concat(days.map(d => { const xs = away(d); const sun = new Date(d + 'T00:00:00').getDay() === 0;
+      return `<td style="vertical-align:top; min-width:90px; ${sun ? 'background:var(--blue-bg);' : ''} ${d === todayISO() ? 'outline:2px solid var(--blue);' : ''}"><strong>${Number(d.slice(8))}</strong>${xs.map(l => `<div class="hint" title="${escapeHtml(l.leave_type)}">${escapeHtml(hrEmpName(l.user_id))}</div>`).join('')}</td>`; }));
+    const weeks = []; for(let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7).join(''));
+    const inMonth = leave.filter(l => l.status === 'Approved' && l.start_date <= days[days.length - 1] && l.end_date >= days[0]);
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><label class="hint" style="align-self:center;">Month</label>${hrMonthBox(label, 'month', f)}</div></div>
+      <div class="card"><div class="card-title">${escapeHtml(rgMonthLabel(f.month))}</div><div class="table-wrap"><table><tr>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<th>${d}</th>`).join('')}</tr>${weeks.map(w => `<tr>${w}</tr>`).join('')}</table></div></div>
+      ${admChart('hr-lc', 'People Away per Day', 'bar', days.map(d => Number(d.slice(8))), [{ label: 'Away', data: days.map(d => away(d).length) }])}
+      ${hrTableCard('Approved leave this month', inMonth, [['Employee', l => hrEmpCell(l.user_id)], ['Type', l => escapeHtml(l.leave_type)], ['From', l => escapeHtml(l.start_date)], ['To', l => escapeHtml(l.end_date)], ['Days', l => hrLeaveRowDays(l)]], 'Nobody is on leave this month.')}`;
+  },
+  leaveBalances: (spec, label) => {
+    const leave = hrLeave(); const emps = hrEmployees(); const g = hrGuard(leave, emps); if(g) return g;
+    const yr = String(new Date().getFullYear());
+    const rows = hrActiveEmps().map(e => { const mine = leave.filter(l => l.user_id === e.id && l.start_date.slice(0, 4) === yr);
+      return { e, taken: mine.filter(l => l.status === 'Approved').reduce((s, l) => s + hrLeaveRowDays(l), 0), pending: mine.filter(l => l.status === 'Pending').reduce((s, l) => s + hrLeaveRowDays(l), 0), bal: e.leave_days_balance == null ? null : Number(e.leave_days_balance) }; });
+    const top = rows.slice().sort((a, b) => b.taken - a.taken).slice(0, 12);
+    return `${hrTiles([['Days taken in ' + yr, rows.reduce((s, r) => s + r.taken, 0)], ['Days pending', rows.reduce((s, r) => s + r.pending, 0)], ['Average balance', rows.length ? Math.round(rows.reduce((s, r) => s + (r.bal || 0), 0) / rows.length) : 0], ['Low balance (≤3 days)', rows.filter(r => r.bal != null && r.bal <= 3).length]])}
+      ${hrEmpEditForm('hr-bal', 'Adjust leave balance', ['leave_days_balance'])}
+      ${admChart('hr-lb', 'Taken vs Balance', 'bar', top.map(r => r.e.name), [{ label: 'Taken', data: top.map(r => r.taken), backgroundColor: '#E76F51' }, { label: 'Balance', data: top.map(r => r.bal || 0), backgroundColor: '#2A9D8F' }])}
+      ${hrTableCard(label, rows, [['Employee', r => hrEmpCell(r.e.id)], ['Branch', r => escapeHtml(branchName(r.e.branch_id))], ['Taken ' + yr, r => r.taken], ['Pending', r => r.pending], ['Balance', r => r.bal == null ? '—' : r.bal <= 3 ? admBadge(r.bal, 'red') : r.bal]], 'No employees.')}`;
+  },
+  leaveReport: (spec, label) => {
+    const leave = hrLeave(); const emps = hrEmployees(); const g = hrGuard(leave, emps); if(g) return g;
+    const approved = leave.filter(l => l.status === 'Approved'); const months = hrMonthKeys(12); const types = [...new Set(leave.map(l => l.leave_type))];
+    const byBr = admGroup(approved, l => branchName((emps.find(e => e.id === l.user_id) || {}).branch_id), hrLeaveRowDays);
+    const rows = types.map(t => { const xs = leave.filter(l => l.leave_type === t); const ap = xs.filter(l => l.status === 'Approved');
+      return { t, req: xs.length, ap: ap.length, rej: xs.filter(l => l.status === 'Rejected').length, days: ap.reduce((s, l) => s + hrLeaveRowDays(l), 0), people: new Set(ap.map(l => l.user_id)).size }; });
+    return `${hrTiles([['Requests', leave.length], ['Approved', approved.length], ['Days taken', approved.reduce((s, l) => s + hrLeaveRowDays(l), 0)], ['Approval rate', hrPct(approved.length, leave.filter(l => l.status !== 'Pending').length) + '%']])}
+      ${admTwoCharts(admChart('hr-lr-mo', 'Leave Days by Month', 'line', months.map(rgMonthLabel), types.map((t, i) => ({ label: t, data: months.map(k => approved.filter(l => l.leave_type === t && l.start_date.slice(0, 7) === k).reduce((s, l) => s + hrLeaveRowDays(l), 0)), borderColor: ADM_PALETTE[i % 10], backgroundColor: ADM_PALETTE[i % 10], fill: false, tension: 0.25 }))),
+        admChart('hr-lr-br', 'Leave Days by Branch', 'bar', byBr[0], [{ label: 'Days', data: byBr[1] }]))}
+      ${hrTableCard('By leave type', rows, [['Leave type', r => `<strong>${escapeHtml(r.t)}</strong>`], ['Requests', r => r.req], ['Approved', r => r.ap], ['Rejected', r => r.rej], ['Days taken', r => r.days], ['People', r => r.people]], 'No leave recorded yet.')}`;
+  },
+
+  /* Payroll */
+  payOverview: (spec, label) => {
+    const runs = hrRuns(); const emps = hrEmployees(); const g = hrGuard(runs, emps); if(g) return g;
+    const latest = runs[0]; const lr = latest ? hrRun(latest.id) : null; if(latest){ const g2 = hrGuard(lr); if(g2) return g2; }
+    const asc = runs.slice().reverse().slice(-12); const lines = lr ? lr.lines : [];
+    const comp = [['PAYE', 'paye'], ['NSSF', 'nssf'], ['SHIF', 'shif'], ['Salary advance', 'salaryAdvance'], ['Other', 'otherDeductions']];
+    const byBr = admGroup(lines, l => branchName(l.branchId), l => l.gross);
+    return `${hrTiles([['Payroll staff', hrActiveEmps().filter(e => e.basic_salary > 0).length], ['Monthly basic', fmt(hrActiveEmps().reduce((s, e) => s + (e.basic_salary || 0), 0))], ['Latest run', latest ? `${rgMonthLabel(latest.period)} ${admBadge(latest.status, hrRunTone(latest.status))}` : 'None yet'], ['Latest net pay', latest ? fmt(latest.totalNet) : '—']])}
+      ${admTwoCharts(admChart('hr-po-trend', 'Gross and Net Pay by Month', 'line', asc.map(r => rgMonthLabel(r.period)), [{ label: 'Gross', data: asc.map(r => r.totalGross), fill: false, tension: 0.25 }, { label: 'Net', data: asc.map(r => r.totalNet), fill: false, tension: 0.25 }]),
+        admChart('hr-po-ded', 'Deductions — ' + (latest ? rgMonthLabel(latest.period) : ''), 'bar', comp.map(c => c[0]), [{ label: 'KES', data: comp.map(c => lines.reduce((s, l) => s + (l[c[1]] || 0), 0)) }]))}
+      ${admChart('hr-po-br', 'Gross Pay by Branch — latest run', 'bar', byBr[0], [{ label: 'KES', data: byBr[1] }], hrHorizontal)}
+      ${hrTableCard('Recent payroll runs', runs.slice(0, 6), [['Month', r => `<strong>${escapeHtml(rgMonthLabel(r.period))}</strong>`], ['Staff', r => r.employeeCount], ['Gross', r => fmt(r.totalGross)], ['Deductions', r => fmt(r.totalDeductions)], ['Net', r => fmt(r.totalNet)], ['Status', r => admBadge(r.status, hrRunTone(r.status))]], 'No payroll has been run yet.')}`;
+  },
+  salaries: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const f = hrFilter(label, { q:'', branch:'' });
+    const list = hrActiveEmps().filter(e => hrEmpMatch(e, f.q) && (!f.branch || e.branch_id === f.branch));
+    const bands = [['< 20k', 0, 20000], ['20–40k', 20000, 40000], ['40–60k', 40000, 60000], ['60–100k', 60000, 100000], ['100k+', 100000, Infinity]];
+    const byRole = {}; hrActiveEmps().filter(e => e.basic_salary > 0).forEach(e => { const k = hrRole(e); byRole[k] = byRole[k] || []; byRole[k].push(e.basic_salary); });
+    return `${hrTiles([['Monthly basic', fmt(list.reduce((s, e) => s + (e.basic_salary || 0), 0))], ['On payroll', list.filter(e => e.basic_salary > 0).length], ['No salary set', list.filter(e => !e.basic_salary).length], ['Missing KRA/NSSF/SHA', list.filter(e => !e.kra_pin || !e.nssf_no || !e.sha_no).length]])}
+      ${hrEmpEditForm('hr-sal', 'Update salary & statutory details', ['basic_salary', 'job_grade', 'kra_pin', 'nssf_no', 'sha_no'])}
+      ${admTwoCharts(admChart('hr-sal-band', 'Staff by Salary Band', 'bar', bands.map(b => b[0]), [{ label: 'Staff', data: bands.map(b => list.filter(e => e.basic_salary > 0 && e.basic_salary >= b[1] && e.basic_salary < b[2]).length) }]),
+        admChart('hr-sal-role', 'Average Basic by Role', 'bar', Object.keys(byRole), [{ label: 'KES', data: Object.values(byRole).map(xs => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)) }], hrHorizontal))}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Grade', e => escapeHtml(e.job_grade || '—')], ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Basic salary', e => e.basic_salary ? fmt(e.basic_salary) : admBadge('Not set', 'amber')],
+        ['KRA PIN', e => escapeHtml(e.kra_pin || '—')], ['NSSF', e => escapeHtml(e.nssf_no || '—')], ['SHA', e => escapeHtml(e.sha_no || '—')]], 'No employees.', `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'branch', f, hrBranchList(), 'All branches')}</div>`)}`;
+  },
+  payProcessing: (spec, label) => {
+    const runs = hrRuns(); const emps = hrEmployees(); const g = hrGuard(runs, emps); if(g) return g;
+    const sel = runs.find(r => r.id === session.hrRunId) || runs[0];
+    const detail = sel ? hrRun(sel.id) : null;
+    const next = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+    const approver = hrHas('approve_payroll'); const preparer = hrHas('manage_payroll');
+    const actions = r => [r.status === 'Draft' && preparer ? `<button class="btn btn-sm btn-outline" onclick="hrRecompute('${r.id}')">Recompute</button>` : '',
+      r.status === 'Draft' && approver && r.createdBy !== session.userId ? `<button class="btn btn-sm btn-primary" onclick="hrRunStatus('${r.id}','Approved')">Approve</button>` : '',
+      r.status === 'Draft' && !approver ? '<span class="hint">Waiting for CEO / Director approval</span>' : '',
+      r.status === 'Approved' && preparer ? `<button class="btn btn-sm btn-primary" onclick="hrRunStatus('${r.id}','Paid')">Mark paid</button>` : ''].join('');
+    let body = '';
+    if(sel){
+      const g2 = hrGuard(detail);
+      if(g2) body = g2; else {
+        const lines = detail.lines;
+        body = `${admChart('hr-pp-net', 'Net Pay per Employee — ' + rgMonthLabel(sel.period), 'bar', lines.map(l => l.name), [{ label: 'Gross', data: lines.map(l => l.gross), backgroundColor: '#2E5C8A' }, { label: 'Net', data: lines.map(l => l.net), backgroundColor: '#2A9D8F' }])}
+          ${hrTableCard('Payroll lines — ' + rgMonthLabel(sel.period), lines, [['Employee', l => `<strong>${escapeHtml(l.name)}</strong><div class="hint">${escapeHtml(l.staffCode || '')}</div>`], ['Basic', l => fmt(l.basic)], ['Allowances', l => fmt(l.allowances)], ['Gross', l => fmt(l.gross)], ['PAYE', l => fmt(l.paye)], ['NSSF', l => fmt(l.nssf)], ['SHIF', l => fmt(l.shif)], ['Advance', l => fmt(l.salaryAdvance)], ['Other', l => fmt(l.otherDeductions)], ['Net pay', l => `<strong>${fmt(l.net)}</strong>`]], 'No employees with a salary set — add basic salaries under Employee Salaries, then recompute.')}`;
+      }
+    }
+    return `${preparer ? `<div class="fp ${isFormOpen('hr-run') ? 'fp-open' : ''}">${formToggleBtn('hr-run', 'Run payroll')}<div class="fp-body"><div class="card"><div class="card-title">Run payroll for a month</div>
+        <form onsubmit="return hrCreateRun(event)"><div class="form-grid"><div class="field"><label>Month</label><input type="month" name="period" value="${next}"></div></div>
+        <div class="hint" style="margin-bottom:8px;">Computes every active employee's pay from their basic salary, allowances, PAYE, NSSF, SHIF and approved salary advances. The CEO, a Director or the System Administrator approves it before it is paid.</div>
+        <button class="btn btn-primary btn-sm" type="submit">Compute payroll</button></form></div></div></div>` : ''}
+      ${sel ? `<div class="card"><div class="card-title"><span>${escapeHtml(rgMonthLabel(sel.period))} payroll ${admBadge(sel.status, hrRunTone(sel.status))}</span><div class="pill-row" style="flex-wrap:nowrap;">${actions(sel)}</div></div>
+        <div class="adm-tiles">${admTile('Staff', sel.employeeCount)}${admTile('Gross', fmt(sel.totalGross))}${admTile('Deductions', fmt(sel.totalDeductions))}${admTile('Net pay', fmt(sel.totalNet))}</div>
+        <div class="hint" style="margin-top:8px;">Prepared by ${escapeHtml(sel.createdByName || '—')}${sel.approvedByName ? ` · approved by ${escapeHtml(sel.approvedByName)}` : ''}${sel.paidAt ? ` · paid ${timeAgo(sel.paidAt)}` : ''}</div></div>` : ''}
+      ${body}
+      ${hrTableCard('All payroll runs', runs, [['Month', r => `<a href="#" onclick="session.hrRunId='${r.id}'; renderApp(); return false;"><strong>${escapeHtml(rgMonthLabel(r.period))}</strong></a>`], ['Staff', r => r.employeeCount], ['Net', r => fmt(r.totalNet)], ['Status', r => admBadge(r.status, hrRunTone(r.status))], ['', r => actions(r)]], 'No payroll has been run yet.')}`;
+  },
+  advances: (spec, label) => {
+    const adv = hrAdv(); const emps = hrEmployees(); const g = hrGuard(adv, emps); if(g) return g;
+    const f = hrFilter(label, { status:'' });
+    const list = adv.filter(a => !f.status || a.status === f.status);
+    const months = hrMonthKeys(6);
+    return `${hrTiles([['Requests', adv.length], ['Pending', adv.filter(a => a.status === 'Pending').length], ['Approved value', fmt(adv.filter(a => a.status === 'Approved').reduce((s, a) => s + Number(a.amount || 0), 0))], ['Recovered through payroll', 'Next payroll run']])}
+      ${admTwoCharts(admChart('hr-adv-mo', 'Advance Value by Month', 'bar', months.map(rgMonthLabel), [{ label: 'Approved', data: months.map(k => adv.filter(a => a.status === 'Approved' && String(a.created_at).slice(0, 7) === k).reduce((s, a) => s + Number(a.amount || 0), 0)), backgroundColor: '#2A9D8F' }, { label: 'Requested', data: months.map(k => adv.filter(a => String(a.created_at).slice(0, 7) === k).reduce((s, a) => s + Number(a.amount || 0), 0)), backgroundColor: '#3D8BD9' }]),
+        admChart('hr-adv-st', 'Requests by Status', 'pie', ['Pending','Approved','Rejected'], [{ data: ['Pending','Approved','Rejected'].map(s => adv.filter(a => a.status === s).length) }]))}
+      ${hrTableCard(label, list, [['Employee', a => hrEmpCell(a.user_id)], ['Amount', a => fmt(a.amount)], ['Reason', a => escapeHtml(a.reason || '—')], ['Requested', a => escapeHtml(String(a.created_at).slice(0, 10))], ['Status', a => admBadge(a.status, a.status === 'Approved' ? 'green' : a.status === 'Rejected' ? 'red' : 'amber')],
+        ['', a => a.status === 'Pending' && a.user_id !== session.userId ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="hrDecideAdvance('${a.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="hrDecideAdvance('${a.id}','Rejected')">Reject</button></div>` : '']],
+        'No salary advance requests.', `<div class="pill-row adm-filters">${hrSelectBox(label, 'status', f, ['Pending','Approved','Rejected'], 'All statuses')}</div>`)}`;
+  },
+  payslips: (spec, label) => {
+    const runs = hrRuns(); const emps = hrEmployees(); const g = hrGuard(runs, emps); if(g) return g;
+    if(!runs.length) return admError('No payroll has been run yet — payslips appear after Payroll Processing.');
+    const f = hrFilter(label, { run: runs[0].id, emp: '' });
+    const run = runs.find(r => r.id === f.run) || runs[0]; const d = hrRun(run.id); const g2 = hrGuard(d); if(g2) return g2;
+    const l = d.lines.find(x => x.employeeId === f.emp) || d.lines[0];
+    const rowsOf = x => [['Basic salary', x.basic], ['Allowances', x.allowances], ['Gross pay', x.gross], ['PAYE', -x.paye], ['NSSF', -x.nssf], ['SHIF', -x.shif], ['Salary advance', -x.salaryAdvance], ['Other deductions', -x.otherDeductions], ['Total deductions', -x.totalDeductions], ['Net pay', x.net]];
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;">${hrSelectBox(label, 'run', f, runs.map(r => ({ v: r.id, l: rgMonthLabel(r.period) + ' (' + r.status + ')' })), 'Latest month')}${hrSelectBox(label, 'emp', f, d.lines.map(x => ({ v: x.employeeId, l: x.name })), 'First employee')}</div></div>
+      ${l ? `<div class="card"><div class="card-title"><span>Payslip — ${escapeHtml(l.name)} · ${escapeHtml(rgMonthLabel(run.period))}</span>${hrGen(`Payslip ${l.name} ${run.period}`, ['Item', 'Amount (KES)'], rowsOf(l).map(r => [r[0], Math.round(r[1])]).concat([['KRA PIN', l.kraPin || ''], ['NSSF No.', l.nssfNo || ''], ['SHA No.', l.shaNo || ''], ['Reference', l.payslipRef || '']]))}</div>
+        <div class="adm-kv"><span>Staff code</span>${escapeHtml(l.staffCode || '—')}</div><div class="adm-kv"><span>Job title</span>${escapeHtml(l.jobTitle || '—')}</div><div class="adm-kv"><span>Branch</span>${escapeHtml(branchName(l.branchId))}</div>
+        <div class="adm-kv"><span>KRA PIN · NSSF · SHA</span>${escapeHtml([l.kraPin, l.nssfNo, l.shaNo].map(x => x || '—').join(' · '))}</div>
+        ${rowsOf(l).map(r => `<div class="adm-kv"><span>${escapeHtml(r[0])}</span>${['Gross pay','Net pay'].includes(r[0]) ? `<strong>${fmt(r[1])}</strong>` : (r[1] < 0 ? '− ' + fmt(-r[1]) : fmt(r[1]))}</div>`).join('')}
+        <div class="hint" style="margin-top:8px;">Status: ${admBadge(run.status, hrRunTone(run.status))} · Ref ${escapeHtml(l.payslipRef || '—')}</div></div>
+        ${admChart('hr-ps', 'Where the Pay Goes', 'pie', ['Net pay','PAYE','NSSF','SHIF','Advance','Other'], [{ data: [l.net, l.paye, l.nssf, l.shif, l.salaryAdvance, l.otherDeductions] }])}` : admError('This payroll has no employees.')}
+      ${hrTableCard('All payslips — ' + rgMonthLabel(run.period), d.lines, [['Employee', x => `<a href="#" onclick="hrFilter('${label}',{}).emp='${x.employeeId}'; renderApp(); return false;"><strong>${escapeHtml(x.name)}</strong></a>`], ['Gross', x => fmt(x.gross)], ['Deductions', x => fmt(x.totalDeductions)], ['Net', x => fmt(x.net)], ['Reference', x => escapeHtml(x.payslipRef || '—')]], 'No payslips.')}`;
+  },
+  payHistory: (spec, label) => {
+    const runs = hrRuns(); const g = hrGuard(runs); if(g) return g;
+    const asc = runs.slice().reverse();
+    return `${hrTiles([['Payroll runs', runs.length], ['Paid', runs.filter(r => r.status === 'Paid').length], ['Total net paid', fmt(runs.filter(r => r.status === 'Paid').reduce((s, r) => s + r.totalNet, 0))]])}
+      ${admTwoCharts(admChart('hr-ph-net', 'Net Pay by Month', 'bar', asc.map(r => rgMonthLabel(r.period)), [{ label: 'Net', data: asc.map(r => r.totalNet) }]),
+        admChart('hr-ph-staff', 'Staff Paid by Month', 'line', asc.map(r => rgMonthLabel(r.period)), [{ label: 'Staff', data: asc.map(r => r.employeeCount), fill: false, tension: 0.25 }]))}
+      ${hrTableCard(label, runs, [['Month', r => `<strong>${escapeHtml(rgMonthLabel(r.period))}</strong>`], ['Staff', r => r.employeeCount], ['Gross', r => fmt(r.totalGross)], ['Deductions', r => fmt(r.totalDeductions)], ['Net', r => fmt(r.totalNet)], ['Prepared by', r => escapeHtml(r.createdByName || '—')], ['Approved by', r => escapeHtml(r.approvedByName || '—')], ['Status', r => admBadge(r.status, hrRunTone(r.status))]], 'No payroll has been run yet.')}`;
+  },
+  payReport: (spec, label) => {
+    const runs = hrRuns(); const g = hrGuard(runs); if(g) return g;
+    if(!runs.length) return admError('No payroll has been run yet.');
+    const f = hrFilter(label, { run: runs[0].id });
+    const run = runs.find(r => r.id === f.run) || runs[0]; const d = hrRun(run.id); const g2 = hrGuard(d); if(g2) return g2;
+    const sum = k => d.lines.reduce((s, l) => s + (l[k] || 0), 0);
+    const comp = [['Gross pay', 'gross'], ['PAYE (KRA)', 'paye'], ['NSSF', 'nssf'], ['SHIF', 'shif'], ['Salary advances recovered', 'salaryAdvance'], ['Other deductions', 'otherDeductions'], ['Net pay', 'net']];
+    const asc = runs.slice().reverse().slice(-12);
+    return `<div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;">${hrSelectBox(label, 'run', f, runs.map(r => ({ v: r.id, l: rgMonthLabel(r.period) })), 'Latest month')}</div></div>
+      ${hrTiles([['PAYE to KRA', fmt(sum('paye'))], ['NSSF', fmt(sum('nssf'))], ['SHIF', fmt(sum('shif'))], ['Net pay', fmt(sum('net'))]])}
+      ${admTwoCharts(admChart('hr-pr-comp', 'Payroll Components — ' + rgMonthLabel(run.period), 'bar', comp.map(c => c[0]), [{ label: 'KES', data: comp.map(c => sum(c[1])) }], hrHorizontal),
+        admChart('hr-pr-trend', 'Payroll Cost Trend', 'line', asc.map(r => rgMonthLabel(r.period)), [{ label: 'Gross', data: asc.map(r => r.totalGross), fill: false, tension: 0.25 }, { label: 'Deductions', data: asc.map(r => r.totalDeductions), fill: false, tension: 0.25 }]))}
+      ${hrTableCard('Statutory remittances — ' + rgMonthLabel(run.period), comp.map(c => ({ c, v: sum(c[1]) })), [['Item', x => `<strong>${escapeHtml(x.c[0])}</strong>`], ['Amount', x => fmt(x.v)]], '—')}
+      ${hrTableCard('By employee — ' + rgMonthLabel(run.period), d.lines, [['Employee', l => escapeHtml(l.name)], ['KRA PIN', l => escapeHtml(l.kraPin || '—')], ['Gross', l => fmt(l.gross)], ['PAYE', l => fmt(l.paye)], ['NSSF No.', l => escapeHtml(l.nssfNo || '—')], ['NSSF', l => fmt(l.nssf)], ['SHA No.', l => escapeHtml(l.shaNo || '—')], ['SHIF', l => fmt(l.shif)], ['Net', l => fmt(l.net)]], 'No employees.')}`;
+  },
+
+  /* Performance */
+  staffTargets: (spec, label) => {
+    const tg = hrData('targets', '/api/targets', r => r.targets); const emps = hrEmployees(); const g = hrGuard(tg, emps); if(g) return g;
+    const f = hrFilter(label, { period:'', metric:'' });
+    const who = t => t.recipient_user_id ? hrEmpName(t.recipient_user_id) : t.branch_id ? branchName(t.branch_id) : 'Region';
+    const pct = t => Math.round(Number(t.achievementPct || 0));
+    const periods = [...new Set(tg.map(t => t.period))].sort().reverse(); const metrics = [...new Set(tg.map(t => t.metric))];
+    const list = tg.filter(t => (!f.period || t.period === f.period) && (!f.metric || t.metric === f.metric));
+    const top = list.slice().sort((a, b) => pct(b) - pct(a)).slice(0, 15);
+    const ml = m => (typeof TARGET_METRIC_LABELS !== 'undefined' && TARGET_METRIC_LABELS[m]) || m;
+    return `${hrTiles([['Targets', list.length], ['Met (100%+)', list.filter(t => pct(t) >= 100).length], ['Below half', list.filter(t => pct(t) < 50).length], ['Average achievement', list.length ? Math.round(list.reduce((s, t) => s + pct(t), 0) / list.length) + '%' : '—']])}
+      ${admChart('hr-tg', 'Achievement %', 'bar', top.map(who), [{ label: 'Achievement %', data: top.map(pct) }], hrHorizontal)}
+      ${hrTableCard(label, list, [['Staff / branch', t => `<strong>${escapeHtml(who(t))}</strong>`], ['Branch', t => escapeHtml(t.branch_id ? branchName(t.branch_id) : '—')], ['Metric', t => escapeHtml(ml(t.metric))], ['Period', t => escapeHtml(t.period)], ['Target', t => fmtNum(t.target_value)], ['Achieved', t => fmtNum(t.achieved || 0)], ['Achievement', t => hrBar(pct(t))]],
+        'No targets have been set yet. Managers set lending targets for their staff.', `<div class="pill-row adm-filters">${hrSelectBox(label, 'period', f, periods, 'All periods')}${hrSelectBox(label, 'metric', f, metrics.map(m => ({ v: m, l: ml(m) })), 'All metrics')}</div><div class="hint" style="margin-bottom:8px;">Targets are set by managers; HR sees them here to support reviews and appraisals.</div>`)}`;
+  },
+  perfTracking: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const latest = (kind, id) => hrRecs(kind, r => r.employeeId === id && r.score != null).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    const rows = hrActiveEmps().map(e => { const rv = latest('review', e.id), ap = latest('appraisal', e.id); const plans = hrRecs('perf_plan', r => r.employeeId === e.id);
+      return { e, rv, ap, plansOpen: plans.filter(p => p.isOpen).length, plansDone: plans.filter(p => p.status === 'Completed').length, pip: hrRecs('pip', r => r.employeeId === e.id && r.isOpen).length }; });
+    const scored = rows.filter(r => r.rv || r.ap).sort((a, b) => ((b.rv || b.ap).score) - ((a.rv || a.ap).score)).slice(0, 15);
+    return `${hrTiles([['Reviewed', rows.filter(r => r.rv).length + ' / ' + rows.length], ['Average review score', rows.filter(r => r.rv).length ? Math.round(rows.filter(r => r.rv).reduce((s, r) => s + r.rv.score, 0) / rows.filter(r => r.rv).length) : '—'], ['Objectives open', rows.reduce((s, r) => s + r.plansOpen, 0)], ['On an improvement plan', rows.filter(r => r.pip).length]])}
+      ${admChart('hr-pt', 'Latest Scores', 'bar', scored.map(r => r.e.name), [{ label: 'Review', data: scored.map(r => r.rv ? r.rv.score : 0), backgroundColor: '#2E5C8A' }, { label: 'Appraisal', data: scored.map(r => r.ap ? r.ap.score : 0), backgroundColor: '#2A9D8F' }])}
+      ${hrTableCard(label, rows, [['Employee', r => hrEmpCell(r.e.id)], ['Role', r => escapeHtml(hrRole(r.e))], ['Latest review', r => r.rv ? hrScore(r.rv.score) + ` <span class="hint">${escapeHtml(r.rv.data.period || '')}</span>` : '—'], ['Latest appraisal', r => r.ap ? hrScore(r.ap.score) : '—'],
+        ['Objectives', r => `${r.plansDone} done · ${r.plansOpen} open`], ['Improvement plan', r => r.pip ? admBadge('Active', 'amber') : '—']], 'No employees.',
+        '<div class="hint" style="margin-bottom:8px;">Lending targets and achievement for field staff are on Staff Targets.</div>')}`;
+  },
+  perfReport: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const scored = hrRecs(['review', 'appraisal'], r => r.score != null);
+    const buckets = [['Below 50', 0, 50], ['50–64', 50, 65], ['65–74', 65, 75], ['75–89', 75, 90], ['90+', 90, 101]];
+    const byBr = {}; scored.forEach(r => { const e = emps.find(x => x.id === r.employeeId); const b = branchName(e && e.branch_id); (byBr[b] = byBr[b] || []).push(r.score); });
+    const periods = [...new Set(hrRecs('review', r => r.score != null).map(r => r.data.period || String(r.createdAt).slice(0, 7)))].sort();
+    const avg = xs => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
+    const recos = admGroup(hrRecs('appraisal'), r => r.data.recommendation);
+    return `${hrTiles([['Scored reviews & appraisals', scored.length], ['Average score', avg(scored.map(r => r.score))], ['Top performers (75+)', scored.filter(r => r.score >= 75).length], ['Below 50', scored.filter(r => r.score < 50).length], ['Open improvement plans', hrCount('pip', r => r.isOpen)]])}
+      ${admTwoCharts(admChart('hr-prf-dist', 'Score Distribution', 'bar', buckets.map(b => b[0]), [{ label: 'Ratings', data: buckets.map(b => scored.filter(r => r.score >= b[1] && r.score < b[2]).length) }]),
+        admChart('hr-prf-trend', 'Average Review Score by Period', 'line', periods, [{ label: 'Average', data: periods.map(p => avg(hrRecs('review', r => r.score != null && (r.data.period || String(r.createdAt).slice(0, 7)) === p).map(r => r.score))), fill: false, tension: 0.25 }]))}
+      ${admTwoCharts(admChart('hr-prf-br', 'Average Score by Branch', 'bar', Object.keys(byBr), [{ label: 'Average', data: Object.values(byBr).map(avg) }], hrHorizontal),
+        admChart('hr-prf-rec', 'Appraisal Recommendations', 'polarArea', recos[0], [{ data: recos[1] }]))}
+      ${hrTableCard('By branch', Object.keys(byBr).map(b => ({ b, xs: byBr[b] })), [['Branch', x => `<strong>${escapeHtml(x.b)}</strong>`], ['Ratings', x => x.xs.length], ['Average', x => hrScore(avg(x.xs))], ['Highest', x => Math.max(...x.xs)], ['Lowest', x => Math.min(...x.xs)]], 'No scored reviews yet.')}`;
+  },
+
+  /* Benefits */
+  benefitsOverview: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const ben = hrRecs('benefit', r => r.status === 'Active'); const byType = admGroup(ben, r => r.category, r => r.amount); const people = admGroup(ben, r => r.category);
+    const active = hrActiveEmps().length;
+    return `${hrTiles([['Active benefits', ben.length], ['Monthly cost', fmt(ben.reduce((s, r) => s + (r.amount || 0), 0))], ['Employees covered', new Set(ben.map(r => r.employeeId)).size + ' / ' + active], ['Welfare cases open', hrCount('welfare', r => r.isOpen)]])}
+      ${admTwoCharts(admChart('hr-bo-cost', 'Monthly Cost by Benefit Type', 'bar', byType[0], [{ label: 'KES', data: byType[1] }]), admChart('hr-bo-ppl', 'Enrolments by Type', 'polarArea', people[0], [{ data: people[1] }]))}
+      ${hrTableCard('By benefit type', HR_BENEFIT_TYPES.map(t => ({ t, xs: ben.filter(r => r.category === t) })).filter(x => x.xs.length), [['Benefit', x => `<strong>${escapeHtml(x.t)}</strong>`], ['Employees', x => new Set(x.xs.map(r => r.employeeId)).size], ['Coverage', x => hrBar(hrPct(new Set(x.xs.map(r => r.employeeId)).size, active))], ['Monthly cost', x => fmt(x.xs.reduce((s, r) => s + (r.amount || 0), 0))]], 'No active benefits — add them under Employee Benefits.')}`;
+  },
+  benefitsReport: (spec, label) => {
+    const recs = hrRecords(); const g = hrGuard(recs); if(g) return g;
+    const ben = hrRecs('benefit'); const wel = hrRecs('welfare'); const months = hrMonthKeys(12);
+    const activeIn = (r, k) => (r.startDate || String(r.createdAt).slice(0, 10)) <= hrMonthEnd(k) && (!r.endDate || r.endDate >= hrMonthStart(k)) && r.status !== 'Ended';
+    return `${hrTiles([['Benefit cost this month', fmt(ben.filter(r => activeIn(r, hrThisMonth())).reduce((s, r) => s + (r.amount || 0), 0))], ['Welfare paid', fmt(wel.filter(r => r.status === 'Paid').reduce((s, r) => s + (r.amount || 0), 0))], ['Welfare cases', wel.length]])}
+      ${admTwoCharts(admChart('hr-br-mo', 'Benefit Cost by Month', 'line', months.map(rgMonthLabel), [{ label: 'KES', data: months.map(k => ben.filter(r => activeIn(r, k)).reduce((s, r) => s + (r.amount || 0), 0)), fill: true, tension: 0.3 }]),
+        admChart('hr-br-wel', 'Welfare by Type', 'bar', admGroup(wel, r => r.category)[0], [{ label: 'KES', data: admGroup(wel, r => r.category, r => r.amount)[1] }]))}
+      ${hrTableCard('Benefits by type', HR_BENEFIT_TYPES.map(t => ({ t, xs: ben.filter(r => r.category === t) })).filter(x => x.xs.length), [['Type', x => escapeHtml(x.t)], ['Active', x => x.xs.filter(r => r.status === 'Active').length], ['Ended / suspended', x => x.xs.filter(r => r.status !== 'Active').length], ['Monthly cost', x => fmt(x.xs.filter(r => r.status === 'Active').reduce((s, r) => s + (r.amount || 0), 0))]], 'No benefits recorded.')}
+      ${hrTableCard('Welfare', wel, [['Employee', r => hrEmpCell(r.employeeId)], ['Type', r => escapeHtml(r.category || '—')], ['Reason', r => escapeHtml(r.title)], ['Amount', r => r.amount != null ? fmt(r.amount) : '—'], ['Status', r => admBadge(r.status, HR_TONE[r.status])]], 'No welfare cases.')}`;
+  },
+
+  /* Training */
+  trainingCalendar: (spec, label) => {
+    const recs = hrRecords(); const g = hrGuard(recs); if(g) return g;
+    const progs = hrRecs('training_program').filter(p => p.startDate).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const months = [...new Set(progs.map(p => p.startDate.slice(0, 7)))].sort();
+    return `${hrTiles([['Upcoming', progs.filter(p => p.startDate >= todayISO() && p.status !== 'Cancelled').length], ['Running now', progs.filter(p => p.startDate <= todayISO() && (!p.endDate || p.endDate >= todayISO()) && p.status !== 'Cancelled').length], ['This year', progs.filter(p => p.startDate.slice(0, 4) === String(new Date().getFullYear())).length]])}
+      ${admChart('hr-tc', 'Programs per Month', 'bar', months.map(rgMonthLabel), [{ label: 'Programs', data: months.map(k => progs.filter(p => p.startDate.slice(0, 7) === k).length) }])}
+      ${months.slice().reverse().map(k => hrTableCard(rgMonthLabel(k), progs.filter(p => p.startDate.slice(0, 7) === k), [['Program', p => `<strong>${escapeHtml(p.title)}</strong><div class="hint">${escapeHtml(p.category || '')}</div>`], ['Dates', p => escapeHtml(`${p.startDate} → ${p.endDate || '—'}`)], ['Provider', p => escapeHtml(p.data.provider || '—')], ['Enrolled', p => hrCount('training_enrolment', x => x.relatedId === p.id)], ['Status', p => admBadge(p.status, HR_TONE[p.status])]], '')).join('') || admError('No training programs with dates yet — add them under Training Programs.')}`;
+  },
+  trainingReport: (spec, label) => {
+    const recs = hrRecords(); const g = hrGuard(recs); if(g) return g;
+    const progs = hrRecs('training_program'); const enr = hrRecs('training_enrolment'); const reqs = hrRecs('training_request');
+    const cats = [...new Set(progs.map(p => p.category || 'Other'))];
+    const rows = progs.map(p => { const xs = enr.filter(x => x.relatedId === p.id); return { p, n: xs.length, done: xs.filter(x => x.status === 'Completed').length, avg: xs.filter(x => x.score != null).length ? Math.round(xs.filter(x => x.score != null).reduce((s, x) => s + x.score, 0) / xs.filter(x => x.score != null).length) : null }; });
+    return `${hrTiles([['Programs', progs.length], ['Enrolments', enr.length], ['Completion rate', hrPct(enr.filter(x => x.status === 'Completed').length, enr.filter(x => x.status !== 'Enrolled').length) + '%'], ['Training cost', fmt(progs.filter(p => p.status !== 'Cancelled').reduce((s, p) => s + (p.amount || 0), 0))], ['Requests pending', reqs.filter(r => r.status === 'Pending').length]])}
+      ${admTwoCharts(admChart('hr-tr-cat', 'Cost by Category', 'bar', cats, [{ label: 'KES', data: cats.map(c => progs.filter(p => (p.category || 'Other') === c && p.status !== 'Cancelled').reduce((s, p) => s + (p.amount || 0), 0)) }]),
+        admChart('hr-tr-enr', 'Enrolment Outcomes', 'pie', ['Enrolled','Completed','Failed','Withdrawn'], [{ data: ['Enrolled','Completed','Failed','Withdrawn'].map(s => enr.filter(x => x.status === s).length) }]))}
+      ${hrTableCard('By program', rows, [['Program', r => `<strong>${escapeHtml(r.p.title)}</strong>`], ['Category', r => escapeHtml(r.p.category || '—')], ['Enrolled', r => r.n], ['Completed', r => r.done], ['Average score', r => hrScore(r.avg)], ['Cost', r => r.p.amount != null ? fmt(r.p.amount) : '—'], ['Status', r => admBadge(r.p.status, HR_TONE[r.p.status])]], 'No training programs yet.')}`;
+  },
+
+  /* Employee relations */
+  relations: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const kinds = [['case_request', 'Requests'], ['case_complaint', 'Complaints'], ['case_grievance', 'Grievances'], ['case_disciplinary', 'Disciplinary']];
+    const all = hrRecs(kinds.map(k => k[0])); const open = all.filter(r => r.isOpen); const months = hrMonthKeys(6);
+    return `${hrTiles(kinds.map(k => [k[1] + ' open', hrCount(k[0], r => r.isOpen)]).concat([['Urgent / high', open.filter(r => ['Urgent','High'].includes(r.data.priority)).length]]))}
+      ${admTwoCharts(admChart('hr-rel-kind', 'Open vs Closed', 'bar', kinds.map(k => k[1]), [{ label: 'Open', data: kinds.map(k => hrCount(k[0], r => r.isOpen)), backgroundColor: '#E9C46A' }, { label: 'Closed', data: kinds.map(k => hrCount(k[0], r => !r.isOpen)), backgroundColor: '#2A9D8F' }], hrStacked),
+        admChart('hr-rel-mo', 'Cases Raised per Month', 'line', months.map(rgMonthLabel), kinds.map((k, i) => ({ label: k[1], data: months.map(m => hrCount(k[0], r => String(r.startDate || r.createdAt).slice(0, 7) === m)), borderColor: ADM_PALETTE[i], backgroundColor: ADM_PALETTE[i], fill: false, tension: 0.25 }))))}
+      ${hrTableCard('Open cases', open, [['Type', r => escapeHtml(HR_KIND_UI[r.kind].singular)], ['Employee', r => hrEmpCell(r.employeeId)], ['Subject', r => `<strong>${escapeHtml(r.title)}</strong>`], ['Priority', r => admBadge(r.data.priority || 'Normal', { Urgent:'red', High:'amber', Normal:'blue', Low:'grey' }[r.data.priority || 'Normal'])], ['Raised', r => escapeHtml(r.startDate || String(r.createdAt).slice(0, 10))], ['Status', r => admBadge(r.status, HR_TONE[r.status])], ['', r => hrCanWrite() ? hrActions(r) : '']], 'No open cases.')}`;
+  },
+  caseList: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const f = hrFilter(label, { q:'', kind:'' });
+    const all = hrRecs(['case_request', 'case_complaint', 'case_grievance', 'case_disciplinary'], r => !spec.closed || ['Resolved', 'Closed'].includes(r.status));
+    const list = all.filter(r => (!f.kind || r.kind === f.kind) && (!f.q || [r.title, r.employeeName, r.category].some(x => (x || '').toLowerCase().includes(f.q.toLowerCase()))));
+    const days = r => r.closedAt ? Math.max(0, Math.round((new Date(r.closedAt) - new Date(r.startDate ? r.startDate + 'T00:00:00' : r.createdAt)) / 86400000)) : null;
+    const byCat = admGroup(all, r => r.category); const closedList = all.filter(r => days(r) != null);
+    return `${hrTiles([['Cases', all.length], spec.closed ? ['Average days to resolve', closedList.length ? Math.round(closedList.reduce((s, r) => s + days(r), 0) / closedList.length) : '—'] : ['Open', all.filter(r => r.isOpen).length], ['Disciplinary sanctions', all.filter(r => r.kind === 'case_disciplinary' && r.data.sanction && r.data.sanction !== 'None').length]])}
+      ${admTwoCharts(admChart('hr-cl-cat-' + (spec.closed ? 'c' : 'a'), 'By Category', 'bar', byCat[0], [{ label: 'Cases', data: byCat[1] }], hrHorizontal),
+        admChart('hr-cl-kind-' + (spec.closed ? 'c' : 'a'), 'By Type', 'pie', ['Requests','Complaints','Grievances','Disciplinary'], [{ data: ['case_request','case_complaint','case_grievance','case_disciplinary'].map(k => all.filter(r => r.kind === k).length) }]))}
+      ${hrTableCard(label, list, [['Type', r => escapeHtml(HR_KIND_UI[r.kind].singular)], ['Employee', r => hrEmpCell(r.employeeId)], ['Subject', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category || '')}</div>`], ['Raised', r => escapeHtml(r.startDate || String(r.createdAt).slice(0, 10))],
+        ['Status', r => admBadge(r.status, HR_TONE[r.status])], ['Outcome', r => escapeHtml(r.data.sanction && r.data.sanction !== 'None' ? 'Sanction: ' + r.data.sanction : r.closedAt ? 'Closed after ' + days(r) + ' day(s)' : '—')]], 'No cases.',
+        `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'kind', f, [['case_request','Requests'],['case_complaint','Complaints'],['case_grievance','Grievances'],['case_disciplinary','Disciplinary']].map(k => ({ v: k[0], l: k[1] })), 'All case types')}</div>`)}`;
+  },
+
+  /* HR administration */
+  departments: (spec, label) => {
+    const depts = hrDepts(); const emps = hrEmployees(); const g = hrGuard(depts, emps); if(g) return g;
+    const unassigned = hrActiveEmps().filter(e => !e.department_id).length;
+    return `${hrTiles([['Departments', depts.length], ['Staff assigned', depts.reduce((s, d) => s + d.headcount, 0)], ['Not assigned', unassigned]])}
+      ${hrCanWrite() ? `<div class="fp ${isFormOpen('hr-dept') ? 'fp-open' : ''}">${formToggleBtn('hr-dept', 'New department')}<div class="fp-body"><div class="card"><div class="card-title">New department</div>
+        <form onsubmit="return hrCreateDept(event)"><div class="form-grid"><div class="field"><label>Department name</label><input name="name"></div></div><button class="btn btn-primary btn-sm" type="submit">Save department</button></form></div></div></div>` : ''}
+      ${hrEmpEditForm('hr-dept-assign', 'Assign employee to department', ['department_id', 'job_title'])}
+      ${admChart('hr-dept-hc', 'Headcount by Department', 'bar', depts.map(d => d.name).concat(unassigned ? ['Not assigned'] : []), [{ label: 'Staff', data: depts.map(d => d.headcount).concat(unassigned ? [unassigned] : []) }])}
+      ${hrTableCard(label, depts, [['Department', d => `<strong>${escapeHtml(d.name)}</strong>`], ['Headcount', d => d.headcount], ['Share of staff', d => hrBar(hrPct(d.headcount, hrActiveEmps().length))], ['', d => hrCanWrite() ? `<button class="btn btn-sm btn-outline" onclick="hrRenameDept('${d.id}')">Rename</button>` : '']], 'No departments yet.')}`;
+  },
+  branchAssign: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const g = hrGuard(emps, recs); if(g) return g;
+    const f = hrFilter(label, { q:'', branch:'' });
+    const live = hrActiveEmps(); const list = live.filter(e => hrEmpMatch(e, f.q) && (!f.branch || e.branch_id === f.branch));
+    const brs = (DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    const roles = [...new Set(live.map(e => e.role_id))];
+    return `${hrTiles([['Branches', brs.length], ['Staff posted', live.filter(e => e.branch_id).length], ['Not posted to a branch', live.filter(e => !e.branch_id).length], ['Transfers in progress', hrCount('transfer', r => r.isOpen)]])}
+      ${admChart('hr-ba', 'Staff per Branch by Role', 'bar', brs.map(b => b.name), roles.map((r, i) => ({ label: ROLE_ID_TO_DISPLAY[r] || r, data: brs.map(b => live.filter(e => e.branch_id === b.id && e.role_id === r).length), backgroundColor: ADM_PALETTE[i % 10] })), hrStacked)}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Branch', e => `<strong>${escapeHtml(branchName(e.branch_id))}</strong>`], ['Region', e => escapeHtml(admRegionName(e.region_id))], ['Pending transfer', e => { const t = hrRecs('transfer', r => r.employeeId === e.id && r.isOpen)[0]; return t ? `→ ${escapeHtml(branchName(t.data.toBranchId))} ${admBadge(t.status, HR_TONE[t.status])}` : '—'; }]],
+        'No employees match.', `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'branch', f, hrBranchList(), 'All branches')}${hrCanWrite() ? `<button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Employee Transfers')">Move someone — Employee Transfers</button>` : ''}</div>`)}`;
+  },
+
+  /* Analytics */
+  workforce: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const live = hrActiveEmps(); const gender = admGroup(live, e => e.gender || 'Not recorded'); const type = admGroup(live, e => e.employment_type || 'Not recorded');
+    const ages = [['Under 25', 0, 25], ['25–34', 25, 35], ['35–44', 35, 45], ['45–54', 45, 55], ['55+', 55, 200]];
+    const ten = [['< 1 yr', 0, 1], ['1–2 yrs', 1, 2], ['2–5 yrs', 2, 5], ['5+ yrs', 5, 100]];
+    const byRole = admGroup(live, hrRole);
+    return `${hrTiles([['Headcount', live.length], ['Average age', (() => { const a = live.map(hrAge).filter(x => x != null); return a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : '—'; })()], ['Average tenure', (live.reduce((s, e) => s + hrTenureYears(e), 0) / (live.length || 1)).toFixed(1) + ' yrs'], ['Branches staffed', new Set(live.map(e => e.branch_id).filter(Boolean)).size]])}
+      ${admTwoCharts(admChart('hr-wf-g', 'Gender', 'pie', gender[0], [{ data: gender[1] }]), admChart('hr-wf-t', 'Employment Type', 'bar', type[0], [{ label: 'Staff', data: type[1] }]))}
+      ${admTwoCharts(admChart('hr-wf-age', 'Age Bands', 'bar', ages.map(a => a[0]), [{ label: 'Staff', data: ages.map(a => live.filter(e => { const x = hrAge(e); return x != null && x >= a[1] && x < a[2]; }).length) }]),
+        admChart('hr-wf-ten', 'Tenure', 'bar', ten.map(t => t[0]), [{ label: 'Staff', data: ten.map(t => live.filter(e => hrTenureYears(e) >= t[1] && hrTenureYears(e) < t[2]).length) }]))}
+      ${admChart('hr-wf-role', 'Staff by Role', 'polarArea', byRole[0], [{ data: byRole[1] }])}
+      ${hrTableCard('Workforce by role', byRole[0].map((r, i) => ({ r, n: byRole[1][i] })), [['Role', x => `<strong>${escapeHtml(x.r)}</strong>`], ['Staff', x => x.n], ['Share', x => hrBar(hrPct(x.n, live.length))]], 'No employees.')}`;
+  },
+  headcount: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const live = hrActiveEmps(); const byBr = admGroup(live, e => branchName(e.branch_id)); const byDept = admGroup(live, e => hrDeptName(e.department_id)); const byRole = admGroup(live, hrRole);
+    const months = hrMonthKeys(12); const growth = months.map(k => emps.filter(e => String(e.created_at).slice(0, 7) <= k && e.status !== 'Terminated').length);
+    return `${hrTiles([['Current headcount', live.length], ['Joined in the last 12 months', emps.filter(e => String(e.created_at).slice(0, 7) >= months[0]).length], ['Branches', byBr[0].length], ['Departments', byDept[0].length]])}
+      ${admTwoCharts(admChart('hr-hc-grow', 'Headcount Growth (12 months)', 'line', months.map(rgMonthLabel), [{ label: 'Headcount', data: growth, fill: true, tension: 0.3 }]), admChart('hr-hc-br', 'By Branch', 'bar', byBr[0], [{ label: 'Staff', data: byBr[1] }], hrHorizontal))}
+      ${admTwoCharts(admChart('hr-hc-dept', 'By Department', 'bar', byDept[0], [{ label: 'Staff', data: byDept[1] }]), admChart('hr-hc-role', 'By Role', 'bar', byRole[0], [{ label: 'Staff', data: byRole[1] }]))}
+      ${hrTableCard('By branch', byBr[0].map((b, i) => ({ b, n: byBr[1][i] })).sort((a, c) => c.n - a.n), [['Branch', x => `<strong>${escapeHtml(x.b)}</strong>`], ['Staff', x => x.n], ['Loan officers', x => live.filter(e => branchName(e.branch_id) === x.b && e.role_id === 'loan_officer').length], ['Share', x => hrBar(hrPct(x.n, live.length))]], 'No employees.')}`;
+  },
+  turnover: (spec, label) => {
+    const emps = hrEmployees(); const audit = hrAudit(); const g = hrGuard(emps, audit); if(g) return g;
+    const months = hrMonthKeys(12);
+    const exits = audit.filter(a => /terminat/i.test(a.action || '') || /Terminated/.test(String(a.new_value || '')));
+    const exitMonth = id => { const a = exits.find(x => x.record_id === id); return a ? String(a.created_at).slice(0, 7) : null; };
+    const leavers = emps.filter(e => e.status === 'Terminated');
+    const joins = months.map(k => emps.filter(e => String(e.created_at).slice(0, 7) === k).length);
+    const leaves = months.map(k => leavers.filter(e => exitMonth(e.id) === k).length);
+    const avgHead = (hrActiveEmps().length + leavers.length / 2) || 1;
+    const rate = hrPct(leaves.reduce((a, b) => a + b, 0), avgHead);
+    return `${hrTiles([['Joiners (12 months)', joins.reduce((a, b) => a + b, 0)], ['Leavers (12 months)', leaves.reduce((a, b) => a + b, 0)], ['Turnover rate (12 months)', rate + '%'], ['Total terminated', leavers.length]])}
+      ${admTwoCharts(admChart('hr-to-mo', 'Joiners and Leavers by Month', 'bar', months.map(rgMonthLabel), [{ label: 'Joiners', data: joins, backgroundColor: '#2A9D8F' }, { label: 'Leavers', data: leaves, backgroundColor: '#E76F51' }]),
+        admChart('hr-to-net', 'Net Change by Month', 'line', months.map(rgMonthLabel), [{ label: 'Net change', data: months.map((_, i) => joins[i] - leaves[i]), fill: false, tension: 0.25 }], { scales: { y: { ticks: { precision: 0 } } } }))}
+      ${hrTableCard('Leavers', leavers, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Branch', e => escapeHtml(branchName(e.branch_id))], ['Joined', e => escapeHtml(String(e.created_at || '').slice(0, 10))], ['Left', e => escapeHtml(exitMonth(e.id) ? rgMonthLabel(exitMonth(e.id)) : '—')], ['Tenure', e => hrTenureYears(e).toFixed(1) + ' yrs']], 'Nobody has left.')}`;
+  },
+  hrSummary: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const leave = hrLeave(); const runs = hrRuns(); const att = hrAtt(todayISO(), todayISO());
+    const g = hrGuard(emps, recs, leave, runs, att); if(g) return g;
+    const live = hrActiveEmps(); const byBr = admGroup(live, e => branchName(e.branch_id)); const asc = runs.slice().reverse().slice(-6);
+    const rows = [['Headcount', live.length], ['On leave today', leave.filter(l => l.status === 'Approved' && l.start_date <= todayISO() && l.end_date >= todayISO()).length], ['Leave pending', leave.filter(l => l.status === 'Pending').length],
+      ['Attendance recorded today', att.length + ' / ' + live.length], ['Open vacancies', hrCount('vacancy', r => r.isOpen)], ['Candidates in process', hrCount('application', r => r.isOpen)], ['Open relations cases', hrCount(['case_request','case_complaint','case_grievance','case_disciplinary'], r => r.isOpen)],
+      ['Active improvement plans', hrCount('pip', r => r.isOpen)], ['Training running', hrCount('training_program', r => r.status === 'Ongoing')], ['Latest payroll', runs[0] ? `${rgMonthLabel(runs[0].period)} — ${fmt(runs[0].totalNet)} (${runs[0].status})` : 'None'],
+      ['Contracts ending in 60 days', live.filter(e => e.contract_end && hrDaysTo(e.contract_end) >= 0 && hrDaysTo(e.contract_end) <= 60).length], ['Access requests pending', hrCount('access_request', r => r.status === 'Pending')]];
+    return `${hrTiles(rows.slice(0, 8))}
+      ${admTwoCharts(admChart('hr-sum-br', 'Headcount by Branch', 'bar', byBr[0], [{ label: 'Staff', data: byBr[1] }]), admChart('hr-sum-pay', 'Net Payroll Trend', 'line', asc.map(r => rgMonthLabel(r.period)), [{ label: 'Net pay', data: asc.map(r => r.totalNet), fill: true, tension: 0.3 }]))}
+      ${hrTableCard('HR summary — ' + todayISO(), rows, [['Measure', r => `<strong>${escapeHtml(r[0])}</strong>`], ['Value', r => escapeHtml(String(r[1]))]], '')}`;
+  },
+
+  /* Compliance */
+  empCompliance: (spec, label) => {
+    const emps = hrEmployees(); const recs = hrRecords(); const g = hrGuard(emps, recs); if(g) return g;
+    const live = hrActiveEmps(); const issues = [];
+    live.forEach(e => {
+      [['kra_pin', 'KRA PIN missing'], ['nssf_no', 'NSSF number missing'], ['sha_no', 'SHA number missing'], ['national_id', 'National ID missing']].forEach(([k, t]) => { if(!e[k]) issues.push({ e, type: t, detail: '', tone: 'red' }); });
+      if(e.contract_end){ const n = hrDaysTo(e.contract_end); if(n < 0) issues.push({ e, type: 'Contract expired', detail: e.contract_end, tone: 'red' }); else if(n <= 60) issues.push({ e, type: 'Contract ending soon', detail: `${e.contract_end} (${n}d)`, tone: 'amber' }); }
+      else if(e.employment_type && e.employment_type !== 'Permanent') issues.push({ e, type: 'No contract end date', detail: e.employment_type, tone: 'amber' });
+      if(e.probation_end){ const n = hrDaysTo(e.probation_end); if(n >= -30 && n <= 30) issues.push({ e, type: 'Probation review due', detail: e.probation_end, tone: 'amber' }); }
+    });
+    hrRecs('employee_document', r => r.endDate && hrDaysTo(r.endDate) < 0).forEach(r => { const e = live.find(x => x.id === r.employeeId); if(e) issues.push({ e, type: 'Document expired', detail: r.title, tone: 'red' }); });
+    const byType = admGroup(issues, i => i.type);
+    const complete = live.filter(e => e.kra_pin && e.nssf_no && e.sha_no && e.national_id).length;
+    return `${hrTiles([['Statutory details complete', complete + ' / ' + live.length], ['Issues', issues.length], ['Contracts ending in 60 days', issues.filter(i => i.type === 'Contract ending soon').length], ['Probation reviews due', issues.filter(i => i.type === 'Probation review due').length]])}
+      ${hrEmpEditForm('hr-comp', 'Fix employee details', ['kra_pin', 'nssf_no', 'sha_no', 'contract_start', 'contract_end', 'probation_end'])}
+      ${admChart('hr-ec', 'Issues by Type', 'bar', byType[0], [{ label: 'Issues', data: byType[1] }], hrHorizontal)}
+      ${hrTableCard(label, issues, [['Employee', i => hrEmpCell(i.e.id)], ['Role', i => escapeHtml(hrRole(i.e))], ['Issue', i => admBadge(i.type, i.tone)], ['Detail', i => escapeHtml(i.detail)]], 'Everything is in order.')}`;
+  },
+  contracts: (spec, label) => {
+    const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;
+    const live = hrActiveEmps(); const f = hrFilter(label, { q:'', type:'' });
+    const list = live.filter(e => hrEmpMatch(e, f.q) && (!f.type || e.employment_type === f.type)).sort((a, b) => (a.contract_end || '9999').localeCompare(b.contract_end || '9999'));
+    const months = hrMonthKeys(1).concat(Array.from({ length: 11 }, (_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + i + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }));
+    const types = [...new Set(live.map(e => e.employment_type).filter(Boolean))];
+    return `${hrTiles([['On a fixed-term contract', live.filter(e => e.contract_end).length], ['Ending in 30 days', live.filter(e => e.contract_end && hrDaysTo(e.contract_end) >= 0 && hrDaysTo(e.contract_end) <= 30).length], ['Expired', live.filter(e => e.contract_end && hrDaysTo(e.contract_end) < 0).length], ['No contract dates', live.filter(e => !e.contract_start).length]])}
+      ${hrEmpEditForm('hr-contract', 'Update contract', ['employment_type', 'contract_start', 'contract_end', 'probation_end'])}
+      ${admChart('hr-ct', 'Contracts Ending by Month (next 12 months)', 'bar', months.map(rgMonthLabel), [{ label: 'Contracts', data: months.map(k => live.filter(e => (e.contract_end || '').slice(0, 7) === k).length) }])}
+      ${hrTableCard(label, list, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Type', e => escapeHtml(e.employment_type || '—')], ['Start', e => escapeHtml(e.contract_start || '—')], ['End', e => hrExpiry(e.contract_end)], ['Probation ends', e => escapeHtml(e.probation_end || '—')]], 'No employees.',
+        `<div class="pill-row adm-filters">${hrSearchBox(label, f)}${hrSelectBox(label, 'type', f, types, 'All employment types')}</div>`)}`;
+  },
+  policyCompliance: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const live = hrActiveEmps(); const pols = hrRecs('policy', r => r.status === 'Active');
+    const f = hrFilter(label, { policy: pols[0] ? pols[0].id : '' });
+    const acked = id => new Set(hrRecs('policy_ack', a => a.relatedId === id).map(a => a.employeeId));
+    const sel = pols.find(p => p.id === f.policy); const missing = sel ? live.filter(e => !acked(sel.id).has(e.id)) : [];
+    return `${hrTiles([['Active policies', pols.length], ['Acknowledgements', hrCount('policy_ack')], ['Fully acknowledged', pols.filter(p => live.every(e => acked(p.id).has(e.id))).length]])}
+      ${admChart('hr-pc', 'Acknowledged %', 'bar', pols.map(p => p.title), [{ label: '% of staff', data: pols.map(p => hrPct([...acked(p.id)].filter(id => live.some(e => e.id === id)).length, live.length)) }], Object.assign({}, hrHorizontal, { scales: { x: { beginAtZero: true, max: 100 } } }))}
+      ${hrTableCard('Policies', pols, [['Policy', p => `<strong>${escapeHtml(p.title)}</strong><div class="hint">${escapeHtml(p.category || '')} · v${escapeHtml(p.data.version || '1.0')}</div>`], ['Effective', p => escapeHtml(p.startDate || '—')], ['Acknowledged', p => hrBar(hrPct([...acked(p.id)].filter(id => live.some(e => e.id === id)).length, live.length))], ['', p => hrCanWrite() ? `<button class="btn btn-sm btn-outline" onclick="hrAckPolicy('${p.id}')">Record acknowledgement</button>` : '']], 'No active policies — add them under HR Policies.')}
+      ${pols.length ? hrTableCard('Not yet acknowledged', missing, [['Employee', e => hrEmpCell(e.id)], ['Role', e => escapeHtml(hrRole(e))], ['Branch', e => escapeHtml(branchName(e.branch_id))]], 'Everyone has acknowledged this policy.',
+        `<div class="pill-row adm-filters">${hrSelectBox(label, 'policy', f, pols.map(p => ({ v: p.id, l: p.title })), 'Choose a policy')}</div>`) : ''}`;
+  },
+  complianceReport: (spec, label) => {
+    const recs = hrRecords(); const emps = hrEmployees(); const g = hrGuard(recs, emps); if(g) return g;
+    const live = hrActiveEmps(); const n = live.length || 1;
+    const stat = [['KRA PIN', 'kra_pin'], ['NSSF number', 'nssf_no'], ['SHA number', 'sha_no'], ['National ID', 'national_id'], ['Contract dates', 'contract_start']].map(([l, k]) => ({ l, pct: hrPct(live.filter(e => e[k]).length, n), missing: live.filter(e => !e[k]).length }));
+    const tasks = hrRecs('compliance_item'); const pols = hrRecs('policy', r => r.status === 'Active');
+    const ack = pols.length ? Math.round(pols.reduce((s, p) => s + hrPct(new Set(hrRecs('policy_ack', a => a.relatedId === p.id).map(a => a.employeeId)).size, n), 0) / pols.length) : 0;
+    const docs = hrRecs('employee_document');
+    return `${hrTiles([['Statutory completeness', Math.round(stat.slice(0, 4).reduce((s, x) => s + x.pct, 0) / 4) + '%'], ['Policy acknowledgement', ack + '%'], ['Compliance tasks done', tasks.filter(t => t.status === 'Done').length + ' / ' + tasks.length], ['Tasks overdue', tasks.filter(t => t.status === 'Pending' && t.endDate && hrDaysTo(t.endDate) < 0).length], ['Documents expired', docs.filter(d => d.endDate && hrDaysTo(d.endDate) < 0).length]])}
+      ${admTwoCharts(admChart('hr-cr-stat', 'Statutory Details on File %', 'bar', stat.map(s => s.l), [{ label: '% complete', data: stat.map(s => s.pct) }], { scales: { y: { beginAtZero: true, max: 100 } } }),
+        admChart('hr-cr-tasks', 'Compliance Tasks', 'pie', ['Pending','Done','Missed'], [{ data: ['Pending','Done','Missed'].map(s => tasks.filter(t => t.status === s).length) }]))}
+      ${hrTableCard('Statutory details', stat, [['Detail', s => `<strong>${escapeHtml(s.l)}</strong>`], ['On file', s => hrBar(s.pct)], ['Missing', s => s.missing ? admBadge(s.missing, 'red') : 0]], '')}
+      ${hrTableCard('Compliance tasks', tasks, [['Obligation', t => `<strong>${escapeHtml(t.title)}</strong><div class="hint">${escapeHtml(t.category || '')}</div>`], ['Due', t => hrDue(t)], ['Owner', t => escapeHtml(t.data.owner || '—')], ['Status', t => admBadge(t.status, HR_TONE[t.status])]], 'No compliance tasks — add them under Compliance Calendar.')}`;
+  },
+};
+async function hrSuspendForm(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target); const emp = fd.get('employee_id'); const reason = String(fd.get('reason') || '').trim();
+  if(!emp){ toast('Choose the employee.'); return false; }
+  if(!reason){ toast('Give a reason.'); return false; }
+  await withRequest('hr-susp', async ()=>{ await api.post('/api/hr/records', { kind:'access_request', title: reason, employee_id: emp, data: { action: fd.get('action') } }); hrForget('records'); }, { mutates: true });
+  return false;
+}
+// Account changes HR asked for (activate / suspend / reset…): the System
+// Administrator decides them here; an approved activation or suspension
+// takes effect on the account at once.
+function hrAdminAccessCard(){
+  const recs = hrRecords(); hrEmployees();
+  if(recs === undefined) return admLoading('Requests from HR');
+  if(recs.__error) return '';
+  const pending = hrRecs('access_request', r => r.status === 'Pending');
+  return `<div class="card"><div class="card-title"><span>Requests from HR <small>${pending.length}</small></span>${hrGen('Requests from HR', ['Employee','Change','Reason','Raised by','Raised'], pending.map(r => [hrEmpName(r.employeeId), r.data.action || '', r.title, r.createdByName || '', String(r.createdAt).slice(0, 10)]))}</div>
+    ${admTable(['Employee','Change','Reason','Raised by',''], pending.map(r => [hrEmpCell(r.employeeId), `<strong>${escapeHtml(r.data.action || '—')}</strong>`, escapeHtml(r.title), escapeHtml(r.createdByName || '—'),
+      admIsAdmin() && r.createdBy !== session.userId ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="hrSetStatus('${r.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="hrSetStatus('${r.id}','Rejected')">Reject</button></div>` : '']), 'HR has no account requests waiting.')}
+    <div class="hint" style="margin-top:8px;">Approving "Activate", "Suspend" or "Deactivate account" changes the account immediately; for role changes and password resets, make the change under Users after approving.</div></div>`;
+}
+// Audit-trail pages (Employee History, Access Audit Log).
+function hrAuditPage(label, pred){
+  const a = hrAudit(); const g = hrGuard(a); if(g) return g;
+  const f = hrFilter(label, { q:'' });
+  const all = a.filter(pred); const list = all.filter(e => !f.q || [e.user_name, e.action, e.record_type, e.reason].some(x => (x || '').toLowerCase().includes(f.q.toLowerCase())));
+  const days = admLastDays(30); const byAct = admGroup(all, e => e.action); const top = byAct[0].map((k, i) => [k, byAct[1][i]]).sort((x, y) => y[1] - x[1]).slice(0, 10);
+  const short = v => { if(!v) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
+  return `${hrTiles([['Changes', all.length], ['Last 7 days', all.filter(e => String(e.created_at).slice(0, 10) >= hrDaysAgo(6)).length], ['People making changes', new Set(all.map(e => e.user_name)).size]])}
+    ${admTwoCharts(admChart('hr-aud-day-' + label.length, 'Changes per Day (30 days)', 'line', days.map(admDayLabel), [{ label: 'Changes', data: days.map(d => all.filter(e => String(e.created_at).slice(0, 10) === d).length), fill: true, tension: 0.3 }]),
+      admChart('hr-aud-act-' + label.length, 'Most Common Changes', 'bar', top.map(t => t[0]), [{ label: 'Times', data: top.map(t => t[1]) }], hrHorizontal))}
+    ${hrTableCard(label, list, [['When', e => admWhen(e.created_at)], ['By', e => `<strong>${escapeHtml(e.user_name || '—')}</strong><div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[e.role_id] || e.role_id || '')}</div>`], ['Action', e => escapeHtml(e.action)], ['Record', e => escapeHtml(e.record_type || '—')],
+      ['Change', e => `<span class="hint">${escapeHtml(short(e.new_value))}</span>`], ['Reason', e => escapeHtml(e.reason || '')]], 'No changes recorded.', `<div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search person, action…')}</div>`)}`;
+}
+
 
 function renderPlaceholder(){
   return `
@@ -11095,6 +12331,7 @@ function renderLoanBook(){
   // Create Application (Loan Officer) is its own full-screen, chrome-free
   // page — no subtab bar above it, matching the requested design exactly.
   // The other two roles' Create Application forms are untouched.
+  if(active==="Undisbursed Loans") return renderUndisbursedApprovalsPage();
   if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
   if(active==="Create Application" && session.role==='Manager') return renderManagerCreateApplicationForm();
   if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
@@ -11363,8 +12600,70 @@ const LOAN_APP_CATEGORY_STATUSES = {
 };
 function defaultLoanApplicationsFilterState(){ return { category:'All templates', month:'', day:'', search:'' }; }
 function goToUndisbursedLoans(){
-  if(session.role === 'Loan Officer') session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' };
-  goTo('loanbook','Loan Applications');
+  if(session.role === 'Loan Officer'){ session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' }; goTo('loanbook','Loan Applications'); return; }
+  goTo('loanbook','Undisbursed Loans');
+}
+// ---- Undisbursed Loans: the approvals & disbursement desk ----
+// Every loan not yet disbursed, grouped by where it is in the approval
+// chain. Whoever holds the current step (Manager → Regional Manager →
+// Operational Manager → Accountant) approves, returns or rejects right
+// here; once a loan is Approved for Disbursement, staff who may disburse
+// release the money from the same page. The server re-checks every rule.
+const UNDISB_STAGES = ['Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Approved for Disbursement','Disbursement Pending','Returned for Correction','Pending'];
+// The server's own effective permissions for this user (role default or
+// personal override); the older local matrix is only a fallback.
+function serverCan(permId, label){ const p = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.permissions; return Array.isArray(p) ? p.includes(permId) : hasPermission(session.role, label); }
+function undisbMyStep(loan){ const r = STATUS_TO_REQUIRED_ROLE_ID[loan.status]; return !!r && (r === ROLE_DISPLAY_TO_ID[session.role] || session.role === 'Admin') && serverCan('approve_loans', 'Approve Loans'); }
+const undisbCanDisburse = () => serverCan('disburse_loans', 'Disburse Loans');
+function renderUndisbursedApprovalsPage(){
+  const f = session.undisbFilter || (session.undisbFilter = { q:'', branch:'' });
+  const q = (f.q || '').toLowerCase();
+  const all = (DB.loans || []).filter(l => UNDISB_STAGES.includes(l.status));
+  const list = all.filter(l => (!f.branch || l.branchId === f.branch) && (!q || [clientName(l.clientId), l.productName, staffName(l.officerId), l.id].some(x => String(x || '').toLowerCase().includes(q))));
+  const mine = list.filter(undisbMyStep);
+  const ready = list.filter(l => l.status === 'Approved for Disbursement');
+  const others = list.filter(l => !mine.includes(l) && l.status !== 'Approved for Disbursement');
+  const sum = xs => xs.reduce((a, l) => a + Number(l.principal || 0), 0);
+  const stages = UNDISB_STAGES.filter(st => all.some(l => l.status === st));
+  const age = l => { const d = Math.floor((Date.now() - new Date(l.createdAt)) / 86400000); return d <= 0 ? 'Today' : d + ' day' + (d > 1 ? 's' : ''); };
+  const base = [['Client', l => `<strong>${escapeHtml(clientName(l.clientId))}</strong><div class="hint">${escapeHtml(l.productName || '')}</div>`], ['Amount', l => fmt(l.principal)], ['Loan officer', l => escapeHtml(staffName(l.officerId))], ['Branch', l => escapeHtml(branchName(l.branchId))], ['Submitted', l => escapeHtml(String(l.createdAt || '').slice(0, 10)) + `<div class="hint">${age(l)} ago</div>`]];
+  const card = (title, rows, cols, empty, note) => { const heads = cols.map(c => c[0]); return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${rows.length} · ${fmt(sum(rows))}</small></span>${generateMenuHtml(title, () => ({ headers: heads.filter(h => h), rows: rows.map(l => cols.filter(c => c[0]).map(c => String(c[1](l)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())) }))}</div>${note || ''}${admTable(heads, rows.map(l => cols.map(c => c[1](l))), empty)}</div>`; };
+  const actions = l => `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="undisbDecide('${l.id}','approve')">Approve</button><button class="btn btn-sm btn-outline" onclick="undisbDecide('${l.id}','return')">Return</button><button class="btn btn-sm btn-red" onclick="undisbDecide('${l.id}','reject')">Reject</button><button class="btn btn-sm btn-outline" onclick="openLoanDetailsModal('${l.id}')">View</button></div>`;
+  const disb = l => undisbCanDisburse() ? `<div class="pill-row" style="flex-wrap:nowrap;"><select id="undisb-ch-${l.id}" class="btn btn-sm btn-outline"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa (B2C)</option></select><button class="btn btn-sm btn-primary" onclick="undisbDisburse('${l.id}')">Disburse</button></div>` : '<span class="hint">Waiting for disbursement</span>';
+  const branches = [...new Set(all.map(l => l.branchId))].map(id => ({ id, name: branchName(id) })).sort((a, b) => a.name.localeCompare(b.name));
+  return `<div class="adm-page">
+    <div class="card adm-head"><div class="ac-eyebrow">LoanBook</div><h2 class="adm-title">Undisbursed Loans</h2>
+      <div class="adm-sub">Approve, return or reject the loans waiting on you, and disburse loans that have completed approval.</div></div>
+    <div class="card"><div class="card-title">Overview</div><div class="adm-tiles">
+      ${admTile('Waiting for you', mine.length, fmt(sum(mine)))}${admTile('Ready to disburse', ready.length, fmt(sum(ready)))}${admTile('At other steps', others.length, fmt(sum(others)))}${admTile('All undisbursed', list.length, fmt(sum(list)))}</div></div>
+    ${admTwoCharts(admChart('undisb-stage-n', 'Loans by Stage', 'bar', stages, [{ label: 'Loans', data: stages.map(st => all.filter(l => l.status === st).length) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }),
+      admChart('undisb-stage-amt', 'Amount by Stage (KES)', 'bar', stages, [{ label: 'KES', data: stages.map(st => sum(all.filter(l => l.status === st))) }]))}
+    <div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><input placeholder="Search client, product, officer…" value="${escapeHtml(f.q)}" onchange="session.undisbFilter.q=this.value; renderApp();">
+      <select onchange="session.undisbFilter.branch=this.value; renderApp();"><option value="">All branches</option>${branches.map(b => `<option value="${b.id}" ${f.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select></div></div>
+    ${card('Waiting for your approval', mine, base.concat([['Stage', l => admBadge(l.status, 'amber')], ['', actions]]), serverCan('approve_loans', 'Approve Loans') ? 'Nothing is waiting for your approval.' : 'Your role does not approve loans.')}
+    ${card('Ready to disburse', ready, base.concat([['Approved', l => { const a = (l.approvals || []).filter(x => x.decision === 'Approved').slice(-1)[0]; return a ? escapeHtml(a.name) + `<div class="hint">${escapeHtml(String(a.createdAt).slice(0, 10))}</div>` : '—'; }], ['', disb]]), 'No loans are waiting to be disbursed.')}
+    ${card('At other approval steps', others, base.concat([['Stage', l => admBadge(l.status, l.status === 'Returned for Correction' ? 'red' : 'blue')]]), 'No other loans in the approval chain.')}
+  </div>`;
+}
+async function undisbDecide(loanId, action){
+  const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
+  const who = clientName(loan.clientId) + ' — ' + fmt(loan.principal);
+  let note = null;
+  if(action === 'approve'){ if(typeof confirm === 'function' && !confirm('Approve ' + who + '?')) return; }
+  else { note = typeof prompt === 'function' ? prompt((action === 'reject' ? 'Reason for rejecting ' : 'What needs correcting for ') + who + '?') : 'Not approved'; if(!note) return; }
+  await withRequest('undisb-' + action + '-' + loanId, async ()=>{
+    if(action === 'approve') await approveLoan(loanId, null);
+    else if(action === 'reject') await rejectLoan(loanId, note);
+    else await returnLoanForCorrection(loanId, note);
+  }, { mutates: true });
+}
+async function undisbDisburse(loanId){
+  const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
+  const sel = typeof document !== 'undefined' && document.getElementById ? document.getElementById('undisb-ch-' + loanId) : null;
+  const channel = sel ? sel.value : 'Bank';
+  if(channel === 'mpesa') return promptB2cDisbursement(loanId);
+  if(typeof confirm === 'function' && !confirm(`Disburse ${fmt(loan.principal)} to ${clientName(loan.clientId)} by ${channel}?`)) return;
+  await withRequest('undisb-disburse-' + loanId, ()=>disburseLoan(loanId, channel), { mutates: true });
 }
 function loanTermDaysLabel(loan){
   const prod = DB.products.find(p=>p.id===loan.productId);
@@ -17249,7 +18548,7 @@ function renderRolesPage(){
   if(f.accessLevel) rows = rows.filter(r => r.default_access_level === f.accessLevel);
   if(f.status) rows = rows.filter(r => (r.status||'Active') === f.status);
   if(f.roleType) rows = rows.filter(r => (r.is_system ? 'System' : 'Custom') === f.roleType);
-  const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level))].sort();
+  const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level).concat(STANDARD_ACCESS_LEVELS))].sort();
   const trs = rows.map(r => `<tr class="clickable" onclick="openRoleDetail('${r.id}')">
       <td><strong>${escapeHtml(r.name)}</strong><br><span class="hint">${escapeHtml(r.id)}</span></td>
       <td class="hint">${escapeHtml(r.description || ROLE_DESCRIPTIONS[r.name] || '—')}</td>
@@ -17394,7 +18693,7 @@ function renderCreateRoleModal(){
   const state = DB.acctPages.roles;
   if(!state) { loadRolesPage(); return `<div class="modal-head"><h3>Create Role</h3></div><div class="empty">${loadingDotsHtml()}</div>`; }
   const editRole = modal.editRoleId ? state.roles.find(r=>r.id===modal.editRoleId) : null;
-  const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level))].sort();
+  const accessLevels = [...new Set(state.roles.map(r=>r.default_access_level).concat(STANDARD_ACCESS_LEVELS))].sort();
   const allPerms = state.allPermissions || [];
   const categorized = {};
   allPerms.forEach(p=>{ const cat = PERMISSION_CATEGORIES[p.id] || 'Other'; (categorized[cat] = categorized[cat] || []).push(p); });
@@ -20137,11 +21436,12 @@ async function loadGovernanceData(){
 }
 // ==================== M-Pesa Configuration (Admin only, real credential handling) ====================
 async function loadMpesaAdminConfig(){
-  return withRequest('load-mpesa-config', async ()=>{ DB.mpesaAdminConfig = await api.get('/api/admin/mpesa/config'); });
+  return withRequest('load-mpesa-config', async ()=>{ try{ DB.mpesaAdminConfig = await api.get('/api/admin/mpesa/config'); } catch(e){ DB.mpesaAdminConfig = { __error: (e && e.message) || 'Could not load the M-Pesa configuration' }; throw e; } });
 }
 function renderMpesaConfigForm(env, config){
   return `<div class="card">
     <div class="card-title">${env==='production'?'Production':'Sandbox'} Configuration <small>${config.configured?'Configured ✓':'Not configured'}</small></div>
+    ${config.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red); margin-bottom:10px;"><strong>Re-enter these credentials.</strong> The saved ${env} keys can no longer be read because the server's encryption key changed (this happens on a redeploy when no fixed MPESA_ENCRYPTION_KEY is set). Type the Consumer Key, Consumer Secret and Passkey again and save.</div>` : ''}
     <form onsubmit="return submitMpesaConfig(event,'${env}')">
       <div class="form-grid">
         <div class="field"><label>Consumer Key ${config.consumerKey?`(${escapeHtml(config.consumerKey)})`:''}</label><input name="consumerKey" type="password" placeholder="${config.consumerKey?'Leave blank to keep current':'Enter Consumer Key'}"></div>
@@ -20331,6 +21631,7 @@ function renderMpesaConfiguration(){
   if(!DB.mpesaAdminConfig) loadMpesaAdminConfig();
   const cfg = DB.mpesaAdminConfig;
   if(!cfg) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  if(cfg.__error) return `<div class="card"><div class="empty">${escapeHtml(cfg.__error)}<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="DB.mpesaAdminConfig=null; renderApp();">Retry</button></div></div></div>`;
   return `
     <div class="card">
       <div class="card-title">M-Pesa Integration Status <small>Active environment: ${cfg.activeEnvironment ? cfg.activeEnvironment.toUpperCase() : 'None'}</small></div>
@@ -21191,12 +22492,19 @@ async function loadC2bPaymentsBrowser(){
     if(from) params.set('from', from);
     if(to) params.set('to', to);
     if(st.q) params.set('q', st.q);
-    const result = await api.get('/api/mpesa/c2b/transactions?'+params.toString());
+    let result;
+    // A failed load is remembered (with a Retry button) instead of being
+    // re-requested on every render, which used to hammer the server.
+    try{ result = await api.get('/api/mpesa/c2b/transactions?'+params.toString()); }
+    catch(e){ if(seq === c2bPaymentsReqSeq) DB.c2bPaymentsBrowser = { stateKey: JSON.stringify(st), error: (e && e.message) || 'Could not load payments' }; throw e; }
     if(seq !== c2bPaymentsReqSeq) return; // a newer request has since superseded this one
     result.stateKey = JSON.stringify(st);
     DB.c2bPaymentsBrowser = result;
     DB.c2bUnmatchedCount = result.totals.unmatchedCount;
   });
+}
+function c2bErrorHtml(){
+  return `<div class="empty">${escapeHtml(DB.c2bPaymentsBrowser.error)}<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="DB.c2bPaymentsBrowser=null; renderApp();">Retry</button></div></div>`;
 }
 function openC2bPaymentsPanel(){
   if(!session.c2bPaymentsState) session.c2bPaymentsState = { period:'today', q:'', page:1 };
@@ -21217,6 +22525,7 @@ function renderC2bPaymentsModal(){
     loadC2bPaymentsBrowser();
     return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div><div class="empty">${loadingDotsHtml()}</div>`;
   }
+  if(DB.c2bPaymentsBrowser.error) return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>${c2bErrorHtml()}`;
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
   const canAssign = hasPermission(session.role,"Post Accounting Entries") || session.role==='Manager';
@@ -21260,6 +22569,7 @@ function renderLoanOfficerUnpostedPayments(){
     loadC2bPaymentsBrowser();
     return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   }
+  if(DB.c2bPaymentsBrowser.error) return `<div class="card">${c2bErrorHtml()}</div>`;
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
   return `

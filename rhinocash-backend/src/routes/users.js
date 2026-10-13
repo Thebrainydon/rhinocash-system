@@ -63,6 +63,17 @@ function requireAdminOnly(action) {
   };
 }
 
+// Every access level the system recognises: the standard one for each
+// structural role (so a level is always choosable even before any role
+// carries it — e.g. HR & People Management Access) plus any level an
+// existing role already uses.
+const STANDARD_ACCESS_LEVELS = ['Portfolio Access', 'Branch Management Access', 'Operations & Branch Expansion Access', 'Regional Management Access',
+  'Accounting & Financial Access', 'Master System Administration Access', 'Executive Management Access', 'Strategic & Governance Access', 'HR & People Management Access'];
+async function knownAccessLevels() {
+  const used = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+  return [...new Set(STANDARD_ACCESS_LEVELS.concat(used))];
+}
+
 function register(router) {
   // List — real server-side search/filter/pagination, deterministic order.
   // Every authenticated user with 'staff' module access can see the
@@ -157,7 +168,7 @@ function register(router) {
     // already requires manage_users, may override it.
     let accessLevel = role.default_access_level;
     if (allowAccessLevelOverride && b.access_level) {
-      const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+      const knownLevels = await knownAccessLevels();
       if (!knownLevels.includes(b.access_level)) { next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' }); return null; }
       accessLevel = b.access_level;
     }
@@ -388,7 +399,7 @@ function register(router) {
         roleId = b.role_id; accessLevel = role.default_access_level;
       }
       if (b.access_level) {
-        const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+        const knownLevels = await knownAccessLevels();
         if (!knownLevels.includes(b.access_level)) return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
         accessLevel = b.access_level;
       }
@@ -650,7 +661,7 @@ function register(router) {
 
     const accessLevel = String(b.access_level || '').trim();
     if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
-    const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+    const knownLevels = await knownAccessLevels();
     if (!knownLevels.includes(accessLevel)) {
       return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
     }
@@ -729,7 +740,7 @@ function register(router) {
 
     const accessLevel = b.access_level !== undefined ? String(b.access_level).trim() : before.default_access_level;
     if (!accessLevel) return next({ status: 400, message: 'Access Level is required' });
-    const knownLevels = (await all('SELECT DISTINCT default_access_level FROM roles')).map(r => r.default_access_level);
+    const knownLevels = await knownAccessLevels();
     if (!knownLevels.includes(accessLevel)) {
       return next({ status: 400, message: 'Unknown Access Level — choose one of the existing access levels' });
     }
