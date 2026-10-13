@@ -7858,6 +7858,44 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('SendGrid') && html.includes('Mailgun') && html.includes('Send test email'), "Admin can configure email through SendGrid or Mailgun");
   }
 
+  // ---- Director: every Director submenu is a real, company-wide page ----
+  {
+    const dForm = new Map([['username','director@rhinocash.co.ke'],['password', process.env.SEEDED_DIRECTOR_PASSWORD]]);
+    global.FormData = class { constructor(){ return dForm; } };
+    await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    if(session.mustChangePassword){ const rf = new Map([['newPassword', process.env.SEEDED_DIRECTOR_PASSWORD], ['confirmPassword', process.env.SEEDED_DIRECTOR_PASSWORD]]); global.FormData = class { constructor(){ return rf; } }; await submitForcedPasswordReset({ preventDefault(){}, target:{} }); closeModal(); }
+    __assert(session.role === 'Director', "setup: signed in as the Director");
+    const QUICK = ['Leave Application','Create Ticket','Create a Lead'];
+    const items = SIDEBAR_MENUS.Director.flatMap(sec => sec.items);
+    const dead = items.filter(it => !QUICK.includes(it) && (!resolveRoute(it) || resolveRoute(it).section === 'placeholder'));
+    __assert(dead.length === 0, "every Director submenu opens a real page: " + dead.join(', '));
+    const broken = [];
+    for(const label of Object.keys(DIR_PAGES)){
+      if(!items.includes(label)) continue;
+      window.__pendingCharts = [];
+      sidebarNavigate(label); renderApp();
+      for(let i=0; i<250 && document.getElementById('root').innerHTML.includes('loading-dots'); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      const h = document.getElementById('root').innerHTML;
+      if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || />undefined</.test(h) || />[^<]*\bNaN\b[^<]*</.test(h) || window.__pendingCharts.some(c => c.config.type === 'doughnut')) broken.push(label);
+    }
+    __assert(broken.length === 0, "every Director page renders with its bold blue title, no errors and no donut charts: " + broken.join(', '));
+    sidebarNavigate('Company Performance');
+    let html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Company at a Glance') && !html.includes('>Region at a Glance<'), "reused Regional pages read as company-wide for the Director");
+    // Record a risk through the page's form.
+    sidebarNavigate('Enterprise Risk'); for(let i=0; i<200 && (!DB.adm || DB.adm['dir:recs'] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('+ New risk') && html.includes('<div class="fp ">') && html.includes('-- Generate --'), "Director record pages have a closed '+ New' form and Generate");
+    const rForm = new Map([['title','[TEST] Agent collections fraud'],['category','Fraud'],['data.likelihood','4'],['data.impact','5'],['owner_id',''],['due_date',''],['details','']]);
+    global.FormData = class { constructor(){ return rForm; } };
+    await dirCreate({ preventDefault(){}, target:{} }, 'risk');
+    for(let i=0; i<200 && (!DB.adm || DB.adm['dir:recs'] === undefined); i++){ await new Promise(r=>setTimeout(r,20)); } renderApp();
+    const risk = (DB.adm['dir:recs'] || []).find(r => r.title === '[TEST] Agent collections fraud');
+    __assert(risk && risk.data.likelihood === 4 && risk.data.impact === 5, "the Director records a rated enterprise risk");
+    html = document.getElementById('root').innerHTML;
+    __assert(html.includes('Risk Heat Map') && html.includes('[TEST] Agent collections fraud'), "the risk appears on the register and heat map");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

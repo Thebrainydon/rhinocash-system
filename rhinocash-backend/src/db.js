@@ -1162,6 +1162,34 @@ CREATE TABLE IF NOT EXISTS report_filter_presets (
 
 -- Outbound integrations (SMS, email) the System Administrator configures
 -- from Admin > Integrations; the API key is AES-256-GCM encrypted.
+-- Director / CEO working records (strategy, decisions, governance, risk,
+-- capital, requests needing an executive decision). See routes/execOps.js.
+CREATE TABLE IF NOT EXISTS exec_records (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  details TEXT,
+  category TEXT,
+  priority TEXT NOT NULL DEFAULT 'Normal',
+  status TEXT NOT NULL,
+  branch_id TEXT REFERENCES branches(id),
+  owner_id TEXT REFERENCES users(id),
+  due_date TEXT,
+  start_date TEXT,
+  amount NUMERIC(16,2),
+  score NUMERIC(6,2),
+  related_id TEXT,
+  data_json TEXT,
+  outcome TEXT,
+  created_by TEXT REFERENCES users(id),
+  decided_by TEXT REFERENCES users(id),
+  decided_at TEXT,
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  updated_at TEXT,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_exec_records_kind ON exec_records(kind, status);
+
 CREATE TABLE IF NOT EXISTS integration_configs (
   kind TEXT PRIMARY KEY,
   provider TEXT,

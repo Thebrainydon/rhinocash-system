@@ -663,6 +663,7 @@ const NAV = [
   {id:"admin", num:14, label:"System Administration"},
   {id:"regional", num:15, label:"Regional Management"},
   {id:"hr", num:16, label:"Human Resources"},
+  {id:"director", num:17, label:"Director"},
 ];
 const NAV_PERMISSIONS = {
   "Admin": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","audit","staff","staff-leaves","staff-portfolios","support","account","admin"],
@@ -671,7 +672,7 @@ const NAV_PERMISSIONS = {
   "Regional Manager": ["dashboard","clients","loanbook","payments","accounting","branches","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account","regional"],
   "Accountant": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
   "CEO": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
-  "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","account"],
+  "Director": ["dashboard","clients","loanbook","payments","accounting","branches","investors","reports","business-analytics","audit","notifications","staff","staff-leaves","staff-portfolios","staff-workplans","support","director","account"],
   "Investor": ["dashboard","reports","notifications","support","account"],
   // HR has no lending/accounting/branch authority — just company-wide
   // visibility into the real Staff Directory ("staff") it shares with
@@ -820,6 +821,8 @@ function isSectionAllowed(section){
   if(section==="regional") return ["Regional Manager","Operational Manager"].includes(session.role);
   // "hr" (Human Resources pages) is not a backend module either; every HR
   // endpoint checks the HR role itself.
+  // "director" (the Director's executive pages) — every endpoint they use checks the role itself.
+  if(section==="director") return session.role==="Director";
   if(section==="hr"){ const m = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.modules; return Array.isArray(m) && DB.me.finalAccess.permissions ? m.includes("hr") : ["HR","Admin"].includes(session.role); }
   // DB.me is the real, server-computed user record (GET /api/auth/me),
   // including finalAccess.modules — the actual effective module list
@@ -3520,6 +3523,7 @@ function renderSection(){
     case "admin": return renderAdminSection();
     case "regional": return renderRegionalSection();
     case "hr": return renderHrSection();
+    case "director": return renderDirectorSection();
     case "placeholder": return renderPlaceholder();
     default: return "";
   }
@@ -7138,6 +7142,709 @@ function hrAuditPage(label, pred){
       ['Change', e => `<span class="hint">${escapeHtml(short(e.new_value))}</span>`], ['Reason', e => escapeHtml(e.reason || '')]], 'No changes recorded.', `<div class="pill-row adm-filters">${hrSearchBox(label, f, 'Search person, action…')}</div>`)}`;
 }
 
+
+
+/* ================= Director pages =================
+   Every Director submenu that had no page is one of these: the company-wide
+   versions of the Regional pages (performance, comparison, collection, PAR,
+   alerts, operations), the Director's own records (strategy, decisions,
+   governance, risk, capital, requests needing an executive decision), and
+   executive analytics built from the live loan, payment and accounting
+   data. Same chassis as Admin/Regional/HR: bold blue title, forms behind a
+   "+ New" button, tables, charts (never donuts) and Generate (PDF/Excel). */
+const DIR_STATUS_TONE = { Planned:'blue', 'In Progress':'amber', Completed:'green', Cancelled:'grey', Pending:'amber', Approved:'blue', Rejected:'red', Fulfilled:'green', Paid:'green',
+  Open:'blue', Done:'green', Scheduled:'blue', Passed:'green', Failed:'red', Waived:'grey', Draft:'grey', Active:'green', Achieved:'green', Abandoned:'grey', Proposed:'amber', Implemented:'green',
+  Held:'green', Mitigating:'amber', Accepted:'grey', Closed:'grey', Complied:'green', Tabled:'amber', Resolved:'green', Deferred:'grey', Retired:'grey', Current:'green', Archived:'grey',
+  Exited:'grey', Executed:'green', Dropped:'grey', Prospect:'blue', Negotiating:'amber', Ended:'grey', 'On Track':'green', 'At Risk':'amber', 'Off Track':'red', 'Partly Funded':'amber', Funded:'green', Allocated:'blue', Spent:'green' };
+const DIR_NEXT = {
+  action_plan: { Planned:['In Progress','Cancelled'], 'In Progress':['Completed','Cancelled'] },
+  company_request: { Pending:['Approved','Rejected'], Approved:['Fulfilled'] },
+  financial_request: { Pending:['Approved','Rejected'], Approved:['Paid'] },
+  special_approval: { Pending:['Approved','Rejected'] },
+  op_task: { Open:['In Progress','Done','Cancelled'], 'In Progress':['Done','Cancelled'] },
+  compliance_check: { Scheduled:['Passed','Failed','Waived'] },
+  strategic_plan: { Draft:['Active','Abandoned'], Active:['Achieved','Abandoned'] },
+  decision: { Proposed:['Approved','Rejected'], Approved:['Implemented'] },
+  meeting: { Scheduled:['Held','Cancelled'] },
+  action_item: { Open:['In Progress','Done','Cancelled'], 'In Progress':['Done','Cancelled'] },
+  risk: { Open:['Mitigating','Accepted','Closed'], Mitigating:['Closed','Accepted'] },
+  regulatory: { Open:['In Progress','Complied'], 'In Progress':['Complied'], Complied:['Closed'] },
+  board_matter: { Open:['Tabled','Deferred'], Tabled:['Resolved','Deferred'], Deferred:['Tabled'] },
+  policy: { Draft:['Active'], Active:['Retired'] },
+  governance_record: { Current:['Archived'] },
+  investment: { Proposed:['Approved','Rejected'], Approved:['Active'], Active:['Exited'] },
+  capital_plan: { Draft:['Approved','Cancelled'], Approved:['Executed','Cancelled'] },
+  expansion_plan: { Proposed:['Approved','Dropped'], Approved:['In Progress','Dropped'], 'In Progress':['Completed','Dropped'] },
+  partnership: { Prospect:['Negotiating','Ended'], Negotiating:['Active','Ended'], Active:['Ended'] },
+  strategy_goal: { 'On Track':['At Risk','Off Track','Achieved'], 'At Risk':['On Track','Off Track','Achieved'], 'Off Track':['At Risk','On Track'] },
+  review: { Scheduled:['Completed','Cancelled'] },
+  oversight: { Open:['Closed'] },
+  director_action: { Open:['Done','Cancelled'] },
+  funding: { Open:['Partly Funded','Funded','Cancelled'], 'Partly Funded':['Funded','Cancelled'] },
+  allocation: { Planned:['Allocated','Cancelled'], Allocated:['Spent','Cancelled'] },
+  budget: { Active:['Closed'] },
+  scheduled_report: { Active:['Paused'], Paused:['Active'] },
+};
+const DIR_DECISION_KINDS = ['company_request','financial_request','special_approval'];
+const DIR_REPORTS = ['Executive summary','Management report','Financial report','Portfolio report','Company report','Risk report','Governance report'];
+const dPri = hSel('priority', 'Priority', ['Low','Normal','High','Critical'], { def:'Normal' });
+const dDue = (label) => hF('due_date', label || 'Due date', 'date');
+const dOwner = (label) => hF('owner_id', label || 'Responsible person', 'staff');
+const dBranch = (label) => hSel('branch_id', label || 'Branch (optional)', () => [{ v:'', l:'Whole company' }].concat((DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(b => ({ v: b.id, l: b.name }))));
+const dAmt = (label) => hF('amount', label || 'Amount (KES)', 'number', { min: 0 });
+const dDetails = (label) => hF('details', label || 'Details', 'textarea');
+const dCat = (opts, label) => hSel('category', label || 'Category', opts);
+const dWhoCell = r => escapeHtml(r.ownerName || '—');
+const dDueCell = r => { if(!r.dueDate) return '—'; const late = r.isOpen && r.dueDate < todayISO(); return `${escapeHtml(r.dueDate)} ${late ? admBadge('Overdue', 'red') : ''}`; };
+const dTitleCell = r => `<strong>${escapeHtml(r.title)}</strong>${r.category ? `<div class="hint">${escapeHtml(r.category)}</div>` : ''}`;
+const dAmtCell = r => r.amount != null ? fmt(r.amount) : '—';
+const dPriCell = r => admBadge(r.priority || 'Normal', { Critical:'red', High:'amber', Normal:'blue', Low:'grey' }[r.priority || 'Normal']);
+const dBranchCell = r => escapeHtml(r.branchId ? branchName(r.branchId) : 'Whole company');
+const dRiskScore = r => (Number(r.data.likelihood) || 0) * (Number(r.data.impact) || 0);
+const dRiskBadge = n => admBadge(n || '—', n >= 15 ? 'red' : n >= 8 ? 'amber' : 'green');
+const DIR_KIND_UI = {
+  action_plan: { singular:'action plan', titleLabel:'Action', fields:[dCat(['Growth','Collections','Portfolio quality','Cost control','People','Compliance','Systems','Other']), dPri, dBranch(), dOwner(), dDue(), dDetails()], cols:[['Action', dTitleCell], ['Branch', dBranchCell], ['Owner', dWhoCell], ['Priority', dPriCell], ['Due', dDueCell]] },
+  company_request: { singular:'company request', titleLabel:'Request', fields:[dCat(['Budget','Staff','Equipment','Premises','Systems','Policy change','Other']), dPri, dBranch('Branch concerned'), dAmt('Estimated cost (KES)'), dDetails('Justification')], cols:[['Request', dTitleCell], ['Branch', dBranchCell], ['Cost', dAmtCell], ['Raised by', r => escapeHtml(r.createdByName || '—')]] },
+  financial_request: { singular:'financial request', titleLabel:'What the money is for', fields:[dCat(['Capital expenditure','Operating expense','Branch fit-out','Marketing','Technology','Loan fund','Other']), dAmt('Amount requested (KES)'), dPri, dBranch(), dDue('Needed by'), dDetails('Justification')], cols:[['Request', dTitleCell], ['Amount', dAmtCell], ['Branch', dBranchCell], ['Needed by', dDueCell], ['Raised by', r => escapeHtml(r.createdByName || '—')]] },
+  special_approval: { singular:'special approval', titleLabel:'What needs approval', fields:[dCat(['Loan exception','Write-off','Policy exception','Pricing','Staff matter','Other']), dPri, dAmt('Amount involved (KES, optional)'), dDetails('Why this needs a special approval')], cols:[['Matter', dTitleCell], ['Amount', dAmtCell], ['Priority', dPriCell], ['Raised by', r => escapeHtml(r.createdByName || '—')]] },
+  op_task: { singular:'task', titleLabel:'Task', fields:[dCat(['Branch operations','Collections','Systems','Compliance','Staffing','Other']), dPri, dBranch(), dOwner('Assigned to'), dDue(), dDetails()], cols:[['Task', dTitleCell], ['Branch', dBranchCell], ['Assigned to', dWhoCell], ['Priority', dPriCell], ['Due', dDueCell]] },
+  compliance_check: { singular:'compliance check', titleLabel:'Check', fields:[dCat(['CBK / regulatory','KYC','Data protection','Anti-money laundering','Tax','Internal policy','Other']), dBranch('Branch checked'), dOwner('Checked by'), dDue('Check date'), dDetails('Scope and findings')], cols:[['Check', dTitleCell], ['Branch', dBranchCell], ['Checked by', dWhoCell], ['Date', dDueCell]] },
+  strategic_plan: { singular:'strategic plan', titleLabel:'Goal', fields:[dCat(['Growth','Profitability','Portfolio quality','Expansion','People','Technology','Funding']), dPri, dOwner('Lead'), hF('start_date','Starts','date'), dDue('Target date'), hF('score','Progress (%)','number',{min:0,max:100}), dDetails('Plan')], cols:[['Goal', dTitleCell], ['Lead', dWhoCell], ['Target date', dDueCell], ['Progress', r => r.score != null ? hrBar(Math.round(r.score)) : '—']] },
+  decision: { singular:'executive decision', titleLabel:'Decision', fields:[dCat(['Strategy','Finance','Operations','People','Credit policy','Governance','Other']), dPri, dOwner('Owner'), dDue('Implement by'), dDetails('Rationale')], cols:[['Decision', dTitleCell], ['Owner', dWhoCell], ['Implement by', dDueCell], ['Outcome', r => escapeHtml(r.outcome || '—')]] },
+  meeting: { singular:'meeting', titleLabel:'Meeting', fields:[dCat(['Management meeting','Board meeting','Strategy session','Branch review','Investor meeting']), dDue('Date'), hF('data.time','Time','time'), hF('data.venue','Venue / link'), hF('data.attendees','Attendees'), dDetails('Agenda')], cols:[['Meeting', dTitleCell], ['Date', r => escapeHtml((r.dueDate || '—') + ' ' + (r.data.time || ''))], ['Venue', r => escapeHtml(r.data.venue || '—')], ['Attendees', r => escapeHtml(r.data.attendees || '—')], ['Minutes', r => escapeHtml(r.outcome || '—')]] },
+  action_item: { singular:'action item', titleLabel:'Action', fields:[dCat(['From meeting','From decision','From review','Other']), dPri, dOwner('Owner'), dDue(), dDetails()], cols:[['Action', dTitleCell], ['Owner', dWhoCell], ['Priority', dPriCell], ['Due', dDueCell]] },
+  risk: { singular:'risk', titleLabel:'Risk', fields:[dCat(['Credit','Liquidity','Operational','Fraud','Compliance','Strategic','Reputational','Technology']), hSel('data.likelihood','Likelihood (1-5)',['1','2','3','4','5'],{def:'3'}), hSel('data.impact','Impact (1-5)',['1','2','3','4','5'],{def:'3'}), dOwner('Risk owner'), dDue('Review date'), dDetails('Mitigation')], cols:[['Risk', dTitleCell], ['Likelihood', r => r.data.likelihood || '—'], ['Impact', r => r.data.impact || '—'], ['Score', r => dRiskBadge(dRiskScore(r))], ['Owner', dWhoCell], ['Review', dDueCell]] },
+  regulatory: { singular:'regulatory matter', titleLabel:'Matter', fields:[dCat(['CBK','KRA','Data Commissioner','County licensing','Credit bureau','Other regulator']), dPri, dOwner('Responsible'), dDue('Deadline'), dDetails()], cols:[['Matter', dTitleCell], ['Responsible', dWhoCell], ['Priority', dPriCell], ['Deadline', dDueCell]] },
+  board_matter: { singular:'board matter', titleLabel:'Matter', fields:[dCat(['Strategy','Finance','Audit','Risk','Appointments','Policy','Other']), dPri, dDue('For board meeting on'), dDetails('Background')], cols:[['Matter', dTitleCell], ['Priority', dPriCell], ['Board date', dDueCell], ['Outcome', r => escapeHtml(r.outcome || '—')]] },
+  policy: { singular:'policy', titleLabel:'Policy', fields:[dCat(['Credit','Finance','Operations','HR','IT & data','Governance','Risk']), hF('data.version','Version',null,{def:'1.0'}), hF('start_date','Effective from','date'), dDue('Next review'), dDetails('Summary')], cols:[['Policy', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.category || '')} · v${escapeHtml(r.data.version || '1.0')}</div>`], ['Effective', r => escapeHtml(r.startDate || '—')], ['Next review', dDueCell]] },
+  governance_record: { singular:'governance record', titleLabel:'Record', fields:[dCat(['Board minutes','Certificate','Licence','Statutory filing','Register','Agreement','Other']), hF('data.reference','Reference number'), hF('start_date','Dated','date'), dDue('Renewal / expiry'), hF('data.location','Stored at / link')], cols:[['Record', dTitleCell], ['Reference', r => escapeHtml(r.data.reference || '—')], ['Dated', r => escapeHtml(r.startDate || '—')], ['Expires', dDueCell], ['Location', r => escapeHtml(r.data.location || '—')]] },
+  investment: { singular:'strategic investment', titleLabel:'Investment', fields:[dCat(['Technology','Branch network','Vehicles','Subsidiary','Partnership','Treasury','Other']), dAmt('Amount (KES)'), hF('data.expectedReturn','Expected return (%)','number'), hF('start_date','Start','date'), dDetails('Business case')], cols:[['Investment', dTitleCell], ['Amount', dAmtCell], ['Expected return', r => r.data.expectedReturn ? r.data.expectedReturn + '%' : '—'], ['Start', r => escapeHtml(r.startDate || '—')]] },
+  capital_plan: { singular:'capital plan', titleLabel:'Plan', fields:[dCat(['Equity raise','Debt facility','Retained earnings','Investor capital','Grant']), dAmt('Amount (KES)'), dDue('Target date'), dDetails()], cols:[['Plan', dTitleCell], ['Amount', dAmtCell], ['Target date', dDueCell]] },
+  expansion_plan: { singular:'expansion plan', titleLabel:'Expansion', fields:[dCat(['New branch','New region','New product','Digital channel','Acquisition']), hF('data.location','Location / market'), dAmt('Budget (KES)'), dDue('Target opening'), dOwner('Lead'), dDetails('Rationale')], cols:[['Expansion', dTitleCell], ['Location', r => escapeHtml(r.data.location || '—')], ['Budget', dAmtCell], ['Target', dDueCell], ['Lead', dWhoCell]] },
+  partnership: { singular:'partnership', titleLabel:'Partner', fields:[dCat(['Bank','Mobile money','Insurer','Credit bureau','NGO / development','Supplier','Technology']), hF('data.contact','Contact person'), hF('start_date','Start','date'), dDue('Review / renewal'), dDetails('Scope')], cols:[['Partner', dTitleCell], ['Contact', r => escapeHtml(r.data.contact || '—')], ['Since', r => escapeHtml(r.startDate || '—')], ['Review', dDueCell]] },
+  strategy_goal: { singular:'long-term goal', titleLabel:'Goal', fields:[dCat(['Scale','Profitability','Market share','Customer','People','Technology','Governance']), hF('data.target','Target (e.g. 100,000 clients)'), hF('data.horizon','Horizon (year)','number'), hF('score','Progress (%)','number',{min:0,max:100}), dOwner('Lead'), dDetails()], cols:[['Goal', dTitleCell], ['Target', r => escapeHtml(r.data.target || '—')], ['Horizon', r => escapeHtml(r.data.horizon || '—')], ['Progress', r => r.score != null ? hrBar(Math.round(r.score)) : '—'], ['Lead', dWhoCell]] },
+  review: { singular:'strategic review', titleLabel:'Review', fields:[dCat(['Quarterly business review','Strategy review','Branch review','Product review','Risk review']), dDue('Review date'), dOwner('Presenter'), hF('score','Rating (0-100)','number',{min:0,max:100}), dDetails('Scope')], cols:[['Review', dTitleCell], ['Date', dDueCell], ['Presenter', dWhoCell], ['Rating', r => hrScore(r.score)], ['Conclusions', r => escapeHtml(r.outcome || '—')]] },
+  oversight: { singular:'oversight note', titleLabel:'Observation', fields:[dOwner('Manager concerned'), dCat(['Performance','Conduct','Compliance','Operations','Development']), dPri, dDue('Follow up by'), dDetails('Notes')], cols:[['Manager', dWhoCell], ['Observation', dTitleCell], ['Priority', dPriCell], ['Follow up', dDueCell]] },
+  director_action: { singular:'director action', titleLabel:'Action', fields:[dCat(['Follow up','Instruction','Approval','Visit','Other']), dPri, dOwner('Directed to'), dDue(), dDetails()], cols:[['Action', dTitleCell], ['Directed to', dWhoCell], ['Priority', dPriCell], ['Due', dDueCell]] },
+  funding: { singular:'funding requirement', titleLabel:'Requirement', fields:[dCat(['Loan fund','Branch expansion','Technology','Working capital','Debt repayment']), dAmt('Amount needed (KES)'), dDue('Needed by'), hF('data.source','Proposed source'), dDetails()], cols:[['Requirement', dTitleCell], ['Amount', dAmtCell], ['Source', r => escapeHtml(r.data.source || '—')], ['Needed by', dDueCell]] },
+  allocation: { singular:'capital allocation', titleLabel:'Allocated to', fields:[dCat(['Loan book','Branches','Technology','Marketing','Reserves','Other']), dAmt('Amount (KES)'), dBranch(), dDue('Period end'), dDetails()], cols:[['Allocation', dTitleCell], ['Amount', dAmtCell], ['Branch', dBranchCell], ['Period end', dDueCell]] },
+  budget: { singular:'budget line', titleLabel:'Budget line', fields:[hSel('category','Expense category',() => [...new Set(['Rent','Salaries','Utilities','Transport','Marketing','Stationery','Communication','Repairs','Other'].concat((DB.expenses || []).map(e => e.category).filter(Boolean)))]), dAmt('Budget for the period (KES)'), hF('start_date','Period start','date'), dDue('Period end'), dBranch()], cols:[['Budget line', dTitleCell], ['Branch', dBranchCell], ['Period', r => escapeHtml(`${r.startDate || '—'} → ${r.dueDate || '—'}`)], ['Budget', dAmtCell]] },
+  scheduled_report: { singular:'scheduled report', titleLabel:'Report name', fields:[hSel('data.report','Report',DIR_REPORTS), hSel('data.frequency','Frequency',['Weekly','Monthly','Quarterly','Annually'],{def:'Monthly'}), hF('data.recipients','Send to (emails)'), dDetails('Notes')], cols:[['Report', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.data.report || '')}</div>`], ['Frequency', r => escapeHtml(r.data.frequency || '—')], ['Recipients', r => escapeHtml(r.data.recipients || '—')], ['Last generated', r => r.data.lastRun ? timeAgo(r.data.lastRun) : 'Never']] },
+};
+
+/* ---- data ---- */
+const dirData = (key, path, pick) => admData('dir:' + key, path, pick);
+const dirForget = key => admForget('dir:' + key);
+const dirRecords = () => dirData('recs', '/api/exec/records', r => r.records);
+const dirRecs = (kind, pred) => { const r = DB.adm && Array.isArray(DB.adm['dir:recs']) ? DB.adm['dir:recs'] : []; return r.filter(x => (!kind || (Array.isArray(kind) ? kind.includes(x.kind) : x.kind === kind)) && (!pred || pred(x))); };
+const dirCanWrite = () => ['Director','CEO'].includes(session.role);
+const dirGuard = (...v) => { if(admPending(...v)) return admLoading(); const f = admFailed(...v); return f ? admError(f.__error) : null; };
+const dirGen = (title, headers, rows) => generateMenuHtml(title, () => ({ headers, rows }));
+const dirPlain = v => String(v == null ? '' : v).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+function dirTable(title, list, cols, empty, extra){
+  const headers = cols.map(c => c[0]).filter(Boolean);
+  return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${list.length}</small></span>${dirGen(title, headers, list.map(r => cols.filter(c => c[0]).map(c => dirPlain(c[1](r)))))}</div>${extra || ''}
+    ${admTable(cols.map(c => c[0]), list.map(r => cols.map(c => c[1](r))), empty)}</div>`;
+}
+const dirTiles = t => `<div class="card"><div class="card-title">Overview</div><div class="adm-tiles">${t.map(x => admTile(x[0], x[1], x[2])).join('')}</div></div>`;
+const dirMonths = n => rgLastMonths(n);
+const dirStats = () => computeStats(null, (DB.branches || []).map(b => b.id));
+const dirSum = (xs, f) => xs.reduce((s, x) => s + (Number(f ? f(x) : x) || 0), 0);
+const dirHoriz = { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } };
+// The 15 branches with the largest portfolio, for charts (35 bars are unreadable).
+const dirTopBranches = rows => rows.filter(r => r.st.portfolioOutstanding > 0).sort((a, b) => b.st.portfolioOutstanding - a.st.portfolioOutstanding).slice(0, 15);
+const dirStacked = { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } };
+// Ledger movements per month for an account (credit-normal for income, debit-normal for expense).
+function dirLedgerByMonth(account, months, debitNormal){
+  const tx = DB.transactions || [];
+  return months.map(m => Math.round(dirSum(tx.filter(t => t.account === account && String(t.date).slice(0, 7) === m), t => debitNormal ? (t.debit || 0) - (t.credit || 0) : (t.credit || 0) - (t.debit || 0))));
+}
+// Text on the reused Regional pages says "region"; for the Director it is the company.
+function dirRetitle(html){
+  return html.replace(/>([^<]+)</g, (m, t) => '>' + t.replace(/\bRegional\b/g, 'Company').replace(/\bregional\b/g, 'company').replace(/\bRegion\b/g, 'Company').replace(/\bregion\b/g, 'company') + '<');
+}
+
+/* ---- page registry ---- */
+const DIR_PAGES = {
+  // Employees
+  "Employee Transfers": { ops:'transfer', sub:'Staff moves between branches across the company.' },
+  "Workforce Planning": { view:'workforce', sub:'Staff against workload in every branch, and where more people are needed.' },
+  // Accounting
+  "Financial Requests": { exec:'financial_request', sub:'Requests for money that need a Director or CEO decision.' },
+  // Company & Executive Operations
+  "Company Loan Summary": { view:'loanSummary', sub:'The whole loan book by branch: loans, portfolio, disbursements and arrears.' },
+  "View Company Structure": { view:'structure', sub:'Regions, branches, managers and staff — how the company is organised.' },
+  "Company Performance": { rg:'Regional Performance', sub:'How the company is performing this month, branch by branch.' },
+  "Company Comparison": { rg:'Branch Comparison', sub:'Rank every branch on any key measure against the company average.' },
+  "Company Targets": { rg:'Regional Targets', sub:'Targets set across the company and how far each has got.' },
+  "Branch Transfers": { ops:'transfer', sub:'Staff and client moves between branches.' },
+  "Branch Status": { view:'branchStatus', sub:'Every branch with its health: portfolio, PAR, collection and staffing.' },
+  // Business Analytics
+  "Company Collection": { rg:'Regional Collection', sub:'What was due and what was collected across the company.' },
+  "Disbursement Analysis": { rg:'Disbursement Analysis', sub:'Loans disbursed across the company by month, branch and product.' },
+  "Company PAR & Risk Analysis": { rg:'Regional PAR & Risk Analysis', sub:'Portfolio at risk and arrears ageing across the company.' },
+  "Growth Analysis": { view:'growth', sub:'How clients, loans and the portfolio are growing month by month.' },
+  "Executive Performance": { view:'execPerformance', sub:'How each branch manager and regional leader is performing.' },
+  // Executive Operations
+  "Executive Action Plans": { exec:'action_plan', sub:'Company-level actions with owners, deadlines and progress.' },
+  "Company Requests": { exec:'company_request', sub:'Requests raised to executive level for a decision.' },
+  "Operational Transfers": { ops:'transfer', sub:'Staff and client transfers awaiting or completed.' },
+  "Operational Issues": { ops:'issue', sub:'Problems affecting branch operations, tracked to resolution.' },
+  "Escalations": { ops:'escalation', sub:'Matters escalated from the regions to executive level.' },
+  "Executive Alerts": { rg:'Regional Alerts', sub:'Live warnings from across the company that need executive attention.' },
+  "Executive Activity Log": { view:'execActivity', sub:'Everything the executive team has done in the system.' },
+  // Operations
+  "Branch Requests": { ops:'branch_request', sub:'Requests branches raise for staff, equipment, budget and more.' },
+  "Operational Approvals": { view:'opApprovals', sub:'Everything operational that is waiting for a decision.' },
+  "Operational Tasks": { exec:'op_task', sub:'Operational tasks assigned across the company.' },
+  "Process Monitoring": { view:'process', sub:'How long loans take at each approval step, and where they are stuck.' },
+  "Compliance Checks": { exec:'compliance_check', sub:'Scheduled and completed compliance checks.' },
+  "Operations Activity Log": { rg:'Regional Activity Log', sub:'Everything staff across the company have done in the system.' },
+  // Executive Management
+  "Strategic Plans": { exec:'strategic_plan', sub:'The company\'s strategic goals and their progress.' },
+  "Executive Decisions": { exec:'decision', sub:'Decisions taken by the executive, with rationale and outcome.' },
+  "Management Meetings": { exec:'meeting', sub:'Management and board meetings, agendas and minutes.' },
+  "Action Tracking": { exec:'action_item', sub:'Follow-up actions from meetings, decisions and reviews.' },
+  "Executive Dashboard": { view:'execDashboard', sub:'The company on one page.' },
+  // Company Performance
+  "Company KPIs": { view:'kpis', sub:'The key performance indicators for the whole company.' },
+  "Portfolio Performance": { view:'portfolio', sub:'Size, quality and mix of the loan portfolio.' },
+  "Profitability": { view:'profitability', sub:'Income, expenses and net result — company-wide and by branch.' },
+  "Business Growth": { view:'growth', sub:'How clients, loans and the portfolio are growing month by month.' },
+  // Financial Management
+  "Revenue Overview": { view:'revenue', sub:'Interest and fee income by month and by branch.' },
+  "Cash Position": { view:'cash', sub:'Cash, bank and M-Pesa balances and this month\'s cash flow.' },
+  "Budget Monitoring": { view:'budget', sub:'Budget lines against actual spending.' },
+  "Financial Reports": { view:'finReports', sub:'Profit & loss, balance sheet and cash flow in one place.' },
+  // Risk & Compliance
+  "Enterprise Risk": { exec:'risk', sub:'The company risk register, rated by likelihood and impact.' },
+  "Compliance Monitoring": { view:'compliance', sub:'Compliance checks, regulatory matters and data quality.' },
+  "Regulatory Matters": { exec:'regulatory', sub:'Matters with regulators and their deadlines.' },
+  "Risk Reports": { view:'riskReport', sub:'Credit, operational and enterprise risk in one report.' },
+  "Compliance Reports": { view:'compliance', sub:'Compliance checks, regulatory matters and data quality.' },
+  // Executive Approvals
+  "Financial Approvals": { view:'finApprovals', sub:'Money matters waiting for a decision.' },
+  "Staff Approvals": { view:'staffApprovals', sub:'Leave and salary advance requests waiting for a decision.' },
+  "Special Approvals": { exec:'special_approval', sub:'Exceptions that need a Director or CEO decision.' },
+  // Reports & Intelligence
+  "Executive Reports": { view:'report', report:'Executive summary', sub:'The executive summary report.' },
+  "Management Reports": { view:'report', report:'Management report', sub:'Branch and staff performance for management.' },
+  "Portfolio Reports": { view:'report', report:'Portfolio report', sub:'The loan portfolio report.' },
+  "Company Reports": { view:'report', report:'Company report', sub:'The company report: structure, people, portfolio and finances.' },
+  "Scheduled Reports": { exec:'scheduled_report', sub:'Reports set up to be produced on a schedule.' },
+  // Governance
+  "Board Matters": { exec:'board_matter', sub:'Matters for the board and their outcomes.' },
+  "Policies & Procedures": { exec:'policy', sub:'The company policy register.' },
+  "Board Resolutions": { view:'resolutions', sub:'Board resolutions proposed and decided.' },
+  "Governance Records": { exec:'governance_record', sub:'Statutory records, certificates and licences.' },
+  "Governance Reports": { view:'report', report:'Governance report', sub:'Resolutions, board matters, policies and records in one report.' },
+  // Ownership & Strategy
+  "Company Ownership": { view:'ownership', sub:'Who owns the company.' },
+  "Shareholder Structure": { view:'shareholders', sub:'Shareholders by type and size of holding.' },
+  "Strategic Investments": { exec:'investment', sub:'Investments the company is making or considering.' },
+  "Capital Planning": { exec:'capital_plan', sub:'How the company plans to raise capital.' },
+  "Expansion Strategy": { exec:'expansion_plan', sub:'New branches, regions and products planned.' },
+  "Strategic Partnerships": { exec:'partnership', sub:'Partners and the state of each relationship.' },
+  "Long-Term Strategy": { exec:'strategy_goal', sub:'Long-term goals and progress towards them.' },
+  // Director Oversight
+  "CEO Performance": { view:'ceoPerformance', sub:'The company\'s results under the CEO against targets and last period.' },
+  "Management Oversight": { exec:'oversight', sub:'Observations on managers, with their branches\' results.' },
+  "Strategic Reviews": { exec:'review', sub:'Scheduled and completed strategic reviews.' },
+  "Director Actions": { exec:'director_action', sub:'Instructions and follow-ups from the Director.' },
+  "Director Activity Log": { view:'myActivity', sub:'Everything you have done in the system.' },
+  // Investment & Capital
+  "Investment Portfolio": { view:'investPortfolio', sub:'Investor capital and strategic investments.' },
+  "Capital Contributions": { view:'contributions', sub:'Capital contributed by shareholders and investors.' },
+  "Capital Allocation": { exec:'allocation', sub:'Where the company\'s capital is allocated.' },
+  "Funding Requirements": { exec:'funding', sub:'Funding the company needs and how it will be raised.' },
+  "Investment Reports": { view:'report', report:'Investment report', sub:'Investors, capital and investments in one report.' },
+  // Client Registry / LoanBook
+  "Client Transfers": { ops:'transfer', sub:'Clients moved between officers and branches.' },
+  "Client Data Quality": { view:'dataQuality', sub:'Client records with missing or doubtful details.' },
+  "Loan Transfers": { ops:'transfer', sub:'Loans and clients moved between officers.' },
+};
+DIR_REPORTS.push('Investment report');
+const DIR_SECTION_OF = {};
+(SIDEBAR_MENUS.Director || []).forEach(sec => sec.items.forEach(item => { if(DIR_PAGES[item] && !DIR_SECTION_OF[item]) DIR_SECTION_OF[item] = sec.section; }));
+ROLE_ROUTE_OVERRIDES.Director = Object.assign(ROLE_ROUTE_OVERRIDES.Director || {}, Object.fromEntries(Object.keys(DIR_PAGES).map(l => [l, { section:'director', subtab:l }])),
+  { "Disbursements": { section:'loanbook', subtab:'Disbursements' } });
+
+function renderDirectorSection(){
+  const label = session.subtab; const spec = DIR_PAGES[label];
+  if(!spec) return renderPlaceholder();
+  admExports = [];
+  let body;
+  try{
+    if(spec.rg) body = dirRetitle((RG_VIEWS[spec.rg] || (() => ''))());
+    else if(spec.ops) body = dirRetitle(rgOpsPage(label, spec.ops));
+    else if(spec.exec) body = dirRecordsPage(label, spec);
+    else body = (DIR_VIEWS[spec.view] || (() => admError('This page is not available.')))(spec, label);
+  }catch(e){ console.error(e); body = admError('This page could not be displayed. Please reload and try again.'); }
+  return `<div class="adm-page">
+    <div class="card adm-head"><div class="ac-eyebrow">${escapeHtml(DIR_SECTION_OF[label] || 'Director')} · Company-wide</div>
+      <h2 class="adm-title">${escapeHtml(label)}</h2><div class="adm-sub">${escapeHtml(spec.sub || '')}</div></div>
+    ${body}</div>`;
+}
+
+/* ---- records pages ---- */
+function dirResolveField(f){
+  if(f.type === 'staff') return Object.assign({}, f, { type:'select', opts: [{ v:'', l:'Choose…' }].concat((DB.staff || []).filter(s => s.status !== 'Terminated').slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => ({ v: s.id, l: `${s.name} — ${s.role}` }))) });
+  return typeof f.opts === 'function' ? Object.assign({}, f, { opts: f.opts() }) : f;
+}
+function dirForm(kind){ session.dirForms = session.dirForms || {}; return session.dirForms[kind] || (session.dirForms[kind] = {}); }
+function dirRecordsPage(label, spec){
+  const kind = spec.exec; const ui = DIR_KIND_UI[kind];
+  const recs = dirRecords(); const g = dirGuard(recs); if(g) return g;
+  const all = dirRecs(kind);
+  const f = (session.dirFilters = session.dirFilters || {})[label] || (session.dirFilters[label] = { status:'open', q:'' });
+  const q = (f.q || '').toLowerCase();
+  const list = all.filter(r => (f.status === 'all' || (f.status === 'open' ? r.isOpen : !r.isOpen)) && (!q || [r.title, r.category, r.ownerName, r.details].some(x => (x || '').toLowerCase().includes(q))));
+  const statuses = [...new Set(all.map(r => r.status))];
+  const cols = ui.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status] || 'grey') + (r.decidedByName ? `<div class="hint">by ${escapeHtml(r.decidedByName)}</div>` : '')]]);
+  const hasAmt = all.some(r => r.amount != null);
+  const months = dirMonths(6);
+  const byCat = admGroup(all, r => r.category || 'Other', hasAmt ? (r => r.amount || 0) : null);
+  const formKey = 'dir-' + kind;
+  let extraCharts = '';
+  if(kind === 'risk'){
+    const cells = []; for(let li = 5; li >= 1; li--) cells.push(`<tr><th>${li}</th>${[1,2,3,4,5].map(im => { const n = all.filter(r => r.isOpen && Number(r.data.likelihood) === li && Number(r.data.impact) === im).length; const sc = li * im;
+      return `<td style="text-align:center; background:${sc >= 15 ? '#F8D7DA' : sc >= 8 ? '#FFF3CD' : '#D4EDDA'}; font-weight:800;">${n || ''}</td>`; }).join('')}</tr>`);
+    extraCharts = `<div class="card"><div class="card-title">Risk Heat Map <small>open risks · likelihood (rows) × impact (columns)</small></div><div class="table-wrap"><table><tr><th></th>${[1,2,3,4,5].map(i => `<th style="text-align:center;">${i}</th>`).join('')}</tr>${cells.join('')}</table></div></div>`;
+  }
+  return `${dirTiles([['Total', all.length], ['Open', all.filter(r => r.isOpen).length], ['Overdue', all.filter(r => r.isOpen && r.dueDate && r.dueDate < todayISO()).length]].concat(hasAmt ? [['Total value', fmt(dirSum(all, r => r.amount))], ['Open value', fmt(dirSum(all.filter(r => r.isOpen), r => r.amount))]] : []).concat(DIR_DECISION_KINDS.includes(kind) ? [['Waiting for a decision', all.filter(r => r.status === 'Pending').length]] : []))}
+    ${dirCanWrite() ? dirRecordForm(kind, formKey) : ''}
+    ${extraCharts}
+    ${admTwoCharts(admChart('dir-st-' + kind, 'By Status', 'bar', statuses, [{ label: 'Records', data: statuses.map(s => all.filter(r => r.status === s).length) }]),
+      byCat[0].length > 1 || hasAmt ? admChart('dir-cat-' + kind, hasAmt ? 'Value by Category (KES)' : 'By Category', 'bar', byCat[0], [{ label: hasAmt ? 'KES' : 'Records', data: byCat[1] }], dirHoriz)
+        : admChart('dir-mo-' + kind, 'Recorded per Month', 'line', months.map(rgMonthLabel), [{ label: 'Records', data: months.map(m => all.filter(r => String(r.createdAt).slice(0, 7) === m).length), fill: false, tension: 0.25 }]))}
+    ${dirTable(label, list, cols.concat(dirCanWrite() ? [['', dirActions]] : []), `No ${f.status === 'all' ? '' : f.status + ' '}${ui.singular}s.`,
+      `<div class="pill-row adm-filters"><input placeholder="Search" value="${escapeHtml(f.q)}" onchange="session.dirFilters['${label.replace(/'/g, "\\'")}'].q=this.value; renderApp();">
+        <select onchange="session.dirFilters['${label.replace(/'/g, "\\'")}'].status=this.value; renderApp();">${[['open','Open'],['closed','Closed'],['all','All']].map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}`;
+}
+function dirActions(r){
+  const next = (DIR_NEXT[r.kind] || {})[r.status] || [];
+  const mineToDecide = DIR_DECISION_KINDS.includes(r.kind) && r.status === 'Pending';
+  const btns = next.map(s => {
+    if(mineToDecide && ['Approved','Rejected'].includes(s) && r.createdBy === session.userId) return '';
+    return `<button class="btn btn-sm ${['Rejected','Cancelled','Failed','Abandoned','Dropped','Off Track','Ended'].includes(s) ? 'btn-red' : ['Approved','Completed','Done','Passed','Achieved','Paid','Funded','Implemented','Resolved','Complied','Held'].includes(s) ? 'btn-primary' : 'btn-outline'}" onclick="dirSetStatus('${r.id}','${s}')">${escapeHtml(s)}</button>`;
+  }).filter(Boolean);
+  if(mineToDecide && r.createdBy === session.userId) btns.unshift('<span class="hint">Awaiting another executive</span>');
+  if(['strategic_plan','strategy_goal'].includes(r.kind) && r.isOpen) btns.push(`<button class="btn btn-sm btn-outline" onclick="dirProgress('${r.id}')">Update progress</button>`);
+  if(['meeting','decision','board_matter','review'].includes(r.kind)) btns.push(`<button class="btn btn-sm btn-outline" onclick="dirOutcome('${r.id}')">${r.kind === 'meeting' ? 'Minutes' : 'Outcome'}</button>`);
+  if(r.kind === 'scheduled_report' && r.status === 'Active') btns.push(`<button class="btn btn-sm btn-outline" onclick="dirRunScheduled('${r.id}')">Open report</button>`);
+  return btns.length ? `<div class="pill-row" style="flex-wrap:nowrap;">${btns.join('')}</div>` : '';
+}
+function dirRecordForm(kind, formKey){
+  const ui = DIR_KIND_UI[kind]; const v = dirForm(kind);
+  const fields = [hF('title', ui.titleLabel)].concat(ui.fields).map(dirResolveField);
+  return `<div class="fp ${isFormOpen(formKey) ? 'fp-open' : ''}">${formToggleBtn(formKey, 'New ' + ui.singular)}<div class="fp-body"><div class="card">
+    <div class="card-title">New ${escapeHtml(ui.singular)}</div>
+    <form onsubmit="return dirCreate(event,'${kind}')"><div class="form-grid">${fields.map(f => admFieldHtml(f, v[f.k] !== undefined ? v[f.k] : f.def, false)).join('')}</div>
+    <button class="btn btn-primary btn-sm" type="submit">Save ${escapeHtml(ui.singular)}</button></form></div></div></div>`;
+}
+async function dirCreate(ev, kind){
+  ev.preventDefault();
+  const ui = DIR_KIND_UI[kind];
+  const fields = [hF('title', ui.titleLabel)].concat(ui.fields).map(dirResolveField);
+  const vals = admCollect(new FormData(ev.target), fields);
+  if(!vals.title){ toast(`${ui.titleLabel} is required.`); return false; }
+  const bad = admInvalidNumber(fields, vals); if(bad){ toast(`${bad.label}: enter a valid number.`); return false; }
+  const body = { kind, data: {} };
+  Object.entries(vals).forEach(([k, val]) => { if(k.startsWith('data.')){ if(val !== '' && val !== null) body.data[k.slice(5)] = val; } else if(val !== '' && val !== null) body[k] = val; });
+  if(kind === 'risk'){ body.data.likelihood = Number(body.data.likelihood || 3); body.data.impact = Number(body.data.impact || 3); }
+  await withRequest('dir-create-' + kind, async ()=>{ await api.post('/api/exec/records', body); session.dirForms[kind] = {}; dirForget('recs'); }, { mutates: true });
+  return false;
+}
+async function dirSetStatus(id, status){
+  const r = dirRecs(null, x => x.id === id)[0]; if(!r) return;
+  let outcome;
+  if(['Rejected','Failed','Cancelled','Abandoned','Dropped'].includes(status)){ outcome = typeof prompt === 'function' ? prompt(`Reason (${status.toLowerCase()}):`) : status; if(outcome === null) return; }
+  await withRequest('dir-status-' + id, async ()=>{ await api.patch('/api/exec/records/' + id, Object.assign({ status }, outcome ? { outcome } : {})); dirForget('recs'); }, { mutates: true });
+}
+async function dirProgress(id){
+  const v = typeof prompt === 'function' ? prompt('Progress so far (0-100%):') : null; if(v === null || v === '') return;
+  const n = Number(v); if(!(n >= 0 && n <= 100)){ toast('Enter a number from 0 to 100.'); return; }
+  await withRequest('dir-progress-' + id, async ()=>{ await api.patch('/api/exec/records/' + id, { score: n }); dirForget('recs'); }, { mutates: true });
+}
+async function dirOutcome(id){
+  const r = dirRecs(null, x => x.id === id)[0]; if(!r) return;
+  const v = typeof prompt === 'function' ? prompt(r.kind === 'meeting' ? 'Minutes / key points:' : 'Outcome:', r.outcome || '') : null; if(v === null) return;
+  await withRequest('dir-outcome-' + id, async ()=>{ await api.patch('/api/exec/records/' + id, { outcome: v }); dirForget('recs'); }, { mutates: true });
+}
+async function dirRunScheduled(id){
+  const r = dirRecs(null, x => x.id === id)[0]; if(!r) return;
+  await withRequest('dir-run-' + id, async ()=>{ await api.patch('/api/exec/records/' + id, { data: { lastRun: new Date().toISOString() } }); dirForget('recs'); });
+  const target = Object.entries(DIR_PAGES).find(([, s]) => s.view === 'report' && s.report === r.data.report);
+  sidebarNavigate(target ? target[0] : 'Executive Reports');
+}
+
+/* ---- per-branch rows for executive views ---- */
+function dirBranchRows(){
+  return (DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(b => {
+    const st = computeStats(null, [b.id]);
+    const outstanding = st.activeScope.reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const par30 = st.activeScope.filter(l => loanArrearsDays(l) > 30).reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const dueMTD = st.activeScope.flatMap(l => l.schedule || []).filter(r => r.dueDate && isThisMonth(r.dueDate)).reduce((s, r) => s + r.totalDue, 0);
+    const staff = (DB.staff || []).filter(s => s.branch === b.id && s.status !== 'Terminated');
+    const mgr = b.managerId ? staffName(b.managerId) : ((staff.find(s => s.role === 'Manager') || {}).name || '');
+    return { b, st, staff, officers: staff.filter(s => s.role === 'Loan Officer').length, manager: mgr && mgr !== '—' ? mgr : 'Not assigned',
+      par30Pct: rgPct(par30, outstanding), collRate: dueMTD > 0 ? Math.min(150, st.collectionsMTD / dueMTD * 100) : null, dueMTD };
+  });
+}
+const dirRegionName = id => ((DB.regions || []).find(r => r.id === id) || {}).name || 'No region';
+
+/* ---- the views ---- */
+const DIR_VIEWS = {
+  loanSummary: () => {
+    const rows = dirBranchRows(); const st = dirStats();
+    const headers = ['Branch','Region','Loans','Active loans','Portfolio outstanding','Disbursed MTD','Disbursed YTD','Collected MTD','Arrears','PAR30 %'];
+    return `${dirTiles([['Loans on book', fmtNum(st.loansScope.length)], ['Active loans', fmtNum(st.activeScope.length)], ['Portfolio outstanding', fmt(st.portfolioOutstanding)], ['Disbursed this year', fmt(st.disbursedYTD), st.loansYTDCount + ' loan(s)'], ['Arrears', fmt(st.arrearsAmt)], ['Undisbursed pipeline', fmt(st.undisbursedAmt), st.undisbursedCount + ' loan(s)']])}
+      ${admTwoCharts(admChart('dir-ls-port', 'Portfolio by Branch (KES, top 15)', 'bar', dirTopBranches(rows).map(r => r.b.name), [{ label: 'Outstanding', data: dirTopBranches(rows).map(r => Math.round(r.st.portfolioOutstanding)) }], dirHoriz),
+        admChart('dir-ls-status', 'Loans by Status', 'bar', [...new Set(st.loansScope.map(l => l.status))], [{ label: 'Loans', data: [...new Set(st.loansScope.map(l => l.status))].map(s => st.loansScope.filter(l => l.status === s).length) }]))}
+      ${dirTable('Loan summary by branch', rows, [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['Region', r => escapeHtml(dirRegionName(r.b.region))], ['Loans', r => fmtNum(r.st.loansScope.length)], ['Active', r => fmtNum(r.st.activeScope.length)], ['Portfolio', r => fmt(r.st.portfolioOutstanding)], ['Disbursed MTD', r => fmt(r.st.disbursedMTD)], ['Disbursed YTD', r => fmt(r.st.disbursedYTD)], ['Collected MTD', r => fmt(r.st.collectionsMTD)], ['Arrears', r => fmt(r.st.arrearsAmt)], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)]], 'No branches.')}`;
+  },
+  structure: () => {
+    const regions = (DB.regions || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    const branches = DB.branches || []; const staff = (DB.staff || []).filter(s => s.status !== 'Terminated');
+    const head = staff.filter(s => !s.branch);
+    const rows = branches.map(b => ({ b, staff: staff.filter(s => s.branch === b.id) }));
+    const roles = [...new Set(staff.map(s => s.role))];
+    return `${dirTiles([['Regions', regions.length], ['Branches', branches.length], ['Staff', staff.length], ['Head office staff', head.length]])}
+      <div class="card"><div class="card-title">Organisation</div><div class="adm-org">
+        <div class="adm-org-region"><div class="adm-org-title">Head Office</div>${roles.filter(r => head.some(s => s.role === r)).map(r => `<div class="adm-org-branch"><strong>${escapeHtml(r)}</strong><div class="hint">${head.filter(s => s.role === r).map(s => escapeHtml(s.name)).join(', ')}</div></div>`).join('') || '<div class="hint">No head-office staff.</div>'}</div>
+        ${regions.map(rg => { const bs = rows.filter(x => x.b.region === rg.id); const rm = staff.find(s => s.role === 'Regional Manager' && s.regionId === rg.id);
+          return `<div class="adm-org-region"><div class="adm-org-title">${escapeHtml(rg.name)}</div><div class="hint" style="margin-bottom:6px;">Regional Manager: ${escapeHtml(rm ? rm.name : 'Not assigned')}</div>
+            ${bs.map(x => { const m = x.b.managerId ? staffName(x.b.managerId) : ((x.staff.find(s => s.role === 'Manager') || {}).name || 'Not assigned'); return `<div class="adm-org-branch"><strong>${escapeHtml(x.b.name)}</strong><div class="hint">Manager: ${escapeHtml(m)} · ${x.staff.filter(s => s.role === 'Loan Officer').length} officer(s) · ${x.staff.length} staff</div></div>`; }).join('') || '<div class="hint">No branches.</div>'}</div>`; }).join('')}
+      </div></div>
+      ${admChart('dir-str', 'Staff by Region and Role', 'bar', regions.map(r => r.name).concat(['Head office']), roles.map((ro, i) => ({ label: ro, data: regions.map(rg => staff.filter(s => s.role === ro && branches.some(b => b.id === s.branch && b.region === rg.id)).length).concat([head.filter(s => s.role === ro).length]), backgroundColor: ADM_PALETTE[i % 10] })), dirStacked)}
+      ${dirTable('Branches', rows, [['Branch', x => `<strong>${escapeHtml(x.b.name)}</strong>`], ['Region', x => escapeHtml(dirRegionName(x.b.region))], ['Manager', x => escapeHtml(x.b.managerId ? staffName(x.b.managerId) : ((x.staff.find(s => s.role === 'Manager') || {}).name || 'Not assigned'))], ['Loan officers', x => x.staff.filter(s => s.role === 'Loan Officer').length], ['All staff', x => x.staff.length]], 'No branches.')}`;
+  },
+  branchStatus: () => {
+    const rows = dirBranchRows();
+    const health = r => { const issues = []; if(r.par30Pct > 10) issues.push('High PAR'); if(r.collRate != null && r.collRate < 80) issues.push('Low collection'); if(!r.officers) issues.push('No loan officers'); if(r.manager === 'Not assigned') issues.push('No manager'); return issues; };
+    const tone = r => { const n = health(r).length; return n === 0 ? ['Healthy', 'green'] : n === 1 ? ['Watch', 'amber'] : ['Needs attention', 'red']; };
+    const groups = ['Healthy','Watch','Needs attention'];
+    return `${dirTiles(groups.map(g => [g, rows.filter(r => tone(r)[0] === g).length]).concat([['Branches', rows.length]]))}
+      ${admTwoCharts(admChart('dir-bs-h', 'Branch Health', 'bar', groups, [{ label: 'Branches', data: groups.map(g => rows.filter(r => tone(r)[0] === g).length), backgroundColor: ['#2A9D8F','#E9C46A','#E76F51'] }]),
+        admChart('dir-bs-par', 'PAR30 % by Branch', 'bar', rows.map(r => r.b.name), [{ label: 'PAR30 %', data: rows.map(r => Math.round(r.par30Pct * 10) / 10) }], dirHoriz))}
+      ${dirTable('Branch status', rows.sort((a, b) => health(b).length - health(a).length), [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong><div class="hint">${escapeHtml(dirRegionName(r.b.region))}</div>`], ['Status', r => admBadge(r.b.status || 'Active', (r.b.status || 'Active') === 'Active' ? 'green' : 'grey')], ['Health', r => admBadge(...tone(r))], ['Issues', r => escapeHtml(health(r).join(', ') || '—')], ['Manager', r => escapeHtml(r.manager)], ['Officers', r => r.officers], ['Portfolio', r => fmt(r.st.portfolioOutstanding)], ['Collection rate', r => r.collRate == null ? '—' : rgPctBadge(r.collRate, 95, 80)], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)]], 'No branches.')}`;
+  },
+  workforce: () => {
+    const rows = dirBranchRows().map(r => ({ ...r, perOfficer: r.officers ? r.st.activeScope.length / r.officers : null, clientsPerOfficer: r.officers ? r.st.activeClients / r.officers : null }));
+    const target = 120; // active loans one officer can manage well
+    const need = r => r.officers ? Math.max(0, Math.ceil(r.st.activeScope.length / target) - r.officers) : (r.st.activeScope.length ? Math.ceil(r.st.activeScope.length / target) : 1);
+    return `${dirTiles([['Staff', (DB.staff || []).filter(s => s.status !== 'Terminated').length], ['Loan officers', dirSum(rows, r => r.officers)], ['Avg active loans per officer', rows.filter(r => r.officers).length ? Math.round(dirSum(rows, r => r.st.activeScope.length) / Math.max(1, dirSum(rows, r => r.officers))) : '—'], ['Officers needed (at ' + target + ' loans each)', dirSum(rows, need)]])}
+      ${admChart('dir-wf', 'Active Loans per Officer by Branch', 'bar', rows.map(r => r.b.name), [{ label: 'Loans per officer', data: rows.map(r => r.perOfficer == null ? 0 : Math.round(r.perOfficer)) }, { label: 'Comfortable load', data: rows.map(() => target), type: 'line', borderColor: '#E76F51', fill: false, pointRadius: 0 }])}
+      ${dirTable('Workforce by branch', rows, [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['Staff', r => r.staff.length], ['Loan officers', r => r.officers], ['Active clients', r => fmtNum(r.st.activeClients)], ['Active loans', r => fmtNum(r.st.activeScope.length)], ['Loans per officer', r => r.perOfficer == null ? '—' : Math.round(r.perOfficer)], ['Clients per officer', r => r.clientsPerOfficer == null ? '—' : Math.round(r.clientsPerOfficer)], ['Officers needed', r => need(r) ? admBadge('+' + need(r), 'amber') : '0']], 'No branches.',
+        `<div class="hint" style="margin-bottom:8px;">"Officers needed" assumes one loan officer comfortably manages about ${target} active loans.</div>`)}`;
+  },
+  growth: () => {
+    const gr = dirData('growth', '/api/reports/growth', r => r.months); const g = dirGuard(gr); if(g) return g;
+    const months = gr.map(m => m.month).sort(); const by = k => months.map(m => (gr.find(x => x.month === m) || {})[k] || 0);
+    const loans = DB.loans || []; const port = months.map(m => dirSum(loans.filter(l => l.disbursedAt && String(l.disbursedAt).slice(0, 7) <= m), l => l.principal));
+    const pct = (a, b) => b ? Math.round((a - b) / b * 100) : null;
+    const last = months.length - 1;
+    return `${dirTiles([['New clients (latest month)', fmtNum(by('newClients')[last] || 0), pct(by('newClients')[last], by('newClients')[last - 1]) == null ? '' : pct(by('newClients')[last], by('newClients')[last - 1]) + '% vs previous'], ['New loans (latest month)', fmtNum(by('newLoans')[last] || 0)], ['New loan value (latest month)', fmt(by('newLoanValue')[last] || 0)], ['Cumulative disbursed', fmt(port[last] || 0)]])}
+      ${admTwoCharts(admChart('dir-gr-c', 'New Clients and Loans per Month', 'bar', months.map(rgMonthLabel), [{ label: 'New clients', data: by('newClients'), backgroundColor: '#2E5C8A' }, { label: 'New loans', data: by('newLoans'), backgroundColor: '#2A9D8F' }]),
+        admChart('dir-gr-v', 'Cumulative Amount Disbursed (KES)', 'line', months.map(rgMonthLabel), [{ label: 'Disbursed to date', data: port, fill: true, tension: 0.3 }]))}
+      ${dirTable('Growth by month', months.slice().reverse(), [['Month', m => rgMonthLabel(m)], ['New clients', m => fmtNum((gr.find(x => x.month === m) || {}).newClients || 0)], ['New loans', m => fmtNum((gr.find(x => x.month === m) || {}).newLoans || 0)], ['New loan value', m => fmt((gr.find(x => x.month === m) || {}).newLoanValue || 0)], ['Change in new loans', m => { const i = months.indexOf(m); const p = pct(by('newLoans')[i], by('newLoans')[i - 1]); return p == null ? '—' : admBadge((p >= 0 ? '+' : '') + p + '%', p >= 0 ? 'green' : 'red'); }]], 'No data yet.')}`;
+  },
+  execPerformance: () => {
+    const rows = dirBranchRows();
+    const score = r => { const parts = [r.collRate == null ? null : Math.min(100, r.collRate), Math.max(0, 100 - r.par30Pct * 5), r.st.disbursedMTD > 0 ? 100 : 40].filter(x => x != null); return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length); };
+    const regions = (DB.regions || []).map(rg => { const rs = rows.filter(r => r.b.region === rg.id); const rm = (DB.staff || []).find(s => s.role === 'Regional Manager' && s.regionId === rg.id);
+      return { rg, rm: rm ? rm.name : 'Not assigned', branches: rs.length, portfolio: dirSum(rs, r => r.st.portfolioOutstanding), disbursed: dirSum(rs, r => r.st.disbursedMTD), collected: dirSum(rs, r => r.st.collectionsMTD), score: rs.length ? Math.round(dirSum(rs, score) / rs.length) : 0 }; });
+    const ranked = rows.slice().sort((a, b) => score(b) - score(a));
+    return `${dirTiles([['Branch managers', rows.filter(r => r.manager !== 'Not assigned').length], ['Average score', rows.length ? Math.round(dirSum(rows, score) / rows.length) : '—'], ['Top branch', ranked[0] ? escapeHtml(ranked[0].b.name) : '—'], ['Needs support', rows.filter(r => score(r) < 60).length]])}
+      ${admTwoCharts(admChart('dir-ep-b', 'Branch Manager Scores', 'bar', ranked.map(r => r.manager + ' (' + r.b.name + ')'), [{ label: 'Score', data: ranked.map(score) }], dirHoriz),
+        admChart('dir-ep-r', 'Regional Leaders — Collected vs Disbursed (MTD)', 'bar', regions.map(r => r.rg.name), [{ label: 'Disbursed', data: regions.map(r => Math.round(r.disbursed)), backgroundColor: '#2E5C8A' }, { label: 'Collected', data: regions.map(r => Math.round(r.collected)), backgroundColor: '#2A9D8F' }]))}
+      ${dirTable('Regional leaders', regions, [['Region', r => `<strong>${escapeHtml(r.rg.name)}</strong>`], ['Regional Manager', r => escapeHtml(r.rm)], ['Branches', r => r.branches], ['Portfolio', r => fmt(r.portfolio)], ['Disbursed MTD', r => fmt(r.disbursed)], ['Collected MTD', r => fmt(r.collected)], ['Score', r => hrScore(r.score)]], 'No regions.')}
+      ${dirTable('Branch managers', ranked, [['Manager', r => `<strong>${escapeHtml(r.manager)}</strong>`], ['Branch', r => escapeHtml(r.b.name)], ['Portfolio', r => fmt(r.st.portfolioOutstanding)], ['Disbursed MTD', r => fmt(r.st.disbursedMTD)], ['Collection rate', r => r.collRate == null ? '—' : rgPctBadge(r.collRate, 95, 80)], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)], ['Score', r => hrScore(score(r))]], 'No branches.',
+        '<div class="hint" style="margin-bottom:8px;">Score blends collection rate, portfolio quality (PAR30) and disbursement activity this month.</div>')}`;
+  },
+  execActivity: () => dirAuditPage('all', e => ['Director','CEO','Admin','Operational Manager'].includes(ROLE_ID_TO_DISPLAY[e.roleId] || e.role) || ['executive','governance','admin'].includes(e.module)),
+  myActivity: () => dirAuditPage('mine', () => true),
+  opApprovals: () => {
+    const ops = rgData('ops', '/api/regional-ops', r => r.records); const recs = dirRecords(); const props = DB.branchProposals || [];
+    const g = dirGuard(ops, recs); if(g) return g;
+    const items = [].concat(
+      ops.filter(r => r.kind === 'branch_request' && r.status === 'Pending').map(r => ({ type: 'Branch request', title: r.title, who: r.createdByName, branch: r.branchId, when: r.createdAt, go: 'Branch Requests' })),
+      ops.filter(r => r.kind === 'transfer' && r.status === 'Requested').map(r => ({ type: 'Transfer', title: r.title, who: r.createdByName, branch: r.branchId, when: r.createdAt, go: 'Branch Transfers' })),
+      ops.filter(r => r.kind === 'escalation' && r.status === 'Open').map(r => ({ type: 'Escalation', title: r.title, who: r.createdByName, branch: r.branchId, when: r.createdAt, go: 'Escalations' })),
+      dirRecs('company_request', r => r.status === 'Pending').map(r => ({ type: 'Company request', title: r.title, who: r.createdByName, branch: r.branchId, when: r.createdAt, go: 'Company Requests' })),
+      dirRecs('decision', r => r.status === 'Proposed').map(r => ({ type: 'Executive decision', title: r.title, who: r.createdByName, branch: null, when: r.createdAt, go: 'Executive Decisions' })),
+      props.filter(p => ['Proposed','Pending','Under Review'].includes(p.status)).map(p => ({ type: 'Branch opening', title: p.name, who: staffName(p.proposedBy), branch: null, when: p.createdAt || '', go: 'Branch Opening' })));
+    const types = [...new Set(items.map(i => i.type))];
+    const age = i => i.when ? Math.floor((Date.now() - new Date(i.when)) / 86400000) : 0;
+    return `${dirTiles([['Waiting for a decision', items.length], ['Older than 7 days', items.filter(i => age(i) > 7).length]].concat(types.slice(0, 4).map(t => [t, items.filter(i => i.type === t).length])))}
+      ${admChart('dir-oa', 'Waiting by Type', 'bar', types, [{ label: 'Items', data: types.map(t => items.filter(i => i.type === t).length) }], dirHoriz)}
+      ${dirTable('Waiting for a decision', items.sort((a, b) => age(b) - age(a)), [['Type', i => admBadge(i.type, 'blue')], ['Item', i => `<strong>${escapeHtml(i.title)}</strong>`], ['Branch', i => escapeHtml(i.branch ? branchName(i.branch) : '—')], ['Raised by', i => escapeHtml(i.who || '—')], ['Waiting', i => age(i) > 7 ? admBadge(age(i) + ' days', 'red') : age(i) + ' day(s)'], ['', i => `<button class="btn btn-sm btn-primary" onclick="sidebarNavigate('${i.go}')">Open</button>`]], 'Nothing operational is waiting for a decision.')}`;
+  },
+  finApprovals: () => {
+    const recs = dirRecords(); const aging = dirData('aging', '/api/accounting/approval-aging', r => r.items); const g = dirGuard(recs, aging); if(g) return g;
+    const fr = dirRecs('financial_request', r => r.status === 'Pending');
+    return `${dirTiles([['Financial requests pending', fr.length, fmt(dirSum(fr, r => r.amount))], ['Accounting items pending', aging.length], ['Overdue (accounting)', aging.filter(i => i.overdue).length]])}
+      ${admChart('dir-fa', 'Pending Items by Type', 'bar', ['Financial requests'].concat([...new Set(aging.map(i => i.type))]), [{ label: 'Items', data: [fr.length].concat([...new Set(aging.map(i => i.type))].map(t => aging.filter(i => i.type === t).length)) }], dirHoriz)}
+      ${dirTable('Financial requests', fr, DIR_KIND_UI.financial_request.cols.concat([['', dirActions]]), 'No financial requests are waiting.')}
+      ${dirTable('Accounting approvals in progress', aging, [['Type', i => escapeHtml(i.type)], ['Reference', i => escapeHtml(i.reference || '—')], ['Branch', i => escapeHtml(i.branchId ? branchName(i.branchId) : '—')], ['Waiting for', i => escapeHtml(i.awaitingRole || '—')], ['Age', i => i.overdue ? admBadge(Math.round(i.ageHours) + ' h', 'red') : Math.round(i.ageHours) + ' h']], 'No accounting approvals are pending.',
+        '<div class="hint" style="margin-bottom:8px;">These are decided by the Accountant and Managers; shown here so you can see what is held up.</div>')}`;
+  },
+  staffApprovals: () => {
+    const leave = (DB.leaveRequests || []).filter(l => l.status === 'Pending'); const adv = (DB.salaryAdvances || []).filter(a => a.status === 'Pending');
+    const decide = (type, id) => `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="dirDecideStaff('${type}','${id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="dirDecideStaff('${type}','${id}','Rejected')">Reject</button></div>`;
+    return `${dirTiles([['Leave requests', leave.length], ['Salary advances', adv.length, fmt(dirSum(adv, a => a.amount))]])}
+      ${admChart('dir-sa', 'Waiting by Type', 'bar', ['Leave','Salary advance'], [{ label: 'Requests', data: [leave.length, adv.length] }])}
+      ${dirTable('Leave requests', leave, [['Employee', l => `<strong>${escapeHtml(staffName(l.user_id))}</strong>`], ['Type', l => escapeHtml(l.leave_type)], ['From', l => escapeHtml(l.start_date)], ['To', l => escapeHtml(l.end_date)], ['Reason', l => escapeHtml(l.reason || '—')], ['', l => l.user_id === session.userId ? '' : decide('leave', l.id)]], 'No leave is waiting.')}
+      ${dirTable('Salary advances', adv, [['Employee', a => `<strong>${escapeHtml(staffName(a.user_id))}</strong>`], ['Amount', a => fmt(a.amount)], ['Reason', a => escapeHtml(a.reason || '—')], ['Requested', a => escapeHtml(String(a.created_at).slice(0, 10))], ['', a => a.user_id === session.userId ? '' : decide('advance', a.id)]], 'No salary advances are waiting.')}`;
+  },
+  process: () => {
+    const loans = DB.loans || [];
+    const stages = ['Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Approved for Disbursement'];
+    const waitingNow = stages.map(s => loans.filter(l => l.status === s));
+    const age = l => { const last = (l.approvals || []).slice(-1)[0]; const since = last ? last.createdAt : l.createdAt; return Math.max(0, (Date.now() - new Date(since)) / 3600000); };
+    const done = loans.filter(l => l.disbursedAt && l.createdAt);
+    const tat = done.map(l => (new Date(l.disbursedAt) - new Date(l.createdAt)) / 3600000).filter(h => h >= 0);
+    const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+    const months = dirMonths(6);
+    return `${dirTiles([['In the pipeline', fmtNum(dirSum(waitingNow, x => x.length))], ['Average time to disburse', tat.length ? Math.round(avg(tat)) + ' h' : '—'], ['Stuck over 48 h', loans.filter(l => stages.includes(l.status) && age(l) > 48).length], ['Returned for correction', loans.filter(l => l.status === 'Returned for Correction').length]])}
+      ${admTwoCharts(admChart('dir-pm-now', 'Loans Waiting at Each Step', 'bar', stages, [{ label: 'Loans', data: waitingNow.map(x => x.length) }], dirHoriz),
+        admChart('dir-pm-tat', 'Average Hours from Application to Disbursement', 'line', months.map(rgMonthLabel), [{ label: 'Hours', data: months.map(m => Math.round(avg(done.filter(l => String(l.disbursedAt).slice(0, 7) === m).map(l => (new Date(l.disbursedAt) - new Date(l.createdAt)) / 3600000)))), fill: false, tension: 0.25 }]))}
+      ${dirTable('Waiting at each step', stages.map((s, i) => ({ s, xs: waitingNow[i] })), [['Step', x => `<strong>${escapeHtml(x.s)}</strong>`], ['Loans', x => x.xs.length], ['Amount', x => fmt(dirSum(x.xs, l => l.principal))], ['Average wait', x => x.xs.length ? Math.round(avg(x.xs.map(age))) + ' h' : '—'], ['Longest wait', x => x.xs.length ? Math.round(Math.max(...x.xs.map(age))) + ' h' : '—']], '—')}
+      ${dirTable('Stuck for more than 48 hours', loans.filter(l => stages.includes(l.status) && age(l) > 48).sort((a, b) => age(b) - age(a)), [['Client', l => `<strong>${escapeHtml(clientName(l.clientId))}</strong>`], ['Amount', l => fmt(l.principal)], ['Branch', l => escapeHtml(branchName(l.branchId))], ['Step', l => admBadge(l.status, 'amber')], ['Waiting', l => admBadge(Math.round(age(l)) + ' h', 'red')]], 'Nothing is stuck.')}`;
+  },
+  execDashboard: () => {
+    const st = dirStats(); const rows = dirBranchRows(); const recs = dirRecords(); const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const g = dirGuard(recs, pnl); if(g) return g;
+    const months = dirMonths(6); const posted = rgLoanPaymentsPosted();
+    const cash = DB.cashPosition ? (DB.cashPosition.cash || 0) + (DB.cashPosition.bank || 0) + (DB.cashPosition.mpesa || 0) : null;
+    return `${dirTiles([['Portfolio outstanding', fmt(st.portfolioOutstanding)], ['Active clients', fmtNum(st.activeClients)], ['Disbursed this month', fmt(st.disbursedMTD)], ['Collected this month', fmt(st.collectionsMTD)], ['Net profit (all time)', fmt(pnl.netProfit)], ['Cash available', cash == null ? '—' : fmt(cash)], ['Open risks', dirRecs('risk', r => r.isOpen).length], ['Decisions waiting', dirRecs(DIR_DECISION_KINDS, r => r.status === 'Pending').length]])}
+      ${admTwoCharts(admChart('dir-ed-dc', 'Disbursed vs Collected (6 months)', 'bar', months.map(rgMonthLabel), [{ label: 'Disbursed', data: months.map(m => dirSum(st.loansScope.filter(l => l.disbursedAt && String(l.disbursedAt).slice(0, 7) === m), l => l.principal)), backgroundColor: '#2E5C8A' }, { label: 'Collected', data: months.map(m => dirSum(posted.filter(p => String(p.date).slice(0, 7) === m), p => p.amount)), backgroundColor: '#2A9D8F' }]),
+        admChart('dir-ed-br', 'Portfolio by Branch (KES, top 15)', 'bar', dirTopBranches(rows).map(r => r.b.name), [{ label: 'Outstanding', data: dirTopBranches(rows).map(r => Math.round(r.st.portfolioOutstanding)) }], dirHoriz))}
+      ${dirTable('Strategic plans', dirRecs('strategic_plan', r => r.isOpen), DIR_KIND_UI.strategic_plan.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No active strategic plans — add them under Strategic Plans.')}`;
+  },
+  kpis: () => {
+    const st = dirStats(); const rows = dirBranchRows(); const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const g = dirGuard(pnl); if(g) return g;
+    const due = dirSum(rows, r => r.dueMTD); const outstanding = st.activeScope.reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const par30 = st.activeScope.filter(l => loanArrearsDays(l) > 30).reduce((s, l) => s + loanOutstandingPrincipal(l), 0);
+    const officers = dirSum(rows, r => r.officers);
+    const kpis = [
+      ['Portfolio outstanding', fmt(st.portfolioOutstanding), 'Total principal still owed on active loans'],
+      ['PAR30', rgPct(par30, outstanding).toFixed(1) + '%', 'Share of the portfolio more than 30 days late'],
+      ['Collection rate (MTD)', due > 0 ? rgPct(st.collectionsMTD, due).toFixed(1) + '%' : '—', 'Collected this month against what fell due'],
+      ['Disbursed (MTD)', fmt(st.disbursedMTD), st.loansMTDCount + ' loan(s)'],
+      ['Disbursed (YTD)', fmt(st.disbursedYTD), st.loansYTDCount + ' loan(s)'],
+      ['Active clients', fmtNum(st.activeClients), fmtNum(st.totalClients) + ' registered'],
+      ['Average loan size', st.loansScope.length ? fmt(dirSum(st.loansScope, l => l.principal) / st.loansScope.length) : '—', 'Across all loans'],
+      ['Portfolio per officer', officers ? fmt(st.portfolioOutstanding / officers) : '—', officers + ' loan officer(s)'],
+      ['Repeat loans', fmtNum(st.repeatLoans || 0), 'Returning clients'],
+      ['Net profit (all time)', fmt(pnl.netProfit), 'Interest + fees − expenses'],
+      ['Cost-to-income', (pnl.interestIncome + pnl.feeIncome) > 0 ? rgPct(pnl.expenses, pnl.interestIncome + pnl.feeIncome).toFixed(1) + '%' : '—', 'Expenses as a share of income'],
+      ['Arrears', fmt(st.arrearsAmt), 'Overdue amounts outstanding'],
+    ];
+    return `<div class="card"><div class="card-title"><span>Company KPIs <small>live</small></span>${dirGen('Company KPIs', ['KPI','Value','Meaning'], kpis.map(k => k.map(dirPlain)))}</div><div class="adm-tiles">${kpis.map(k => admTile(k[0], k[1], k[2])).join('')}</div></div>
+      ${admTwoCharts(admChart('dir-kpi-coll', 'Collection Rate by Branch %', 'bar', rows.filter(r => r.collRate != null).map(r => r.b.name), [{ label: 'Collection rate %', data: rows.filter(r => r.collRate != null).map(r => Math.round(r.collRate)) }], dirHoriz),
+        admChart('dir-kpi-par', 'PAR30 % by Branch', 'bar', rows.map(r => r.b.name), [{ label: 'PAR30 %', data: rows.map(r => Math.round(r.par30Pct * 10) / 10) }], dirHoriz))}`;
+  },
+  portfolio: () => {
+    const st = dirStats(); const act = st.activeScope;
+    const buckets = [['Current', 0, 0], ['1-30 days', 1, 30], ['31-60 days', 31, 60], ['61-90 days', 61, 90], ['90+ days', 91, 99999]];
+    const bucketAmt = buckets.map(b => dirSum(act.filter(l => { const d = loanArrearsDays(l); return d >= b[1] && d <= b[2]; }), loanOutstandingPrincipal));
+    const prods = admGroup(act, l => l.productName || 'Other', loanOutstandingPrincipal);
+    const sizes = [['< 10k', 0, 10000], ['10k-25k', 10000, 25000], ['25k-50k', 25000, 50000], ['50k-100k', 50000, 100000], ['100k+', 100000, 1e12]];
+    return `${dirTiles([['Active loans', fmtNum(act.length)], ['Outstanding', fmt(st.portfolioOutstanding)], ['Performing', rgPct(bucketAmt[0], dirSum(bucketAmt)).toFixed(1) + '%'], ['PAR30', rgPct(dirSum(bucketAmt.slice(2)), dirSum(bucketAmt)).toFixed(1) + '%'], ['PAR90', rgPct(bucketAmt[4], dirSum(bucketAmt)).toFixed(1) + '%']])}
+      ${admTwoCharts(admChart('dir-pf-age', 'Portfolio by Arrears Age (KES)', 'bar', buckets.map(b => b[0]), [{ label: 'Outstanding', data: bucketAmt.map(Math.round), backgroundColor: ['#2A9D8F','#E9C46A','#F4A261','#E76F51','#C1440E'] }]),
+        admChart('dir-pf-prod', 'Portfolio by Product (KES)', 'bar', prods[0], [{ label: 'Outstanding', data: prods[1] }], dirHoriz))}
+      ${admChart('dir-pf-size', 'Loans by Size', 'bar', sizes.map(s => s[0]), [{ label: 'Loans', data: sizes.map(s => act.filter(l => l.principal >= s[1] && l.principal < s[2]).length) }])}
+      ${dirTable('Arrears ageing', buckets.map((b, i) => ({ b, amt: bucketAmt[i], n: act.filter(l => { const d = loanArrearsDays(l); return d >= b[1] && d <= b[2]; }).length })), [['Bucket', x => `<strong>${x.b[0]}</strong>`], ['Loans', x => x.n], ['Outstanding', x => fmt(x.amt)], ['Share', x => hrBar(Math.round(rgPct(x.amt, dirSum(bucketAmt))))]], '—')}`;
+  },
+  profitability: () => {
+    const bp = dirData('bprof', '/api/accounting/branch-profitability', r => r.branches); const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const g = dirGuard(bp, pnl); if(g) return g;
+    const months = dirMonths(6); const ii = dirLedgerByMonth('interest_income', months), fi = dirLedgerByMonth('fee_income', months), ex = dirLedgerByMonth('operating_expense', months, true);
+    const sorted = bp.slice().sort((a, b) => b.netResult - a.netResult);
+    return `${dirTiles([['Interest income', fmt(pnl.interestIncome)], ['Fee income', fmt(pnl.feeIncome)], ['Expenses', fmt(pnl.expenses)], ['Net profit', fmt(pnl.netProfit)], ['Profit margin', (pnl.interestIncome + pnl.feeIncome) > 0 ? rgPct(pnl.netProfit, pnl.interestIncome + pnl.feeIncome).toFixed(1) + '%' : '—'], ['Branches in profit', bp.filter(b => b.netResult > 0).length + ' / ' + bp.length]])}
+      ${admTwoCharts(admChart('dir-pr-mo', 'Income vs Expenses by Month (KES)', 'bar', months.map(rgMonthLabel), [{ label: 'Income', data: months.map((_, i) => ii[i] + fi[i]), backgroundColor: '#2A9D8F' }, { label: 'Expenses', data: ex, backgroundColor: '#E76F51' }, { label: 'Net', data: months.map((_, i) => ii[i] + fi[i] - ex[i]), type: 'line', borderColor: '#2E5C8A', fill: false }]),
+        admChart('dir-pr-br', 'Net Result by Branch (KES)', 'bar', sorted.map(b => b.branchName), [{ label: 'Net result', data: sorted.map(b => Math.round(b.netResult)), backgroundColor: sorted.map(b => b.netResult >= 0 ? '#2A9D8F' : '#E76F51') }], dirHoriz))}
+      ${dirTable('Profitability by branch', sorted, [['Branch', b => `<strong>${escapeHtml(b.branchName)}</strong>`], ['Revenue', b => fmt(b.revenue)], ['Expenses', b => fmt(b.expenses)], ['Net result', b => b.netResult >= 0 ? fmt(b.netResult) : `<span style="color:var(--red); font-weight:700;">${fmt(b.netResult)}</span>`], ['Margin', b => b.revenue > 0 ? rgPct(b.netResult, b.revenue).toFixed(1) + '%' : '—'], ['Portfolio', b => fmt(b.portfolio)], ['Return on portfolio', b => b.portfolio > 0 ? rgPct(b.netResult, b.portfolio).toFixed(1) + '%' : '—']], 'No branches.')}`;
+  },
+  revenue: () => {
+    const bp = dirData('bprof', '/api/accounting/branch-profitability', r => r.branches); const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const g = dirGuard(bp, pnl); if(g) return g;
+    const months = dirMonths(12); const ii = dirLedgerByMonth('interest_income', months), fi = dirLedgerByMonth('fee_income', months);
+    return `${dirTiles([['Total revenue', fmt(pnl.interestIncome + pnl.feeIncome)], ['Interest income', fmt(pnl.interestIncome)], ['Fee income', fmt(pnl.feeIncome)], ['This month', fmt(ii[11] + fi[11])], ['Last month', fmt(ii[10] + fi[10])]])}
+      ${admTwoCharts(admChart('dir-rv-mo', 'Revenue by Month (KES)', 'bar', months.map(rgMonthLabel), [{ label: 'Interest', data: ii, backgroundColor: '#2E5C8A' }, { label: 'Fees', data: fi, backgroundColor: '#E9C46A' }], dirStacked),
+        admChart('dir-rv-br', 'Revenue by Branch (KES)', 'bar', bp.map(b => b.branchName), [{ label: 'Revenue', data: bp.map(b => Math.round(b.revenue)) }], dirHoriz))}
+      ${dirTable('Revenue by month', months.slice().reverse(), [['Month', m => rgMonthLabel(m)], ['Interest', m => fmt(ii[months.indexOf(m)])], ['Fees', m => fmt(fi[months.indexOf(m)])], ['Total', m => `<strong>${fmt(ii[months.indexOf(m)] + fi[months.indexOf(m)])}</strong>`]], '—')}`;
+  },
+  cash: () => {
+    const cf = dirData('cashflow', '/api/accounting/cashflow'); const g = dirGuard(cf); if(g) return g;
+    const cp = DB.cashPosition || {}; const accts = Object.entries(cp).filter(([, v]) => typeof v === 'number');
+    const months = dirMonths(6); const tx = DB.transactions || []; const cashAcc = Object.keys(cp);
+    const inflow = months.map(m => dirSum(tx.filter(t => cashAcc.includes(t.account) && String(t.date).slice(0, 7) === m), t => t.debit || 0));
+    const outflow = months.map(m => dirSum(tx.filter(t => cashAcc.includes(t.account) && String(t.date).slice(0, 7) === m), t => t.credit || 0));
+    return `${dirTiles([['Total cash available', fmt(dirSum(accts, a => a[1]))]].concat(accts.map(([k, v]) => [k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()), fmt(v)])).concat([['Inflows this month', fmt(cf.inflows)], ['Outflows this month', fmt(cf.outflows)], ['Net this month', fmt(cf.net)]]))}
+      ${admTwoCharts(admChart('dir-cash-acc', 'Cash by Account (KES)', 'bar', accts.map(a => a[0]), [{ label: 'Balance', data: accts.map(a => Math.round(a[1])) }]),
+        admChart('dir-cash-flow', 'Cash In and Out by Month (KES)', 'line', months.map(rgMonthLabel), [{ label: 'In', data: inflow.map(Math.round), fill: false, tension: 0.25 }, { label: 'Out', data: outflow.map(Math.round), fill: false, tension: 0.25 }]))}
+      ${dirTable('Cash flow this month', [['Opening balance', cf.opening], ['Inflows', cf.inflows], ['Outflows', -cf.outflows], ['Net movement', cf.net], ['Closing balance', cf.closing]], [['Item', r => `<strong>${r[0]}</strong>`], ['Amount', r => fmt(r[1])]], '—', `<div class="hint" style="margin-bottom:8px;">${escapeHtml(cf.from)} to ${escapeHtml(cf.to)}</div>`)}`;
+  },
+  budget: () => {
+    const recs = dirRecords(); const g = dirGuard(recs); if(g) return g;
+    const lines = dirRecs('budget', r => r.status === 'Active'); const exp = (DB.expenses || []).filter(e => ['Approved','Paid'].includes(e.status));
+    const actual = l => dirSum(exp.filter(e => e.category === l.category && (!l.branchId || e.branchId === l.branchId) && (!l.startDate || String(e.date).slice(0, 10) >= l.startDate) && (!l.dueDate || String(e.date).slice(0, 10) <= l.dueDate)), e => e.amount);
+    const rows = lines.map(l => ({ l, a: actual(l) })).map(x => ({ ...x, used: x.l.amount ? x.a / x.l.amount * 100 : 0 }));
+    return `${dirTiles([['Budget lines', lines.length], ['Total budget', fmt(dirSum(lines, l => l.amount))], ['Spent', fmt(dirSum(rows, x => x.a))], ['Over budget', rows.filter(x => x.used > 100).length]])}
+      ${dirCanWrite() ? dirRecordForm('budget', 'dir-budget') : ''}
+      ${admChart('dir-bud', 'Budget vs Actual (KES)', 'bar', rows.map(x => x.l.title), [{ label: 'Budget', data: rows.map(x => Math.round(x.l.amount || 0)), backgroundColor: '#2E5C8A' }, { label: 'Actual', data: rows.map(x => Math.round(x.a)), backgroundColor: '#E76F51' }])}
+      ${dirTable('Budget vs actual', rows, [['Budget line', x => `<strong>${escapeHtml(x.l.title)}</strong><div class="hint">${escapeHtml(x.l.category || '')}</div>`], ['Branch', x => escapeHtml(x.l.branchId ? branchName(x.l.branchId) : 'Whole company')], ['Period', x => escapeHtml(`${x.l.startDate || '—'} → ${x.l.dueDate || '—'}`)], ['Budget', x => fmt(x.l.amount)], ['Actual', x => fmt(x.a)], ['Used', x => x.used > 100 ? admBadge(Math.round(x.used) + '%', 'red') : hrBar(Math.round(x.used))], ['', x => dirCanWrite() ? `<button class="btn btn-sm btn-outline" onclick="dirSetStatus('${x.l.id}','Closed')">Close</button>` : '']], 'No budget lines yet — add one above. Actual spending comes from approved and paid expenses in the same category.')}`;
+  },
+  finReports: () => {
+    const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const bs = dirData('bs', '/api/accounting/balance-sheet'); const cf = dirData('cashflow', '/api/accounting/cashflow'); const g = dirGuard(pnl, bs, cf); if(g) return g;
+    const pl = [['Interest income', pnl.interestIncome], ['Fee income', pnl.feeIncome], ['Total income', pnl.interestIncome + pnl.feeIncome], ['Operating expenses', -pnl.expenses], ['Net profit', pnl.netProfit]];
+    const bal = [].concat((bs.assets || []).map(a => ['Asset: ' + (a.name || a.account || a.id), a.balance]), [['Total assets', bs.totalAssets]], (bs.liabilities || []).map(a => ['Liability: ' + (a.name || a.account || a.id), a.balance]), [['Total liabilities', bs.totalLiabilities], ['Equity', bs.equity]]);
+    const cfr = [['Opening', cf.opening], ['Inflows', cf.inflows], ['Outflows', -cf.outflows], ['Closing', cf.closing]];
+    const tbl = (title, rows) => dirTable(title, rows, [['Item', r => /^Total|^Net|^Equity|^Closing/.test(r[0]) ? `<strong>${escapeHtml(r[0])}</strong>` : escapeHtml(r[0])], ['Amount (KES)', r => fmt(r[1])]], '—');
+    return `${dirTiles([['Net profit', fmt(pnl.netProfit)], ['Total assets', fmt(bs.totalAssets)], ['Total liabilities', fmt(bs.totalLiabilities)], ['Equity', fmt(bs.equity)], ['Cash this month (net)', fmt(cf.net)]])}
+      ${admChart('dir-fr', 'Income, Expenses and Profit (KES)', 'bar', ['Interest income','Fee income','Expenses','Net profit'], [{ label: 'KES', data: [pnl.interestIncome, pnl.feeIncome, pnl.expenses, pnl.netProfit].map(Math.round), backgroundColor: ['#2E5C8A','#E9C46A','#E76F51','#2A9D8F'] }])}
+      ${tbl('Profit & loss (all time)', pl)}${tbl('Balance sheet', bal)}${tbl('Cash flow this month', cfr)}`;
+  },
+  compliance: () => {
+    const recs = dirRecords(); const g = dirGuard(recs); if(g) return g;
+    const checks = dirRecs('compliance_check'); const reg = dirRecs('regulatory'); const govs = dirRecs('governance_record');
+    const clients = DB.clients || [];
+    const dq = [['No ID number', clients.filter(c => !c.idNumber).length], ['No phone', clients.filter(c => !c.phone).length], ['No next of kin', clients.filter(c => !c.nextOfKin).length], ['Not verified', clients.filter(c => c.verificationStatus && c.verificationStatus !== 'Verified').length]];
+    const expiring = govs.filter(r => r.dueDate && r.dueDate <= new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10) && r.isOpen);
+    return `${dirTiles([['Checks passed', checks.filter(c => c.status === 'Passed').length + ' / ' + checks.filter(c => c.status !== 'Scheduled').length], ['Checks failed', checks.filter(c => c.status === 'Failed').length], ['Regulatory matters open', reg.filter(r => r.isOpen).length], ['Overdue regulatory deadlines', reg.filter(r => r.isOpen && r.dueDate && r.dueDate < todayISO()).length], ['Licences/records expiring (60 days)', expiring.length]])}
+      ${admTwoCharts(admChart('dir-cm-chk', 'Compliance Check Results', 'bar', ['Passed','Failed','Waived','Scheduled'], [{ label: 'Checks', data: ['Passed','Failed','Waived','Scheduled'].map(s => checks.filter(c => c.status === s).length), backgroundColor: ['#2A9D8F','#E76F51','#6C757D','#3D8BD9'] }]),
+        admChart('dir-cm-dq', 'Client Records with Gaps', 'bar', dq.map(d => d[0]), [{ label: 'Clients', data: dq.map(d => d[1]) }], dirHoriz))}
+      ${dirTable('Failed or scheduled checks', checks.filter(c => ['Failed','Scheduled'].includes(c.status)), DIR_KIND_UI.compliance_check.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No failed or upcoming checks.')}
+      ${dirTable('Open regulatory matters', reg.filter(r => r.isOpen), DIR_KIND_UI.regulatory.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No open regulatory matters.')}
+      ${dirTable('Records expiring within 60 days', expiring, DIR_KIND_UI.governance_record.cols, 'Nothing expiring soon.')}`;
+  },
+  riskReport: () => {
+    const recs = dirRecords(); const g = dirGuard(recs); if(g) return g;
+    const st = dirStats(); const act = st.activeScope; const out = dirSum(act, loanOutstandingPrincipal);
+    const risks = dirRecs('risk', r => r.isOpen); const cats = [...new Set(risks.map(r => r.category || 'Other'))];
+    const rows = dirBranchRows().sort((a, b) => b.par30Pct - a.par30Pct);
+    return `${dirTiles([['PAR30', rgPct(dirSum(act.filter(l => loanArrearsDays(l) > 30), loanOutstandingPrincipal), out).toFixed(1) + '%'], ['Arrears', fmt(st.arrearsAmt)], ['Open enterprise risks', risks.length], ['High risks (score 15+)', risks.filter(r => dRiskScore(r) >= 15).length], ['Open escalations', ((DB.adm && DB.adm['rg:ops']) || []).filter(r => r.kind === 'escalation' && r.isOpen).length]])}
+      ${admTwoCharts(admChart('dir-rr-cat', 'Open Risks by Category (total score)', 'bar', cats, [{ label: 'Risk score', data: cats.map(c => dirSum(risks.filter(r => (r.category || 'Other') === c), dRiskScore)) }], dirHoriz),
+        admChart('dir-rr-par', 'PAR30 % by Branch', 'bar', rows.map(r => r.b.name), [{ label: 'PAR30 %', data: rows.map(r => Math.round(r.par30Pct * 10) / 10) }], dirHoriz))}
+      ${dirTable('Top enterprise risks', risks.sort((a, b) => dRiskScore(b) - dRiskScore(a)), DIR_KIND_UI.risk.cols, 'No open enterprise risks — add them under Enterprise Risk.')}
+      ${dirTable('Credit risk by branch', rows, [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)], ['Arrears', r => fmt(r.st.arrearsAmt)], ['Collection rate', r => r.collRate == null ? '—' : rgPctBadge(r.collRate, 95, 80)]], 'No branches.')}`;
+  },
+  report: (spec, label) => {
+    const recs = dirRecords(); const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const g = dirGuard(recs, pnl); if(g) return g;
+    const st = dirStats(); const rows = dirBranchRows(); const kind = spec.report;
+    const sections = [];
+    const kv = (title, items) => sections.push({ title, items });
+    if(['Executive summary','Company report','Management report','Portfolio report'].includes(kind)) kv('Portfolio', [['Portfolio outstanding', fmt(st.portfolioOutstanding)], ['Active loans', fmtNum(st.activeScope.length)], ['Active clients', fmtNum(st.activeClients)], ['Disbursed this month', fmt(st.disbursedMTD)], ['Collected this month', fmt(st.collectionsMTD)], ['Arrears', fmt(st.arrearsAmt)]]);
+    if(['Executive summary','Company report','Financial report'].includes(kind)) kv('Finance', [['Interest income', fmt(pnl.interestIncome)], ['Fee income', fmt(pnl.feeIncome)], ['Expenses', fmt(pnl.expenses)], ['Net profit', fmt(pnl.netProfit)]]);
+    if(['Executive summary','Governance report'].includes(kind)) kv('Governance & strategy', [['Active strategic plans', dirRecs('strategic_plan', r => r.status === 'Active').length], ['Open board matters', dirRecs('board_matter', r => r.isOpen).length], ['Active policies', dirRecs('policy', r => r.status === 'Active').length], ['Decisions waiting', dirRecs(DIR_DECISION_KINDS, r => r.status === 'Pending').length], ['Open risks', dirRecs('risk', r => r.isOpen).length]]);
+    if(['Company report'].includes(kind)) kv('Organisation', [['Regions', (DB.regions || []).length], ['Branches', (DB.branches || []).length], ['Staff', (DB.staff || []).filter(s => s.status !== 'Terminated').length], ['Loan officers', dirSum(rows, r => r.officers)]]);
+    if(['Investment report'].includes(kind)) kv('Capital', [['Investors', (DB.investors || []).length], ['Investor capital', fmt(dirSum(DB.investors || [], i => i.amount))], ['Strategic investments', fmt(dirSum(dirRecs('investment', r => ['Approved','Active'].includes(r.status)), r => r.amount))], ['Open funding needs', fmt(dirSum(dirRecs('funding', r => r.isOpen), r => r.amount))]]);
+    const branchTable = ['Executive summary','Management report','Portfolio report','Company report'].includes(kind);
+    const flat = sections.flatMap(s => s.items.map(i => [s.title, i[0], dirPlain(i[1])])).concat(branchTable ? rows.map(r => ['Branches', r.b.name, `Portfolio ${Math.round(r.st.portfolioOutstanding)} · PAR30 ${r.par30Pct.toFixed(1)}%`]) : []);
+    return `<div class="card"><div class="card-title"><span>${escapeHtml(kind)} <small>as of ${todayISO()}</small></span>${dirGen(label, ['Section','Measure','Value'], flat)}</div>
+        ${sections.map(s => `<div class="detail-label" style="margin-top:10px;">${escapeHtml(s.title)}</div><div class="adm-tiles">${s.items.map(i => admTile(i[0], i[1])).join('')}</div>`).join('')}</div>
+      ${branchTable ? admChart('dir-rep-' + label.length, 'Portfolio and Arrears by Branch (KES)', 'bar', rows.map(r => r.b.name), [{ label: 'Portfolio', data: rows.map(r => Math.round(r.st.portfolioOutstanding)), backgroundColor: '#2E5C8A' }, { label: 'Arrears', data: rows.map(r => Math.round(r.st.arrearsAmt)), backgroundColor: '#E76F51' }]) : ''}
+      ${branchTable ? dirTable('Branches', rows, [['Branch', r => `<strong>${escapeHtml(r.b.name)}</strong>`], ['Manager', r => escapeHtml(r.manager)], ['Portfolio', r => fmt(r.st.portfolioOutstanding)], ['Disbursed MTD', r => fmt(r.st.disbursedMTD)], ['Collected MTD', r => fmt(r.st.collectionsMTD)], ['PAR30', r => rgPctBadge(r.par30Pct, 5, 10, true)]], 'No branches.') : ''}
+      ${kind === 'Governance report' ? dirTable('Board matters', dirRecs('board_matter'), DIR_KIND_UI.board_matter.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No board matters.') + dirTable('Policies', dirRecs('policy'), DIR_KIND_UI.policy.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No policies.') : ''}
+      ${kind === 'Investment report' ? dirTable('Investors', DB.investors || [], [['Investor', i => `<strong>${escapeHtml(i.name)}</strong>`], ['Amount', i => fmt(i.amount)], ['Profit share', i => (i.profitSharePct || 0) + '%'], ['Term', i => (i.termMonths || '—') + ' months'], ['Status', i => escapeHtml(i.status || '—')]], 'No investors.') : ''}`;
+  },
+  resolutions: () => {
+    const res = dirData('resolutions', '/api/governance/resolutions', r => r.resolutions); const g = dirGuard(res); if(g) return g;
+    const sts = ['Proposed','Approved','Rejected'];
+    return `${dirTiles(sts.map(s => [s, res.filter(r => r.status === s).length]))}
+      ${dirCanWrite() ? `<div class="fp ${isFormOpen('dir-res') ? 'fp-open' : ''}">${formToggleBtn('dir-res', 'Propose resolution')}<div class="fp-body"><div class="card"><div class="card-title">Propose a board resolution</div>
+        <form onsubmit="return dirProposeResolution(event)"><div class="form-grid"><div class="field full"><label>Resolution</label><input name="title"></div><div class="field full"><label>Description</label><textarea name="description" rows="3"></textarea></div></div>
+        <button class="btn btn-primary btn-sm" type="submit">Propose</button></form></div></div></div>` : ''}
+      ${admChart('dir-res', 'Resolutions by Status', 'bar', sts, [{ label: 'Resolutions', data: sts.map(s => res.filter(r => r.status === s).length), backgroundColor: ['#E9C46A','#2A9D8F','#E76F51'] }])}
+      ${dirTable('Board resolutions', res, [['Resolution', r => `<strong>${escapeHtml(r.title)}</strong><div class="hint">${escapeHtml(r.description || '')}</div>`], ['Proposed by', r => escapeHtml(staffName(r.proposed_by))], ['Proposed', r => escapeHtml(String(r.created_at).slice(0, 10))], ['Status', r => admBadge(r.status, r.status === 'Approved' ? 'green' : r.status === 'Rejected' ? 'red' : 'amber')],
+        ['', r => r.status === 'Proposed' && session.role === 'Director' && r.proposed_by !== session.userId ? `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="dirDecideResolution('${r.id}','Approved')">Approve</button><button class="btn btn-sm btn-red" onclick="dirDecideResolution('${r.id}','Rejected')">Reject</button></div>` : r.status === 'Proposed' ? '<span class="hint">Awaiting the Director</span>' : '']], 'No resolutions yet.')}`;
+  },
+  ownership: () => dirEquityPage(false),
+  shareholders: () => dirEquityPage(true),
+  investPortfolio: () => {
+    const recs = dirRecords(); const g = dirGuard(recs); if(g) return g;
+    const inv = DB.investors || []; const strat = dirRecs('investment', r => ['Approved','Active'].includes(r.status));
+    const cats = [...new Set(strat.map(r => r.category || 'Other'))];
+    return `${dirTiles([['Investors', inv.length], ['Investor capital', fmt(dirSum(inv, i => i.amount))], ['Strategic investments', strat.length], ['Invested strategically', fmt(dirSum(strat, r => r.amount))]])}
+      ${admTwoCharts(admChart('dir-ip-inv', 'Capital by Investor (KES)', 'bar', inv.map(i => i.name), [{ label: 'Amount', data: inv.map(i => Math.round(i.amount || 0)) }], dirHoriz),
+        admChart('dir-ip-str', 'Strategic Investments by Category (KES)', 'bar', cats, [{ label: 'Amount', data: cats.map(c => dirSum(strat.filter(r => (r.category || 'Other') === c), r => r.amount)) }]))}
+      ${dirTable('Investors', inv, [['Investor', i => `<strong>${escapeHtml(i.name)}</strong>`], ['Amount', i => fmt(i.amount)], ['Profit share', i => (i.profitSharePct || 0) + '%'], ['Term', i => (i.termMonths || '—') + ' months'], ['Since', i => escapeHtml(i.startDate || '—')], ['Status', i => escapeHtml(i.status || '—')]], 'No investors yet.')}
+      ${dirTable('Strategic investments', strat, DIR_KIND_UI.investment.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No approved or active strategic investments.')}`;
+  },
+  contributions: () => {
+    const eq = dirData('equity', '/api/governance/equity', r => r.holdings); const g = dirGuard(eq); if(g) return g;
+    const inv = DB.investors || [];
+    const rows = eq.map(h => ({ name: h.holder_name, type: h.holder_type, amount: Number(h.capital_contributed || 0), pct: Number(h.percentage || 0), src: 'Shareholder' })).concat(inv.map(i => ({ name: i.name, type: 'Investor', amount: Number(i.amount || 0), pct: null, src: 'Investor' })));
+    return `${dirTiles([['Shareholder capital', fmt(dirSum(eq, h => h.capital_contributed))], ['Investor capital', fmt(dirSum(inv, i => i.amount))], ['Total contributed', fmt(dirSum(rows, r => r.amount))], ['Contributors', rows.length]])}
+      ${admChart('dir-cc', 'Capital Contributed (KES)', 'bar', rows.map(r => r.name), [{ label: 'Amount', data: rows.map(r => Math.round(r.amount)) }], dirHoriz)}
+      ${dirTable('Capital contributions', rows.sort((a, b) => b.amount - a.amount), [['Contributor', r => `<strong>${escapeHtml(r.name)}</strong>`], ['Type', r => escapeHtml(r.type)], ['Capital', r => fmt(r.amount)], ['Ownership', r => r.pct == null ? '—' : r.pct + '%'], ['Share of capital', r => hrBar(Math.round(rgPct(r.amount, dirSum(rows, x => x.amount))))]], 'No capital recorded yet.')}`;
+  },
+  ceoPerformance: () => {
+    const pnl = dirData('pnl', '/api/accounting/profit-and-loss'); const tg = dirData('targets', '/api/targets', r => r.targets); const recs = dirRecords(); const g = dirGuard(pnl, tg, recs); if(g) return g;
+    const st = dirStats(); const months = dirMonths(2); const posted = rgLoanPaymentsPosted();
+    const disb = m => dirSum(st.loansScope.filter(l => l.disbursedAt && String(l.disbursedAt).slice(0, 7) === m), l => l.principal);
+    const coll = m => dirSum(posted.filter(p => String(p.date).slice(0, 7) === m), p => p.amount);
+    const met = tg.filter(t => Number(t.achievementPct || 0) >= 100).length;
+    const plans = dirRecs('strategic_plan'); const decisions = dirRecs('decision');
+    const ceo = (DB.staff || []).find(s => s.role === 'CEO');
+    const card = [['Disbursed (this vs last month)', fmt(disb(months[1])), 'Last month ' + fmt(disb(months[0]))], ['Collected (this vs last month)', fmt(coll(months[1])), 'Last month ' + fmt(coll(months[0]))], ['Net profit (all time)', fmt(pnl.netProfit)], ['Targets met', met + ' / ' + tg.length], ['Strategic plans achieved', plans.filter(p => p.status === 'Achieved').length + ' / ' + plans.length], ['Decisions implemented', decisions.filter(d => d.status === 'Implemented').length + ' / ' + decisions.length]];
+    return `<div class="card"><div class="card-title"><span>Scorecard — ${escapeHtml(ceo ? ceo.name : 'CEO')}</span>${dirGen('CEO Performance', ['Measure','Value','Context'], card.map(c => c.map(dirPlain)))}</div><div class="adm-tiles">${card.map(c => admTile(c[0], c[1], c[2])).join('')}</div></div>
+      ${admTwoCharts(admChart('dir-ceo-mm', 'This Month vs Last Month (KES)', 'bar', ['Disbursed','Collected'], [{ label: rgMonthLabel(months[0]), data: [disb(months[0]), coll(months[0])], backgroundColor: '#6C757D' }, { label: rgMonthLabel(months[1]), data: [disb(months[1]), coll(months[1])], backgroundColor: '#2E5C8A' }]),
+        admChart('dir-ceo-tg', 'Company Targets — Achievement %', 'bar', tg.slice(0, 15).map(t => (TARGET_METRIC_LABELS[t.metric] || t.metric) + ' ' + t.period), [{ label: 'Achievement %', data: tg.slice(0, 15).map(t => Math.round(Number(t.achievementPct || 0))) }], dirHoriz))}
+      ${dirTable('Strategic plans', plans, DIR_KIND_UI.strategic_plan.cols.concat([['Status', r => admBadge(r.status, DIR_STATUS_TONE[r.status])]]), 'No strategic plans recorded yet.')}`;
+  },
+  dataQuality: () => {
+    const clients = DB.clients || []; const ids = {}; clients.forEach(c => { if(c.idNumber) (ids[c.idNumber] = ids[c.idNumber] || []).push(c); });
+    const phones = {}; clients.forEach(c => { if(c.phone) (phones[c.phone] = phones[c.phone] || []).push(c); });
+    const issues = [];
+    clients.forEach(c => {
+      if(!c.idNumber) issues.push({ c, issue: 'No ID number' });
+      if(!c.phone) issues.push({ c, issue: 'No phone number' }); else if(!/^(\+?254|0)?[17]\d{8}$/.test(String(c.phone).replace(/\s/g, ''))) issues.push({ c, issue: 'Phone number looks wrong' });
+      if(!c.nextOfKin) issues.push({ c, issue: 'No next of kin' });
+      if(!c.address) issues.push({ c, issue: 'No residence' });
+      if(c.idNumber && ids[c.idNumber].length > 1) issues.push({ c, issue: 'Duplicate ID number' });
+      if(c.phone && phones[c.phone].length > 1) issues.push({ c, issue: 'Phone shared with another client' });
+    });
+    const types = [...new Set(issues.map(i => i.issue))]; const clean = clients.filter(c => !issues.some(i => i.c === c)).length;
+    const byBr = admGroup(issues, i => branchName(i.c.branch));
+    return `${dirTiles([['Clients', fmtNum(clients.length)], ['Complete records', clients.length ? Math.round(clean / clients.length * 100) + '%' : '—'], ['Issues found', issues.length], ['Duplicate IDs', issues.filter(i => i.issue === 'Duplicate ID number').length]])}
+      ${admTwoCharts(admChart('dir-dq-t', 'Issues by Type', 'bar', types, [{ label: 'Clients', data: types.map(t => issues.filter(i => i.issue === t).length) }], dirHoriz), admChart('dir-dq-b', 'Issues by Branch', 'bar', byBr[0], [{ label: 'Issues', data: byBr[1] }]))}
+      ${dirTable('Records to fix', issues.slice(0, 500), [['Client', i => `<a href="#" onclick="openClient('${i.c.id}'); return false;"><strong>${escapeHtml(i.c.name)}</strong></a>`], ['Branch', i => escapeHtml(branchName(i.c.branch))], ['Officer', i => escapeHtml(staffName(i.c.officerId))], ['Issue', i => admBadge(i.issue, /Duplicate|wrong/.test(i.issue) ? 'red' : 'amber')]], 'Every client record is complete.')}`;
+  },
+};
+async function dirDecideStaff(type, id, decision){
+  await withRequest('dir-staff-' + id, async ()=>{
+    if(type === 'leave'){ const r = await api.post(`/api/leave-requests/${id}/decide`, { decision }); const i = (DB.leaveRequests || []).findIndex(l => l.id === id); if(i >= 0) DB.leaveRequests[i] = r.leaveRequest; }
+    else { const r = await api.post(`/api/salary-advances/${id}/decide`, { decision }); const i = (DB.salaryAdvances || []).findIndex(a => a.id === id); if(i >= 0) DB.salaryAdvances[i] = r.salaryAdvance; }
+  }, { mutates: true });
+}
+async function dirProposeResolution(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target); const title = String(fd.get('title') || '').trim(); if(!title){ toast('Enter the resolution.'); return false; }
+  await withRequest('dir-res-new', async ()=>{ await api.post('/api/governance/resolutions', { title, description: String(fd.get('description') || '').trim() }); dirForget('resolutions'); DB.governance = null; }, { mutates: true });
+  return false;
+}
+async function dirDecideResolution(id, decision){
+  await withRequest('dir-res-' + id, async ()=>{ await api.post(`/api/governance/resolutions/${id}/decide`, { decision }); dirForget('resolutions'); DB.governance = null; }, { mutates: true });
+}
+function dirEquityPage(byType){
+  const eq = dirData('equity', '/api/governance/equity', r => r.holdings); const g = dirGuard(eq); if(g) return g;
+  const total = dirSum(eq, h => h.percentage); const types = [...new Set(eq.map(h => h.holder_type))];
+  return `${dirTiles([['Shareholders', eq.length], ['Ownership recorded', total.toFixed(2) + '%', total < 100 ? (100 - total).toFixed(2) + '% unallocated' : ''], ['Largest holder', eq[0] ? escapeHtml(eq[0].holder_name) + ' (' + Number(eq[0].percentage) + '%)' : '—'], ['Capital contributed', fmt(dirSum(eq, h => h.capital_contributed))]])}
+    ${byType ? admChart('dir-sh-t', 'Ownership by Shareholder Type %', 'polarArea', types, [{ data: types.map(t => dirSum(eq.filter(h => h.holder_type === t), h => h.percentage)) }])
+      : admChart('dir-own', 'Ownership %', 'bar', eq.map(h => h.holder_name), [{ label: '% owned', data: eq.map(h => Number(h.percentage)) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100 } } })}
+    ${dirTable(byType ? 'Shareholders by type' : 'Ownership register', byType ? types.map(t => ({ t, hs: eq.filter(h => h.holder_type === t) })) : eq,
+      byType ? [['Type', x => `<strong>${escapeHtml(x.t)}</strong>`], ['Shareholders', x => x.hs.length], ['Ownership', x => dirSum(x.hs, h => h.percentage).toFixed(2) + '%'], ['Capital', x => fmt(dirSum(x.hs, h => h.capital_contributed))]]
+        : [['Shareholder', h => `<strong>${escapeHtml(h.holder_name)}</strong>`], ['Type', h => escapeHtml(h.holder_type)], ['Ownership', h => hrBar(Math.round(Number(h.percentage)))], ['Capital contributed', h => h.capital_contributed != null ? fmt(h.capital_contributed) : '—'], ['Notes', h => escapeHtml(h.notes || '')]],
+      'No ownership recorded yet — the official register is maintained under Governance Responsibilities.')}`;
+}
+function dirAuditPage(which, pred){
+  const logs = which === 'mine' ? dirData('audit:mine', '/api/audit-logs?limit=200&user_id=' + encodeURIComponent(session.userId || ''), r => r.auditLogs) : dirData('audit:all', '/api/audit-logs?limit=200', r => r.auditLogs); const g = dirGuard(logs); if(g) return g;
+  const list = logs.map(a => ({ when: a.created_at, user: a.user_name, userId: a.user_id, roleId: a.role_id, action: a.action, module: a.module, record: a.record_type, reason: a.reason })).filter(pred);
+  const days = admLastDays(30); const byAct = admGroup(list, e => e.action); const top = byAct[0].map((k, i) => [k, byAct[1][i]]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  return `${dirTiles([['Actions', list.length], ['Last 7 days', list.filter(e => String(e.when).slice(0, 10) >= admLastDays(7)[0]).length], ['People', new Set(list.map(e => e.user)).size]])}
+    ${admTwoCharts(admChart('dir-aud-d', 'Actions per Day (30 days)', 'line', days.map(admDayLabel), [{ label: 'Actions', data: days.map(d => list.filter(e => String(e.when).slice(0, 10) === d).length), fill: true, tension: 0.3 }]), admChart('dir-aud-a', 'Most Common Actions', 'bar', top.map(t => t[0]), [{ label: 'Times', data: top.map(t => t[1]) }], dirHoriz))}
+    ${dirTable('Activity', list, [['When', e => admWhen(e.when)], ['By', e => `<strong>${escapeHtml(e.user || '—')}</strong><div class="hint">${escapeHtml(ROLE_ID_TO_DISPLAY[e.roleId] || e.roleId || '')}</div>`], ['Action', e => escapeHtml(e.action)], ['Area', e => escapeHtml(e.module || '—')], ['Record', e => escapeHtml(e.record || '—')]], 'No activity recorded.')}`;
+}
 
 function renderPlaceholder(){
   return `
