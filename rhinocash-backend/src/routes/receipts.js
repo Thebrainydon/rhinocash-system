@@ -43,6 +43,10 @@ async function assignReceiptNumbers() {
   }
 }
 
+// A loan whose processing fee was deducted from its proceeds at
+// disbursement rather than paid up front through M-Pesa.
+const DEDUCTED_FEE_WHERE = `l.processing_fee > 0 AND l.disbursed_at IS NOT NULL AND l.processing_fee_receipt IS NULL
+  AND NOT EXISTS (SELECT 1 FROM loan_fee_payments fp WHERE fp.loan_id = l.id)`;
 async function scope(user) {
   const ids = await branchIdsInScope(user);
   const pay = []; const payParams = []; const fee = []; const feeParams = [];
@@ -179,10 +183,15 @@ function register(router) {
       FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id
       WHERE f.status = 'Confirmed' AND (f.confirmed_at)::date >= (?)::date AND (f.confirmed_at)::date <= (?)::date ${sc.fee.length ? 'AND ' + sc.fee.join(' AND ') : ''}
       GROUP BY COALESCE(c.officer_id, f.initiated_by)`, [r.from, r.to, ...sc.feeParams]);
+    // Fees taken out of the proceeds at disbursement (percentage-fee products).
+    const deducted = await all(`SELECT l.officer_id AS officer, COALESCE(SUM(l.processing_fee),0) AS fee FROM loans l
+      WHERE ${DEDUCTED_FEE_WHERE} AND (l.disbursed_at)::date >= (?)::date AND (l.disbursed_at)::date <= (?)::date ${sc.pay.length ? 'AND ' + sc.pay.join(' AND ') : ''}
+      GROUP BY l.officer_id`, [r.from, r.to, ...sc.payParams]);
     const by = {};
     const row = id => by[id || ''] || (by[id || ''] = { officerId: id || null, principal: 0, interest: 0, checkoff: 0, fee: 0, penalty: 0 });
     pay.forEach(x => { const o = row(x.officer); o.principal += Number(x.principal) || 0; o.interest += Number(x.interest) || 0; o.penalty += Number(x.penalty) || 0; o.checkoff += Number(x.checkoff) || 0; });
     fees.forEach(x => { row(x.officer).fee += Number(x.fee) || 0; });
+    deducted.forEach(x => { row(x.officer).fee += Number(x.fee) || 0; });
     const ids = Object.keys(by).filter(Boolean);
     const names = {};
     if (ids.length) (await all(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids)).forEach(u => { names[u.id] = u.name; });
@@ -212,6 +221,13 @@ function register(router) {
         FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id LEFT JOIN branches b ON b.id = c.branch_id
         LEFT JOIN loans ln ON ln.id = f.loan_id LEFT JOIN users u ON u.id = f.confirmed_by
         WHERE ${w.join(' AND ')} ORDER BY f.confirmed_at`, ps)).map(x => ({ ...x, amount: Number(x.amount) || 0 }));
+      const dw = [DEDUCTED_FEE_WHERE, '(l.disbursed_at)::date >= (?)::date', '(l.disbursed_at)::date <= (?)::date', ...sc.pay]; const dps = [r.from, r.to, ...sc.payParams];
+      if (officer) { dw.push('l.officer_id = ?'); dps.push(officer); }
+      const dRows = (await all(`SELECT l.id, l.disbursed_at AS at, 'Deducted at disbursement' AS reference, l.processing_fee AS amount, NULL AS receipt_no, c.name AS client_name, c.national_id,
+          b.name AS branch_name, l.disbursed_at, 'System' AS approved_by
+        FROM loans l LEFT JOIN clients c ON c.id = l.client_id LEFT JOIN branches b ON b.id = l.branch_id
+        WHERE ${dw.join(' AND ')}`, dps)).map(x => ({ ...x, amount: Number(x.amount) || 0 }));
+      rows = rows.concat(dRows).sort((a, b) => String(a.at).localeCompare(String(b.at)));
     } else {
       const amountExpr = bucket === 'checkoff' ? 'p.amount' : `p.allocated_${bucket}`;
       const w = [`p.status IN ('Posted','Overpayment')`, '(p.created_at)::date >= (?)::date', '(p.created_at)::date <= (?)::date', ...sc.pay]; const ps = [r.from, r.to, ...sc.payParams];

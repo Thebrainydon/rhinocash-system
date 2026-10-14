@@ -5564,7 +5564,7 @@ apiRequest = async function(method, path, body){
     goTo('dashboard');
     let html = document.getElementById('root').innerHTML;
     __assert(!html.includes('topbar-title') && !html.includes('logout-btn'), "the real topbar no longer renders the old page-title text or a separate Logout button");
-    __assert(html.includes('Welcome, '), "the dashboard profile card genuinely shows a real 'Welcome, <name>' heading, matching the requested redesign");
+    __assert(html.includes('WELCOME BACK') && !html.includes('Welcome, '), "the dashboard profile card says WELCOME BACK once, above the user's name");
 
     // Logout is still real and still reachable — just moved to the sidebar, never removed.
     __assert(html.includes('doLogout()'), "a real, working Logout control still exists in the sidebar even though the topbar button is gone");
@@ -8153,6 +8153,35 @@ apiRequest = async function(method, path, body){
     __assert(session.laTest.f.principal === '7000' && renderCreateLoanAppPage('laTest', 'submitMgrLoanApp').includes('value="7000"'), "typed values survive a re-render");
     __assert(__rawIndexHtml.includes('data-state="addClientSig"') && /doc_type:'Client Signature'/.test(__srcForBanCheck), "Add Client lets the client sign, and the signature is saved with the client");
     session.laTest = null; session.fltTest = null; session.role = realRole;
+  }
+
+  // ---- Validate Payments for every role; welcome splash; page edges; scoped form options ----
+  {
+    const realRole = session.role, realMe = DB.me;
+    session.role = 'Manager'; session.section = 'payments'; session.subtab = 'Validate Payments';
+    __assert(renderPayments().includes('Validate Payment Transaction'), "every role's Validate Payments opens the same search page as the Loan Officer's");
+    __assert(/function renderLoanOfficerPaymentsReportSummary[\s\S]*?k === 'fee'/.test(__srcForBanCheck) && __srcForBanCheck.includes("openPaymentsReportDetail(null, 'fee', 'All staff')"), "the Payments Report's Processing Fee column always has a View button");
+    __assert(!/dash-hero-name">Welcome, /.test(__rawIndexHtml), "dashboards say Welcome only once");
+    DB.me = Object.assign({}, realMe, { gender: 'Female' });
+    __assert(userGender() === 'female' && renderEdgeDecor().includes('🌺') && renderEdgeDecor().includes('🌹'), "a female account gets flowers at the page edges");
+    DB.me = Object.assign({}, realMe, { gender: 'Male' });
+    __assert(userGender() === 'male' && renderEdgeDecor().includes('ed-money') && renderEdgeDecor().includes(MONEY_IMG_DATA_URI.slice(0, 40)), "a male account gets the money bundles at the page edges");
+    DB.me = Object.assign({}, realMe, { gender: '' });
+    __assert(renderEdgeDecor() === '', "with no recorded gender the page edges stay plain");
+    DB.me = Object.assign({}, realMe, { gender: 'Male', name: 'David Simon' });
+    showWelcomeSplash();
+    const splash = document.getElementById('welcome-splash').innerHTML;
+    __assert(splash.includes('Welcome') && splash.includes('David Simon') && splash.includes('ws-avatar'), "after login a full-screen avatar says Welcome with the user's name");
+    __assert(/showWelcomeSplash\(\);\s*\}catch\(e\)\{/.test(__srcForBanCheck), "the splash shows right after a successful login");
+    __assert(/class="login-hero-money" src="\$\{MONEY_IMG_DATA_URI\}"/.test(__rawIndexHtml), "the login page shows the Kenyan money image");
+    DB.me = realMe;
+    session.role = 'Manager';
+    __assert(assignableRoles().join(',') === 'Loan Officer' && roleBranches().every(b => b.id === DB.me.branch_id), "a Manager can only give the Loan Officer role and pick their own branch");
+    session.role = 'Admin';
+    __assert(assignableRoles().includes('Admin') && roleBranches().length === (DB.branches || []).length, "the Admin sees every role and branch");
+    session.role = 'HR';
+    __assert(!assignableRoles().includes('Admin'), "only the Admin can create another Admin");
+    session.role = realRole;
   }
 
   // ---- Record page arranges fields by meaning ----
