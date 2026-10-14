@@ -1838,6 +1838,16 @@ async function initSchema() {
   await ensureColumn('payments', 'overpay_assigned_to TEXT');
   await ensureColumn('loan_fee_payments', 'receipt_no BIGINT');
   await ensureColumn('loan_fee_payments', 'printed_at TEXT');
+  // Create Loan Application › Guarantors & Collateral: the securities a
+  // loan is pledged against, the client's business, whether the client
+  // guarantees the loan alone, and the client's own drawn signature.
+  await ensureColumn('loans', 'business_type TEXT');
+  await ensureColumn('loans', 'self_guaranteed INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('loans', 'client_signature_path TEXT');
+  await rawRun(`CREATE TABLE IF NOT EXISTS loan_collaterals (
+    id TEXT PRIMARY KEY, loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+    category TEXT NOT NULL, security_type TEXT NOT NULL, details TEXT NOT NULL,
+    serial_no TEXT, photo_path TEXT, created_at TEXT NOT NULL DEFAULT iso_now())`);
   await rawRun(`CREATE TABLE IF NOT EXISTS payment_merges (
     id TEXT PRIMARY KEY, merge_no BIGINT NOT NULL, client_id TEXT REFERENCES clients(id), loan_id TEXT REFERENCES loans(id),
     payment_id TEXT REFERENCES payments(id), total NUMERIC(14,2) NOT NULL, transactions_json TEXT NOT NULL,

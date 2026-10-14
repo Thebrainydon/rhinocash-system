@@ -35,6 +35,12 @@ async function requireAuth(req, res, next) {
   if (!user) return next({ status: 401, message: 'User no longer exists' });
   if (!user.account_status) return next({ status: 403, message: 'This employee has no System Account' });
   if (user.account_status !== 'Active') return next({ status: 403, message: `Account is ${user.account_status.toLowerCase()}` });
+  // A list request may narrow its own scope with ?branch_id / ?region_id
+  // (the page's Branch / Region filters); branchScopeSQL intersects that
+  // with what this user may see, so it can only ever narrow, never widen.
+  if (req.method === 'GET' && req.query && (req.query.branch_id || req.query.region_id)) {
+    user.scopeNarrow = { branch_id: req.query.branch_id || null, region_id: req.query.region_id || null };
+  }
   req.user = user;
   req.sessionTokenHash = session.token_hash;
   // Backs the single-active-session login block (routes/auth.js) — a

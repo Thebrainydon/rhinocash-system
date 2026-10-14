@@ -121,6 +121,16 @@ async function hasPermission(user, permissionId) {
 // *reading* (their dashboards are explicitly company-wide per spec); write
 // actions are still separately gated by module+action permissions above.
 async function branchScopeSQL(user, branchColumn = 'branch_id') {
+  const base = await baseBranchScopeSQL(user, branchColumn);
+  const n = user && user.scopeNarrow;
+  if (!n) return base;
+  let wanted = null;
+  if (n.region_id) wanted = (await all('SELECT id FROM branches WHERE region_id = ?', [n.region_id])).map(b => b.id);
+  if (n.branch_id) wanted = wanted ? wanted.filter(id => id === n.branch_id) : [n.branch_id];
+  if (!wanted || !wanted.length) return wanted ? { clause: '1=0', params: [] } : base;
+  return { clause: `(${base.clause}) AND ${branchColumn} IN (${wanted.map(() => '?').join(',')})`, params: [...base.params, ...wanted] };
+}
+async function baseBranchScopeSQL(user, branchColumn = 'branch_id') {
   const roleId = user.role_id;
   // HR is a head-office role with no single-branch assignment of its own —
   // it needs company-wide visibility into staff records to do its job at

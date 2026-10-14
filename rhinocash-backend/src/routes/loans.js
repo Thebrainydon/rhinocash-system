@@ -2218,6 +2218,11 @@ function register(router) {
       if (feePayment.client_id !== b.client_id || feePayment.product_id !== b.product_id) return next({ status: 400, message: 'The processing fee payment does not match this client and product' });
       if (feePayment.loan_id) return next({ status: 400, message: 'This processing fee payment has already been used for another application' });
     }
+    // Collateral: each security needs a type and a description.
+    const collaterals = Array.isArray(b.collaterals) ? b.collaterals.filter(c => c && (c.security_type || c.details)) : [];
+    for (const c of collaterals) {
+      if (!String(c.security_type || '').trim() || !String(c.details || '').trim()) return next({ status: 400, message: 'Each security needs a security type and details' });
+    }
     const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
     // for a real Loan Officer who genuinely belongs to the resolved branch
@@ -2244,8 +2249,34 @@ function register(router) {
         feePayment ? feePayment.amount : 0, feePayment ? feePayment.mpesa_receipt_number : null]
     );
     if (feePayment) await run('UPDATE loan_fee_payments SET loan_id = ? WHERE id = ?', [id, feePayment.id]);
+    await run('UPDATE loans SET business_type = ?, self_guaranteed = ?, client_signature_path = ? WHERE id = ?',
+      [b.business_type || null, b.self_guaranteed ? 1 : 0, b.client_signature_path || null, id]);
+    for (const c of collaterals) {
+      await run('INSERT INTO loan_collaterals (id, loan_id, category, security_type, details, serial_no, photo_path) VALUES (?,?,?,?,?,?,?)',
+        ['lcol_' + crypto.randomUUID(), id, String(c.category || 'Custom Securities'), String(c.security_type).trim(), String(c.details).trim(), c.serial_no || null, c.photo_path || null]);
+    }
     await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
-    res.status(201).json({ loan: await get('SELECT * FROM loans WHERE id = ?', [id]) });
+    const loanRow = await get('SELECT * FROM loans WHERE id = ?', [id]);
+    loanRow.collaterals = await all('SELECT * FROM loan_collaterals WHERE loan_id = ? ORDER BY created_at', [id]);
+    res.status(201).json({ loan: loanRow });
+  });
+
+  // Securities pledged against a loan.
+  router.get('/api/loans/:id/collaterals', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const loan = await get('SELECT id, branch_id FROM loans WHERE id = ?', [req.params.id]);
+    if (!loan) return next({ status: 404, message: 'Loan not found' });
+    try { await assertRecordInScope(req.user, loan.branch_id, 'loan'); } catch (e) { return next(e); }
+    res.json({ collaterals: await all('SELECT * FROM loan_collaterals WHERE loan_id = ? ORDER BY created_at', [loan.id]) });
+  });
+
+  // Guarantors a client has used before, to pick from on a new application.
+  router.get('/api/clients/:id/saved-guarantors', requireAuth, requireModule('loanbook'), async (req, res, next) => {
+    const client = await get('SELECT id, branch_id FROM clients WHERE id = ?', [req.params.id]);
+    if (!client) return next({ status: 404, message: 'Client not found' });
+    try { await assertRecordInScope(req.user, client.branch_id, 'client'); } catch (e) { return next(e); }
+    const rows = await all(`SELECT guarantor AS name, guarantor_contact AS contact, MAX(created_at) AS last_used, COUNT(*) AS loans
+      FROM loans WHERE client_id = ? AND guarantor IS NOT NULL AND guarantor <> '' GROUP BY guarantor, guarantor_contact ORDER BY MAX(created_at) DESC`, [client.id]);
+    res.json({ guarantors: rows.map(r => ({ ...r, loans: Number(r.loans) })) });
   });
 
   // Real edit, for the exact real window the reference design calls

@@ -289,6 +289,32 @@ table.pg-matrix th.c{text-align:center;} table.pg-matrix tr.pg-th2 th{background
 .pg-rec{border:1px solid var(--line); border-radius:10px; padding:12px; background:#fff;}
 .pg-rec-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
 .pg-rec-foot{display:flex; justify-content:space-between; align-items:center; margin-top:8px;}
+/* Create Loan Application */
+.la-card{max-width:980px;}
+.la-tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin:4px 0 16px;}
+.la-tab{border:none; background:transparent; padding:9px 14px; font-size:12.5px; font-weight:700; color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:6px 6px 0 0;}
+.la-tab.on{color:#1F5D99; border-bottom-color:#1F5D99; background:#EEF6FD;}
+.la-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px 16px;}
+.la-grid .field textarea{min-height:76px;}
+.la-found{font-size:11.5px; color:var(--green); font-weight:700; margin-top:4px;} .la-miss{font-size:11.5px; color:var(--red); margin-top:4px;}
+.la-sec-head{display:flex; align-items:center; gap:10px; margin:6px 0 10px;} .la-ic{font-size:18px;} .la-h{font-weight:800; color:#1F5D99; font-size:14px;}
+.la-sec{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; background:#fff;}
+.la-sec-top{display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; margin-bottom:10px; border-bottom:1px solid var(--line); color:#1F3A5F;}
+.la-req{color:#E0620D; font-size:11px; font-weight:700;} .la-star{color:var(--red);}
+.la-info{border-left:3px solid #2A9D8F; background:#F2FAF9; padding:7px 10px; font-size:11.5px; color:var(--ink-soft); border-radius:4px; margin:2px 0 10px;}
+.la-photo{border:1px dashed var(--line); border-radius:8px; padding:10px; margin-top:6px;} .la-photo label{display:block; font-size:12px; font-weight:700; margin-bottom:6px;}
+.la-check{display:flex; align-items:center; gap:8px; font-size:12.5px; margin:4px 0 10px;}
+canvas.sig-pad{width:100%; max-width:640px; height:190px; border:1.5px dashed #9EB7D3; border-radius:10px; background:#fff; touch-action:none; display:block; cursor:crosshair;}
+.la-foot{display:flex; justify-content:flex-end; border-top:1px solid var(--line); margin-top:16px; padding-top:12px;}
+@media (max-width:640px){ .la-grid{grid-template-columns:1fr;} }
+/* Counting save progress + success pop-up */
+.pct-wrap{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(15,30,50,0.18); z-index:9999;}
+.pct-card{width:min(360px, 86vw); background:#fff; border-radius:14px; padding:18px 20px; box-shadow:0 12px 40px rgba(0,0,0,0.18); text-align:center;}
+.pct-title{font-weight:700; color:#1F3A5F; font-size:13.5px; margin-bottom:12px;}
+.pct-bar{height:12px; border-radius:8px; background:#E3F4EA; overflow:hidden;}
+.pct-fill{height:100%; background:linear-gradient(90deg, #4CAF7A, #2E9D62); border-radius:8px; transition:width 0.06s linear;}
+.pct-num{margin-top:8px; font-weight:800; color:#2E9D62; font-size:15px;}
+.pct-tick{width:46px; height:46px; border-radius:50%; background:#2E9D62; color:#fff; font-size:24px; font-weight:800; display:flex; align-items:center; justify-content:center; margin:0 auto 10px;}
 /* Payments pages (reference layout) */
 .pay-card{padding:14px 16px;}
 .pay-head{display:flex; align-items:center; gap:10px; padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line);}
@@ -2182,12 +2208,33 @@ function formToggleBtn(key, label){
   const open = isFormOpen(key);
   return `<div class="fp-bar"><button type="button" class="btn btn-sm ${open ? 'btn-outline' : 'btn-primary'}" onclick="toggleForm('${key}')">${open ? '✕ Close' : '+ ' + escapeHtml(label)}</button></div>`;
 }
+// A greenish bar that counts from 1% to 100% while a save runs, then a
+// success pop-up. Painted into its own node outside the render tree.
+function pctProgressPaint(st){
+  st.el.innerHTML = `<div class="pct-wrap"><div class="pct-card"><div class="pct-title">${escapeHtml(st.title)}…</div><div class="pct-bar"><div class="pct-fill" style="width:${st.pct}%"></div></div><div class="pct-num">${st.pct}%</div></div></div>`;
+}
+function pctProgressStart(title){
+  if(typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
+  const st = { el: ensureFileFormProgressOverlay('pct-progress-overlay'), pct: 1, title, timer: null };
+  pctProgressPaint(st);
+  st.timer = setInterval(() => { if(st.pct < 92){ st.pct += st.pct < 50 ? 3 : st.pct < 80 ? 2 : 1; pctProgressPaint(st); } }, 70);
+  return st;
+}
+async function pctProgressFinish(st, ok, msg){
+  clearInterval(st.timer);
+  if(!ok){ st.el.innerHTML = ''; return; }
+  while(st.pct < 100){ st.pct = Math.min(100, st.pct + 4); pctProgressPaint(st); await new Promise(r => setTimeout(r, 15)); }
+  st.el.innerHTML = `<div class="pct-wrap"><div class="pct-card pct-done"><div class="pct-tick">✓</div><div class="pct-title">${escapeHtml(msg)}</div><div class="pct-bar"><div class="pct-fill" style="width:100%"></div></div><div class="pct-num">100%</div></div></div>`;
+  await new Promise(r => setTimeout(r, 1600));
+  st.el.innerHTML = '';
+}
 async function withRequest(key, fn, opts){
   if(inFlight.has(key)) return; // duplicate-submit guard
   inFlight.add(key);
   setTopProgress(true);
   const mutates = opts && opts.mutates;
-  const processingToast = mutates ? centerToast('Processing... please wait', 'success') : null;
+  const pct = opts && opts.progress ? pctProgressStart(opts.progress) : null;
+  const processingToast = mutates && !pct ? centerToast('Processing... please wait', 'success') : null;
   let succeeded = false;
   try{ await fn(); succeeded = true; }
   catch(e){
@@ -2204,7 +2251,8 @@ async function withRequest(key, fn, opts){
     setTopProgress(false);
     renderApp();
     if(mutates && succeeded && session.openForms){ session.openForms = {}; renderApp(); }
-    if(mutates && succeeded){
+    if(pct) await pctProgressFinish(pct, succeeded, opts.successMsg || 'Saved successfully');
+    else if(mutates && succeeded){
       // 'success' with NO type arg — this is deliberately the gray/
       // "done" style, not the greenish one 'success' as a TYPE means
       // above; matches the real reference site's own lowercase gray
@@ -2687,7 +2735,9 @@ async function createLoanApplication(data){
     guarantor_contact:data.guarantor_contact||null, loan_securities:data.loan_securities||null,
     loan_category:data.loan_category||null, fee_payer_phone:data.fee_payer_phone||null,
     processing_fee_id:data.processing_fee_id||data.processingFeeId||null,
-    branch_id:data.branchId||null, officer_id:data.officerId||null };
+    branch_id:data.branchId||null, officer_id:data.officerId||null,
+    business_type:data.business_type||null, collaterals:data.collaterals||[], self_guaranteed:!!data.self_guaranteed,
+    client_signature_path:data.client_signature_path||null };
   const res = await api.post('/api/loans', payload);
   const loan = adaptLoan(res.loan);
   DB.loans.unshift(loan);
@@ -13511,12 +13561,19 @@ async function loadClientDirectory(filters, page){
 const CLIENT_DIR_CATEGORIES = ['All','Dormant','Active','Blacklisted','Unfunded'];
 function setClientDirCategory(category){
   const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
-  const merged = { q: prev.q, branch_id: prev.branch_id, officer_id: prev.officer_id, category };
+  const merged = { q: prev.q, region_id: prev.region_id, branch_id: prev.branch_id, officer_id: prev.officer_id, category };
   if(category==='Unfunded'){ merged.unfunded = 'true'; }
   else if(category!=='All'){ merged.status = category; }
   loadClientDirectory(merged, 1);
 }
+// View Client's Region / Branch / Loan Officer filters (see scopeFilterSelects).
+function applyClientDirScope(){
+  const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
+  const sc = session.clientDirScope || {};
+  loadClientDirectory({ ...prev, region_id: sc.regionId || undefined, branch_id: sc.branchId || undefined, officer_id: sc.officerId || undefined }, 1);
+}
 function setClientDirOfficer(officerId){
+  (session.clientDirScope || (session.clientDirScope = {})).officerId = officerId || '';
   const prev = DB.acctPages.clientdir ? DB.acctPages.clientdir.filters : {};
   loadClientDirectory({ ...prev, officer_id: officerId||undefined }, 1);
 }
@@ -13568,10 +13625,7 @@ function renderClientDirectoryPage(){
         <select onchange="setClientDirCategory(this.value)" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${CLIENT_DIR_CATEGORIES.map(c=>`<option value="${c}" ${c===category?'selected':''}>${c} clients</option>`).join("")}
         </select>
-        ${hasOfficerVisibility() ? `<select onchange="setClientDirOfficer(this.value)" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${state && state.filters.officer_id===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('clientDirScope', "applyClientDirScope();")}
         <div style="margin-left:auto; display:flex; gap:6px; align-items:center; flex-shrink:0;">
           <select onchange="if(this.value) generateClientReport(this.value); this.value='';" class="btn btn-sm btn-outline" style="min-width:110px;">
             <option value="" selected>-- Generate --</option>
@@ -13753,6 +13807,8 @@ async function loadClientInteractions(){
     if(st.to) params.set('to', st.to);
     if(st.q) params.set('q', st.q);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     params.set('page', st.page || 1);
     params.set('limit', 25);
     const res = await api.get('/api/clients/interactions?'+params.toString());
@@ -13762,7 +13818,7 @@ async function loadClientInteractions(){
 function submitClientInteractionsFilter(ev){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
-  session.clientInteractionsState = { ...(session.clientInteractionsState||defaultClientInteractionsState()), from: f.from||'', to: f.to||'', q: f.q||'', officerId: f.officer_id||'', page: 1 };
+  session.clientInteractionsState = { ...(session.clientInteractionsState||defaultClientInteractionsState()), from: f.from||'', to: f.to||'', q: f.q||'', officerId: f.officer_id !== undefined ? f.officer_id : ((session.clientInteractionsState||{}).officerId||''), page: 1 };
   DB.clientInteractions = null;
   return loadClientInteractions();
 }
@@ -13793,10 +13849,7 @@ function renderClientInteractionsPage(){
         <input type="date" name="from" value="${escapeHtml(st.from)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
         <span class="hint" style="flex-shrink:0;">~</span>
         <input type="date" name="to" value="${escapeHtml(st.to)}" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
-        ${hasOfficerVisibility() ? `<select name="officer_id" onchange="this.form.requestSubmit()" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('clientInteractionsState', "DB.clientInteractions=null; loadClientInteractions();")}
         <input class="search" name="q" placeholder="Search client" value="${escapeHtml(st.q||'')}" style="margin-left:auto; width:120px; flex-shrink:0;" onchange="this.form.requestSubmit()">
       </form>
       <div class="table-wrap"><table>
@@ -13877,8 +13930,9 @@ function renderAddClientForm(){
             ${addClientFileBox('Id Photo Back', '<input name="idPhotoBack" type="file" accept="image/*">')}
           </div>
           <div class="ac-file-box" style="margin-top:12px;">
-            <div class="ac-file-label">Client Signature</div>
-            <div class="hint">Save the client first, then store a reusable signature here.</div>
+            <div class="ac-file-label" style="display:flex; align-items:center;">✍ Client Signature<span class="pg-link" style="margin-left:auto;" onclick="sigPadClear('addClientSig')">↺ Clear</span></div>
+            <canvas class="sig-pad" data-state="addClientSig" width="640" height="170"></canvas>
+            ${sigHintHtml('addClientSig', session.addClientSig && session.addClientSig.signatureDataUrl)}
           </div>
         </div>
         <div id="ac-panel-guarantors" style="display:none;">
@@ -13940,6 +13994,13 @@ async function submitAddClient(ev){
     const c = await addClient(f);
     // Real uploads, attached as real client_documents rows — only for
     // fields the user actually chose a file for.
+    const sig = session.addClientSig && session.addClientSig.signatureDataUrl;
+    if(sig && typeof fetch === 'function' && typeof File === 'function'){
+      const blob = await (await fetch(sig)).blob();
+      const up = await uploadFile(new File([blob], 'client-signature.png', { type: 'image/png' }));
+      await api.post(`/api/clients/${c.id}/documents`, { name:'client-signature.png', doc_type:'Client Signature', file_path:up.path });
+    }
+    session.addClientSig = null;
     for(const ff of fileFields){
       const fileInput = form.elements[ff.input];
       const file = fileInput && fileInput.files && fileInput.files[0];
@@ -14174,6 +14235,8 @@ async function loadLeadsBrowser(){
     if(st.to) params.set('to', st.to);
     if(st.q) params.set('q', st.q);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     const res = await api.get('/api/leads?'+params.toString());
     DB.leadsBrowser = { rows: res.leads, stateKey: JSON.stringify(st) };
   });
@@ -14232,10 +14295,7 @@ function renderClientLeads(){
         <input type="date" value="${escapeHtml(st.from)}" onchange="session.leadsBrowserState.from=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
         <span class="hint" style="flex-shrink:0;">~</span>
         <input type="date" value="${escapeHtml(st.to)}" onchange="session.leadsBrowserState.to=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
-        ${hasOfficerVisibility() ? `<select onchange="session.leadsBrowserState.officerId=this.value; DB.leadsBrowser=null; renderApp();" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('leadsBrowserState', "DB.leadsBrowser=null; renderApp();")}
       </div>
       <div class="table-wrap"><table>
         <tr><th>Name</th><th>Idno</th><th>Contact</th><th>Branch</th><th>Client Location</th><th>Other Info</th><th>Creator</th><th>Date Created</th><th>Interactions</th><th>Status</th></tr>
@@ -14260,6 +14320,32 @@ const LEAD_EXTRA_FIELD_DEFS = [
 // real picker to say which one instead — otherwise the field would just
 // be a picker over nothing. Shared by Create Client Lead's own Loan
 // Officer field and Client Interactions' Loan Officer filter.
+// ---- Role-based list filters ----
+// Loan Officer: no staff filters (only their own book). Manager: Loan
+// Officer. Regional Manager: Branch + Loan Officer. Operational Manager and
+// every role above: Region + Branch + Loan Officer. Choosing a region
+// narrows the branches, and a branch narrows the officers.
+const ROLE_FILTER_LEVEL = { 'Loan Officer': 1, 'Manager': 2, 'Regional Manager': 3 };
+const roleFilterLevel = () => ROLE_FILTER_LEVEL[session.role] || 4;
+function scopedBranches(st){ let b = DB.branches || []; if(st && st.regionId) b = b.filter(x => x.region === st.regionId); return b; }
+function scopedOfficers(st){
+  let o = officerFilterOptions(officerScopeBranchIds()).filter(x => x.status !== 'Inactive');
+  if(st && st.regionId){ const ids = scopedBranches(st).map(b => b.id); o = o.filter(x => ids.includes(x.branch)); }
+  if(st && st.branchId) o = o.filter(x => x.branch === st.branchId);
+  return o;
+}
+function scopeFilterSet(key, field, value){
+  const st = session[key] || (session[key] = {});
+  st[field] = value;
+  if(field === 'regionId' && st.branchId && !scopedBranches(st).some(b => b.id === st.branchId)) st.branchId = '';
+  if(field !== 'officerId' && st.officerId && !scopedOfficers(st).some(o => o.id === st.officerId)) st.officerId = '';
+  if('page' in st) st.page = 1;
+}
+const scopeSel = (key, field, label, list, cur, reload, text) => `<select class="btn btn-sm btn-outline" style="flex-shrink:0;" onchange="scopeFilterSet('${key}','${field}',this.value); ${reload}"><option value="">-- ${label} --</option>${list.map(x => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${escapeHtml(text(x))}</option>`).join('')}</select>`;
+function scopeRegionSelect(key, reload){ if(roleFilterLevel() < 4) return ''; const st = session[key] || {}; return scopeSel(key, 'regionId', 'Region', DB.regions || [], st.regionId, reload, r => r.name); }
+function scopeBranchSelect(key, reload){ if(roleFilterLevel() < 3) return ''; const st = session[key] || {}; return scopeSel(key, 'branchId', 'Branch', scopedBranches(st), st.branchId, reload, b => b.name); }
+function scopeOfficerSelect(key, reload){ if(roleFilterLevel() < 2) return ''; const st = session[key] || {}; const wide = roleFilterLevel() >= 3; return scopeSel(key, 'officerId', 'Loan Officer', scopedOfficers(st), st.officerId, reload, o => o.name + (wide && !st.branchId ? ' · ' + branchName(o.branch) : '')); }
+const scopeFilterSelects = (key, reload) => scopeRegionSelect(key, reload) + scopeBranchSelect(key, reload) + scopeOfficerSelect(key, reload);
 function hasOfficerVisibility(){
   return session.role !== "Loan Officer" && (NAV_PERMISSIONS[session.role]||[]).includes("staff");
 }
@@ -15127,7 +15213,7 @@ function renderLoanBook(){
   if(active==="Undisbursed Loans") return renderUndisbursedApprovalsPage();
   if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
   if(active==="Create Application" && session.role==='Manager') return renderManagerCreateApplicationForm();
-  if(active==="Create Application") return tabsHtml + ((session.role==='Regional Manager' || session.role==='Operational Manager') ? renderRegionalManagerCreateApplicationForm() : renderManagerCreateApplicationForm());
+  if(active==="Create Application") return renderCreateLoanAppPage('wideLoanAppState', 'submitWideLoanApp');
   if(active==="Collection MTD" && session.role==='Manager') return renderCollectionMTD();
   if(active==="Collection MTD" && session.role !== 'Loan Officer') return tabsHtml + renderMtdBranchPage();
   if(active==="Collection MTD") return renderCollectionMTD();
@@ -15181,47 +15267,165 @@ function handleLoanCategoryChange(value, formEl, stateKey){
   const priorLoans = DB.loans.filter(l=>l.clientId===st.matchedClient.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
   const prior = priorLoans[0];
   if(!prior) return;
-  const form = formEl.form;
-  if(prior.guarantor && !form.elements['guarantor'].value) form.elements['guarantor'].value = prior.guarantor;
-  if(prior.guarantorContact && !form.elements['guarantor_contact'].value) form.elements['guarantor_contact'].value = prior.guarantorContact;
+  const form = formEl && formEl.form; st.f = st.f || {};
+  if(prior.guarantor && !st.f.guarantor){ st.f.guarantor = prior.guarantor; if(form && form.elements['guarantor']) form.elements['guarantor'].value = prior.guarantor; }
+  if(prior.guarantorContact && !st.f.guarantor_contact){ st.f.guarantor_contact = prior.guarantorContact; if(form && form.elements['guarantor_contact']) form.elements['guarantor_contact'].value = prior.guarantorContact; }
 }
-function renderLoanApplicationForm(){
-  const st = session.loanAppState || (session.loanAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false, feePhone:'', feePayment:null });
-  const product = DB.products.find(p=>p.id===st.productId);
+// ==================== Create Loan Application (every role) ====================
+// One page with two tabs — Loan Details and Guarantors & Collateral — kept
+// in one form so Save Application sends both. Every field writes to the
+// page's own state as it is typed, so a re-render (client lookup, adding a
+// security, switching tab) never loses what was entered. The client signs
+// on the Guarantors & Collateral tab before the application can be saved.
+const LOAN_SECURITY_CATEGORIES = ['Custom Securities', 'Household Items', 'Motor Vehicle (Logbook)', 'Land (Title Deed)', 'Business Stock', 'Wallet Holds'];
+const blankLoanSecurity = () => ({ category: LOAN_SECURITY_CATEGORIES[0], security_type: '', details: '', serial_no: '', photo_path: '', photo_name: '' });
+function loanAppState(k){
+  const st = session[k] || (session[k] = { idNumber:'', matchedClient:null, productId:'', notFound:false, feePhone:'', feePayment:null, officerId:'' });
+  if(!st.f) st.f = {};
+  if(!st.tab) st.tab = 'details';
+  if(!st.securities) st.securities = [blankLoanSecurity()];
+  return st;
+}
+function loanAppSet(k, field, value){ loanAppState(k).f[field] = value; }
+function loanAppTab(k, tab){ loanAppState(k).tab = tab; renderApp(); }
+function loanSecSet(k, i, field, value){ const s = loanAppState(k).securities[i]; if(s) s[field] = value; }
+function loanSecAdd(k){ loanAppState(k).securities.push(blankLoanSecurity()); renderApp(); }
+function loanSecRemove(k, i){ const st = loanAppState(k); st.securities.splice(i, 1); if(!st.securities.length) st.securities.push(blankLoanSecurity()); renderApp(); }
+function loanSecPhoto(k, i, input){
+  const file = input && input.files && input.files[0]; if(!file) return;
+  return withRequest('loan-sec-photo-' + i, async () => {
+    const up = await uploadFile(file);
+    const s = loanAppState(k).securities[i]; if(s){ s.photo_path = up.path; s.photo_name = file.name; }
+  });
+}
+function loanPickGuarantor(k, idx){
+  const st = loanAppState(k); const g = (st.savedGuarantors || [])[idx]; if(!g) return;
+  st.f.guarantor = g.name || ''; st.f.guarantor_contact = g.contact || ''; st.selfGuaranteed = false; renderApp();
+}
+function loadSavedGuarantors(k){
+  const st = loanAppState(k); const c = st.matchedClient; if(!c || st.savedGuarantorsFor === c.id) return;
+  st.savedGuarantorsFor = c.id; st.savedGuarantors = null;
+  withRequest('saved-guarantors-' + k, async () => {
+    const r = await api.get(`/api/clients/${c.id}/saved-guarantors`);
+    if(session[k] && session[k].savedGuarantorsFor === c.id) session[k].savedGuarantors = r.guarantors || [];
+  });
+}
+const sigHintHtml = (k, signed) => `<div class="hint" style="margin-top:4px;" data-sig-hint="${k}">${signed ? '✓ Signed by the client' : 'The client signs inside the box above with a finger or mouse.'}</div>`;
+// Clears a pad in place (no re-render, so a form being filled keeps its values).
+function sigPadClear(k){
+  if(session[k]) session[k].signatureDataUrl = '';
+  if(typeof document === 'undefined' || typeof document.querySelector !== 'function') return;
+  const c = document.querySelector(`canvas.sig-pad[data-state="${k}"]`); if(c && c.getContext) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  const h = document.querySelector(`[data-sig-hint="${k}"]`); if(h) h.textContent = 'The client signs inside the box above with a finger or mouse.';
+}
+function loanSigClear(k){ sigPadClear(k); }
+const clientBranchOf = c => c ? (c.branchId || c.branch_id || c.branch || null) : null;
+function loanAppOfficers(st){
+  const cb = clientBranchOf(st.matchedClient);
+  const me = DB.staff.find(s => s.id === session.userId);
+  return DB.staff.filter(s => s.role === 'Loan Officer' && s.status !== 'Inactive' && (cb ? s.branch === cb : (session.role === 'Manager' ? s.branch === (me && me.branch) : true)));
+}
+function renderCreateLoanAppPage(k, submitFn){
+  const st = loanAppState(k), f = st.f;
+  const isLO = session.role === 'Loan Officer';
+  const product = DB.products.find(p => p.id === st.productId);
+  const c = st.matchedClient;
+  if(c) loadSavedGuarantors(k);
+  const officers = isLO ? [] : loanAppOfficers(st);
+  if(!isLO && c && !st.officerId){ const own = c.officerId || c.officer_id; if(own && officers.some(o => o.id === own)) st.officerId = own; }
+  const wide = !isLO && session.role !== 'Manager';
+  const v = name => escapeHtml(f[name] || '');
+  const inp = (name, extra) => `<input name="${name}" value="${v(name)}" oninput="loanAppSet('${k}','${name}',this.value)" ${extra || ''}>`;
+  const tab = (id, label, icon) => `<button type="button" class="la-tab ${st.tab === id ? 'on' : ''}" onclick="loanAppTab('${k}','${id}')">${icon} ${label}</button>`;
+  const secs = st.securities;
+  const saved = st.savedGuarantors;
   return `
-    <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
-      <span onclick="goTo('dashboard')" style="position:absolute; top:14px; right:16px; color:var(--rust); font-size:22px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Create Loan Application</h3>
-      <form onsubmit="return submitLoanApp(event)">
-        <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value)"></div>
-        <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
-        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.loanAppState.productId=this.value; session.loanAppState.feePayment=null; session.loanAppState.feePhone=''; renderApp(); checkExistingProcessingFee();">
-          <option value="">-- Loan Product --</option>
-          ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
-        </select></div>
-        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required ${product?`min="${product.minAmt}" max="${product.maxAmt}"`:''} placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
-        <div class="field"><label>Loan Duration</label><select name="term" required>
-          <option value="">-- Select --</option>
-          ${product ? (product.termWeeks
-            ? `<option value="1" selected>${product.termWeeks*7} days</option>`
-            : Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join(""))
-            : ""}
-        </select></div>
-        <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
-        <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
-        <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
-        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product) : ""}
-        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this)">
-          <option value="">-- Select --</option>
-          <option>New Loan</option><option>Repeat Loan</option>
-        </select></div>
-        <div style="text-align:right; margin-top:16px;">
-          <button class="btn btn-green" type="submit">Save</button>
+    <div class="card pg-card la-card">
+      ${pgHead('Loan Application', 'Create Loan Application', '', "goTo('loanbook','Loan Applications')")}
+      <div class="la-tabs">${tab('details', 'Loan Details', '▤')}${tab('guarantors', 'Guarantors &amp; Collateral', '🛡')}</div>
+      <form onsubmit="return ${submitFn}(event)">
+        <input type="hidden" name="clientId" value="${c ? c.id : ''}">
+        <input type="hidden" name="productId" value="${escapeHtml(st.productId || '')}">
+        <div class="la-panel" style="${st.tab === 'details' ? '' : 'display:none;'}">
+          <div class="la-grid">
+            <div class="field"><label>Client Id Number</label><input name="clientIdNumber" placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value, '${k}')">
+              ${c ? `<div class="la-found">✓ ${escapeHtml(c.name || '')}${c.phone ? ' · ' + escapeHtml(c.phone) : ''}</div>` : st.notFound ? `<div class="la-miss">No client with this ID number</div>` : ''}</div>
+            <div class="field"><label>Loan Product</label><select onchange="session['${k}'].productId=this.value; session['${k}'].feePayment=null; session['${k}'].feePhone=''; renderApp(); checkExistingProcessingFee('${k}');">
+              <option value="">-- Loan Product --</option>
+              ${DB.products.map(p => `<option value="${p.id}" ${p.id === st.productId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+            </select></div>
+            ${isLO ? '' : `<div class="field"><label>Loan Officer</label><select name="officerId" onchange="session['${k}'].officerId=this.value;"><option value="">-- Select Officer --</option>${officers.map(o => `<option value="${o.id}" ${o.id === st.officerId ? 'selected' : ''}>${escapeHtml(o.name)}${wide ? ' · ' + escapeHtml(branchName(o.branch)) : ''}</option>`).join('')}</select></div>`}
+            <div class="field"><label>Loan Amount</label>${inp('principal', `type="number" ${product ? `min="${product.minAmt}" max="${product.maxAmt}"` : ''} placeholder="${product ? `${fmt(product.minAmt)} - ${fmt(product.maxAmt)}` : '-'}"`)}</div>
+            <div class="field"><label>Loan Duration</label><select name="term" onchange="loanAppSet('${k}','term',this.value)">
+              <option value="">-- Select --</option>
+              ${product ? (product.termWeeks
+                ? `<option value="1" selected>${product.termWeeks * 7} days</option>`
+                : Array.from({ length: product.maxTerm - product.minTerm + 1 }, (_, i) => product.minTerm + i).map(m => `<option value="${m}"${String(f.term) === String(m) ? ' selected' : ''}>${m} month${m > 1 ? 's' : ''}</option>`).join(''))
+                : ''}
+            </select></div>
+            <div class="field"><label>Business Type</label>${inp('business_type', 'placeholder="e.g. Retail shop"')}</div>
+            <div class="field"><label>Loan Securities</label><textarea name="loan_securities" oninput="loanAppSet('${k}','loan_securities',this.value)" placeholder="e.g. Woofer, gas bed">${v('loan_securities')}</textarea></div>
+            <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="loanAppSet('${k}','loan_category',this.value); handleLoanCategoryChange(this.value, this, '${k}')">
+              <option value="">-- Select --</option>${['New Loan', 'Repeat Loan'].map(x => `<option ${f.loan_category === x ? 'selected' : ''}>${x}</option>`).join('')}
+            </select></div>
+          </div>
+          ${c && product && product.processingFeeAmount != null ? renderProcessingFeeSection(st, product, k) : ''}
         </div>
+        <div class="la-panel" style="${st.tab === 'guarantors' ? '' : 'display:none;'}">
+          <div class="la-sec-head"><span class="la-ic">🛡</span><div><div class="la-h">Loan Collateral</div></div></div>
+          ${secs.map((s, i) => `<div class="la-sec">
+            <div class="la-sec-top"><strong>Security ${i + 1}</strong>${i === 0 ? '<span class="la-req">Required</span>' : `<span class="pg-x" onclick="loanSecRemove('${k}',${i})">✕</span>`}</div>
+            <div class="field"><label>Security type <span class="la-req">Required</span></label><select onchange="loanSecSet('${k}',${i},'category',this.value)">${LOAN_SECURITY_CATEGORIES.map(x => `<option ${s.category === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+            <div class="la-info">ⓘ Fill in the details provided for loan securities</div>
+            <div class="field"><label>Security Type <span class="la-star">*</span></label><input value="${escapeHtml(s.security_type)}" oninput="loanSecSet('${k}',${i},'security_type',this.value)" placeholder="e.g. Television"></div>
+            <div class="field"><label>Details or description <span class="la-star">*</span></label><input value="${escapeHtml(s.details)}" oninput="loanSecSet('${k}',${i},'details',this.value)" placeholder="e.g. 43 inch Samsung, black"></div>
+            <div class="field"><label>Model &amp; Serial No <span class="hint">(Optional)</span></label><input value="${escapeHtml(s.serial_no)}" oninput="loanSecSet('${k}',${i},'serial_no',this.value)"></div>
+            <div class="la-photo"><label>Security Photo <span class="hint">(Optional)</span></label>${s.photo_path ? `<div class="la-found">✓ ${escapeHtml(s.photo_name || 'Photo uploaded')}</div>` : ''}<input type="file" accept="image/*" onchange="loanSecPhoto('${k}',${i},this)"></div>
+          </div>`).join('')}
+          <div style="text-align:right; margin:-4px 0 16px;"><button type="button" class="pg-btn" onclick="loanSecAdd('${k}')">⊕ Add Another Security</button></div>
+          <div class="la-sec-head"><span class="la-ic">👥</span><div><div class="la-h">Client Guarantors</div></div></div>
+          ${!c ? `<div class="pg-empty" style="padding:18px;">Enter the client ID on <strong>&nbsp;Loan Details&nbsp;</strong> to load saved guarantors.</div>` : `
+            <label class="la-check"><input type="checkbox" ${st.selfGuaranteed ? 'checked' : ''} onchange="session['${k}'].selfGuaranteed=this.checked; renderApp();"> Self guaranteed — the client covers this loan with wallet reserves</label>
+            ${saved == null ? `<div class="hint">${loadingDotsHtml()}</div>` : saved.length ? `<div class="table-wrap"><table class="pg-table pg-mini"><tr><th></th><th>Guarantor</th><th>Contact</th><th>Loans guaranteed</th></tr>${saved.map((g, i) => `<tr><td><input type="radio" name="savedGuarantor" ${f.guarantor === g.name && f.guarantor_contact === (g.contact || '') ? 'checked' : ''} onchange="loanPickGuarantor('${k}',${i})" ${st.selfGuaranteed ? 'disabled' : ''}></td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.contact || '—')}</td><td>${g.loans}</td></tr>`).join('')}</table></div>` : `<div class="hint" style="margin-bottom:6px;">No saved guarantors for this client yet — add one below.</div>`}
+            ${st.selfGuaranteed ? '' : `<div class="la-grid" style="margin-top:10px;"><div class="field"><label>Guarantor Name</label><input value="${v('guarantor')}" oninput="loanAppSet('${k}','guarantor',this.value)" placeholder="Guarantor name"></div><div class="field"><label>Guarantor Contact</label><input value="${v('guarantor_contact')}" oninput="loanAppSet('${k}','guarantor_contact',this.value)" placeholder="Guarantor phone"></div></div>`}`}
+          <div class="la-sec-head" style="margin-top:14px;"><span class="la-ic">✍</span><div><div class="la-h">Client Signature</div></div><span style="margin-left:auto;" class="pg-link" onclick="loanSigClear('${k}')">↺ Clear</span></div>
+          <canvas class="sig-pad" data-state="${k}" width="640" height="190"></canvas>
+          ${sigHintHtml(k, st.signatureDataUrl)}
+        </div>
+        <div class="la-foot"><button class="pg-primary" type="submit">Save Application</button></div>
       </form>
-    </div>
-  `;
+    </div>`;
 }
+// The client's signature canvas on this page, in a real browser only.
+function loanSigCanvas(k){ if(typeof document === 'undefined' || typeof document.querySelector !== 'function') return null; const c = document.querySelector(`canvas.sig-pad[data-state="${k}"]`); return c && typeof c.getContext === 'function' && typeof c.toDataURL === 'function' ? c : null; }
+function submitCreateLoanApp(ev, k, needOfficer){
+  ev.preventDefault();
+  const st = loanAppState(k);
+  const f = Object.fromEntries(new FormData(ev.target));
+  if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
+  if(needOfficer && !f.officerId){ toast('Select a loan officer'); return false; }
+  const secs = (st.securities || []).filter(s => s.security_type || s.details);
+  if(secs.some(s => !String(s.security_type).trim() || !String(s.details).trim())){ st.tab = 'guarantors'; renderApp(); toast('Each security needs a security type and details'); return false; }
+  if(loanSigCanvas(k) && !st.signatureDataUrl){ st.tab = 'guarantors'; renderApp(); toast('The client must sign on Guarantors & Collateral before saving'); return false; }
+  if(st.selfGuaranteed){ f.guarantor = ''; f.guarantor_contact = ''; }
+  else { f.guarantor = f.guarantor || st.f.guarantor || ''; f.guarantor_contact = f.guarantor_contact || st.f.guarantor_contact || ''; }
+  return withRequest('submit-loan-' + k, async () => {
+    if(st.signatureDataUrl && typeof fetch === 'function' && typeof File === 'function'){
+      const blob = await (await fetch(st.signatureDataUrl)).blob();
+      const up = await uploadFile(new File([blob], 'client-signature.png', { type: 'image/png' }));
+      f.client_signature_path = up.path;
+    }
+    f.collaterals = secs.map(s => ({ category: s.category, security_type: s.security_type, details: s.details, serial_no: s.serial_no || null, photo_path: s.photo_path || null }));
+    f.self_guaranteed = !!st.selfGuaranteed;
+    if(!f.term && st.f.term) f.term = st.f.term;
+    await createLoanApplication(f);
+    if(f.client_signature_path) await api.post(`/api/clients/${f.clientId}/documents`, { name: 'client-signature.png', doc_type: 'Client Signature', file_path: f.client_signature_path }).catch(() => {});
+    session[k] = null;
+    goToUndisbursedLoans();
+    if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
+  }, { mutates: true, progress: 'Saving loan application', successMsg: 'Loan application saved successfully' });
+}
+function renderLoanApplicationForm(){ return renderCreateLoanAppPage('loanAppState', 'submitLoanApp'); }
 // Real client lookup — triggered as the officer types the client's real
 // ID number, using the exact same real search the client directory
 // already supports. State-driven (not direct DOM writes) so a real
@@ -15350,19 +15554,7 @@ function confirmProcessingFee(code, stateKey){
     renderApp();
   }, {mutates:true});
 }
-function submitLoanApp(ev){
-  ev.preventDefault();
-  const f = Object.fromEntries(new FormData(ev.target));
-  if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
-  // The real, page-centered "Processing... please wait" -> "Success" bars
-  // (now the shared withRequest({mutates:true}) behavior every other
-  // create/update action uses too, not a one-off here anymore).
-  return withRequest('submit-loan', async ()=>{
-    await createLoanApplication(f);
-    session.loanAppState = null;
-    goToUndisbursedLoans();
-  }, {mutates:true});
-}
+function submitLoanApp(ev){ return submitCreateLoanApp(ev, 'loanAppState', false); }
 // ---- Loan Applications (Loan Officer): one real table, filterable by
 // category — All templates / Disbursed loans / Undisbursed loans / Pended
 // loans / Declined loans — matching the real reference design, where
@@ -15769,6 +15961,8 @@ async function loadCollectionSheetDay(){
     if(st.portfolio) params.set('portfolio', st.portfolio);
     if(st.period) params.set('period', st.period);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     const res = await api.get('/api/collections/sheet-day?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.collSheetDay = res;
@@ -15803,10 +15997,7 @@ function renderCollectionSheet(){
           <option value="">-- Installment --</option>
           ${d.periods.map(p=>`<option value="${p}" ${String(st.period)===String(p)?'selected':''}>Installment ${p}</option>`).join("")}
         </select>
-        ${hasOfficerVisibility() ? `<select onchange="session.collSheetDayState.officerId=this.value; DB.collSheetDay=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('collSheetDayState', "DB.collSheetDay=null; renderApp();")}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportCollectionSheetDayCSV()')}
       </div>
@@ -15855,6 +16046,8 @@ async function loadOfficerCollectionReport(){
   return withRequest('load-officer-collection-report:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ from: st.from, to: st.to });
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     const res = await api.get('/api/collections/client-report?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.officerCollectionReport = res;
@@ -15881,10 +16074,7 @@ function renderCollectionReport(){
         <input type="date" value="${st.from}" max="${maxDate}" onchange="session.collectionReportState.from=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
         <span>~</span>
         <input type="date" value="${st.to}" max="${maxDate}" onchange="session.collectionReportState.to=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-        ${hasOfficerVisibility() ? `<select onchange="session.collectionReportState.officerId=this.value; DB.officerCollectionReport=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('collectionReportState', "DB.officerCollectionReport=null; renderApp();")}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportCollectionReportCSV()')}
       </div>
@@ -15993,6 +16183,8 @@ async function loadLoanArrearsSheet(){
     const params = new URLSearchParams({ from: st.from, to: st.to });
     if(st.status) params.set('status', st.status);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     const res = await api.get('/api/loans/arrears-sheet?'+params.toString());
     res.stateKey = JSON.stringify(st);
     DB.loanArrearsSheet = res;
@@ -16023,10 +16215,7 @@ function renderLoanArrearsSheet(){
           <option value="overdue" ${st.status==='overdue'?'selected':''}>Overdue Loans</option>
           <option value="running" ${st.status==='running'?'selected':''}>Running Loans</option>
         </select>
-        ${hasOfficerVisibility() ? `<select onchange="session.loanArrearsSheetState.officerId=this.value; DB.loanArrearsSheet=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('loanArrearsSheetState', "DB.loanArrearsSheet=null; renderApp();")}
         <span style="flex:1 1 auto;"></span>
         ${generateDropdownHtml('exportLoanArrearsSheetCSV()')}
       </div>
@@ -16099,6 +16288,8 @@ function loanOfficerViewLoansParams(st){
   if(st.sort) params.set('sort', st.sort);
   if(st.q) params.set('q', st.q);
   if(st.officerId) params.set('officer_id', st.officerId);
+  if(st.regionId) params.set('region_id', st.regionId);
+  if(st.branchId) params.set('branch_id', st.branchId);
   params.set('page', st.page||1);
   params.set('page_size', 20);
   return params;
@@ -16146,10 +16337,7 @@ function renderLoanOfficerViewLoans(){
           <option value="">Cycles</option>
           ${['1','2','3','4+'].map(c=>`<option value="${c}" ${st.cycles===c?'selected':''}>${c}</option>`).join("")}
         </select>
-        ${hasOfficerVisibility() ? `<select onchange="session.loViewLoansState.officerId=this.value; session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();" class="btn btn-sm btn-outline">
-          <option value="">-- Loan Officer --</option>
-          ${officerFilterOptions(officerScopeBranchIds()).map(o=>`<option value="${o.id}" ${st.officerId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select>` : ""}
+        ${scopeFilterSelects('loViewLoansState', "session.loViewLoansState.page=1; DB.loViewLoans=null; renderApp();")}
       </div>
       <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
         <button class="btn btn-sm btn-outline" onclick="session.loViewLoansState.filterDatesOpen=!session.loViewLoansState.filterDatesOpen; renderApp();">☰ Filter Dates</button>
@@ -16254,6 +16442,8 @@ async function loadMtdBranch(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     DB.mtdBranch = await api.get('/api/collections/mtd-branch?'+params.toString());
     DB.mtdBranch.stateKey = JSON.stringify(st);
@@ -16265,6 +16455,8 @@ async function exportMtdBranch(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     const full = await api.get('/api/collections/mtd-branch?'+params.toString());
     exportRowsToCsv('collection-mtd.csv', ['loanId','clientId','officerId','branchId','productId','expected','collected','outstanding','status','paymentMethod'], full.clientRows||[]);
@@ -16356,6 +16548,8 @@ async function loadDisbursementsOverview(){
     if(st.to) params.set('to', st.to);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     DB.disbursementsOverview = await api.get('/api/loans/disbursements-overview?'+params.toString());
     DB.disbursementsOverview.stateKey = JSON.stringify(st);
@@ -16369,6 +16563,8 @@ async function exportDisbursementsOverview(){
     if(st.to) params.set('to', st.to);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     const full = await api.get('/api/loans/disbursements-overview?'+params.toString());
     exportRowsToCsv('disbursements.csv', ['loanId','clientId','officerId','branchId','productId','principal','disbursedAt','status','cycle'], full.rows||[]);
@@ -16383,6 +16579,8 @@ async function loadCollectionReport(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.q) params.set('q', st.q);
@@ -16400,6 +16598,8 @@ async function exportCollectionReport(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.q) params.set('q', st.q);
@@ -16417,6 +16617,8 @@ async function loadCollectionRatesBranch(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.cycle) params.set('cycle', st.cycle);
     if(st.status) params.set('status', st.status);
@@ -16435,6 +16637,8 @@ async function exportCollectionRatesBranch(){
     if(st.from) params.set('from', st.from);
     if(st.to) params.set('to', st.to);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.cycle) params.set('cycle', st.cycle);
     if(st.status) params.set('status', st.status);
@@ -16488,13 +16692,13 @@ function renderCollectionRatesBranchPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrRatesState.branchId=this.value; session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrRatesState', "session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();")}<select onchange="scopeFilterSet('mgrRatesState','branchId',this.value); session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();">
         <option value="">-- All Branches --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrRatesState.officerId=this.value; session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();">
         <option value="">-- All Officers --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <input placeholder="Search client, loan" value="${escapeHtml(st.q)}" oninput="session.mgrRatesState.q=this.value; session.mgrRatesState.page=1; DB.collectionRatesBranch=null; renderApp();">
       ${(st.branchId||st.officerId||st.productId||st.cycle||st.status||st.q) ? `<button class="btn btn-sm btn-outline" onclick="session.mgrRatesState={from:st.from,to:st.to,branchId:'',officerId:'',productId:'',cycle:'',status:'',q:'',page:1}; DB.collectionRatesBranch=null; renderApp();">Reset Filters</button>` : ""}
@@ -16531,6 +16735,8 @@ async function loadArrearsBranch(){
     if(st.asOf) params.set('as_of', st.asOf);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.bucket) params.set('bucket', st.bucket);
     if(st.q) params.set('q', st.q);
@@ -16547,6 +16753,8 @@ async function exportArrearsBranch(){
     if(st.asOf) params.set('as_of', st.asOf);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.bucket) params.set('bucket', st.bucket);
     if(st.q) params.set('q', st.q);
@@ -16563,6 +16771,8 @@ async function loadViewLoans(){
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.riskStatus) params.set('risk_status', st.riskStatus);
     if(st.cycles) params.set('cycles', st.cycles);
     if(st.disbursedFrom) params.set('disbursed_from', st.disbursedFrom);
@@ -16587,6 +16797,8 @@ async function generateViewLoans(){
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.riskStatus) params.set('risk_status', st.riskStatus);
     if(st.q) params.set('q', st.q);
     params.set('export', 'true');
@@ -16601,6 +16813,8 @@ async function loadBranchPortfolio(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.bucket) params.set('bucket', st.bucket);
@@ -16618,6 +16832,8 @@ async function exportBranchPortfolio(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.q) params.set('q', st.q);
@@ -16634,6 +16850,8 @@ async function loadPortfolioQualityBranch(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.riskStatus) params.set('risk_status', st.riskStatus);
     if(st.q) params.set('q', st.q);
@@ -16649,6 +16867,8 @@ async function exportPortfolioQualityBranch(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.riskStatus) params.set('risk_status', st.riskStatus);
     if(st.q) params.set('q', st.q);
@@ -16664,6 +16884,8 @@ async function loadApprovalMonitoring(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.stage) params.set('stage', st.stage);
     if(st.minAmount) params.set('min_amount', st.minAmount);
@@ -16681,6 +16903,8 @@ async function exportApprovalMonitoring(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.stage) params.set('stage', st.stage);
     if(st.q) params.set('q', st.q);
@@ -16697,6 +16921,8 @@ async function loadMaturityPipeline(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.bucket) params.set('bucket', st.bucket);
     if(st.q) params.set('q', st.q);
@@ -16712,6 +16938,8 @@ async function exportMaturityPipeline(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.bucket) params.set('bucket', st.bucket);
     if(st.q) params.set('q', st.q);
@@ -16727,6 +16955,8 @@ async function loadApprovedLoans(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.disbursedStatus) params.set('disbursed_status', st.disbursedStatus);
     if(st.q) params.set('q', st.q);
@@ -16742,6 +16972,8 @@ async function exportApprovedLoans(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.disbursedStatus) params.set('disbursed_status', st.disbursedStatus);
     if(st.q) params.set('q', st.q);
@@ -16780,6 +17012,8 @@ async function loadOperationalPortfolio(){
     if(st.to) params.set('to', st.to);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.q) params.set('q', st.q);
     params.set('page', st.page||1);
@@ -16798,6 +17032,8 @@ async function exportOperationalPortfolio(){
     if(st.to) params.set('to', st.to);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.q) params.set('q', st.q);
     params.set('export', 'true');
@@ -16812,6 +17048,8 @@ async function loadLoanExceptions(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.category) params.set('category', st.category);
     if(st.q) params.set('q', st.q);
     params.set('page', st.page||1);
@@ -16826,6 +17064,8 @@ async function exportLoanExceptions(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.category) params.set('category', st.category);
     if(st.q) params.set('q', st.q);
     params.set('export', 'true');
@@ -16876,13 +17116,13 @@ function renderLoanExceptionsPage(){
     </div>
 
     <div class="pill-row" style="margin:16px 0 10px;">
-      <select onchange="session.opExceptionsState.branchId=this.value; session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();">
+      ${scopeRegionSelect('opExceptionsState', "session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();")}<select onchange="scopeFilterSet('opExceptionsState','branchId',this.value); session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>
       <select onchange="session.opExceptionsState.officerId=this.value; session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.opExceptionsState.category=this.value; session.opExceptionsState.page=1; DB.loanExceptions=null; renderApp();">
         <option value="">-- Category --</option>
@@ -17009,7 +17249,7 @@ function renderOperationalPortfolioPage(){
     <div class="pill-row" style="margin:16px 0 10px;">
       <select onchange="session.opPortfolioState.officerId=this.value; session.opPortfolioState.page=1; DB.operationalPortfolio=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s=>s.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.opPortfolioState.productId=this.value; session.opPortfolioState.page=1; DB.operationalPortfolio=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17084,13 +17324,13 @@ function renderApprovedLoansPage(){
     </div>
 
     <div class="pill-row" style="margin:16px 0 10px;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrApprovedState.branchId=this.value; session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrApprovedState', "session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();")}<select onchange="scopeFilterSet('mgrApprovedState','branchId',this.value); session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrApprovedState.officerId=this.value; session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrApprovedState.productId=this.value; session.mgrApprovedState.page=1; DB.approvedLoans=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17203,13 +17443,13 @@ function renderMaturityPipelinePage(){
     ` : ""}
 
     <div class="pill-row" style="margin:16px 0 10px;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrMaturityState.branchId=this.value; session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrMaturityState', "session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();")}<select onchange="scopeFilterSet('mgrMaturityState','branchId',this.value); session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrMaturityState.officerId=this.value; session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrMaturityState.productId=this.value; session.mgrMaturityState.page=1; DB.maturityPipeline=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17334,13 +17574,13 @@ function renderApprovalMonitoringPage(){
     </div>
 
     <div class="pill-row" style="margin:16px 0 10px;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrApprovalState.branchId=this.value; session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrApprovalState', "session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();")}<select onchange="scopeFilterSet('mgrApprovalState','branchId',this.value); session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrApprovalState.officerId=this.value; session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrApprovalState.productId=this.value; session.mgrApprovalState.page=1; DB.approvalMonitoring=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17392,13 +17632,13 @@ function renderPortfolioQualityBranchPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrQualityState.branchId=this.value; session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrQualityState', "session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();")}<select onchange="scopeFilterSet('mgrQualityState','branchId',this.value); session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrQualityState.officerId=this.value; session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrQualityState.productId=this.value; session.mgrQualityState.page=1; DB.portfolioQualityBranch=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17504,13 +17744,13 @@ function renderBranchPortfolioPage(){
     </div>
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrPortfolioState.branchId=this.value; session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrPortfolioState', "session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();")}<select onchange="scopeFilterSet('mgrPortfolioState','branchId',this.value); session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrPortfolioState.officerId=this.value; session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrPortfolioState.productId=this.value; session.mgrPortfolioState.page=1; DB.branchPortfolio=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17639,9 +17879,9 @@ function renderViewLoansPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:14px 0; flex-wrap:wrap;">
-      ${showBranchBreakdown ? `<select onchange="session.viewLoansState.branchId=this.value; session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('viewLoansState', "session.viewLoansState.page=1; DB.viewLoans=null; renderApp();")}<select onchange="scopeFilterSet('viewLoansState','branchId',this.value); session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.viewLoansState.productId=this.value; session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17649,7 +17889,7 @@ function renderViewLoansPage(){
       </select>
       ${isManager ? `<select onchange="session.viewLoansState.officerId=this.value; session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.viewLoansState.riskStatus=this.value; session.viewLoansState.page=1; DB.viewLoans=null; renderApp();">
         <option value="">-- Risk Status --</option>
@@ -17685,9 +17925,9 @@ function renderArrearsBranchPage(){
     <div class="pill-row" style="margin-bottom:12px;">
       <label style="align-self:center;">As of:</label>
       <input type="date" value="${st.asOf}" onchange="session.mgrArrearsState.asOf=this.value; session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
-      ${showBranchBreakdown ? `<select onchange="session.mgrArrearsState.branchId=this.value; session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrArrearsState', "session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();")}<select onchange="scopeFilterSet('mgrArrearsState','branchId',this.value); session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
         <option value="">-- All Branches --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
     </div>
 
@@ -17737,7 +17977,7 @@ function renderArrearsBranchPage(){
     <div class="pill-row" style="margin:14px 0;">
       <select onchange="session.mgrArrearsState.officerId=this.value; session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
         <option value="">-- All Officers --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrArrearsState.productId=this.value; session.mgrArrearsState.page=1; DB.arrearsBranch=null; renderApp();">
         <option value="">-- All Products --</option>
@@ -17800,13 +18040,13 @@ function renderCollectionReportPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrReportState.branchId=this.value; session.mgrReportState.page=1; DB.collectionReport=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrReportState', "session.mgrReportState.page=1; DB.collectionReport=null; renderApp();")}<select onchange="scopeFilterSet('mgrReportState','branchId',this.value); session.mgrReportState.page=1; DB.collectionReport=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrReportState.officerId=this.value; session.mgrReportState.page=1; DB.collectionReport=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrReportState.productId=this.value; session.mgrReportState.page=1; DB.collectionReport=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -17895,13 +18135,13 @@ function renderDisbursementsOverviewPage(){
     ${d.pendingRows.slice(0,15).map(r=>`<tr class="clickable" onclick="openLoan('${r.loanId}')"><td>${escapeHtml(r.clientName)}</td><td>${staffName(r.officerId)}</td>${showBranchBreakdown?`<td>${branchName(r.branchId)}</td>`:''}<td>${fmt(r.principal).replace('KES ','')}</td><td>${r.daysSince}d</td><td>${statusBadge(r.status)}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No pending disbursements.</td></tr>`}</table></div>
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrDisbState.branchId=this.value; DB.disbursementsOverview=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrDisbState', "DB.disbursementsOverview=null; renderApp();")}<select onchange="scopeFilterSet('mgrDisbState','branchId',this.value); DB.disbursementsOverview=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrDisbState.officerId=this.value; DB.disbursementsOverview=null; renderApp();">
         <option value="">-- All Officers --</option>
-        ${DB.staff.filter(s2=>s2.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrDisbState.productId=this.value; DB.disbursementsOverview=null; renderApp();">
         <option value="">-- All Products --</option>
@@ -17976,13 +18216,13 @@ function renderMtdBranchPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:14px 0;">
-      ${showBranchBreakdown ? `<select onchange="session.mgrMtdState.branchId=this.value; DB.mtdBranch=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrMtdState', "DB.mtdBranch=null; renderApp();")}<select onchange="scopeFilterSet('mgrMtdState','branchId',this.value); DB.mtdBranch=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrMtdState.officerId=this.value; DB.mtdBranch=null; renderApp();">
         <option value="">-- All Officers --</option>
-        ${DB.staff.filter(s=>s.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrMtdState.productId=this.value; DB.mtdBranch=null; renderApp();">
         <option value="">-- All Products --</option>
@@ -18023,59 +18263,9 @@ function renderMtdBranchPage(){
 // rather than themselves. Shares every helper with the Loan Officer form
 // via the optional stateKey param (session.mgrCreateAppState here,
 // session.loanAppState there) — no logic duplicated.
-function renderManagerCreateApplicationForm(){
-  const st = session.mgrCreateAppState || (session.mgrCreateAppState = { idNumber:'', matchedClient:null, productId:'', notFound:false, feePhone:'', feePayment:null, officerId:'' });
-  const myStaff = DB.staff.find(s=>s.id===session.userId);
-  const product = DB.products.find(p=>p.id===st.productId);
-  return `
-    <div class="card" style="max-width:560px; margin:0 auto; position:relative;">
-      <span onclick="goTo('dashboard')" style="position:absolute; top:14px; right:16px; color:var(--rust); font-size:22px; font-weight:700; cursor:pointer; line-height:1;">✕</span>
-      <h3 style="text-align:center; color:var(--navy); margin:0 0 18px;">Create Loan Application</h3>
-      <form onsubmit="return submitMgrLoanApp(event)">
-        <div class="field"><label>Client Id Number</label><input name="clientIdNumber" required placeholder="National ID number" value="${escapeHtml(st.idNumber)}" oninput="lookupClientForLoanApp(this.value, 'mgrCreateAppState')"></div>
-        <input type="hidden" name="clientId" value="${st.matchedClient?st.matchedClient.id:''}">
-        <div class="field"><label>Loan Officer</label><select name="officerId" required onchange="session.mgrCreateAppState.officerId=this.value;">
-          <option value="">-- Select Officer --</option>
-          ${DB.staff.filter(s=>s.role==='Loan Officer' && s.branch===(myStaff?myStaff.branch:null)).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
-        </select></div>
-        <div class="field"><label>Loan Product</label><select name="productId" required onchange="session.mgrCreateAppState.productId=this.value; session.mgrCreateAppState.feePayment=null; session.mgrCreateAppState.feePhone=''; renderApp(); checkExistingProcessingFee('mgrCreateAppState');">
-          <option value="">-- Loan Product --</option>
-          ${DB.products.map(p=>`<option value="${p.id}" ${p.id===st.productId?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
-        </select></div>
-        <div class="field"><label>Loan Amount</label><input name="principal" type="number" required ${product?`min="${product.minAmt}" max="${product.maxAmt}"`:''} placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
-        <div class="field"><label>Loan Duration</label><select name="term" required>
-          <option value="">-- Select --</option>
-          ${product ? (product.termWeeks
-            ? `<option value="1" selected>${product.termWeeks*7} days</option>`
-            : Array.from({length: product.maxTerm-product.minTerm+1}, (_,i)=>product.minTerm+i).map(m=>`<option value="${m}">${m} month${m>1?'s':''}</option>`).join(""))
-            : ""}
-        </select></div>
-        <div class="field"><label>Guarantor Name</label><input name="guarantor" placeholder="Guarantor name"></div>
-        <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" placeholder="Guarantor phone"></div>
-        <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed"></textarea></div>
-        ${st.matchedClient && product && product.processingFeeAmount!=null ? renderProcessingFeeSection(st, product, 'mgrCreateAppState') : ""}
-        <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category" onchange="handleLoanCategoryChange(this.value, this, 'mgrCreateAppState')">
-          <option value="">-- Select --</option>
-          <option>New Loan</option><option>Repeat Loan</option>
-        </select></div>
-        <div style="text-align:right; margin-top:16px;">
-          <button class="btn btn-green" type="submit">Save</button>
-        </div>
-      </form>
-    </div>
-  `;
-}
-function submitMgrLoanApp(ev){
-  ev.preventDefault();
-  const f = Object.fromEntries(new FormData(ev.target));
-  if(!f.clientId){ toast('Enter a valid Client ID number and wait for the real lookup to find the client'); return false; }
-  if(!f.officerId){ toast('Select a loan officer'); return false; }
-  return withRequest('submit-mgr-loan', async ()=>{
-    await createLoanApplication(f);
-    session.mgrCreateAppState = null;
-    goToUndisbursedLoans();
-  }, {mutates:true});
-}
+function renderManagerCreateApplicationForm(){ return renderCreateLoanAppPage('mgrCreateAppState', 'submitMgrLoanApp'); }
+function submitMgrLoanApp(ev){ return submitCreateLoanApp(ev, 'mgrCreateAppState', true); }
+function submitWideLoanApp(ev){ return submitCreateLoanApp(ev, 'wideLoanAppState', true); }
 
 // ==================== Regional Manager / Operational Manager Create Application — branch selection, then client search, officer selection ====================
 function renderRegionalManagerCreateApplicationForm(){
@@ -18176,6 +18366,8 @@ async function loadApplicationsOverview(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.cycle) params.set('cycle', st.cycle);
@@ -18196,6 +18388,8 @@ async function exportApplicationsOverview(){
     const params = new URLSearchParams();
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.cycle) params.set('cycle', st.cycle);
@@ -18323,13 +18517,13 @@ function renderApplicationsOverviewPage(){
     ` : ""}
 
     <div class="pill-row" style="margin:16px 0 10px;">
-      ${isRegional ? `<select onchange="session.mgrAppOverviewState.branchId=this.value; session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
+      ${isRegional ? `${scopeRegionSelect('mgrAppOverviewState', "session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();")}<select onchange="scopeFilterSet('mgrAppOverviewState','branchId',this.value); session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
         <option value="">-- Branch --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrAppOverviewState.officerId=this.value; session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
         <option value="">-- Loan Officer --</option>
-        ${DB.staff.filter(s=>s.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrAppOverviewState.productId=this.value; session.mgrAppOverviewState.page=1; DB.applicationsOverview=null; renderApp();">
         <option value="">-- Loan Product --</option>
@@ -18373,6 +18567,8 @@ async function loadSheetBranch(){
     if(st.date) params.set('date', st.date);
     if(st.branchId) params.set('branch_id', st.branchId);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     if(st.productId) params.set('product_id', st.productId);
     if(st.status) params.set('status', st.status);
     if(st.q) params.set('q', st.q);
@@ -18398,13 +18594,13 @@ function renderSheetBranchPage(){
 
     <div class="pill-row" style="margin-bottom:12px;">
       <input type="date" value="${st.date}" onchange="session.mgrSheetState.date=this.value; DB.sheetBranch=null; renderApp();">
-      ${showBranchBreakdown ? `<select onchange="session.mgrSheetState.branchId=this.value; DB.sheetBranch=null; renderApp();">
+      ${showBranchBreakdown ? `${scopeRegionSelect('mgrSheetState', "DB.sheetBranch=null; renderApp();")}<select onchange="scopeFilterSet('mgrSheetState','branchId',this.value); DB.sheetBranch=null; renderApp();">
         <option value="">-- All Branches --</option>
-        ${DB.branches.map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
+        ${scopedBranches(st).map(b=>`<option value="${b.id}" ${b.id===st.branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}
       </select>` : ""}
       <select onchange="session.mgrSheetState.officerId=this.value; DB.sheetBranch=null; renderApp();">
         <option value="">-- All Officers --</option>
-        ${DB.staff.filter(s=>s.role==='Loan Officer').map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
+        ${scopedOfficers(st).map(o=>`<option value="${o.id}" ${o.id===st.officerId?'selected':''}>${escapeHtml(o.name)}</option>`).join("")}
       </select>
       <select onchange="session.mgrSheetState.status=this.value; DB.sheetBranch=null; renderApp();">
         <option value="">-- All Statuses --</option>
@@ -19937,6 +20133,8 @@ function loadExpectedCashflow(){
       params.set('week_end', `${st.month}-${String(wk.end).padStart(2,'0')}`);
     } else params.set('month', st.month);
     if(st.officerId) params.set('officer_id', st.officerId);
+    if(st.regionId) params.set('region_id', st.regionId);
+    if(st.branchId) params.set('branch_id', st.branchId);
     const res = await api.get('/api/collections/expected-cashflow?'+params.toString());
     if(seq !== expectedCfReqSeq) return; // a newer request has since superseded this one
     res.stateKey = JSON.stringify(st);
@@ -23251,8 +23449,14 @@ function renderDrawSignatureModal(){
 }
 function initSignatureCanvas(){
   if(typeof document === 'undefined' || !document.getElementById) return;
-  const canvas = document.getElementById('signature-canvas');
+  if(typeof document.querySelectorAll === 'function') document.querySelectorAll('canvas.sig-pad').forEach(wireSignaturePad);
+  wireSignaturePad(document.getElementById('signature-canvas'));
+}
+// A pad tied to page state (data-state) keeps its drawing in that state,
+// so a re-render redraws it instead of wiping it.
+function wireSignaturePad(canvas){
   if(!canvas || canvas.__sigWired) return;
+  const stateKey = canvas.getAttribute && canvas.getAttribute('data-state');
   const ctx = canvas.getContext && canvas.getContext('2d');
   if(!ctx || !canvas.addEventListener) return;
   canvas.__sigWired = true;
@@ -23265,7 +23469,14 @@ function initSignatureCanvas(){
   }
   function start(ev){ drawing = true; const p = pos(ev); ctx.beginPath(); ctx.moveTo(p.x,p.y); if(ev.preventDefault) ev.preventDefault(); }
   function move(ev){ if(!drawing) return; const p = pos(ev); ctx.lineTo(p.x,p.y); ctx.stroke(); if(ev.preventDefault) ev.preventDefault(); }
-  function end(){ drawing = false; }
+  function end(){
+    if(drawing && stateKey && canvas.toDataURL){
+      (session[stateKey] || (session[stateKey] = {})).signatureDataUrl = canvas.toDataURL('image/png');
+      const hint = document.querySelector(`[data-sig-hint="${stateKey}"]`); if(hint) hint.textContent = '✓ Signed by the client';
+    }
+    drawing = false;
+  }
+  if(stateKey && session[stateKey] && session[stateKey].signatureDataUrl && typeof Image === 'function'){ const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0); img.src = session[stateKey].signatureDataUrl; }
   canvas.addEventListener('mousedown', start);
   canvas.addEventListener('mousemove', move);
   window.addEventListener('mouseup', end);

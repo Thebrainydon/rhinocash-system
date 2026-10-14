@@ -4056,11 +4056,13 @@ apiRequest = async function(method, path, body){
     global.FormData = class { constructor(){ return wkLoanForm; } };
     const wkLoansBefore = DB.loans.length;
     const submitPromise = submitLoanApp({ preventDefault(){}, target:{} });
-    __assert(centerToasts.some(t=>t.msg==='Processing... please wait' && t.type==='success'), "clicking Save genuinely shows a real greenish, page-centered 'Processing... please wait' bar for the real duration of the actual submit request — matching the real reference site's own centered messages, not the corner toast style");
-    await submitPromise;
+    const pctEl = document.getElementById('pct-progress-overlay');
+    __assert(pctEl.innerHTML.includes('Saving loan application') && pctEl.innerHTML.includes('pct-fill') && /\d+%/.test(pctEl.innerHTML), "clicking Save Application shows the greenish bar counting up in percent while the request runs");
+    let sawDone = false; const watch = setInterval(()=>{ if(pctEl.innerHTML.includes('Loan application saved successfully') && pctEl.innerHTML.includes('100%')) sawDone = true; }, 5);
+    await submitPromise; clearInterval(watch);
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
-    __assert(!centerToasts.some(t=>t.msg==='Processing... please wait'), "the real greenish 'Processing... please wait' bar genuinely disappears the instant the real request settles");
-    __assert(centerToasts.some(t=>t.msg==='success' && t.type!=='success'), "a real successful submission genuinely shows a second, real page-centered gray 'success' bar, replacing the 'Processing... please wait' one — matching the real reference site's own lowercase, gray success bar exactly, never the same greenish style");
+    __assert(sawDone, "a successful save reaches 100% and shows the success pop-up");
+    __assert(pctEl.innerHTML === '', "the pop-up clears once the save has finished");
     const wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
@@ -4349,7 +4351,8 @@ apiRequest = async function(method, path, body){
     session.rmCreateAppState = null;
     goTo('loanbook', 'Create Application');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('BRANCH SELECTION') && html.includes('Regional oversight'), "Regional Manager's real restored Create Application genuinely shows the real Branch Selection step and real regional-oversight framing");
+    __assert(html.includes('Create Loan Application') && html.includes('Guarantors &amp; Collateral') && html.includes('-- Select Officer --'), "Regional Manager's Create Application opens the shared tabbed page with a Loan Officer picker");
+    renderRegionalManagerCreateApplicationForm(); // the branch-first lookup helpers it shares are still checked below
 
     // Real cross-region check: search in Nairobi (a different real region) must not find the Kisumu client.
     session.rmCreateAppState.branchId = 'br_nairobi';
@@ -5020,7 +5023,7 @@ apiRequest = async function(method, path, body){
     session.rmCreateAppState = null;
     goTo('loanbook', 'Create Application');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('BRANCH SELECTION') && html.includes('Operational oversight'), "Operational Manager's real restored Create Application genuinely shows the real Branch Selection step and real operational-oversight framing, not Regional Manager's region-scoped framing");
+    __assert(html.includes('Create Loan Application') && html.includes('Guarantors &amp; Collateral') && html.includes('-- Select Officer --'), "Operational Manager's Create Application opens the shared tabbed page with a Loan Officer picker");
 
     // Real Pending Loan Approvals routing fix.
     sidebarNavigate('Pending Loan Approvals');
@@ -8124,6 +8127,32 @@ apiRequest = async function(method, path, body){
     }
     const otpRes = await api.post('/api/otp/request', {}).catch(e => e);
     __assert(otpRes && (otpRes.status || otpRes.otpForTesting !== undefined || otpRes.message), "the OTP request endpoint answers");
+  }
+
+  // ---- Role-based filters; Create Loan Application tabs; client signatures ----
+  {
+    const realRole = session.role;
+    const f = () => scopeFilterSelects('fltTest', 'renderApp();');
+    session.role = 'Loan Officer'; __assert(f() === '', "a Loan Officer gets no staff filters");
+    session.role = 'Manager'; let h = f();
+    __assert(h.includes('-- Loan Officer --') && !h.includes('-- Branch --') && !h.includes('-- Region --'), "a Manager filters by Loan Officer");
+    session.role = 'Regional Manager'; h = f();
+    __assert(h.includes('-- Branch --') && h.includes('-- Loan Officer --') && !h.includes('-- Region --'), "a Regional Manager filters by Branch and Loan Officer");
+    for (const r of ['Operational Manager', 'CEO', 'Director', 'Admin']) { session.role = r; h = f(); __assert(h.includes('-- Region --') && h.includes('-- Branch --') && h.includes('-- Loan Officer --'), `${r} filters by Region, Branch and Loan Officer`); }
+    const reg = (DB.regions || []).find(r => (DB.branches || []).some(b => b.region === r.id));
+    if (reg) {
+      session.fltTest = { officerId: '' }; scopeFilterSet('fltTest', 'regionId', reg.id);
+      __assert(scopedBranches(session.fltTest).every(b => b.region === reg.id) && scopedOfficers(session.fltTest).every(o => scopedBranches(session.fltTest).some(b => b.id === o.branch)), "choosing a region narrows the branches and officers offered");
+    }
+    session.role = 'Manager'; session.laTest = null;
+    const page = renderCreateLoanAppPage('laTest', 'submitMgrLoanApp');
+    __assert(['Loan Details', 'Guarantors &amp; Collateral', 'Business Type', 'Security 1', 'Add Another Security', 'Client Guarantors', 'class="sig-pad"', 'Save Application'].every(x => page.includes(x)), "Create Loan Application has the Loan Details and Guarantors & Collateral tabs, securities, guarantors and a signature pad");
+    loanSecAdd('laTest'); loanSecSet('laTest', 1, 'security_type', 'Fridge');
+    __assert(session.laTest.securities.length === 2 && session.laTest.securities[1].security_type === 'Fridge', "another security can be added and filled in");
+    loanAppSet('laTest', 'principal', '7000'); renderApp();
+    __assert(session.laTest.f.principal === '7000' && renderCreateLoanAppPage('laTest', 'submitMgrLoanApp').includes('value="7000"'), "typed values survive a re-render");
+    __assert(__rawIndexHtml.includes('data-state="addClientSig"') && /doc_type:'Client Signature'/.test(__srcForBanCheck), "Add Client lets the client sign, and the signature is saved with the client");
+    session.laTest = null; session.fltTest = null; session.role = realRole;
   }
 
   // ---- Record page arranges fields by meaning ----
