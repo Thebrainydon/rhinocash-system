@@ -6910,6 +6910,11 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('Loan product') && html.includes('Guarantor contact') && html.includes('Loan securities'), "the real Manager Loan Applications page genuinely shares the exact same column set as the Loan Officer's own page");
     __assert(!html.includes('class="subtabs"'), "the real Manager Loan Applications page genuinely has no subtab bar above it, per the requested chrome-free design");
 
+    {
+      const allRow = (html.match(/Loan Apps Approval Test Client[\s\S]*?<\/tr>/) || [''])[0];
+      __assert(allRow.includes('>Approve<') && allRow.includes('>Reject<'), "under All templates too, the Manager whose turn it is gets Approve and Reject in the row");
+    }
+
     session.loanAppFilterState.category = 'Undisbursed loans';
     renderApp();
     html = document.getElementById('root').innerHTML;
@@ -6937,6 +6942,10 @@ apiRequest = async function(method, path, body){
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('<th>Approvals</th>') && !html.includes('<th>Approval</th>'), "outside Undisbursed loans, the real plain 'Approvals' history header genuinely returns");
     __assert(html.includes('Faith Njeri') && html.includes('<em>Ok</em>'), "the real just-made Manager decision genuinely appears in the real history, with the exact real 'Ok' shorthand the Loan Officer's page already uses");
+    {
+      const doneRow = (html.match(/Loan Apps Approval Test Client[\s\S]*?<\/tr>/) || [''])[0];
+      __assert(/<em>Ok<\/em><div class="hint">\d{2}\.\d{2}\.\d{4}, /.test(doneRow) && !doneRow.includes('>Reject<'), "once approved, the row shows who approved it and the date and time, and the buttons are gone");
+    }
 
     // Direct unit coverage for the "Declined" branch: a real Rejected
     // loan is genuinely excluded from the "Undisbursed loans" category
