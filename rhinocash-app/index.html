@@ -492,6 +492,10 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
 .geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
 .geo-pin-wrap{background:transparent; border:none;}
+.ix-block{margin-top:12px;} .gen-auto{display:flex; justify-content:flex-end; margin:6px 0;} .gen-auto select{min-width:110px;}
+table.stmt td.num, table.stmt th.num{text-align:right; white-space:nowrap;} table.stmt tr.section td{background:#F7F9FC; color:#1F3A5F; padding-top:10px;}
+table.stmt tr.total td{border-top:1px solid #CBD5E1; font-weight:700;} table.stmt tr.grand td{border-top:2px solid #1F3A5F; border-bottom:3px double #1F3A5F; font-weight:800; background:#F4F7FB;} .ix-block-h{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; font-weight:800; color:#1F3A5F; font-size:13.5px;}
+.ix-block-h small{font-weight:600; color:#7A8699;} .ix-total td{background:#F4F7FB; font-weight:700;} .ix-note{font-size:11.5px; color:#6B7789; margin-top:8px;}
 .bq-tiles{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;}
 .bq-tile{border:1px solid #DCE5F0; border-radius:12px; padding:12px 14px; background:#fff; border-top:4px solid #9AA6B8;}
 .bq-tile.good{border-top-color:#1E9E61;} .bq-tile.fair{border-top-color:#E0A21B;} .bq-tile.poor{border-top-color:#D64545;}
@@ -2254,6 +2258,19 @@ function genRunJob(id){
   genExplicitTitle = job.title;
   try{ exportCSV(genSlug(job.title), headers, rows); } finally { genExplicitTitle = null; }
 }
+// Generate for a table that has no export of its own: exports exactly the rows on screen.
+function genFromTable(sel, mode){
+  let el = sel.closest('.gen-auto').nextElementSibling;
+  const table = el && (el.tagName === 'TABLE' ? el : el.querySelector('table')); if(!table) return;
+  const trs = [...table.querySelectorAll('tr')];
+  const text = c => (c.innerText || c.textContent || '').replace(/\s+/g, ' ').trim();
+  const headers = [...trs[0].children].map(text);
+  const rows = trs.slice(1).filter(tr => !tr.querySelector('td.empty')).map(tr => [...tr.children].map(text));
+  const card = sel.closest('.card'); const t = card && card.querySelector('.card-title, .ix-block-h, h3');
+  const title = (t && text(t).split('\n')[0]) || session.subtab || 'Report';
+  genQueue(mode); genExplicitTitle = title;
+  try{ exportCSV(genSlug(title), headers, rows); } finally { genExplicitTitle = null; }
+}
 function genSlug(name){ return String(name || 'report').replace(/\.(csv|xlsx)$/i, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'report'; }
 // Report title: an explicit one, else the page the user is on, else the file name.
 function genPrettyTitle(name){
@@ -3520,6 +3537,19 @@ function tidyPageLayout(){
     const hasBtn = [...t.querySelectorAll('tr')].some(r => { const c = r.lastElementChild; return c && c.tagName === 'TD' && c.querySelector('button, .btn'); });
     if(hasBtn) last.textContent = 'Action';
   });
+  // Every data table can be exported: a table whose card has no Generate menu gets its own.
+  if(session.section !== 'dashboard') content.querySelectorAll('table').forEach(t => {
+    if(t.dataset.genAuto || (t.closest && t.closest('.modal, form, .no-gen, .geo-card, .bq-card, .cal-grid'))) return;
+    const trs = t.querySelectorAll('tr'); if(trs.length < 2 || (trs.length === 2 && t.querySelector('td.empty'))) return;
+    const box = (t.closest && t.closest('.ix-block, .card, .adm-page')) || t.parentElement;
+    if(box && box.querySelector('option[value="pdf"]')) return;
+    t.dataset.genAuto = '1';
+    const wrap = (t.closest && t.closest('.table-wrap')) || t;
+    if(!wrap.parentNode) return;
+    const bar = document.createElement('div'); bar.className = 'gen-auto';
+    bar.innerHTML = `<select class="btn btn-sm btn-outline" onchange="if(this.value){ genFromTable(this, this.value); } this.value='';"><option value="" selected>-- Generate --</option><option value="pdf">PDF Printout</option><option value="excel">Excel File</option></select>`;
+    wrap.parentNode.insertBefore(bar, wrap);
+  });
   content.querySelectorAll('.fp').forEach(fp => {
     const bar = fp.querySelector(':scope > .fp-bar'); if(!bar) return;
     const btn = bar.querySelector('button'); if(!btn) return;
@@ -4638,7 +4668,7 @@ function renderInvestorIntelligenceDrillDown(feature){
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 async function loadAdminAnalyticsConfiguration(){
   return withRequest('intel-admin-analytics-config', async ()=>{ DB.adminAnalyticsConfig = (await api.get('/api/intelligence/analytics-configuration')).dimensions; });
@@ -4663,6 +4693,91 @@ function renderAdminKpiConfiguration(){
     <div class="pill-row">${DB.adminKpiConfig.parBuckets.map(b=>`<span class="badge blue">${b}+ days</span>`).join("")}</div>
   </div>`;
 }
+
+// ---- Shared Intelligence views: tables with Generate, totals and charts ----
+// Charts are collected while a page is built and placed under its card.
+let ixAfterQueue = [];
+function ixAfter(html){ if(html) ixAfterQueue.push(html); return ''; }
+function ixFlushAfter(){ const h = ixAfterQueue.join(''); ixAfterQueue = []; return h; }
+const ixPct = v => v == null || !isFinite(v) ? '—' : `${Number(v).toFixed(1)}%`;
+const ixDate = v => v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const ixMonth = m => m ? new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—';
+function ixCell(c, r){ const v = c.v(r); if(c.html) return c.html(r); if(v == null || v === '') return '—';
+  return c.t === 'money' ? fmt(v) : c.t === 'num' ? fmtNum(v) : c.t === 'pct' ? ixPct(v) : c.t === 'date' ? ixDate(v) : escapeHtml(String(v)); }
+function ixText(c, r){ const v = c.v(r); if(v == null) return '';
+  return c.t === 'money' ? Math.round(Number(v) || 0) : c.t === 'num' ? Number(v) || 0 : c.t === 'pct' ? ixPct(v) : c.t === 'date' ? ixDate(v) : String(v); }
+// A titled table with a Generate menu (PDF / Excel of exactly these rows) and an optional total row.
+function ixTable(title, cols, rows, opts = {}){
+  rows = rows || [];
+  const totalRow = opts.total ? `<tr class="ix-total">${cols.map((c, i) => `<td>${i === 0 ? `<strong>${escapeHtml(opts.totalLabel || 'Total')}</strong>` : (c.total ? ixCell(c, opts.total) : '')}</td>`).join('')}</tr>` : '';
+  const gen = generateMenuHtml(title, () => ({ headers: cols.map(c => c.h), rows: [...rows.map(r => cols.map(c => ixText(c, r))), ...(opts.total ? [cols.map((c, i) => i === 0 ? (opts.totalLabel || 'Total') : (c.total ? ixText(c, opts.total) : ''))] : [])] }));
+  return `<div class="ix-block"><div class="ix-block-h"><span>${escapeHtml(title)} <small>${rows.length} row${rows.length === 1 ? '' : 's'}</small></span>${gen}</div>
+    <div class="table-wrap"><table><tr>${cols.map(c => `<th>${escapeHtml(c.h)}</th>`).join('')}</tr>
+    ${rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${ixCell(c, r)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" class="empty">${escapeHtml(opts.empty || 'Nothing in your scope yet.')}</td></tr>`}${rows.length ? totalRow : ''}</table></div></div>`;
+}
+function ixBadge(text, tone){ return `<span class="badge ${tone}">${escapeHtml(text)}</span>`; }
+const ixRateTone = v => v >= 90 ? 'green' : v >= 70 ? 'amber' : 'red';
+const ixParTone = v => v <= 5 ? 'green' : v <= 10 ? 'amber' : 'red';
+// Officer / branch / region / product performance: one row each, with portfolio, arrears, PAR, collections and provision.
+function ixGroupView(feature, rows, total, by){
+  const label = { officer: 'Loan Officer', branch: 'Branch', region: 'Region', product: 'Product' }[by] || 'Name';
+  const t = total || {};
+  const cols = [
+    { h: label, v: r => r.name, html: r => `<strong>${escapeHtml(r.name || '—')}</strong>` },
+    { h: 'Active Loans', v: r => r.activeLoans, t: 'num', total: 1 },
+    { h: 'Clients', v: r => r.clients, t: 'num', total: 1 },
+    { h: 'Outstanding', v: r => r.outstanding, t: 'money', total: 1 },
+    { h: 'Arrears', v: r => r.arrears, t: 'money', total: 1 },
+    { h: 'PAR 30', v: r => r.par30Pct, t: 'pct', html: r => ixBadge(ixPct(r.par30Pct), ixParTone(r.par30Pct)), total: 1 },
+    { h: 'Avg Loan', v: r => r.avgLoanSize, t: 'money', total: 1 },
+    { h: 'Expected MTD', v: r => r.expectedMTD, t: 'money', total: 1 },
+    { h: 'Collected MTD', v: r => r.collectedMTD, t: 'money', total: 1 },
+    { h: 'Collection Rate', v: r => r.collectionRate, t: 'pct', html: r => r.expectedMTD ? ixBadge(ixPct(r.collectionRate), ixRateTone(r.collectionRate)) : '—', total: 1 },
+    { h: 'Provision', v: r => r.provision, t: 'money', total: 1 },
+  ];
+  const tiles = intelKpis([['Active Loans', fmtNum(t.activeLoans)], ['Clients', fmtNum(t.clients)], ['Outstanding', fmt(t.outstanding)], ['Arrears', fmt(t.arrears)], ['PAR 30', ixPct(t.par30Pct)], ['Collection Rate (MTD)', ixPct(t.collectionRate)], ['Loan-Loss Provision', fmt(t.provision)]]);
+  const top = (rows || []).slice(0, 15);
+  const chart = top.length ? admChart('ix-g-' + feature.id, `${label} performance`, 'bar', top.map(r => r.name || '—'), [
+    { label: 'Collection rate %', data: top.map(r => r.collectionRate || 0) }, { label: 'PAR 30 %', data: top.map(r => r.par30Pct || 0) }]) : '';
+  return `${tiles}${ixTable(`${feature.label}`, cols, rows, { total: rows && rows.length > 1 ? t : null })}
+    <div class="ix-note">PAR 30 = balance of loans with an installment 30+ days overdue ÷ total outstanding. Collection rate = collected this month ÷ due this month so far. Provision uses the CBK classes (Normal 1%, Watch 3%, Substandard 20%, Doubtful 50%, Loss 100%).</div>${chart ? ixAfter(chart) : ''}`;
+}
+// A monthly figure: this month, run-rate to month end, change and the last six months.
+function ixTrendView(feature, data, money = true){
+  const f = v => money ? fmt(v) : fmtNum(v);
+  const sign = v => v == null ? '—' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`;
+  const tiles = intelKpis([[`${data.label} this month`, f(data.thisPeriod)], ['Month-end run-rate', data.runRate != null ? f(data.runRate) : '—'], [`${data.label} ${ixMonth(data.lastMonth)}`, f(data.lastPeriod)],
+    ['Change', sign(data.changePct)], ['3-month average', data.avg3 != null ? f(data.avg3) : '—'], ['Run-rate vs average', sign(data.runRateVsAvg3Pct)]]);
+  const hist = data.history || [];
+  const cols = [{ h: 'Month', v: r => ixMonth(r.month) }, { h: data.label, v: r => r.value, t: money ? 'money' : 'num' },
+    { h: 'Change vs previous month', v: r => r.changePct, html: r => r.changePct == null ? '—' : ixBadge(sign(r.changePct), r.changePct >= 0 ? 'green' : 'red') }];
+  const chart = hist.length ? admChart('ix-t-' + feature.id, `${data.label} — last 6 months`, 'line', hist.map(h => ixMonth(h.month)), [{ label: data.label, data: hist.map(h => h.value), tension: .3, fill: false }]) : '';
+  return `${tiles}${ixTable(`${data.label} by month`, cols, hist)}<div class="ix-note">Run-rate = this month so far ÷ ${data.daysElapsed || '—'} days elapsed × ${data.daysInMonth || '—'} days in the month. Comparison month set by Admin's trend window (${data.windowMonths || 1} month${data.windowMonths === 1 ? '' : 's'}).</div>${chart ? ixAfter(chart) : ''}`;
+}
+// Portfolio risk: PAR lines, CBK classification with provisioning, and the riskiest loans.
+function ixRiskView(feature, data){
+  const par30 = ((data.par || []).find(p => p.threshold === 30) || {}).percentage || 0;
+  const tone = data.qualityRating === 'Current' ? 'green' : ['Watch', 'At Risk'].includes(data.qualityRating) ? 'amber' : 'red';
+  const tiles = intelKpis([['Quality Rating', ixBadge(data.qualityRating, tone)], ['Total Outstanding', fmt(data.totalOutstanding)], ['PAR 30', ixPct(par30)], ['Active Loans', fmtNum(data.activeLoans)],
+    ['Provision Required', fmt(data.totalProvision)], ['Provision Coverage', ixPct(data.provisionCoveragePct)]]);
+  const parT = ixTable('Portfolio at Risk', [
+    { h: 'Overdue', v: r => `${r.threshold}+ days` }, { h: 'Loans', v: r => r.loans, t: 'num' }, { h: 'Clients', v: r => r.clients, t: 'num' },
+    { h: 'Arrears', v: r => r.arrears, t: 'money' }, { h: 'Balance at Risk', v: r => r.amount, t: 'money' }, { h: '% of Portfolio', v: r => r.percentage, t: 'pct', html: r => ixBadge(ixPct(r.percentage), ixParTone(r.percentage)) },
+  ], data.par || []);
+  const classes = data.classes || [];
+  const clsTotal = { loans: classes.reduce((s, c) => s + c.loans, 0), clients: classes.reduce((s, c) => s + c.clients, 0), outstanding: classes.reduce((s, c) => s + c.outstanding, 0), sharePct: classes.length ? 100 : 0, provision: classes.reduce((s, c) => s + c.provision, 0) };
+  const clsT = ixTable('Loan classification & provisioning', [
+    { h: 'Class', v: r => r.label }, { h: 'Provision Rate', v: r => r.ratePct, t: 'pct' }, { h: 'Loans', v: r => r.loans, t: 'num', total: 1 }, { h: 'Clients', v: r => r.clients, t: 'num', total: 1 },
+    { h: 'Outstanding', v: r => r.outstanding, t: 'money', total: 1 }, { h: 'Share', v: r => r.sharePct, t: 'pct', total: 1 }, { h: 'Provision', v: r => r.provision, t: 'money', total: 1 },
+  ], classes, { total: classes.length ? clsTotal : null });
+  const riskT = ixTable('Loans needing attention', [
+    { h: 'Client', v: r => r.client, html: r => `<strong>${escapeHtml(r.client || '—')}</strong>${r.phone ? `<div class="pg-sub">${escapeHtml(r.phone)}</div>` : ''}` },
+    { h: 'Officer', v: r => r.officer }, { h: 'Branch', v: r => r.branch }, { h: 'Outstanding', v: r => r.outstanding, t: 'money' }, { h: 'Arrears', v: r => r.arrears, t: 'money' },
+    { h: 'Missed', v: r => r.missed, t: 'num' }, { h: 'Days Overdue', v: r => r.daysOverdue, t: 'num' }, { h: 'Class', v: r => r.classLabel }, { h: 'Provision', v: r => r.provision, t: 'money' },
+  ], data.atRisk || [], { empty: 'No loan in your scope is overdue.' });
+  const chart = classes.length ? admChart('ix-r-' + feature.id, 'Outstanding by loan class', 'bar', classes.map(c => c.label), [{ label: 'Outstanding', data: classes.map(c => c.outstanding) }, { label: 'Provision', data: classes.map(c => c.provision) }]) : '';
+  return `${tiles}${parT}${clsT}${riskT}<div class="ix-note">${escapeHtml(data.formula || '')}. Quality rating thresholds on PAR 30: Watch ${data.thresholds ? data.thresholds.watch : 5}%, At Risk ${data.thresholds ? data.thresholds.atRisk : 10}%, Critical ${data.thresholds ? data.thresholds.critical : 20}%.</div>${chart ? ixAfter(chart) : ''}`;
+}
 function renderIntelligenceDrillDown(feature){
   if(feature.id==='drill-analytics-configuration') return renderAdminAnalyticsConfiguration();
   if(feature.id==='drill-kpi-configuration') return renderAdminKpiConfiguration();
@@ -4680,49 +4795,73 @@ function renderIntelligenceDrillDown(feature){
   let body;
   switch(feature.id){
     case 'drill-portfolio':
-      body = kpis([["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)],["Outstanding Balance",fmt(data.outstandingBalance)]]);
+      body = kpis([["Principal Disbursed",fmt(data.principalDisbursed)],["Outstanding Balance",fmt(data.outstandingBalance)]]) + ixGroupView(feature, data.branches || [], data.summary, 'branch') +
+        ixTable('Loan classification', [{ h: 'Class', v: r => r.label }, { h: 'Loans', v: r => r.loans, t: 'num' }, { h: 'Outstanding', v: r => r.outstanding, t: 'money' }, { h: 'Share', v: r => r.sharePct, t: 'pct' }, { h: 'Provision', v: r => r.provision, t: 'money' }], data.classes || []);
       break;
     case 'drill-officer': case 'drill-officers': case 'drill-officer-performance':
-      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.officers,['name','activeloans','principal'])}</table></div>`;
+      body = ixGroupView(feature, data.officers, data.total, 'officer');
       break;
     case 'drill-region':
-      body = `<div class="table-wrap"><table><tr><th>Region</th><th>Branches</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.regions,['name','branchcount','activeloans','principal'])}</table></div>`;
+      body = ixGroupView(feature, data.regions, data.total, 'region') + ixTable('Branches per region', [{ h: 'Region', v: r => r.name }, { h: 'Branches', v: r => r.branchCount, t: 'num' }, { h: 'Loans per Branch', v: r => r.branchCount ? Math.round(r.activeLoans / r.branchCount) : 0, t: 'num' }, { h: 'Outstanding per Branch', v: r => r.branchCount ? r.outstanding / r.branchCount : 0, t: 'money' }], data.regions || []);
       break;
     case 'drill-branch':
-      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.branches,['name','activeloans','principal'])}</table></div>`;
+      body = ixGroupView(feature, data.branches, data.total, 'branch');
       break;
     case 'drill-client':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Outstanding</th></tr>${rowsFor(data.topClientsByOutstanding,['name','outstanding'])}</table></div>`;
+      body = ixTable('Clients by outstanding balance', [
+        { h: 'Client', v: r => r.name, html: r => `<strong>${escapeHtml(r.name || '—')}</strong>${r.phone ? `<div class="pg-sub">${escapeHtml(r.phone)}</div>` : ''}` },
+        { h: 'Officer', v: r => r.officer }, { h: 'Branch', v: r => r.branch }, { h: 'Loans', v: r => r.loans, t: 'num' }, { h: 'Principal', v: r => r.principal, t: 'money' },
+        { h: 'Outstanding', v: r => r.outstanding, t: 'money' }, { h: 'Arrears', v: r => r.arrears, t: 'money' }, { h: 'Days Overdue', v: r => r.daysOverdue, t: 'num' },
+        { h: 'Class', v: r => r.classLabel }, { h: 'Provision', v: r => r.provision, t: 'money' },
+      ], data.topClientsByOutstanding);
       break;
-    case 'drill-loan':
-      body = `<div class="table-wrap"><table><tr><th>Status</th><th>Loans</th><th>Principal</th></tr>${rowsFor(data.byStatus,['status','loancount','principal'])}</table></div>`;
+    case 'drill-loan': {
+      const st = data.byStatus || [];
+      body = ixTable('Loans by status', [{ h: 'Status', v: r => r.status }, { h: 'Loans', v: r => r.loancount, t: 'num' }, { h: 'Share of Loans', v: r => r.countSharePct, t: 'pct' },
+        { h: 'Principal', v: r => r.principal, t: 'money' }, { h: 'Share of Principal', v: r => r.amountSharePct, t: 'pct' }, { h: 'Average Loan', v: r => r.avgprincipal, t: 'money' }], st) +
+        (st.length ? ixAfter(admChart('ix-loan-status', 'Loans by status', 'bar', st.map(r => r.status), [{ label: 'Loans', data: st.map(r => Number(r.loancount)) }])) : '');
       break;
-    case 'drill-payment':
-      body = `<div class="section-note">Last 30 days, within your scope.</div><div class="table-wrap"><table><tr><th>Channel</th><th>Payments</th><th>Amount</th></tr>${rowsFor(data.last30DaysByChannel,['channel','paymentcount','amount'])}</table></div>`;
+    }
+    case 'drill-payment': {
+      const ch = data.last30DaysByChannel || [];
+      body = `<div class="section-note">Last 30 days, within your scope (posted payments).</div>` + ixTable('Payments by channel', [{ h: 'Channel', v: r => r.channel }, { h: 'Payments', v: r => r.paymentcount, t: 'num' },
+        { h: 'Clients', v: r => r.clients, t: 'num' }, { h: 'Amount', v: r => r.amount, t: 'money' }, { h: 'Share', v: r => r.sharePct, t: 'pct' }, { h: 'Average Payment', v: r => r.avgamount, t: 'money' }, { h: 'Last Payment', v: r => r.lastpayment, t: 'date' }], ch) +
+        (ch.length ? ixAfter(admChart('ix-pay-ch', 'Amount by channel', 'bar', ch.map(r => r.channel), [{ label: 'Amount', data: ch.map(r => Number(r.amount)) }])) : '');
       break;
+    }
     case 'drill-operations':
-      body = kpis([["Branches",data.branchCount],["Officers",data.officerCount],["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)]]);
+      body = kpis([["Branches",data.branchCount],["Officers",data.officerCount],["Loans per Officer",fmtNum(data.loansPerOfficer)],["Portfolio per Officer",fmt(data.portfolioPerOfficer)]]) + ixGroupView(feature, data.branches || [], data.summary, 'branch');
       break;
     case 'drill-profitability':
       body = `<div class="section-note">${data.month}, within your scope.</div>` + kpis([["Revenue",fmt(data.revenue)],["Expenses",fmt(data.expenses)],["Net Profit",fmt(data.netProfit)],["Margin",data.marginPct.toFixed(1)+"%"]]);
       break;
     case 'drill-company':
-      body = kpis([["Total Clients",data.totalClients],["Active Loans",data.activeLoanCount],["Principal Disbursed",fmt(data.principalDisbursed)],["Branches",data.branchCount],["Staff",data.staffCount]]);
+      body = kpis([["Total Clients",fmtNum(data.totalClients)],["Branches",data.branchCount],["Staff",data.staffCount],["Principal Disbursed",fmt(data.principalDisbursed)]]) + ixGroupView(feature, data.branches || [], data.summary, 'branch');
       break;
     case 'drill-product':
-      body = `<div class="table-wrap"><table><tr><th>Product</th><th>Loans</th><th>Principal</th><th>Avg Size</th></tr>${rowsFor(data.products,['name','loancount','principal','avgsize'])}</table></div>`;
+      body = ixGroupView(feature, data.products, data.total, 'product');
       break;
-    case 'drill-organization':
-      body = kpis([["Departments",data.departmentCount],["Branches",data.branchCount],["Employees",data.employeeCount]]) +
-        `<div class="table-wrap"><table><tr><th>Employment Status</th><th>Count</th></tr>${rowsFor(data.byEmploymentStatus,['employment_status','n'])}</table></div>`;
+    case 'drill-organization': {
+      const roles = data.byRole || [];
+      body = kpis([["Departments",data.departmentCount],["Branches",data.branchCount],["Active Employees",data.employeeCount],["Monthly Basic Payroll",fmt(roles.reduce((s, r) => s + Number(r.payroll || 0), 0))]]) +
+        ixTable('Employees by role', [{ h: 'Role', v: r => r.role }, { h: 'Employees', v: r => r.n, t: 'num', total: 1 }, { h: 'Active', v: r => r.active, t: 'num', total: 1 }, { h: 'Monthly Basic Payroll', v: r => r.payroll, t: 'money', total: 1 }, { h: 'Average Basic', v: r => r.n ? r.payroll / r.n : 0, t: 'money' }], roles,
+          { total: { n: roles.reduce((s, r) => s + r.n, 0), active: roles.reduce((s, r) => s + r.active, 0), payroll: roles.reduce((s, r) => s + Number(r.payroll || 0), 0) } }) +
+        ixTable('Employees by employment type', [{ h: 'Employment Type', v: r => r.employment_status }, { h: 'Employees', v: r => r.n, t: 'num' }, { h: 'Active', v: r => r.active, t: 'num' }], data.byEmploymentStatus || []) +
+        (roles.length ? ixAfter(admChart('ix-org-roles', 'Employees by role', 'bar', roles.map(r => r.role), [{ label: 'Employees', data: roles.map(r => r.n) }])) : '');
       break;
-    case 'drill-department':
-      body = `<div class="table-wrap"><table><tr><th>Department</th><th>Employees</th></tr>${rowsFor(data.departments,['name','employeecount'])}</table></div>`;
+    }
+    case 'drill-department': {
+      const ds = data.departments || [];
+      body = ixTable('Departments', [{ h: 'Department', v: r => r.name }, { h: 'Employees', v: r => r.employeecount, t: 'num', total: 1 }, { h: 'Active', v: r => r.active, t: 'num', total: 1 }, { h: 'On Leave', v: r => r.onleave, t: 'num', total: 1 },
+        { h: 'Terminated', v: r => r.terminated, t: 'num', total: 1 }, { h: 'Monthly Basic Payroll', v: r => r.payroll, t: 'money', total: 1 }, { h: 'Average Basic', v: r => r.avgsalary, t: 'money' }], ds,
+        { total: ds.length > 1 ? ['employeecount', 'active', 'onleave', 'terminated', 'payroll'].reduce((o, k) => (o[k] = ds.reduce((s, r) => s + Number(r[k] || 0), 0), o), {}) : null }) +
+        (ds.length ? ixAfter(admChart('ix-dept', 'Headcount by department', 'bar', ds.map(r => r.name), [{ label: 'Active', data: ds.map(r => r.active) }, { label: 'On leave', data: ds.map(r => r.onleave) }])) : '');
       break;
+    }
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 async function loadIntelligencePredictive(featureId){
   return withRequest('intel-predictive-'+featureId, async ()=>{
@@ -4767,7 +4906,7 @@ function renderInvestorIntelligencePredictive(feature){
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 // Generic Predictive Analytics renderer — dispatches by the real
 // server-computed result `kind` (trend/risk/officer-list/branch-list/
@@ -4849,40 +4988,58 @@ function renderIntelligencePredictive(feature){
   const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
   let body;
   switch(data.kind){
-    case 'trend': {
-      const sign = data.changePct>=0 ? '+' : '';
-      body = `<div class="section-note">${data.thisMonth} vs ${data.lastMonth} (${data.windowMonths}-month window)</div>` +
-        kpis([[`${data.label} (current)`,fmt(data.thisPeriod)],[`${data.label} (prior)`,fmt(data.lastPeriod)],["Change",`${sign}${data.changePct.toFixed(1)}%`]]);
+    case 'trend':
+      body = ixTrendView(feature, data, data.label !== 'New Hires');
       break;
-    }
-    case 'risk': {
-      body = `<div class="section-note">As of ${data.asOf} · ${data.formula}</div>` +
-        kpis([["Quality Rating",escapeHtml(data.qualityRating)],["Total Outstanding",fmt(data.totalOutstanding)]]) +
-        `<div class="table-wrap"><table><tr><th>Overdue (days+)</th><th>Amount</th><th>% of Outstanding</th></tr>${
-          data.par.map(p=>`<tr><td>${p.threshold}</td><td>${fmtNum(p.amount)}</td><td>${p.percentage.toFixed(1)}%</td></tr>`).join("")
-        }</table></div>`;
+    case 'risk':
+      body = ixRiskView(feature, data);
       break;
-    }
     case 'officer-list':
-      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Collected This Month</th></tr>${rowsFor(data.officers,['name','thismonthcollected'])}</table></div>`;
+      body = ixGroupView(feature, data.officers, data.total, 'officer');
       break;
     case 'branch-list':
-      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Collected This Month</th></tr>${rowsFor(data.branches,['name','thismonthcollected'])}</table></div>`;
+      body = ixGroupView(feature, data.branches, data.total, 'branch');
       break;
+    case 'attendance': {
+      const ms = data.months || [];
+      const cur = ms[ms.length - 1] || {};
+      body = kpis([["Attendance rate (this month)", ixPct(cur.ratePct)], ["Late (this month)", ixPct(cur.latePct)], ["Absences (this month)", fmtNum(cur.absent)], ["Minutes late (this month)", fmtNum(cur.minuteslate)]]) +
+        ixTable('Attendance by month', [{ h: 'Month', v: r => ixMonth(r.month) }, { h: 'Employees', v: r => r.employees, t: 'num' }, { h: 'Present', v: r => r.present, t: 'num' }, { h: 'Late', v: r => r.late, t: 'num' },
+          { h: 'Absent', v: r => r.absent, t: 'num' }, { h: 'Half Day', v: r => r.halfday, t: 'num' }, { h: 'Remote', v: r => r.remote, t: 'num' }, { h: 'On Leave', v: r => r.onleave, t: 'num' },
+          { h: 'Attendance Rate', v: r => r.ratePct, t: 'pct', html: r => r.ratePct == null ? '—' : ixBadge(ixPct(r.ratePct), ixRateTone(r.ratePct)) }, { h: 'Late %', v: r => r.latePct, t: 'pct' }], ms) +
+        `<div class="ix-note">${escapeHtml(data.formula)}. Recorded on HR › Attendance.</div>` +
+        ixAfter(admChart('ix-att', 'Attendance rate by month', 'line', ms.map(m => ixMonth(m.month)), [{ label: 'Attendance %', data: ms.map(m => m.ratePct || 0), tension: .3 }, { label: 'Late %', data: ms.map(m => m.latePct || 0), tension: .3 }]));
+      break;
+    }
+    case 'turnover': {
+      const ms = data.months || [];
+      body = kpis([["Annual turnover", ixPct(data.annualTurnoverPct)], ["Leavers (12 months)", fmtNum(data.leavers12)], ["Current headcount", fmtNum(data.headcount)], ["Hires (12 months)", fmtNum(ms.reduce((s, m) => s + m.hires, 0))]]) +
+        ixTable('Turnover by month', [{ h: 'Month', v: r => ixMonth(r.month) }, { h: 'Headcount at start', v: r => r.headcountStart, t: 'num' }, { h: 'Hires', v: r => r.hires, t: 'num' }, { h: 'Leavers', v: r => r.leavers, t: 'num' },
+          { h: 'Headcount at end', v: r => r.headcountEnd, t: 'num' }, { h: 'Turnover', v: r => r.turnoverPct, t: 'pct' }], ms) +
+        `<div class="ix-note">${escapeHtml(data.formula)}. Leavers are employees set to Terminated in the month.</div>` +
+        ixAfter(admChart('ix-turn', 'Hires and leavers by month', 'bar', ms.map(m => ixMonth(m.month)), [{ label: 'Hires', data: ms.map(m => m.hires) }, { label: 'Leavers', data: ms.map(m => m.leavers) }]));
+      break;
+    }
     case 'capital':
-      body = kpis([["Total Capital",fmt(data.totalCapital)]]) +
-        `<div class="table-wrap"><table><tr><th>Holder</th><th>Type</th><th>%</th><th>Contributed</th></tr>${rowsFor(data.holders,['holder_name','holder_type','percentage','capital_contributed'])}</table></div>`;
+      body = kpis([["Total Capital",fmt(data.totalCapital)],["Holders",fmtNum((data.holders||[]).length)]]) +
+        ixTable('Capital by holder', [{ h: 'Holder', v: r => r.holder_name }, { h: 'Type', v: r => r.holder_type }, { h: 'Ownership', v: r => r.percentage, t: 'pct', total: 1 }, { h: 'Contributed', v: r => r.capital_contributed, t: 'money', total: 1 },
+          { h: 'Share of Capital', v: r => data.totalCapital ? Number(r.capital_contributed || 0) / data.totalCapital * 100 : 0, t: 'pct' }], data.holders || [],
+          { total: { percentage: (data.holders || []).reduce((s, h) => s + Number(h.percentage || 0), 0), capital_contributed: data.totalCapital } });
       break;
-    case 'point':
-      body = kpis([[data.label,fmt(data.value)]]);
+    case 'point': {
+      const b = data.breakdown || {};
+      const parts = [['Cash', b.cash], ['Bank', b.bank], ['M-Pesa', b.mpesa]].filter(x => x[1] != null);
+      body = kpis([[data.label,fmt(data.value)], ...parts.map(([k, v]) => [k, fmt(v)])]) +
+        (parts.length ? ixTable('Where the cash is', [{ h: 'Account', v: r => r[0] }, { h: 'Balance', v: r => r[1], t: 'money', total: 1 }, { h: 'Share', v: r => data.value ? r[1] / data.value * 100 : 0, t: 'pct' }], parts, { total: { 1: data.value }, totalLabel: 'Total' }) : '');
       break;
+    }
     case 'no-data':
       body = `<div class="empty">${escapeHtml(data.message)}</div>`;
       break;
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 async function loadAdminExplanationRules(){
   return withRequest('intel-admin-explain-rules', async ()=>{ DB.adminExplanationRules = (await api.get('/api/intelligence/explanation-rules')).rules; });
@@ -4937,7 +5094,7 @@ function renderInvestorIntelligenceExplainable(feature){
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 // Generic Explainable Decisions renderer — same "dispatch by real
 // server-computed result kind" pattern as Predictive Analytics.
@@ -4952,53 +5109,72 @@ function renderIntelligenceExplainable(feature){
   const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
   let body;
   switch(data.kind){
-    case 'decisions':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Decision</th><th>Status Change</th><th>Comments</th><th>Date</th></tr>${
-        (data.decisions||[]).map(d=>`<tr><td>${escapeHtml(d.clientname||"—")}</td><td><span class="badge ${d.decision==='Approved'?'green':d.decision==='Declined'?'red':'amber'}">${escapeHtml(d.decision)}</span></td><td>${escapeHtml(d.previous_status)} → ${escapeHtml(d.new_status)}</td><td>${escapeHtml(d.comments||"—")}</td><td>${new Date(d.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No decisions recorded in scope yet.</td></tr>`
-      }</table></div>`;
-      break;
-    case 'risk':
-      body = `<div class="section-note">As of ${data.asOf} · ${data.formula}</div>` +
-        intelKpis([["Quality Rating",escapeHtml(data.qualityRating)],["Total Outstanding",fmt(data.totalOutstanding)]]) +
-        `<div class="table-wrap"><table><tr><th>Overdue (days+)</th><th>Amount</th><th>% of Outstanding</th></tr>${
-          data.par.map(p=>`<tr><td>${p.threshold}</td><td>${fmtNum(p.amount)}</td><td>${p.percentage.toFixed(1)}%</td></tr>`).join("")
-        }</table></div>`;
-      break;
-    case 'priority-list':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Days Overdue</th><th>Outstanding</th></tr>${rowsFor(data.items,['clientname','daysoverdue','outstanding'])}</table></div>`;
-      break;
-    case 'branch-explain':
-      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Active Loans</th><th>Principal</th></tr>${rowsFor(data.branches,['name','activeloans','principal'])}</table></div>`;
-      break;
-    case 'alerts':
-      body = `<div class="table-wrap"><table><tr><th>Severity</th><th>Alert</th></tr>${
-        data.alerts.map(a=>`<tr><td><span class="badge ${a.severity==='None'?'green':a.severity==='Critical'||a.severity==='Default'?'red':'amber'}">${escapeHtml(a.severity)}</span></td><td>${escapeHtml(a.message)}</td></tr>`).join("")
-      }</table></div>`;
-      break;
-    case 'allocations':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Payment Amount</th><th>Bucket</th><th>Applied</th></tr>${
-        (data.allocations||[]).map(a=>`<tr><td>${escapeHtml(a.clientname||"—")}</td><td>${fmtNum(a.amount)}</td><td>${escapeHtml(a.bucket||"—")}</td><td>${a.amount_applied!=null?fmtNum(a.amount_applied):"—"}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No payments in scope yet.</td></tr>`
-      }</table></div>`;
-      break;
-    case 'exceptions':
-      body = `<div class="table-wrap"><table><tr><th>Category</th><th>Description</th><th>Amount</th><th>Status</th></tr>${rowsFor(data.exceptions,['category','description','amount','status'])}</table></div>`;
-      break;
-    case 'adjustments':
-      body = `<div class="table-wrap"><table><tr><th>Reference</th><th>Reason</th><th>Amount</th><th>Status</th></tr>${rowsFor(data.adjustments,['reference','reason','amount','status'])}</table></div>`;
-      break;
-    case 'trend': {
-      const sign = data.changePct>=0 ? '+' : '';
-      body = `<div class="section-note">${data.thisMonth} vs ${data.lastMonth} (${data.windowMonths}-month window)</div>` +
-        intelKpis([[`${data.label} (current)`,fmt(data.thisPeriod)],[`${data.label} (prior)`,fmt(data.lastPeriod)],["Change",`${sign}${data.changePct.toFixed(1)}%`]]);
+    case 'decisions': {
+      const ds = data.decisions || [];
+      const n = k => ds.filter(d => d.decision === k).length;
+      body = intelKpis([["Decisions", fmtNum(ds.length)], ["Approved", fmtNum(n('Approved'))], ["Declined", fmtNum(n('Declined'))], ["Returned / other", fmtNum(ds.length - n('Approved') - n('Declined'))],
+        ["Approval rate", ixPct(ds.length ? n('Approved') / ds.length * 100 : null)]]) +
+        ixTable('Recent decisions', [{ h: 'Client', v: r => r.clientname }, { h: 'Amount', v: r => r.principal, t: 'money' },
+          { h: 'Decision', v: r => r.decision, html: r => ixBadge(r.decision, r.decision === 'Approved' ? 'green' : r.decision === 'Declined' ? 'red' : 'amber') },
+          { h: 'By (role)', v: r => ROLE_ID_TO_DISPLAY[r.role_id] || r.role_id }, { h: 'Status Change', v: r => `${r.previous_status} → ${r.new_status}` }, { h: 'Reason given', v: r => r.comments }, { h: 'Date', v: r => r.created_at, t: 'date' }], ds,
+          { empty: 'No decisions recorded in scope yet.' });
       break;
     }
+    case 'risk':
+      body = ixRiskView(feature, data);
+      break;
+    case 'priority-list': {
+      const it = data.items || [];
+      body = intelKpis([["Loans to follow up", fmtNum(it.length)], ["Arrears to recover", fmt(it.reduce((s, r) => s + r.arrears, 0))], ["Balance involved", fmt(it.reduce((s, r) => s + r.outstanding, 0))], ["Highest score", fmtNum(it.length ? it[0].score : 0)]]) +
+        ixTable('Collection priority', [{ h: 'Score', v: r => r.score, html: r => ixBadge(String(r.score), r.score >= 70 ? 'red' : r.score >= 40 ? 'amber' : 'green') },
+          { h: 'Client', v: r => r.clientname, html: r => `<strong>${escapeHtml(r.clientname || '—')}</strong>${r.phone ? `<div class="pg-sub">${escapeHtml(r.phone)}</div>` : ''}` },
+          { h: 'Officer', v: r => r.officer }, { h: 'Branch', v: r => r.branch }, { h: 'Days Overdue', v: r => r.daysoverdue, t: 'num' }, { h: 'Missed', v: r => r.missed, t: 'num' },
+          { h: 'Arrears', v: r => r.arrears, t: 'money' }, { h: 'Outstanding', v: r => r.outstanding, t: 'money' }, { h: 'Last Payment', v: r => r.lastPayment, t: 'date' }, { h: 'Why', v: r => r.reason }], it,
+          { empty: 'Nothing overdue in your scope.' }) + `<div class="ix-note">${escapeHtml(data.formula || '')}</div>`;
+      break;
+    }
+    case 'branch-explain':
+      body = ixGroupView(feature, data.branches, data.total, 'branch');
+      break;
+    case 'alerts': {
+      const al = data.alerts || [];
+      body = intelKpis([["Alerts", fmtNum(al.filter(a => a.severity !== 'None').length)], ["Critical / Default", fmtNum(al.filter(a => ['Critical', 'Default'].includes(a.severity)).length)], ["Watch / At Risk", fmtNum(al.filter(a => ['Watch', 'At Risk'].includes(a.severity)).length)]]) +
+        ixTable('Alerts', [{ h: 'Severity', v: r => r.severity, html: r => ixBadge(r.severity, r.severity === 'None' ? 'green' : ['Critical', 'Default'].includes(r.severity) ? 'red' : 'amber') }, { h: 'Alert', v: r => r.message }], al);
+      break;
+    }
+    case 'allocations': {
+      const al = data.allocations || [];
+      const by = k => al.filter(a => a.bucket === k).reduce((s, a) => s + Number(a.amount_applied || 0), 0);
+      body = intelKpis([["Applied to arrears", fmt(by('arrears'))], ["Applied to current", fmt(by('current'))], ["Paid ahead (future)", fmt(by('future'))]]) +
+        ixTable('How recent payments were applied', [{ h: 'Client', v: r => r.clientname }, { h: 'Payment', v: r => r.amount, t: 'money' }, { h: 'Date', v: r => r.created_at, t: 'date' },
+          { h: 'Applied to', v: r => r.bucket, html: r => r.bucket ? ixBadge(r.bucket === 'arrears' ? 'Arrears' : r.bucket === 'current' ? 'Current installment' : 'Future installment', r.bucket === 'arrears' ? 'amber' : r.bucket === 'current' ? 'green' : 'blue') : '—' },
+          { h: 'Amount Applied', v: r => r.amount_applied, t: 'money' }], al, { empty: 'No payments in scope yet.' });
+      break;
+    }
+    case 'exceptions': {
+      const ex = data.exceptions || [];
+      body = intelKpis([["Exceptions", fmtNum(ex.length)], ["Rejected", fmtNum(ex.filter(e => e.status === 'Rejected').length)], ["Pending over 7 days", fmtNum(ex.filter(e => e.status === 'Pending').length)], ["Amount", fmt(ex.reduce((s, e) => s + Number(e.amount || 0), 0))]]) +
+        ixTable('Financial exceptions', [{ h: 'Category', v: r => r.category }, { h: 'Description', v: r => r.description }, { h: 'Amount', v: r => r.amount, t: 'money' },
+          { h: 'Status', v: r => r.status, html: r => ixBadge(r.status, r.status === 'Rejected' ? 'red' : 'amber') }, { h: 'Raised', v: r => r.created_at, t: 'date' },
+          { h: 'Age (days)', v: r => r.created_at ? Math.floor((Date.now() - new Date(r.created_at)) / 86400000) : null, t: 'num' }], ex);
+      break;
+    }
+    case 'adjustments': {
+      const ad = data.adjustments || [];
+      body = intelKpis([["Adjustments", fmtNum(ad.length)], ["Total amount", fmt(ad.reduce((s, a) => s + Number(a.amount || 0), 0))]]) +
+        ixTable('Accounting adjustments', [{ h: 'Reference', v: r => r.reference }, { h: 'Reason', v: r => r.reason }, { h: 'Amount', v: r => r.amount, t: 'money' }, { h: 'Status', v: r => r.status }, { h: 'Date', v: r => r.created_at, t: 'date' }], ad);
+      break;
+    }
+    case 'trend':
+      body = ixTrendView(feature, data);
+      break;
     case 'officer-list':
-      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Collected This Month</th></tr>${rowsFor(data.officers,['name','thismonthcollected'])}</table></div>`;
+      body = ixGroupView(feature, data.officers, data.total, 'officer');
       break;
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 // ---- Personalizable Workspaces -----------------------------------------
 function currentWorkspaceCatalog(){
@@ -5235,39 +5411,75 @@ function renderIntelligenceFraud(feature){
   const rowsFor = (arr, cols) => (arr||[]).map(row=>`<tr>${cols.map(c=>`<td>${typeof row[c]==='number'?fmtNum(row[c]):escapeHtml(String(row[c]??'—'))}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="empty">No data in scope.</td></tr>`;
   let body;
   switch(data.kind){
-    case 'duplicate-list':
-      body = (data.groups||[]).length
-        ? data.groups.map(g=>`<div class="card" style="margin-bottom:10px;"><div class="card-title" style="font-size:13px;">National ID: ${escapeHtml(g.nationalId)}</div>
-          <div class="table-wrap"><table><tr><th>Client</th><th>Branch</th></tr>${g.clients.map(c=>`<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(branchName(c.branchId)||'—')}</td></tr>`).join("")}</table></div></div>`).join("")
-        : `<div class="empty">No duplicate client identities found in your scope.</div>`;
+    case 'duplicate-list': {
+      const gs = data.groups || [];
+      const flat = gs.flatMap(g => g.clients.map(c => ({ ...c, nationalId: g.nationalId, groupSize: g.clients.length })));
+      body = intelKpis([["Shared ID numbers", fmtNum(gs.length)], ["Clients involved", fmtNum(flat.length)], ["Branches involved", fmtNum(new Set(flat.map(c => c.branchId)).size)], ["With loans", fmtNum(flat.filter(c => c.loans > 0).length)]]) +
+        ixTable('Clients sharing a national ID', [{ h: 'National ID', v: r => r.nationalId }, { h: 'Client', v: r => r.name, html: r => `<strong>${escapeHtml(r.name || '—')}</strong>` }, { h: 'Phone', v: r => r.phone },
+          { h: 'Branch', v: r => branchName(r.branchId) }, { h: 'Officer', v: r => r.officer }, { h: 'Status', v: r => r.status }, { h: 'Loans', v: r => r.loans, t: 'num' },
+          { h: 'Registered', v: r => r.createdAt, t: 'date' }, { h: 'Records with this ID', v: r => r.groupSize, t: 'num' }], flat, { empty: 'No duplicate client identities found in your scope.' });
       break;
-    case 'reversal-list':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Officer</th><th>Amount</th><th>Date</th></tr>${rowsFor(data.items,['clientname','officername','amount','created_at'])}</table></div>`;
+    }
+    case 'reversal-list': {
+      const it = data.items || [];
+      body = intelKpis([["Reversed payments", fmtNum(it.length)], ["Amount reversed", fmt(it.reduce((s, r) => s + Number(r.amount || 0), 0))], ["Officers involved", fmtNum(new Set(it.map(r => r.officername)).size)]]) +
+        ixTable('Reversed payments', [{ h: 'Client', v: r => r.clientname }, { h: 'Officer', v: r => r.officername }, { h: 'Branch', v: r => r.branchname }, { h: 'Channel', v: r => r.channel },
+          { h: 'Reference', v: r => r.reference }, { h: 'Amount', v: r => r.amount, t: 'money' }, { h: 'Recorded by', v: r => r.recordedby }, { h: 'Date', v: r => r.created_at, t: 'date' }], it, { empty: 'No reversed payments in your scope.' });
       break;
-    case 'writeoff-list':
-      body = `<div class="section-note">Loans written off within ${data.dayWindow} day(s) of disbursement.</div>
-        <div class="table-wrap"><table><tr><th>Client</th><th>Officer</th><th>Principal</th><th>Days to Write-Off</th></tr>${rowsFor(data.items,['clientname','officername','principal','daystowriteoff'])}</table></div>`;
+    }
+    case 'writeoff-list': {
+      const it = data.items || [];
+      body = `<div class="section-note">Loans written off within ${data.dayWindow} day(s) of disbursement.</div>` +
+        intelKpis([["Rapid write-offs", fmtNum(it.length)], ["Principal written off", fmt(it.reduce((s, r) => s + Number(r.principal || 0), 0))], ["Repaid before write-off", fmt(it.reduce((s, r) => s + Number(r.repaid || 0), 0))]]) +
+        ixTable('Rapid write-offs', [{ h: 'Client', v: r => r.clientname }, { h: 'Officer', v: r => r.officername }, { h: 'Branch', v: r => r.branchname }, { h: 'Principal', v: r => r.principal, t: 'money' },
+          { h: 'Repaid', v: r => r.repaid, t: 'money' }, { h: 'Recovery', v: r => r.principal ? Number(r.repaid) / Number(r.principal) * 100 : 0, t: 'pct' }, { h: 'Disbursed', v: r => r.disbursed_at, t: 'date' },
+          { h: 'Written Off', v: r => r.written_off_at, t: 'date' }, { h: 'Days to Write-Off', v: r => r.daystowriteoff, t: 'num' }], it, { empty: 'No rapid write-offs in your scope.' });
       break;
-    case 'overpayment-list':
-      body = `<div class="table-wrap"><table><tr><th>Client</th><th>Overpayment Count</th><th>Total Amount</th></tr>${rowsFor(data.items,['clientname','overpaymentcount','totalamount'])}</table></div>`;
+    }
+    case 'overpayment-list': {
+      const it = data.items || [];
+      body = intelKpis([["Clients", fmtNum(it.length)], ["Overpayments", fmtNum(it.reduce((s, r) => s + Number(r.overpaymentcount || 0), 0))], ["Amount", fmt(it.reduce((s, r) => s + Number(r.totalamount || 0), 0))]]) +
+        ixTable('Repeated overpayments', [{ h: 'Client', v: r => r.clientname }, { h: 'Phone', v: r => r.phone }, { h: 'Officer', v: r => r.officername }, { h: 'Branch', v: r => r.branchname },
+          { h: 'Overpayments', v: r => r.overpaymentcount, t: 'num' }, { h: 'Total Amount', v: r => r.totalamount, t: 'money' }, { h: 'Average', v: r => r.avgamount, t: 'money' }, { h: 'Last', v: r => r.lastat, t: 'date' }], it, { empty: 'No overpayment pattern in your scope.' });
       break;
-    case 'officer-anomaly-list':
-      body = `<div class="table-wrap"><table><tr><th>Officer</th><th>Total Decisions</th><th>Approved</th><th>Same-Day Approvals</th></tr>${rowsFor(data.items,['name','totaldecisions','approvedcount','samedayapprovals'])}</table></div>`;
+    }
+    case 'officer-anomaly-list': {
+      const it = data.items || [];
+      body = ixTable('Approval patterns', [{ h: 'Approver', v: r => r.name }, { h: 'Role', v: r => r.rolename }, { h: 'Branch', v: r => r.branchname }, { h: 'Decisions', v: r => r.totaldecisions, t: 'num' },
+          { h: 'Approved', v: r => r.approvedcount, t: 'num' }, { h: 'Approval Rate', v: r => r.approvalratepct, t: 'pct', html: r => ixBadge(ixPct(r.approvalratepct), r.approvalratepct >= 95 ? 'red' : r.approvalratepct >= 85 ? 'amber' : 'green') },
+          { h: 'Same-Day', v: r => r.samedayapprovals, t: 'num' }, { h: 'Same-Day %', v: r => r.samedaypct, t: 'pct', html: r => ixBadge(ixPct(r.samedaypct), r.samedaypct >= 50 ? 'red' : r.samedaypct >= 25 ? 'amber' : 'green') },
+          { h: 'Principal Approved', v: r => r.approvedprincipal, t: 'money' }], it, { empty: 'No approver with 3 or more decisions in your scope.' }) +
+        `<div class="ix-note">Flag: an approval rate of 95%+ or half or more of decisions made the same day the application was created.</div>`;
       break;
-    case 'overview':
-      body = `<div class="kpi-tile-grid">${(data.signals||[]).map(s=>`<div class="kpi"><div class="kpi-value" style="font-size:20px;">${s.count}</div><div class="kpi-label" style="margin-top:2px;">${escapeHtml(s.label)}</div></div>`).join("")}</div>`;
+    }
+    case 'overview': {
+      const sg = data.signals || [];
+      body = intelKpis(sg.map(x => [x.label, fmtNum(x.count)])) +
+        ixTable('Fraud & risk signals', [{ h: 'Signal', v: r => r.label }, { h: 'Count', v: r => r.count, t: 'num' }, { h: 'Amount', v: r => r.amount, t: 'money' }, { h: 'Last 30 days', v: r => r.last30, t: 'num' }, { h: 'Note', v: r => r.note }], sg) +
+        ixAfter(admChart('ix-fraud-ov', 'Signals', 'bar', sg.map(x => x.label), [{ label: 'Count', data: sg.map(x => x.count) }]));
       break;
-    case 'branch-risk-list':
-      body = `<div class="table-wrap"><table><tr><th>Branch</th><th>Reversals</th><th>Rapid Write-Offs</th></tr>${rowsFor(data.branches,['name','reversalcount','writeoffcount'])}</table></div>`;
+    }
+    case 'branch-risk-list': {
+      const bs = data.branches || [];
+      body = ixTable('Branch risk ranking', [{ h: 'Rank', v: r => bs.indexOf(r) + 1, t: 'num' }, { h: 'Branch', v: r => r.name, html: r => `<strong>${escapeHtml(r.name)}</strong>` },
+          { h: 'Risk Score', v: r => r.riskscore, html: r => ixBadge(String(r.riskscore), r.riskscore >= 10 ? 'red' : r.riskscore >= 3 ? 'amber' : 'green') },
+          { h: 'Reversals', v: r => r.reversalcount, t: 'num' }, { h: 'Rapid Write-Offs', v: r => r.writeoffcount, t: 'num' }, { h: 'Shared-ID Clients', v: r => r.duplicatecount, t: 'num' },
+          { h: 'PAR 30', v: r => r.par30pct, t: 'pct' }, { h: 'Outstanding', v: r => r.outstanding, t: 'money' }], bs) + `<div class="ix-note">${escapeHtml(data.formula || '')}</div>` +
+        (bs.length ? ixAfter(admChart('ix-br-risk', 'Risk score by branch', 'bar', bs.slice(0, 15).map(b => b.name), [{ label: 'Risk score', data: bs.slice(0, 15).map(b => b.riskscore) }])) : '');
       break;
-    case 'advance-pattern-list':
-      body = `<div class="section-note">${data.countThreshold}+ salary advance requests within the last ${data.windowDays} days.</div>
-        <div class="table-wrap"><table><tr><th>Staff</th><th>Request Count</th><th>Total Amount</th></tr>${rowsFor(data.items,['name','requestcount','totalamount'])}</table></div>`;
+    }
+    case 'advance-pattern-list': {
+      const it = data.items || [];
+      body = `<div class="section-note">${data.countThreshold}+ salary advance requests within the last ${data.windowDays} days.</div>` +
+        ixTable('Frequent salary advance requests', [{ h: 'Staff', v: r => r.name }, { h: 'Role', v: r => r.rolename }, { h: 'Branch', v: r => r.branchname }, { h: 'Requests', v: r => r.requestcount, t: 'num' },
+          { h: 'Approved', v: r => r.approvedcount, t: 'num' }, { h: 'Total Requested', v: r => r.totalamount, t: 'money' }, { h: 'Basic Salary', v: r => r.salary, t: 'money' },
+          { h: 'Requested vs Salary', v: r => Number(r.salary) ? Number(r.totalamount) / Number(r.salary) * 100 : null, t: 'pct' }, { h: 'Last Request', v: r => r.lastat, t: 'date' }], it, { empty: 'No staff above the threshold.' });
       break;
+    }
     default:
       body = `<div class="empty">No view built for this dimension yet.</div>`;
   }
-  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>`;
+  return `<div class="card"><div class="card-title">${escapeHtml(feature.label)}</div>${body}</div>` + ixFlushAfter();
 }
 
 async function loadAdminWhatIfModels(){
@@ -5442,10 +5654,11 @@ function renderIntelligenceWhatIf(feature){
       <input type="number" name="delta" value="${data.delta}" min="${bounds.deltaMin}" max="${bounds.deltaMax}" step="any" style="width:90px;">
       <button class="btn btn-sm btn-primary" type="submit">Simulate</button>
     </form>
-    <div class="table-wrap" style="margin-top:12px;"><table><tr><th>Metric</th><th>Baseline</th><th>Projected</th></tr>${
-      data.metrics.map(m=>`<tr><td>${escapeHtml(m.label)}</td><td>${fmtWhatIfMetric(m.baseline,m.unit)}</td><td>${fmtWhatIfMetric(m.projected,m.unit)}</td></tr>`).join("")
-    }</table></div>
-  </div>`;
+    ${ixTable('Simulation result', [{ h: 'Metric', v: r => r.label }, { h: 'Baseline (today)', v: r => fmtWhatIfMetric(r.baseline, r.unit) }, { h: 'Projected', v: r => fmtWhatIfMetric(r.projected, r.unit), html: r => `<strong>${fmtWhatIfMetric(r.projected, r.unit)}</strong>` },
+      { h: 'Change', v: r => r.unit === '%' ? `${(r.projected - r.baseline >= 0 ? '+' : '')}${(r.projected - r.baseline).toFixed(1)} pts` : `${r.projected - r.baseline >= 0 ? '+' : '−'}${fmtWhatIfMetric(Math.abs(r.projected - r.baseline), r.unit)}`,
+        html: r => ixBadge(r.unit === '%' ? `${(r.projected - r.baseline >= 0 ? '+' : '')}${(r.projected - r.baseline).toFixed(1)} pts` : `${r.projected - r.baseline >= 0 ? '+' : '−'}${fmtWhatIfMetric(Math.abs(r.projected - r.baseline), r.unit)}`, r.projected >= r.baseline ? 'green' : 'red') },
+      { h: 'Change %', v: r => r.unit === '%' || !r.baseline ? null : (r.projected - r.baseline) / Math.abs(r.baseline) * 100, t: 'pct' }], data.metrics || [])}
+  </div>` + (() => { const ms = (data.metrics || []).filter(m => m.unit !== '%'); return ms.length ? admChart('ix-wi-' + feature.id, 'Baseline vs projected', 'bar', ms.map(m => m.label), [{ label: 'Baseline', data: ms.map(m => m.baseline) }, { label: 'Projected', data: ms.map(m => m.projected) }]) : ''; })();
 }
 
 function renderIntelligence(){
@@ -20633,6 +20846,7 @@ function renderAccounting(){
 // ---- Shared: real, scoped date/branch filter bar used by several report pages ----
 function acctScopeFilterBar(pageKey, extraFields){
   const f = (DB.acctPages[pageKey]||{}).filters || {};
+  if(['tb','pl','bs'].includes(pageKey)) extraFields = `<input type="month" name="month" value="${escapeHtml(f.month || new Date().toISOString().slice(0, 7))}" max="${new Date().toISOString().slice(0, 7)}" title="Month">` + (extraFields || '');
   return `<form onsubmit="return submitAcctFilter(event,'${pageKey}')" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
     ${roleBranches().length>1 ? `<select name="branch_id"><option value="">All branches (within your scope)</option>${roleBranches().map(b=>`<option value="${b.id}" ${f.branch_id===b.id?'selected':''}>${b.name}</option>`).join("")}</select>` : ""}
     ${extraFields||""}
@@ -21293,26 +21507,58 @@ function renderGeneralLedgerPage(){
 }
 
 // ==================== Trial Balance / P&L / Balance Sheet / Cashflow — real, scoped ====================
+
+// ---- Financial statements: comparative periods and ratios ----
+// A statement table: rows {cells:[…], cls:'section'|'total'|'grand'|''}; Generate exports the same rows.
+function stmtTable(title, headers, rows){
+  const gen = generateMenuHtml(title, () => ({ headers, rows: rows.map(r => r.cells.map(c => typeof c === 'number' ? Math.round(c) : (c == null ? '' : String(c).replace(/<[^>]+>/g, '')))) }));
+  return `<div class="ix-block"><div class="ix-block-h"><span>${escapeHtml(title)}</span>${gen}</div><div class="table-wrap"><table class="stmt"><tr>${headers.map((h, i) => `<th${i ? ' class="num"' : ''}>${escapeHtml(h)}</th>`).join('')}</tr>
+    ${rows.map(r => `<tr class="${r.cls || ''}">${r.cells.map((c, i) => `<td${i && r.cls !== 'section' ? ' class="num"' : ''}>${i === 0 || typeof c !== 'number' ? (c == null ? '' : c) : stmtMoney(c)}</td>`).join('')}</tr>`).join('')}</table></div></div>`;
+}
+function stmtMoney(v){ return v < 0 ? `(${fmt(-v)})` : fmt(v); }
+function stmtChange(v){ return v == null ? '—' : ixBadge(`${v >= 0 ? '+' : ''}${v.toFixed(1)}%`, v >= 0 ? 'green' : 'red'); }
+function stmtNote(st){ return `<div class="ix-note">${escapeHtml(bqMonthLabel(st.month))}: ${escapeHtml(st.periods.month.from)} to ${escapeHtml(st.periods.month.to)} · last month ${escapeHtml(st.periods.prev.from)} to ${escapeHtml(st.periods.prev.to)} · year to date from ${escapeHtml(st.periods.ytd.from)}. From posted journal entries${(DB.acctPages.st.filters || {}).branch_id ? ' for ' + escapeHtml(branchName(DB.acctPages.st.filters.branch_id)) : ''}.</div>`; }
+function stmtRatioTable(st, keys){
+  const r = st.ratios || {};
+  const defs = {
+    netMarginPct: ['Net profit margin', ixPct(r.netMarginPct), 'Net profit ÷ revenue × 100 (this month)'],
+    costToIncomePct: ['Cost-to-income', ixPct(r.costToIncomePct), 'Expenses ÷ revenue × 100 (this month)'],
+    operationalSelfSufficiencyPct: ['Operational self-sufficiency', ixPct(r.operationalSelfSufficiencyPct), 'Revenue ÷ expenses × 100 (100%+ means income covers costs)'],
+    revenueGrowthPct: ['Revenue growth', ixPct(r.revenueGrowthPct), 'Change in revenue vs last month'],
+    expenseGrowthPct: ['Expense growth', ixPct(r.expenseGrowthPct), 'Change in expenses vs last month'],
+    portfolioYieldAnnualPct: ['Portfolio yield (annualised)', ixPct(r.portfolioYieldAnnualPct), 'Interest income × 12 ÷ average loans receivable'],
+    returnOnAssetsAnnualPct: ['Return on assets (annualised)', ixPct(r.returnOnAssetsAnnualPct), 'Net profit × 12 ÷ total assets'],
+    liquidityPct: ['Liquidity', ixPct(r.liquidityPct), '(Cash + bank + M-Pesa) ÷ total assets'],
+    loansToAssetsPct: ['Loans to assets', ixPct(r.loansToAssetsPct), 'Loans receivable ÷ total assets'],
+    debtToEquity: ['Debt to equity', r.debtToEquity == null ? '—' : r.debtToEquity.toFixed(2), 'Total liabilities ÷ equity'],
+    provisionRequired: ['Loan-loss provision required', fmt(r.provisionRequired), 'CBK classes on the loan book: Normal 1%, Watch 3%, Substandard 20%, Doubtful 50%, Loss 100%'],
+    badDebtReserve: ['Bad debt reserve (books)', fmt(r.badDebtReserve), 'Balance of the Bad Debt Reserve account'],
+    provisionShortfall: ['Provision shortfall', fmt(r.provisionShortfall), 'Provision required − bad debt reserve'],
+  };
+  return ixTable('Key ratios', [{ h: 'Ratio', v: x => x[0], html: x => `<strong>${escapeHtml(x[0])}</strong>` }, { h: 'Value', v: x => x[1], html: x => x[1] }, { h: 'How it is calculated', v: x => x[2] }], keys.map(k => defs[k]));
+}
 function loadTrialBalance(filters){
   return withRequest('load-tb', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
     const res = await api.get('/api/accounting/trial-balance?'+params.toString());
+    DB.acctPages.st = { ...(await api.get('/api/accounting/statements?'+params.toString()).catch(e => ({ unavailable: (e && e.message) || 'Statements are not available' }))), filters: filters||{} };
     DB.acctPages.tb = { ...res, filters: filters||{} };
   });
 }
 function renderTrialBalancePage(){
   const state = DB.acctPages.tb;
   if(!state){ loadTrialBalance({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const st = DB.acctPages.st;
+  const tb = st && st.trialBalance;
+  if(!tb) return `<div class="card"><div class="card-title">Trial Balance</div>${acctScopeFilterBar('tb')}<div class="empty">${st && st.unavailable ? escapeHtml(st.unavailable) : loadingDotsHtml()}</div></div>`;
+  const rows = tb.rows.map(r => ({ cells: [r.code || '', escapeHtml(r.name), escapeHtml(r.type), r.debit || '', r.credit || '', r.monthDebit || '', r.monthCredit || ''] }));
+  rows.push({ cls: 'grand', cells: ['', '<strong>Total</strong>', '', tb.totals.debit, tb.totals.credit, tb.totals.monthDebit, tb.totals.monthCredit] });
   return `<div class="card">
-    <div class="card-title">Trial Balance</div>
+    <div class="card-title">Trial Balance <small>${escapeHtml(bqMonthLabel(st.month))}</small></div>
     ${acctScopeFilterBar('tb')}
-    <div class="table-wrap"><table><tr><th>Account</th><th>Type</th><th>Balance</th></tr>
-    ${state.rows.map(r=>`<tr><td>${r.name}</td><td>${r.type}</td><td>${fmt(r.balance)}</td></tr>`).join("")}</table></div>
-    <table style="margin-top:12px;">
-      <tr><td>Total Debits</td><td style="text-align:right;">${fmt(state.totalDebits)}</td></tr>
-      <tr><td>Total Credits</td><td style="text-align:right;">${fmt(state.totalCredits)}</td></tr>
-      <tr><td><strong>Status</strong></td><td style="text-align:right;"><strong style="color:${state.balanced?'var(--green)':'var(--red)'};">${state.balanced?'BALANCED (Debits = Credits)':'OUT OF BALANCE'}</strong></td></tr>
-    </table>
+    ${intelKpis([["Total Debits", fmt(tb.totals.debit)], ["Total Credits", fmt(tb.totals.credit)], ["Difference", fmt(Math.abs(tb.totals.debit - tb.totals.credit))], ["Status", tb.balanced ? ixBadge('Balanced', 'green') : ixBadge('Out of balance', 'red')], ["Accounts in use", fmtNum(tb.rows.length)]])}
+    ${stmtTable('Trial balance', ['Code', 'Account', 'Type', 'Debit', 'Credit', `Debits in ${bqMonthLabel(st.month)}`, `Credits in ${bqMonthLabel(st.month)}`], rows.map(r => ({ ...r, cells: [r.cells[0], ...r.cells.slice(1)] })))}
+    <div class="ix-note">Debit and credit columns are each account's net balance to date; the last two columns are the movement posted in the selected month.</div>
   </div>`;
 }
 
@@ -21320,53 +21566,66 @@ function loadProfitLoss(filters){
   return withRequest('load-pl', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
     const res = await api.get('/api/accounting/profit-and-loss?'+params.toString());
+    DB.acctPages.st = { ...(await api.get('/api/accounting/statements?'+params.toString()).catch(e => ({ unavailable: (e && e.message) || 'Statements are not available' }))), filters: filters||{} };
     DB.acctPages.pl = { ...res, filters: filters||{} };
   });
 }
 function renderProfitLossPage(){
   const state = DB.acctPages.pl;
   if(!state){ loadProfitLoss({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const st = DB.acctPages.st;
+  if(!st || !st.income) return `<div class="card"><div class="card-title">Profit &amp; Loss</div>${acctScopeFilterBar('pl')}<div class="empty">${st && st.unavailable ? escapeHtml(st.unavailable) : loadingDotsHtml()}</div></div>`;
+  const L = st.income.lines, T = st.income.totals;
+  const line = l => ({ cells: [escapeHtml(l.name), l.month, l.prev, stmtChange(l.changePct), l.ytd, ixPct(l.sharePct)] });
+  const rows = [{ cls: 'section', cells: ['<strong>Revenue</strong>', '', '', '', '', ''] }, ...L.filter(l => l.type === 'Revenue').map(line),
+    { cls: 'total', cells: ['<strong>Total revenue</strong>', T.month.revenue, T.prev.revenue, stmtChange(st.ratios.revenueGrowthPct), T.ytd.revenue, '100.0%'] },
+    { cls: 'section', cells: ['<strong>Expenses</strong>', '', '', '', '', ''] }, ...L.filter(l => l.type === 'Expense').map(line),
+    { cls: 'total', cells: ['<strong>Total expenses</strong>', T.month.expenses, T.prev.expenses, stmtChange(st.ratios.expenseGrowthPct), T.ytd.expenses, '100.0%'] },
+    { cls: 'grand', cells: ['<strong>Net profit / (loss)</strong>', T.month.net, T.prev.net, stmtChange(T.prev.net ? (T.month.net - T.prev.net) / Math.abs(T.prev.net) * 100 : null), T.ytd.net, ixPct(st.ratios.netMarginPct) + ' margin'] }];
   return `<div class="card">
-    <div class="card-title">Profit &amp; Loss <small>all-time, from real posted journal entries</small></div>
+    <div class="card-title">Profit &amp; Loss <small>${escapeHtml(bqMonthLabel(st.month))}</small></div>
     ${acctScopeFilterBar('pl')}
-    <table>
-      <tr><td>Interest Income</td><td style="text-align:right;">${fmt(state.interestIncome)}</td></tr>
-      <tr><td>Fee Income</td><td style="text-align:right;">${fmt(state.feeIncome)}</td></tr>
-      <tr><td><strong>Total Revenue</strong></td><td style="text-align:right;"><strong>${fmt(state.interestIncome+state.feeIncome)}</strong></td></tr>
-      <tr><td>Operating Expenses</td><td style="text-align:right;">(${fmt(state.expenses)})</td></tr>
-      <tr><td><strong>Net Profit</strong></td><td style="text-align:right;"><strong style="color:${state.netProfit>=0?'var(--green)':'var(--red)'};">${fmt(state.netProfit)}</strong></td></tr>
-    </table>
-  </div>`;
+    ${intelKpis([["Revenue (month)", fmt(T.month.revenue)], ["Expenses (month)", fmt(T.month.expenses)], ["Net profit (month)", stmtMoney(T.month.net)], ["Net profit (year to date)", stmtMoney(T.ytd.net)], ["Net margin", ixPct(st.ratios.netMarginPct)], ["Cost-to-income", ixPct(st.ratios.costToIncomePct)]])}
+    ${stmtTable('Income statement', ['Account', bqMonthLabel(st.month), 'Last month', 'Change', 'Year to date', 'Share'], rows)}
+    ${stmtRatioTable(st, ['netMarginPct', 'costToIncomePct', 'operationalSelfSufficiencyPct', 'revenueGrowthPct', 'expenseGrowthPct', 'portfolioYieldAnnualPct', 'returnOnAssetsAnnualPct'])}
+    ${stmtNote(st)}<div class="ix-note">All-time to date: revenue ${fmt(state.totalRevenue != null ? state.totalRevenue : state.interestIncome + state.feeIncome)}, expenses ${fmt(state.expenses)}, net ${stmtMoney(state.netProfit)}.</div>
+  </div>` + admChart('stmt-pl', 'Revenue, expenses and net profit', 'bar', ['Last month', bqMonthLabel(st.month), 'Year to date'], [
+    { label: 'Revenue', data: [T.prev.revenue, T.month.revenue, T.ytd.revenue] }, { label: 'Expenses', data: [T.prev.expenses, T.month.expenses, T.ytd.expenses] }, { label: 'Net profit', data: [T.prev.net, T.month.net, T.ytd.net] }]);
 }
 
 function loadBalanceSheet(filters){
   return withRequest('load-bs', async ()=>{
     const params = new URLSearchParams(); Object.entries(filters||{}).forEach(([k,v])=>{ if(v) params.set(k,v); });
     const res = await api.get('/api/accounting/balance-sheet?'+params.toString());
+    DB.acctPages.st = { ...(await api.get('/api/accounting/statements?'+params.toString()).catch(e => ({ unavailable: (e && e.message) || 'Statements are not available' }))), filters: filters||{} };
     DB.acctPages.bs = { ...res, filters: filters||{} };
   });
 }
 function renderBalanceSheetPage(){
   const state = DB.acctPages.bs;
   if(!state){ loadBalanceSheet({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const st = DB.acctPages.st;
+  if(!st || !st.balanceSheet) return `<div class="card"><div class="card-title">Balance Sheet</div>${acctScopeFilterBar('bs')}<div class="empty">${st && st.unavailable ? escapeHtml(st.unavailable) : loadingDotsHtml()}</div></div>`;
+  const B = st.balanceSheet, T = B.totals;
+  const ln = l => ({ cells: [escapeHtml(l.name), l.balance, l.prevBalance, l.change] });
+  const rows = [{ cls: 'section', cells: ['<strong>Assets</strong>', '', '', ''] }, ...B.lines.filter(l => l.type === 'Asset').map(ln),
+    { cls: 'total', cells: ['<strong>Total assets</strong>', T.assets, T.prevAssets, T.assets - T.prevAssets] },
+    { cls: 'section', cells: ['<strong>Liabilities</strong>', '', '', ''] }, ...B.lines.filter(l => l.type === 'Liability').map(ln),
+    { cls: 'total', cells: ['<strong>Total liabilities</strong>', T.liabilities, T.prevLiabilities, T.liabilities - T.prevLiabilities] },
+    { cls: 'section', cells: ['<strong>Equity</strong>', '', '', ''] },
+    { cells: ['Retained earnings (profit to date)', T.retainedEarnings, T.prevRetainedEarnings, T.retainedEarnings - T.prevRetainedEarnings] },
+    { cells: ['Capital and other equity', T.equity - T.retainedEarnings, T.prevEquity - T.prevRetainedEarnings, (T.equity - T.retainedEarnings) - (T.prevEquity - T.prevRetainedEarnings)] },
+    { cls: 'total', cells: ['<strong>Total equity</strong>', T.equity, T.prevEquity, T.equity - T.prevEquity] },
+    { cls: 'grand', cells: ['<strong>Total liabilities + equity</strong>', T.liabilities + T.equity, T.prevLiabilities + T.prevEquity, (T.liabilities + T.equity) - (T.prevLiabilities + T.prevEquity)] }];
+  const assets = B.lines.filter(l => l.type === 'Asset' && l.balance);
   return `<div class="card">
-    <div class="card-title">Balance Sheet</div>
+    <div class="card-title">Balance Sheet <small>as at ${escapeHtml(B.asOf)}</small></div>
     ${acctScopeFilterBar('bs')}
-    <div class="two-col">
-      <div>
-        <div class="card-title" style="font-size:14px;">Assets</div>
-        <table>${state.assets.map(a=>`<tr><td>${a.account}</td><td style="text-align:right;">${fmt(a.balance)}</td></tr>`).join("")}
-        <tr><td><strong>Total Assets</strong></td><td style="text-align:right;"><strong>${fmt(state.totalAssets)}</strong></td></tr></table>
-      </div>
-      <div>
-        <div class="card-title" style="font-size:14px;">Liabilities &amp; Equity</div>
-        <table>${state.liabilities.map(l=>`<tr><td>${l.account}</td><td style="text-align:right;">${fmt(l.balance)}</td></tr>`).join("")}
-        <tr><td>Equity</td><td style="text-align:right;">${fmt(state.equity)}</td></tr>
-        <tr><td><strong>Total Liabilities + Equity</strong></td><td style="text-align:right;"><strong>${fmt(state.totalLiabilities+state.equity)}</strong></td></tr></table>
-      </div>
-    </div>
-    <div class="hint" style="margin-top:10px;">Assets = Liabilities + Equity: ${Math.abs(state.totalAssets-(state.totalLiabilities+state.equity))<0.01 ? '<span style="color:var(--green);">balances correctly</span>' : '<span style="color:var(--red);">DOES NOT BALANCE</span>'}</div>
-  </div>`;
+    ${intelKpis([["Total assets", fmt(T.assets)], ["Total liabilities", fmt(T.liabilities)], ["Equity", stmtMoney(T.equity)], ["Liquidity", ixPct(st.ratios.liquidityPct)], ["Loans to assets", ixPct(st.ratios.loansToAssetsPct)], ["Provision shortfall", fmt(st.ratios.provisionShortfall)]])}
+    ${stmtTable('Statement of financial position', ['Account', `As at ${B.asOf}`, `As at ${B.prevAsOf}`, 'Change'], rows)}
+    <div class="ix-note">Assets = Liabilities + Equity: ${Math.abs(T.assets - (T.liabilities + T.equity)) < 0.01 ? '<span style="color:var(--green);">balances</span>' : '<span style="color:var(--red);">does not balance</span>'}. Equity is assets less liabilities; retained earnings are revenue less expenses posted to date.</div>
+    ${stmtRatioTable(st, ['liquidityPct', 'loansToAssetsPct', 'debtToEquity', 'returnOnAssetsAnnualPct', 'provisionRequired', 'badDebtReserve', 'provisionShortfall'])}
+  </div>` + (assets.length ? admChart('stmt-bs', 'Assets', 'bar', assets.map(a => a.name), [{ label: `As at ${B.asOf}`, data: assets.map(a => a.balance) }, { label: `As at ${B.prevAsOf}`, data: assets.map(a => a.prevBalance) }]) : '');
 }
 
 // ==================== Expected Cashflow (Loan Officer) — real, month/week/day-scoped ====================
@@ -21513,14 +21772,17 @@ function renderCashflowPage(){
   return `<div class="card">
     <div class="card-title">Cashflow <small>${state.from} → ${state.to}</small></div>
     ${acctScopeFilterBar('cf', `<input type="date" name="date_from" value="${state.filters.date_from||''}" placeholder="From"><input type="date" name="date_to" value="${state.filters.date_to||''}" placeholder="To">`)}
-    <table>
-      <tr><td>Opening Balance</td><td style="text-align:right;">${fmt(state.opening)}</td></tr>
-      <tr><td>Cash Inflows</td><td style="text-align:right; color:var(--green);">+${fmt(state.inflows)}</td></tr>
-      <tr><td>Cash Outflows</td><td style="text-align:right; color:var(--red);">−${fmt(state.outflows)}</td></tr>
-      <tr><td><strong>Net Movement</strong></td><td style="text-align:right;"><strong>${fmt(state.net)}</strong></td></tr>
-      <tr><td><strong>Closing Balance</strong></td><td style="text-align:right;"><strong>${fmt(state.closing)}</strong></td></tr>
-    </table>
-  </div>`;
+    ${intelKpis([["Opening balance", fmt(state.opening)], ["Inflows", fmt(state.inflows)], ["Outflows", fmt(state.outflows)], ["Net movement", stmtMoney(state.net)], ["Closing balance", fmt(state.closing)],
+      ["Days of cash cover", state.daysOfCashCover == null ? '—' : fmtNum(state.daysOfCashCover)]])}
+    ${stmtTable('Cashflow statement', ['Line', 'Amount'], [{ cells: ['Opening balance', state.opening] }, { cells: ['Cash inflows', state.inflows] }, { cells: ['Cash outflows', -state.outflows] },
+      { cls: 'total', cells: ['<strong>Net movement</strong>', state.net] }, { cls: 'grand', cells: ['<strong>Closing balance</strong>', state.closing] }])}
+    ${ixTable('By account', [{ h: 'Account', v: r => ({ cash: 'Cash at hand', bank: 'Bank', mpesa: 'M-Pesa' })[r.account] || r.account }, { h: 'Opening', v: r => r.opening, t: 'money', total: 1 }, { h: 'Inflows', v: r => r.inflows, t: 'money', total: 1 },
+      { h: 'Outflows', v: r => r.outflows, t: 'money', total: 1 }, { h: 'Net', v: r => r.net, t: 'money', total: 1 }, { h: 'Closing', v: r => r.closing, t: 'money', total: 1 }, { h: 'Share of cash', v: r => state.closing ? r.closing / state.closing * 100 : null, t: 'pct' }],
+      state.byAccount || [], { total: { opening: state.opening, inflows: state.inflows, outflows: state.outflows, net: state.net, closing: state.closing } })}
+    ${ixTable('By source', [{ h: 'Source', v: r => r.label }, { h: 'Entries', v: r => r.entries, t: 'num' }, { h: 'Inflows', v: r => r.inflows, t: 'money' }, { h: 'Outflows', v: r => r.outflows, t: 'money' }, { h: 'Net', v: r => r.net, t: 'money' },
+      { h: 'Share of movement', v: r => (state.inflows + state.outflows) ? (r.inflows + r.outflows) / (state.inflows + state.outflows) * 100 : null, t: 'pct' }], state.bySource || [], { empty: 'No cash movement in this period.' })}
+    <div class="ix-note">Days of cash cover = closing balance ÷ average daily outflow (${fmt(state.avgDailyOutflow || 0)} a day in this period).</div>
+  </div>` + ((state.byDay || []).length ? admChart('cf-days', 'Daily cash movement', 'bar', state.byDay.map(d => d.day.slice(5)), [{ label: 'Inflows', data: state.byDay.map(d => d.inflows) }, { label: 'Outflows', data: state.byDay.map(d => d.outflows) }]) : '');
 }
 
 // ==================== Petty Cashbook — the real branch till. Every row is

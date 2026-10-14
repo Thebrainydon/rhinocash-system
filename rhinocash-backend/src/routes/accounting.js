@@ -823,21 +823,98 @@ function register(router) {
     res.json({ rows, totalDebits: sums.d, totalCredits: sums.c, balanced: Math.abs(sums.d - sums.c) < 0.01 });
   });
 
+  // Every Revenue and every Expense account counts — expenses paid through
+  // requisitions and vendor payments post to their own expense accounts
+  // (rent, salaries, SMS…), not only to Operating Expenses.
   router.get('/api/accounting/profit-and-loss', requireAuth, requireModule('accounting'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
-    const interestIncome = await ledgerBalance('interest_income', scope);
-    const feeIncome = await ledgerBalance('fee_income', scope);
-    const expenses = await ledgerBalance('operating_expense', scope);
-    res.json({ interestIncome, feeIncome, expenses, netProfit: interestIncome + feeIncome - expenses });
+    const accounts = await all(`SELECT id, name, account_type FROM gl_accounts WHERE account_type IN ('Revenue','Income','Expense') ORDER BY code`);
+    const lines = [];
+    for (const a of accounts) lines.push({ account: a.id, name: a.name, type: a.account_type === 'Expense' ? 'Expense' : 'Revenue', balance: await ledgerBalance(a.id, scope) });
+    const val = id => (lines.find(l => l.account === id) || { balance: 0 }).balance;
+    const totalRevenue = lines.filter(l => l.type === 'Revenue').reduce((s, l) => s + l.balance, 0);
+    const expenses = lines.filter(l => l.type === 'Expense').reduce((s, l) => s + l.balance, 0);
+    res.json({ interestIncome: val('interest_income'), feeIncome: val('fee_income'), penaltyIncome: val('penalty_income'), totalRevenue, expenses, netProfit: totalRevenue - expenses,
+      lines: lines.filter(l => l.balance !== 0 || ['interest_income', 'fee_income', 'penalty_income', 'operating_expense'].includes(l.account)) });
   });
 
   router.get('/api/accounting/balance-sheet', requireAuth, requireModule('accounting'), async (req, res) => {
     const scope = await resolveScopeForRequest(req);
-    const assets = await Promise.all(['cash', 'bank', 'mpesa', 'loans_receivable'].map(async a => ({ account: a, balance: await ledgerBalance(a, scope) })));
+    const byType = async t => { const out = []; for (const a of await all('SELECT id, name FROM gl_accounts WHERE account_type = ? ORDER BY code', [t])) out.push({ account: a.id, name: a.name, balance: await ledgerBalance(a.id, scope) }); return out; };
+    const assets = await byType('Asset');
     const totalAssets = assets.reduce((s, a) => s + a.balance, 0);
-    const liabilities = [{ account: 'overpayment_suspense', balance: await ledgerBalance('overpayment_suspense', scope) }];
+    const liabilities = await byType('Liability');
     const totalLiabilities = liabilities.reduce((s, a) => s + a.balance, 0);
     res.json({ assets, totalAssets, liabilities, totalLiabilities, equity: totalAssets - totalLiabilities });
+  });
+
+  // Comparative statements for a month: income statement (this month, last
+  // month, year to date), balance sheet at month end vs the previous month
+  // end, trial balance with debit/credit columns, and the standard ratios.
+  router.get('/api/accounting/statements', requireAuth, requireModule('accounting'), async (req, res, next) => {
+    // Financial statements are for finance and management roles, not field staff.
+    if (['loan_officer', 'manager'].includes(req.user.role_id)) return next({ status: 403, message: 'Financial statements are not part of your role' });
+    const scope = await resolveScopeForRequest(req);
+    const m = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? req.query.month : new Date().toISOString().slice(0, 7);
+    const [y, mo] = m.split('-').map(Number);
+    const iso = d => d.toISOString().slice(0, 10);
+    const monthEnd = iso(new Date(Date.UTC(y, mo, 0)));
+    const prevStart = iso(new Date(Date.UTC(y, mo - 2, 1))), prevEnd = iso(new Date(Date.UTC(y, mo - 1, 0)));
+    const periods = { month: { from: `${m}-01`, to: monthEnd }, prev: { from: prevStart, to: prevEnd }, ytd: { from: `${y}-01-01`, to: monthEnd } };
+    const sc = scope === null ? { c: '', p: [] } : scope.length ? { c: ` AND branch_id IN (${scope.map(() => '?').join(',')})`, p: [...scope] } : { c: ' AND 1=0', p: [] };
+    const sums = async (where, params) => new Map((await all(`SELECT account_id, COALESCE(SUM(debit),0) AS d, COALESCE(SUM(credit),0) AS c FROM journal_entries WHERE ${where}${sc.c} GROUP BY account_id`, [...params, ...sc.p])).map(r => [r.account_id, { d: Number(r.d), c: Number(r.c) }]));
+    const between = (f, t) => sums('(entry_date)::date BETWEEN (?)::date AND (?)::date', [f, t]);
+    const upto = t => sums('(entry_date)::date <= (?)::date', [t]);
+    const [mv, pv, yv, bal, pbal, all_] = await Promise.all([between(periods.month.from, periods.month.to), between(periods.prev.from, periods.prev.to), between(periods.ytd.from, periods.ytd.to), upto(monthEnd), upto(prevEnd), sums('1=1', [])]);
+    const accounts = await all('SELECT id, code, name, account_type FROM gl_accounts ORDER BY code');
+    const debitNormal = t => ['Asset', 'Expense'].includes(t);
+    const signed = (map, a) => { const x = map.get(a.id) || { d: 0, c: 0 }; return debitNormal(a.account_type) ? x.d - x.c : x.c - x.d; };
+    const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
+    const change = (a, b) => (a ? Math.round(((b - a) / Math.abs(a)) * 1000) / 10 : null);
+    // Income statement
+    const isRev = t => ['Revenue', 'Income'].includes(t);
+    const plLines = accounts.filter(a => isRev(a.account_type) || a.account_type === 'Expense').map(a => ({ account: a.id, code: a.code, name: a.name, type: isRev(a.account_type) ? 'Revenue' : 'Expense',
+      month: signed(mv, a), prev: signed(pv, a), ytd: signed(yv, a) })).filter(l => l.month || l.prev || l.ytd || ['interest_income', 'fee_income', 'penalty_income'].includes(l.account));
+    const tot = (type, k) => plLines.filter(l => l.type === type).reduce((s, l) => s + l[k], 0);
+    const totals = {}; for (const k of ['month', 'prev', 'ytd']) totals[k] = { revenue: tot('Revenue', k), expenses: tot('Expense', k), net: tot('Revenue', k) - tot('Expense', k) };
+    plLines.forEach(l => { l.changePct = change(l.prev, l.month); l.sharePct = pct(l.month, l.type === 'Revenue' ? totals.month.revenue : totals.month.expenses); });
+    // Balance sheet
+    const bsLines = accounts.filter(a => ['Asset', 'Liability', 'Equity'].includes(a.account_type)).map(a => ({ account: a.id, code: a.code, name: a.name, type: a.account_type, balance: signed(bal, a), prevBalance: signed(pbal, a) }))
+      .map(l => ({ ...l, change: l.balance - l.prevBalance }));
+    const sumT = (t, k) => bsLines.filter(l => l.type === t).reduce((s, l) => s + l[k], 0);
+    // Retained earnings to date close the balance sheet (no separate equity postings).
+    const reNow = accounts.reduce((s, a) => s + (isRev(a.account_type) ? signed(bal, a) : a.account_type === 'Expense' ? -signed(bal, a) : 0), 0);
+    const rePrev = accounts.reduce((s, a) => s + (isRev(a.account_type) ? signed(pbal, a) : a.account_type === 'Expense' ? -signed(pbal, a) : 0), 0);
+    const bsTotals = { assets: sumT('Asset', 'balance'), liabilities: sumT('Liability', 'balance'), equity: sumT('Asset', 'balance') - sumT('Liability', 'balance'),
+      prevAssets: sumT('Asset', 'prevBalance'), prevLiabilities: sumT('Liability', 'prevBalance'), prevEquity: sumT('Asset', 'prevBalance') - sumT('Liability', 'prevBalance'), retainedEarnings: reNow, prevRetainedEarnings: rePrev };
+    const get1 = id => (bsLines.find(l => l.account === id) || { balance: 0, prevBalance: 0 });
+    const cashNow = ['cash', 'bank', 'mpesa'].reduce((s, id) => s + get1(id).balance, 0);
+    const loansNow = get1('loans_receivable').balance, loansPrev = get1('loans_receivable').prevBalance;
+    const avgLoans = (loansNow + loansPrev) / 2;
+    const interest = (plLines.find(l => l.account === 'interest_income') || { month: 0 }).month;
+    const { agingProvision } = require('./../portfolioMetrics');
+    const aging = await agingProvision(scope, null, 0);
+    const reserve = get1('bad_debt_reserve').balance;
+    const ratios = {
+      netMarginPct: pct(totals.month.net, totals.month.revenue),
+      costToIncomePct: pct(totals.month.expenses, totals.month.revenue),
+      revenueGrowthPct: change(totals.prev.revenue, totals.month.revenue),
+      expenseGrowthPct: change(totals.prev.expenses, totals.month.expenses),
+      operationalSelfSufficiencyPct: pct(totals.month.revenue, totals.month.expenses),
+      portfolioYieldAnnualPct: avgLoans > 0 ? Math.round(interest * 12 / avgLoans * 1000) / 10 : null,
+      returnOnAssetsAnnualPct: bsTotals.assets ? Math.round(totals.month.net * 12 / bsTotals.assets * 1000) / 10 : null,
+      liquidityPct: pct(cashNow, bsTotals.assets),
+      loansToAssetsPct: pct(loansNow, bsTotals.assets),
+      debtToEquity: bsTotals.equity ? Math.round(bsTotals.liabilities / bsTotals.equity * 100) / 100 : null,
+      provisionRequired: aging.totalProvision, badDebtReserve: reserve, provisionShortfall: Math.max(0, Math.round(aging.totalProvision - reserve)),
+    };
+    // Trial balance (all time) with this month's movement
+    const tb = accounts.map(a => { const x = all_.get(a.id) || { d: 0, c: 0 }; const mm = mv.get(a.id) || { d: 0, c: 0 }; const net = x.d - x.c;
+      return { account: a.id, code: a.code, name: a.name, type: a.account_type, debit: net > 0 ? net : 0, credit: net < 0 ? -net : 0, monthDebit: mm.d, monthCredit: mm.c }; })
+      .filter(r => r.debit || r.credit || r.monthDebit || r.monthCredit);
+    const tbTotals = { debit: tb.reduce((s, r) => s + r.debit, 0), credit: tb.reduce((s, r) => s + r.credit, 0), monthDebit: tb.reduce((s, r) => s + r.monthDebit, 0), monthCredit: tb.reduce((s, r) => s + r.monthCredit, 0) };
+    res.json({ month: m, periods, income: { lines: plLines, totals }, balanceSheet: { asOf: monthEnd, prevAsOf: prevEnd, lines: bsLines, totals: bsTotals }, ratios,
+      trialBalance: { rows: tb, totals: tbTotals, balanced: Math.abs(tbTotals.debit - tbTotals.credit) < 0.01 } });
   });
 
   // ==================== Cashflow — opening/closing balance + inflows/outflows over a real date range ====================
@@ -861,7 +938,23 @@ function register(router) {
       [...cashAccounts, from, to, ...scopeParams]
     );
     const inflows = periodRow.d, outflows = periodRow.c, net = inflows - outflows;
-    res.json({ from, to, opening, inflows, outflows, net, closing: opening + net });
+    // Where the money sits (cash / bank / M-Pesa) and what moved it.
+    const byAccount = [];
+    for (const a of cashAccounts) {
+      const o = await get(`SELECT COALESCE(SUM(debit),0) - COALESCE(SUM(credit),0) as v FROM journal_entries WHERE account_id = ? AND (entry_date)::date < (?)::date ${scopeClause}`, [a, from, ...scopeParams]);
+      const p = await get(`SELECT COALESCE(SUM(debit),0) as d, COALESCE(SUM(credit),0) as c FROM journal_entries WHERE account_id = ? AND (entry_date)::date BETWEEN (?)::date AND (?)::date ${scopeClause}`, [a, from, to, ...scopeParams]);
+      byAccount.push({ account: a, opening: Number(o.v), inflows: Number(p.d), outflows: Number(p.c), net: Number(p.d) - Number(p.c), closing: Number(o.v) + Number(p.d) - Number(p.c) });
+    }
+    const label = { payment: 'Loan repayments', loan: 'Loan disbursements', expense: 'Expenses', requisition: 'Requisitions', utility_payment: 'Vendor & utility payments', adjustment: 'Adjustments', petty_cash: 'Petty cash', payroll: 'Payroll' };
+    const bySource = (await all(`SELECT COALESCE(ref_type,'other') as src, COUNT(*)::int as n, COALESCE(SUM(debit),0) as d, COALESCE(SUM(credit),0) as c FROM journal_entries
+      WHERE account_id IN (${acctList}) AND (entry_date)::date BETWEEN (?)::date AND (?)::date ${scopeClause} GROUP BY 1 ORDER BY (COALESCE(SUM(debit),0) + COALESCE(SUM(credit),0)) DESC`, [...cashAccounts, from, to, ...scopeParams]))
+      .map(r => ({ source: r.src, label: label[r.src] || r.src, entries: r.n, inflows: Number(r.d), outflows: Number(r.c), net: Number(r.d) - Number(r.c) }));
+    const byDay = (await all(`SELECT (entry_date)::date::text as day, COALESCE(SUM(debit),0) as d, COALESCE(SUM(credit),0) as c FROM journal_entries
+      WHERE account_id IN (${acctList}) AND (entry_date)::date BETWEEN (?)::date AND (?)::date ${scopeClause} GROUP BY 1 ORDER BY 1`, [...cashAccounts, from, to, ...scopeParams]))
+      .map(r => ({ day: r.day, inflows: Number(r.d), outflows: Number(r.c), net: Number(r.d) - Number(r.c) }));
+    const days = Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
+    res.json({ from, to, opening, inflows, outflows, net, closing: opening + net, byAccount, bySource, byDay,
+      avgDailyOutflow: Math.round(outflows / days), daysOfCashCover: outflows > 0 ? Math.round((opening + net) / (outflows / days)) : null });
   });
 
   // ==================== Petty Cashbook — the real branch till ====================

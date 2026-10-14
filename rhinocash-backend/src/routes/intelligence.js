@@ -12,6 +12,7 @@ const { logAction } = require('./../audit');
 const { effectiveIntelligenceFeatures, hasIntelligenceAccess, branchIdsInScope, hasInvestorIntelligenceAccess } = require('./../rbac');
 const { computePAR, ledgerBalance } = require('./accounting');
 const { collectionTotals } = require('./collections');
+const { groupMetrics, agingProvision, loanFacts } = require('./../portfolioMetrics');
 const { verifyToken, tokenHash } = require('./../crypto');
 const crypto = require('node:crypto');
 
@@ -50,6 +51,17 @@ function scopeClause(scope, column) {
 // "Collections", "Arrears", "Branches", "Revenue", "Disbursements",
 // "Expenses", "Cashflow" and "Employee" all reuse an existing real page
 // instead, per the spec's own "integrate rather than duplicate" rule).
+// Names of the officers / branches / regions / products a caller can see,
+// so groups with nothing running still show (as zeros).
+async function namesInScope(kind, scope) {
+  const inList = (col) => scope === null ? { c: '1=1', p: [] } : scope.length ? { c: `${col} IN (${scope.map(() => '?').join(',')})`, p: [...scope] } : { c: '1=0', p: [] };
+  let rows = [];
+  if (kind === 'officer') { const w = inList('branch_id'); rows = await all(`SELECT id, name FROM users WHERE role_id = 'loan_officer' AND status = 'Active' AND ${w.c}`, w.p); }
+  if (kind === 'branch') { const w = inList('id'); rows = await all(`SELECT id, name FROM branches WHERE COALESCE(status,'Active') <> 'Closed' AND ${w.c}`, w.p); }
+  if (kind === 'region') { const w = inList('b.id'); rows = await all(`SELECT DISTINCT r.id, r.name FROM regions r JOIN branches b ON b.region_id = r.id WHERE ${w.c}`, w.p); }
+  if (kind === 'product') rows = await all(`SELECT id, name FROM loan_products`);
+  return Object.fromEntries(rows.map(r => [r.id, r.name]));
+}
 async function computeDrillDown(dimension, scope) {
   const loanScope = scopeClause(scope, 'l.branch_id');
   const branchScope = scopeClause(scope, 'id');
@@ -63,70 +75,65 @@ async function computeDrillDown(dimension, scope) {
         `SELECT COALESCE(SUM(ls.total_due - ls.paid_amount),0) as outstanding FROM loan_schedule ls JOIN loans l ON l.id = ls.loan_id WHERE ${loanScope.clause} AND l.status IN ('Active','Disbursed')`,
         loanScope.params
       );
-      return { dimension, activeLoanCount: row.loanCount, principalDisbursed: row.principal, outstandingBalance: Math.max(0, outstandingRow.outstanding) };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      const aging = await agingProvision(scope, null, 10);
+      return { dimension, activeLoanCount: row.loanCount, principalDisbursed: row.principal, outstandingBalance: Math.max(0, outstandingRow.outstanding), summary: g.total, branches: g.rows, classes: aging.classes };
     }
     case 'drill-officer':
     case 'drill-officers':
     case 'drill-officer-performance': {
-      const rows = await all(
-        `SELECT u.id, u.name, COUNT(l.id) as activeLoans, COALESCE(SUM(l.principal),0) as principal
-         FROM users u LEFT JOIN loans l ON l.officer_id = u.id AND l.status IN ('Active','Disbursed') AND ${loanScope.clause.replace(/l\./g,'l.')}
-         WHERE u.role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND u.branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}
-         GROUP BY u.id, u.name ORDER BY principal DESC LIMIT 50`,
-        [...loanScope.params, ...(scope !== null && scope.length ? scope : [])]
-      );
-      return { dimension, officers: rows };
+      const g = await groupMetrics('officer', scope, { names: await namesInScope('officer', scope) });
+      return { dimension, officers: g.rows, total: g.total };
     }
     case 'drill-region': {
-      const rows = await all(
-        `SELECT r.id, r.name, COUNT(DISTINCT b.id) as branchCount, COUNT(l.id) as activeLoans, COALESCE(SUM(l.principal),0) as principal
-         FROM regions r
-         LEFT JOIN branches b ON b.region_id = r.id
-         LEFT JOIN loans l ON l.branch_id = b.id AND l.status IN ('Active','Disbursed')
-         GROUP BY r.id, r.name ORDER BY r.name`
-      );
-      return { dimension, regions: rows };
+      // Only the regions the caller covers (a Regional Manager: their own).
+      const names = await namesInScope('region', scope);
+      const g = await groupMetrics('region', scope, { names });
+      const counts = await all(`SELECT region_id, COUNT(*)::int AS n FROM branches WHERE ${branchScope.clause} GROUP BY region_id`, branchScope.params);
+      const rows = g.rows.filter(r => names[r.id]).map(r => ({ ...r, branchCount: (counts.find(c => c.region_id === r.id) || { n: 0 }).n }));
+      return { dimension, regions: rows, total: g.total };
     }
     case 'drill-branch': {
-      const rows = await all(
-        `SELECT b.id, b.name, COUNT(l.id) as activeLoans, COALESCE(SUM(l.principal),0) as principal
-         FROM branches b LEFT JOIN loans l ON l.branch_id = b.id AND l.status IN ('Active','Disbursed')
-         WHERE ${branchScope.clause.replace('id', 'b.id')} GROUP BY b.id, b.name ORDER BY principal DESC`,
-        branchScope.params
-      );
-      return { dimension, branches: rows };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      return { dimension, branches: g.rows, total: g.total };
     }
     case 'drill-client': {
-      const rows = await all(
-        `SELECT c.id, c.name, c.branch_id, COALESCE(SUM(ls.total_due - ls.paid_amount),0) as outstanding
-         FROM clients c JOIN loans l ON l.client_id = c.id AND l.status IN ('Active','Disbursed') AND ${loanScope.clause}
-         JOIN loan_schedule ls ON ls.loan_id = l.id
-         GROUP BY c.id, c.name, c.branch_id ORDER BY outstanding DESC LIMIT 50`,
-        loanScope.params
-      );
+      const byClient = new Map();
+      for (const l of await loanFacts(scope)) {
+        const c = byClient.get(l.client_id) || { id: l.client_id, name: l.client_name, phone: l.client_phone, officer: l.officer_name, branch: l.branch_name, loans: 0, principal: 0, outstanding: 0, arrears: 0, daysOverdue: 0, provision: 0, classLabel: l.classLabel };
+        c.loans++; c.principal += l.principal; c.outstanding += l.outstanding; c.arrears += l.arrears; c.provision += l.provision;
+        if (l.daysOverdue >= c.daysOverdue) { c.daysOverdue = l.daysOverdue; c.classLabel = l.classLabel; }
+        byClient.set(l.client_id, c);
+      }
+      const rows = [...byClient.values()].sort((a, b) => b.outstanding - a.outstanding).slice(0, 50);
       return { dimension, topClientsByOutstanding: rows };
     }
     case 'drill-loan': {
       const rows = await all(
-        `SELECT status, COUNT(*) as loanCount, COALESCE(SUM(principal),0) as principal FROM loans l WHERE ${loanScope.clause} GROUP BY status ORDER BY loanCount DESC`,
+        `SELECT status, COUNT(*)::int as loanCount, COALESCE(SUM(principal),0) as principal, COALESCE(AVG(principal),0) as avgPrincipal FROM loans l WHERE ${loanScope.clause} GROUP BY status ORDER BY loanCount DESC`,
         loanScope.params
       );
-      return { dimension, byStatus: rows };
+      const n = rows.reduce((s, r) => s + Number(r.loancount), 0), amt = rows.reduce((s, r) => s + Number(r.principal), 0);
+      return { dimension, byStatus: rows.map(r => ({ ...r, avgprincipal: Math.round(Number(r.avgprincipal)), countSharePct: n ? Math.round(r.loancount / n * 1000) / 10 : 0, amountSharePct: amt ? Math.round(r.principal / amt * 1000) / 10 : 0 })) };
     }
     case 'drill-payment': {
       const rows = await all(
-        `SELECT p.channel, COUNT(*) as paymentCount, COALESCE(SUM(p.amount),0) as amount
-         FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND p.created_at >= (CURRENT_DATE - INTERVAL '30 days')::text
+        `SELECT p.channel, COUNT(*)::int as paymentCount, COALESCE(SUM(p.amount),0) as amount, COALESCE(AVG(p.amount),0) as avgAmount,
+                COUNT(DISTINCT p.client_id)::int as clients, MAX(p.created_at) as lastPayment
+         FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND p.status NOT IN ('Unposted','Reversed') AND p.created_at >= (CURRENT_DATE - INTERVAL '30 days')::text
          GROUP BY p.channel ORDER BY amount DESC`,
         loanScope.params
       );
-      return { dimension, last30DaysByChannel: rows };
+      const tot = rows.reduce((s, r) => s + Number(r.amount), 0);
+      return { dimension, last30DaysByChannel: rows.map(r => ({ ...r, avgamount: Math.round(Number(r.avgamount)), sharePct: tot ? Math.round(r.amount / tot * 1000) / 10 : 0 })) };
     }
     case 'drill-operations': {
       const branches = await get(`SELECT COUNT(*) as n FROM branches WHERE ${branchScope.clause}`, branchScope.params);
       const officers = await get(`SELECT COUNT(*) as n FROM users WHERE role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}`, scope !== null && scope.length ? scope : []);
       const loans = await get(`SELECT COUNT(*) as n, COALESCE(SUM(principal),0) as principal FROM loans l WHERE ${loanScope.clause} AND status IN ('Active','Disbursed')`, loanScope.params);
-      return { dimension, branchCount: branches.n, officerCount: officers.n, activeLoanCount: loans.n, principalDisbursed: loans.principal };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      return { dimension, branchCount: branches.n, officerCount: officers.n, activeLoanCount: loans.n, principalDisbursed: loans.principal, summary: g.total, branches: g.rows,
+        loansPerOfficer: officers.n ? Math.round(loans.n / officers.n * 10) / 10 : 0, portfolioPerOfficer: officers.n ? Math.round(g.total.outstanding / officers.n) : 0 };
     }
     case 'drill-profitability': {
       const thisMonth = new Date().toISOString().slice(0, 7);
@@ -140,27 +147,30 @@ async function computeDrillDown(dimension, scope) {
       const loans = await get(`SELECT COUNT(*) as n, COALESCE(SUM(principal),0) as principal FROM loans WHERE status IN ('Active','Disbursed')`);
       const branches = await get(`SELECT COUNT(*) as n FROM branches`);
       const staff = await get(`SELECT COUNT(*) as n FROM users WHERE status='Active'`);
-      return { dimension, totalClients: clients.n, activeLoanCount: loans.n, principalDisbursed: loans.principal, branchCount: branches.n, staffCount: staff.n };
+      const g = await groupMetrics('branch', null, { names: await namesInScope('branch', null) });
+      return { dimension, totalClients: clients.n, activeLoanCount: loans.n, principalDisbursed: loans.principal, branchCount: branches.n, staffCount: staff.n, summary: g.total, branches: g.rows };
     }
     case 'drill-product': {
-      const rows = await all(
-        `SELECT lp.id, lp.name, COUNT(l.id) as loanCount, COALESCE(SUM(l.principal),0) as principal, COALESCE(AVG(l.principal),0) as avgSize
-         FROM loan_products lp LEFT JOIN loans l ON l.product_id = lp.id AND l.status IN ('Active','Disbursed') AND ${loanScope.clause}
-         GROUP BY lp.id, lp.name ORDER BY principal DESC`,
-        loanScope.params
-      );
-      return { dimension, products: rows };
+      const g = await groupMetrics('product', scope, { names: await namesInScope('product', scope) });
+      return { dimension, products: g.rows, total: g.total };
     }
     case 'drill-organization': {
       const departments = await get(`SELECT COUNT(*) as n FROM departments`);
       const branches = await get(`SELECT COUNT(*) as n FROM branches`);
       const employees = await get(`SELECT COUNT(*) as n FROM users WHERE status='Active'`);
-      const byStatus = await all(`SELECT employment_status, COUNT(*) as n FROM users GROUP BY employment_status`);
-      return { dimension, departmentCount: departments.n, branchCount: branches.n, employeeCount: employees.n, byEmploymentStatus: byStatus };
+      const byStatus = await all(`SELECT employment_status, COUNT(*)::int as n, COUNT(*) FILTER (WHERE status = 'Active')::int as active FROM users GROUP BY employment_status ORDER BY n DESC`);
+      const byRole = await all(`SELECT u.role_id, COALESCE(r.name, u.role_id) as role, COUNT(*)::int as n, COUNT(*) FILTER (WHERE u.status = 'Active')::int as active, COALESCE(SUM(u.basic_salary) FILTER (WHERE u.status <> 'Terminated'),0) as payroll
+        FROM users u LEFT JOIN roles r ON r.id = u.role_id GROUP BY u.role_id, r.name ORDER BY n DESC`);
+      return { dimension, departmentCount: departments.n, branchCount: branches.n, employeeCount: employees.n, byEmploymentStatus: byStatus, byRole };
     }
     case 'drill-department': {
       const rows = await all(
-        `SELECT d.id, d.name, COUNT(u.id) as employeeCount FROM departments d LEFT JOIN users u ON u.department_id = d.id GROUP BY d.id, d.name ORDER BY employeeCount DESC`
+        `SELECT d.id, d.name, COUNT(u.id)::int as employeeCount,
+                COUNT(u.id) FILTER (WHERE u.status = 'Active')::int as active, COUNT(u.id) FILTER (WHERE u.status = 'On Leave')::int as onLeave,
+                COUNT(u.id) FILTER (WHERE u.status = 'Terminated')::int as terminated,
+                COALESCE(SUM(u.basic_salary) FILTER (WHERE u.status <> 'Terminated'),0) as payroll,
+                COALESCE(AVG(u.basic_salary) FILTER (WHERE u.status <> 'Terminated'),0) as avgSalary
+         FROM departments d LEFT JOIN users u ON u.department_id = d.id GROUP BY d.id, d.name ORDER BY employeeCount DESC`
       );
       return { dimension, departments: rows };
     }
@@ -191,15 +201,31 @@ function monthKeyOffset(monthsBack) {
 // `sql` must select a single aliased column `v` and end with one LIKE ?
 // placeholder for the month-prefix; `scopeParams` are whatever params the
 // query needs before that final one.
-async function trendCompare(sql, scopeParams) {
+// A monthly figure over the last six months, the change against the
+// comparison month (Admin's trend window), the month-end run-rate (this
+// month so far ÷ days elapsed × days in month) and the 3-month average of
+// the previous complete months.
+async function seriesTrend(valueFor) {
   const window = await getTrendWindowMonths();
-  const thisMonth = monthKeyOffset(0);
+  const months = [5, 4, 3, 2, 1, 0].map(monthKeyOffset);
+  const values = [];
+  for (const m of months) values.push(Number(await valueFor(m)) || 0);
+  const thisMonth = months[5], thisPeriod = values[5];
   const lastMonth = monthKeyOffset(window);
-  const thisRow = await get(sql, [...scopeParams, `${thisMonth}%`]);
-  const lastRow = await get(sql, [...scopeParams, `${lastMonth}%`]);
-  const thisPeriod = thisRow.v || 0, lastPeriod = lastRow.v || 0;
-  const changePct = lastPeriod > 0 ? ((thisPeriod - lastPeriod) / lastPeriod * 100) : (thisPeriod > 0 ? 100 : 0);
-  return { thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+  const lastPeriod = window <= 5 ? values[5 - window] : (Number(await valueFor(lastMonth)) || 0);
+  const change = (a, b) => a !== 0 ? ((b - a) / Math.abs(a) * 100) : (b !== 0 ? 100 : 0);
+  const now = new Date();
+  const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const runRate = Math.round(thisPeriod / Math.max(1, now.getDate()) * dim);
+  const avg3 = Math.round((values[2] + values[3] + values[4]) / 3);
+  return {
+    thisPeriod, lastPeriod, changePct: change(lastPeriod, thisPeriod), windowMonths: window, thisMonth, lastMonth,
+    history: months.map((m, i) => ({ month: m, value: values[i], changePct: i ? change(values[i - 1], values[i]) : null })),
+    runRate, avg3, runRateVsAvg3Pct: avg3 ? change(avg3, runRate) : null, daysElapsed: now.getDate(), daysInMonth: dim,
+  };
+}
+async function trendCompare(sql, scopeParams) {
+  return seriesTrend(async mk => (await get(sql, [...scopeParams, `${mk}%`])).v);
 }
 async function qualityThresholds() {
   const watch = ((await get(`SELECT threshold_value FROM client_risk_config WHERE rule_name = 'quality_watch_par30_pct'`)) || { threshold_value: 5 }).threshold_value;
@@ -213,11 +239,17 @@ async function riskView(scope, officerId) {
   const par = await computePAR(scope, officerId);
   const par30 = (par.par.find(p => p.threshold === 30) || {}).percentage || 0;
   const q = await qualityThresholds();
-  return { ...par, qualityRating: q.classify(par30), thresholds: { watch: q.watch, atRisk: q.atRisk, critical: q.critical, default: q.def } };
+  const aging = await agingProvision(scope, officerId, 25);
+  // Loans and clients behind each PAR line.
+  const loans = await loanFacts(scope, officerId);
+  const parRows = par.par.map(p => { const ls = loans.filter(l => l.daysOverdue >= p.threshold); return { ...p, loans: ls.length, clients: new Set(ls.map(l => l.client_id)).size, arrears: ls.reduce((s, l) => s + l.arrears, 0) }; });
+  return { ...par, par: parRows, qualityRating: q.classify(par30), thresholds: { watch: q.watch, atRisk: q.atRisk, critical: q.critical, default: q.def },
+    classes: aging.classes, atRisk: aging.atRisk, totalProvision: aging.totalProvision, provisionCoveragePct: aging.provisionCoveragePct, activeLoans: loans.length };
 }
 async function computePredictive(featureId, req) {
   const scope = await branchIdsInScope(req.user);
   const loanScope = scopeClause(scope, 'l.branch_id');
+  const lo = req.user.role_id === 'loan_officer' ? req.user.id : null; // a Loan Officer sees their own book
   switch (featureId) {
     case 'pred-my-collection-prediction': {
       const trend = await trendCompare(
@@ -230,7 +262,7 @@ async function computePredictive(featureId, req) {
       return { featureId, kind: 'risk', ...(await riskView(scope, req.user.id)) };
     case 'pred-early-warning-signals':
     case 'pred-operational-early-warnings':
-      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+      return { featureId, kind: 'risk', ...(await riskView(scope, lo)) };
     case 'pred-branch-collection-forecast':
     case 'pred-regional-collection-forecast':
     case 'pred-collection-forecast': {
@@ -243,7 +275,7 @@ async function computePredictive(featureId, req) {
     case 'pred-loan-default-prediction':
     case 'pred-default-prediction':
     case 'pred-risk-forecast':
-      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+      return { featureId, kind: 'risk', ...(await riskView(scope, lo)) };
     case 'pred-portfolio-forecast':
     case 'pred-regional-portfolio-forecast': {
       const trend = await trendCompare(
@@ -254,26 +286,13 @@ async function computePredictive(featureId, req) {
     }
     case 'pred-officer-performance-prediction':
     case 'pred-staff-performance': {
-      const rows = await all(
-        `SELECT u.id, u.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
-         FROM users u LEFT JOIN loans l ON l.officer_id = u.id
-         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
-         WHERE u.role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND u.branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}
-         GROUP BY u.id, u.name ORDER BY thisMonthCollected DESC LIMIT 50`,
-        [`${monthKeyOffset(0)}%`, ...(scope !== null && scope.length ? scope : [])]
-      );
-      return { featureId, kind: 'officer-list', officers: rows };
+      const g = await groupMetrics('officer', scope, { names: await namesInScope('officer', scope) });
+      return { featureId, kind: 'officer-list', officers: g.rows, total: g.total };
     }
     case 'pred-branch-performance-prediction':
     case 'pred-branch-performance': {
-      const rows = await all(
-        `SELECT b.id, b.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
-         FROM branches b LEFT JOIN loans l ON l.branch_id = b.id
-         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
-         WHERE ${scopeClause(scope,'b.id').clause} GROUP BY b.id, b.name ORDER BY thisMonthCollected DESC`,
-        [`${monthKeyOffset(0)}%`, ...scopeClause(scope,'b.id').params]
-      );
-      return { featureId, kind: 'branch-list', branches: rows };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      return { featureId, kind: 'branch-list', branches: g.rows, total: g.total };
     }
     case 'pred-operations-forecast': {
       const trend = await trendCompare(
@@ -293,9 +312,7 @@ async function computePredictive(featureId, req) {
                  COALESCE((SELECT SUM(amount) FROM expenses WHERE status='Paid' AND created_at LIKE ?),0)) as v`,
         [...loanScope.params, `${mk}%`, `${mk}%`]
       )).v || 0;
-      const thisPeriod = await net(thisMonth), lastPeriod = await net(lastMonth);
-      const changePct = lastPeriod !== 0 ? ((thisPeriod - lastPeriod) / Math.abs(lastPeriod) * 100) : (thisPeriod !== 0 ? 100 : 0);
-      return { featureId, kind: 'trend', label: 'Net Cashflow', thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+      return { featureId, kind: 'trend', label: 'Net Cashflow', ...(await seriesTrend(net)) };
     }
     case 'pred-revenue-forecast':
     case 'pred-company-forecast': {
@@ -321,9 +338,7 @@ async function computePredictive(featureId, req) {
         const exp = (await get(`SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE status='Paid' AND created_at LIKE ?`, [`${mk}%`])).v;
         return rev - exp;
       };
-      const thisPeriod = await profit(thisMonth), lastPeriod = await profit(lastMonth);
-      const changePct = lastPeriod !== 0 ? ((thisPeriod - lastPeriod) / Math.abs(lastPeriod) * 100) : (thisPeriod !== 0 ? 100 : 0);
-      return { featureId, kind: 'trend', label: 'Net Profit', thisPeriod, lastPeriod, changePct, windowMonths: window, thisMonth, lastMonth };
+      return { featureId, kind: 'trend', label: 'Net Profit', ...(await seriesTrend(profit)) };
     }
     case 'pred-capital-forecast': {
       const rows = await all(`SELECT holder_name, holder_type, percentage, capital_contributed FROM equity_holdings ORDER BY capital_contributed DESC NULLS LAST`);
@@ -336,10 +351,41 @@ async function computePredictive(featureId, req) {
       );
       return { featureId, kind: 'trend', label: 'New Hires', ...trend };
     }
-    case 'pred-attendance-trends':
-      return { featureId, kind: 'no-data', message: 'No attendance/clock-in data is recorded anywhere in this system yet — this honestly reflects that rather than inventing a trend.' };
-    case 'pred-turnover-prediction':
-      return { featureId, kind: 'no-data', message: 'No employee separation/termination date is recorded anywhere in this system yet — this honestly reflects that rather than inventing a prediction.' };
+    case 'pred-attendance-trends': {
+      // From HR › Attendance: attendance rate = (Present + Late + Remote + ½ Half Day) ÷ (days recorded − On Leave).
+      const rows = await all(`SELECT substr(date, 1, 7) AS month,
+          COUNT(*) FILTER (WHERE status = 'Present')::int AS present, COUNT(*) FILTER (WHERE status = 'Late')::int AS late,
+          COUNT(*) FILTER (WHERE status = 'Absent')::int AS absent, COUNT(*) FILTER (WHERE status = 'On Leave')::int AS onleave,
+          COUNT(*) FILTER (WHERE status = 'Half Day')::int AS halfday, COUNT(*) FILTER (WHERE status = 'Remote')::int AS remote,
+          COALESCE(SUM(minutes_late),0)::int AS minuteslate, COUNT(DISTINCT employee_id)::int AS employees
+        FROM hr_attendance WHERE date >= ? GROUP BY 1 ORDER BY 1`, [monthKeyOffset(5) + '-01']);
+      const months = [5, 4, 3, 2, 1, 0].map(monthKeyOffset).map(m => {
+        const r = rows.find(x => x.month === m) || { present: 0, late: 0, absent: 0, onleave: 0, halfday: 0, remote: 0, minuteslate: 0, employees: 0 };
+        const base = r.present + r.late + r.absent + r.halfday + r.remote;
+        return { month: m, ...r, ratePct: base ? Math.round((r.present + r.late + r.remote + r.halfday / 2) / base * 1000) / 10 : null, latePct: base ? Math.round(r.late / base * 1000) / 10 : null };
+      });
+      return { featureId, kind: 'attendance', months, formula: 'Attendance rate = (Present + Late + Remote + ½ Half Day) ÷ (days recorded − On Leave) × 100' };
+    }
+    case 'pred-turnover-prediction': {
+      // Leavers = employees set to Terminated in the month (audit trail); turnover = leavers ÷ average headcount.
+      const leavers = await all(`SELECT substr(created_at, 1, 7) AS month, COUNT(DISTINCT record_id)::int AS n FROM audit_logs
+        WHERE action = 'Set employment status to Terminated' AND created_at >= ? GROUP BY 1`, [monthKeyOffset(11) + '-01']);
+      const hires = await all(`SELECT substr(created_at, 1, 7) AS month, COUNT(*)::int AS n FROM users WHERE created_at >= ? GROUP BY 1`, [monthKeyOffset(11) + '-01']);
+      const headNow = (await get(`SELECT COUNT(*)::int AS n FROM users WHERE status <> 'Terminated'`)).n;
+      const months = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(monthKeyOffset);
+      // Walk back from today's headcount to each month-end.
+      const out = []; let head = headNow;
+      for (let i = months.length - 1; i >= 0; i--) {
+        const m = months[i]; const l = (leavers.find(x => x.month === m) || { n: 0 }).n; const h = (hires.find(x => x.month === m) || { n: 0 }).n;
+        const end = head, start = head - h + l; head = start;
+        const avg = (start + end) / 2;
+        out.unshift({ month: m, hires: h, leavers: l, headcountStart: start, headcountEnd: end, turnoverPct: avg > 0 ? Math.round(l / avg * 1000) / 10 : 0 });
+      }
+      const last12 = out.reduce((s, r) => s + r.leavers, 0);
+      const avgHead = out.reduce((s, r) => s + (r.headcountStart + r.headcountEnd) / 2, 0) / out.length;
+      return { featureId, kind: 'turnover', months: out, annualTurnoverPct: avgHead ? Math.round(last12 / avgHead * 1000) / 10 : 0, leavers12: last12, headcount: headNow,
+        formula: 'Monthly turnover = leavers in the month ÷ average headcount × 100; annual = leavers in 12 months ÷ average headcount × 100' };
+    }
     default:
       return null;
   }
@@ -355,6 +401,7 @@ async function computePredictive(featureId, req) {
 async function computeExplainable(featureId, req) {
   const scope = await branchIdsInScope(req.user);
   const loanScope = scopeClause(scope, 'l.branch_id');
+  const lo = req.user.role_id === 'loan_officer' ? req.user.id : null;
   switch (featureId) {
     case 'explain-loan-decision-explanation':
     case 'explain-loan-decisions':
@@ -375,28 +422,21 @@ async function computeExplainable(featureId, req) {
       return { featureId, kind: 'risk', ...(await riskView(scope, req.user.id)) };
     case 'explain-risk-explanation':
     case 'explain-risk-decisions':
-      return { featureId, kind: 'risk', ...(await riskView(scope)) };
+      return { featureId, kind: 'risk', ...(await riskView(scope, lo)) };
     case 'explain-collection-priority-explanation': {
-      const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
-      const rows = await all(
-        `SELECT l.id as loanId, c.name as clientName, ls.due_date, ls.total_due - ls.paid_amount as outstanding,
-                (CURRENT_DATE - ls.due_date::date) as daysOverdue
-         FROM loan_schedule ls JOIN loans l ON l.id = ls.loan_id JOIN clients c ON c.id = l.client_id
-         WHERE ${loanScope.clause} AND l.status IN ('Active','Disbursed') AND ls.paid_amount < ls.total_due - 0.01
-           AND ls.due_date < CURRENT_DATE::text ${officerId ? 'AND l.officer_id = ?' : ''}
-         ORDER BY daysOverdue DESC, outstanding DESC LIMIT 25`,
-        officerId ? [...loanScope.params, officerId] : loanScope.params
-      );
-      return { featureId, kind: 'priority-list', items: rows };
+      // Priority score (0–100) = 60 × min(days overdue, 90) ÷ 90 + 40 × arrears ÷ balance.
+      const lastPay = new Map((await all(`SELECT p.loan_id, MAX(p.created_at) AS at FROM payments p JOIN loans l ON l.id = p.loan_id WHERE ${loanScope.clause} AND p.status NOT IN ('Unposted','Reversed') GROUP BY p.loan_id`, loanScope.params)).map(r => [r.loan_id, r.at]));
+      const items = (await loanFacts(scope, lo)).filter(l => l.daysOverdue > 0).map(l => {
+        const score = Math.round(60 * Math.min(l.daysOverdue, 90) / 90 + 40 * (l.outstanding > 0 ? Math.min(1, l.arrears / l.outstanding) : 0));
+        return { loanId: l.id, clientname: l.client_name, phone: l.client_phone, officer: l.officer_name, branch: l.branch_name, daysoverdue: l.daysOverdue, missed: l.missed,
+          arrears: l.arrears, outstanding: l.outstanding, lastPayment: lastPay.get(l.id) || null, classLabel: l.classLabel, score,
+          reason: `${l.daysOverdue} day${l.daysOverdue === 1 ? '' : 's'} overdue · ${l.missed} missed installment${l.missed === 1 ? '' : 's'} · ${Math.round(l.outstanding ? l.arrears / l.outstanding * 100 : 0)}% of the balance in arrears` };
+      }).sort((a, b) => b.score - a.score || b.arrears - a.arrears).slice(0, 50);
+      return { featureId, kind: 'priority-list', items, formula: 'Priority score (0–100) = 60 × min(days overdue, 90) ÷ 90 + 40 × arrears ÷ outstanding balance' };
     }
     case 'explain-branch-performance': {
-      const rows = await all(
-        `SELECT b.id, b.name, COALESCE(SUM(l.principal),0) as principal, COUNT(l.id) as activeLoans
-         FROM branches b LEFT JOIN loans l ON l.branch_id = b.id AND l.status IN ('Active','Disbursed')
-         WHERE ${scopeClause(scope,'b.id').clause} GROUP BY b.id, b.name ORDER BY principal DESC`,
-        scopeClause(scope,'b.id').params
-      );
-      return { featureId, kind: 'branch-explain', branches: rows };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      return { featureId, kind: 'branch-explain', branches: g.rows, total: g.total };
     }
     case 'explain-operational-alerts':
     case 'explain-business-alerts':
@@ -435,15 +475,8 @@ async function computeExplainable(featureId, req) {
       return { featureId, kind: 'adjustments', adjustments: rows };
     }
     case 'explain-performance-decisions': {
-      const rows = await all(
-        `SELECT u.id, u.name, COALESCE(SUM(p.amount),0) as thisMonthCollected
-         FROM users u LEFT JOIN loans l ON l.officer_id = u.id
-         LEFT JOIN payments p ON p.loan_id = l.id AND p.created_at LIKE ?
-         WHERE u.role_id = 'loan_officer' ${scope !== null ? (scope.length ? `AND u.branch_id IN (${scope.map(()=>'?').join(',')})` : 'AND 1=0') : ''}
-         GROUP BY u.id, u.name ORDER BY thisMonthCollected DESC LIMIT 50`,
-        [`${monthKeyOffset(0)}%`, ...(scope !== null && scope.length ? scope : [])]
-      );
-      return { featureId, kind: 'officer-list', officers: rows };
+      const g = await groupMetrics('officer', scope, { names: await namesInScope('officer', scope) });
+      return { featureId, kind: 'officer-list', officers: g.rows, total: g.total };
     }
     case 'explain-performance-changes':
     case 'explain-financial-changes': {
@@ -492,15 +525,17 @@ async function computeFraud(featureId, req) {
     // cross-branch group for context.
     case 'fraud-duplicate-clients': {
       const dupes = await all(
-        `SELECT national_id, array_agg(id) as ids, array_agg(name) as names, array_agg(branch_id) as branch_ids, array_agg(officer_id) as officer_ids
-         FROM clients WHERE national_id IS NOT NULL AND national_id != ''
-         GROUP BY national_id HAVING COUNT(*) > 1`
+        `SELECT c.national_id, array_agg(c.id) as ids, array_agg(c.name) as names, array_agg(c.branch_id) as branch_ids, array_agg(c.officer_id) as officer_ids,
+                array_agg(COALESCE(c.phone,'')) as phones, array_agg(COALESCE(u.name,'')) as officer_names, array_agg(c.created_at) as created, array_agg(c.status) as statuses,
+                array_agg((SELECT COUNT(*) FROM loans l WHERE l.client_id = c.id)) as loan_counts
+         FROM clients c LEFT JOIN users u ON u.id = c.officer_id WHERE c.national_id IS NOT NULL AND c.national_id != ''
+         GROUP BY c.national_id HAVING COUNT(*) > 1`
       );
       const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
       const groups = dupes
         .map(d => ({
           nationalId: d.national_id,
-          clients: d.ids.map((id, i) => ({ id, name: d.names[i], branchId: d.branch_ids[i], officerId: d.officer_ids[i] })),
+          clients: d.ids.map((id, i) => ({ id, name: d.names[i], branchId: d.branch_ids[i], officerId: d.officer_ids[i], phone: d.phones[i], officer: d.officer_names[i], createdAt: d.created[i], status: d.statuses[i], loans: Number(d.loan_counts[i]) })),
         }))
         .filter(g => g.clients.some(c =>
           (officerId ? c.officerId === officerId : true) &&
@@ -511,9 +546,9 @@ async function computeFraud(featureId, req) {
     case 'fraud-payment-reversals': {
       const loanScope = scopeClause(scope, 'l.branch_id');
       const rows = await all(
-        `SELECT p.id, p.amount, p.created_at, c.name as clientname, u.name as officername
+        `SELECT p.id, p.amount, p.created_at, p.channel, p.reference, c.name as clientname, u.name as officername, b.name as branchname, rb.name as recordedby
          FROM payments p JOIN loans l ON l.id = p.loan_id JOIN clients c ON c.id = p.client_id
-         LEFT JOIN users u ON u.id = l.officer_id
+         LEFT JOIN users u ON u.id = l.officer_id LEFT JOIN branches b ON b.id = l.branch_id LEFT JOIN users rb ON rb.id = p.recorded_by
          WHERE p.status = 'Reversed' AND ${loanScope.clause} ORDER BY p.created_at DESC LIMIT 30`,
         loanScope.params
       );
@@ -522,9 +557,10 @@ async function computeFraud(featureId, req) {
     case 'fraud-rapid-writeoff': {
       const loanScope = scopeClause(scope, 'l.branch_id');
       const rows = await all(
-        `SELECT l.id, l.principal, l.disbursed_at, l.written_off_at, c.name as clientname, u.name as officername,
-                (written_off_at::date - disbursed_at::date) as daystowriteoff
-         FROM loans l JOIN clients c ON c.id = l.client_id LEFT JOIN users u ON u.id = l.officer_id
+        `SELECT l.id, l.principal, l.disbursed_at, l.written_off_at, c.name as clientname, u.name as officername, b.name as branchname,
+                (written_off_at::date - disbursed_at::date) as daystowriteoff,
+                COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.loan_id = l.id AND p.status NOT IN ('Unposted','Reversed')),0) as repaid
+         FROM loans l JOIN clients c ON c.id = l.client_id LEFT JOIN users u ON u.id = l.officer_id LEFT JOIN branches b ON b.id = l.branch_id
          WHERE l.status = 'Written Off' AND l.disbursed_at IS NOT NULL AND l.written_off_at IS NOT NULL
            AND (written_off_at::date - disbursed_at::date) <= ? AND ${loanScope.clause}
          ORDER BY daystowriteoff ASC LIMIT 30`,
@@ -536,10 +572,12 @@ async function computeFraud(featureId, req) {
       const officerId = req.user.role_id === 'loan_officer' ? req.user.id : null;
       const loanScope = scopeClause(scope, 'l.branch_id');
       const rows = await all(
-        `SELECT c.id as clientid, c.name as clientname, COUNT(*) as overpaymentcount, COALESCE(SUM(p.amount),0) as totalamount
+        `SELECT c.id as clientid, c.name as clientname, c.phone, MAX(u.name) as officername, MAX(b.name) as branchname,
+                COUNT(*)::int as overpaymentcount, COALESCE(SUM(p.amount),0) as totalamount, COALESCE(AVG(p.amount),0) as avgamount, MAX(p.created_at) as lastat
          FROM payments p JOIN loans l ON l.id = p.loan_id JOIN clients c ON c.id = p.client_id
+         LEFT JOIN users u ON u.id = l.officer_id LEFT JOIN branches b ON b.id = l.branch_id
          WHERE p.status = 'Overpayment' AND ${loanScope.clause} ${officerId ? 'AND l.officer_id = ?' : ''}
-         GROUP BY c.id, c.name ORDER BY overpaymentcount DESC LIMIT 25`,
+         GROUP BY c.id, c.name, c.phone ORDER BY overpaymentcount DESC LIMIT 25`,
         officerId ? [...loanScope.params, officerId] : loanScope.params
       );
       return { featureId, kind: 'overpayment-list', items: rows };
@@ -547,50 +585,66 @@ async function computeFraud(featureId, req) {
     case 'fraud-officer-approval-pattern': {
       const userScope = scopeClause(scope, 'u.branch_id');
       const rows = await all(
-        `SELECT u.id, u.name,
-                COUNT(la.id) as totaldecisions,
-                SUM(CASE WHEN la.decision = 'Approved' THEN 1 ELSE 0 END) as approvedcount,
-                SUM(CASE WHEN la.created_at::date = l.created_at::date THEN 1 ELSE 0 END) as samedayapprovals
+        `SELECT u.id, u.name, MAX(b.name) as branchname, MAX(COALESCE(r.name, u.role_id)) as rolename,
+                COUNT(la.id)::int as totaldecisions,
+                SUM(CASE WHEN la.decision = 'Approved' THEN 1 ELSE 0 END)::int as approvedcount,
+                SUM(CASE WHEN la.created_at::date = l.created_at::date THEN 1 ELSE 0 END)::int as samedayapprovals,
+                COALESCE(SUM(CASE WHEN la.decision = 'Approved' THEN l.principal ELSE 0 END),0) as approvedprincipal
          FROM users u JOIN loan_approvals la ON la.approver_id = u.id JOIN loans l ON l.id = la.loan_id
+         LEFT JOIN branches b ON b.id = u.branch_id LEFT JOIN roles r ON r.id = u.role_id
          WHERE ${userScope.clause} GROUP BY u.id, u.name HAVING COUNT(la.id) >= 3 ORDER BY approvedcount DESC LIMIT 25`,
         userScope.params
       );
-      return { featureId, kind: 'officer-anomaly-list', items: rows };
+      return { featureId, kind: 'officer-anomaly-list', items: rows.map(r => ({ ...r, approvalratepct: r.totaldecisions ? Math.round(r.approvedcount / r.totaldecisions * 1000) / 10 : 0, samedaypct: r.totaldecisions ? Math.round(r.samedayapprovals / r.totaldecisions * 1000) / 10 : 0 })) };
     }
     case 'fraud-overview': {
       const loanScope = scopeClause(scope, 'l.branch_id');
-      const reversals = await get(`SELECT COUNT(*) as n FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.status = 'Reversed' AND ${loanScope.clause}`, loanScope.params);
+      const reversals = await get(`SELECT COUNT(*)::int as n, COALESCE(SUM(p.amount),0) as amt FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.status = 'Reversed' AND ${loanScope.clause}`, loanScope.params);
       const writeoffs = await get(
-        `SELECT COUNT(*) as n FROM loans l WHERE l.status = 'Written Off' AND l.disbursed_at IS NOT NULL AND l.written_off_at IS NOT NULL
+        `SELECT COUNT(*)::int as n, COALESCE(SUM(l.principal),0) as amt FROM loans l WHERE l.status = 'Written Off' AND l.disbursed_at IS NOT NULL AND l.written_off_at IS NOT NULL
            AND (written_off_at::date - disbursed_at::date) <= ? AND ${loanScope.clause}`,
         [settings.rapidWriteoffDays, ...loanScope.params]
       );
+      const overpay = await get(`SELECT COUNT(*)::int as n, COALESCE(SUM(p.amount),0) as amt FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.status = 'Overpayment' AND ${loanScope.clause}`, loanScope.params);
       const dupeRows = await all(`SELECT national_id FROM clients WHERE national_id IS NOT NULL AND national_id != '' GROUP BY national_id HAVING COUNT(*) > 1`);
+      const cs = scopeClause(scope, 'branch_id');
+      const dupeInScope = await get(`SELECT COUNT(*)::int as n FROM clients WHERE ${cs.clause} AND national_id IN (SELECT national_id FROM clients WHERE national_id IS NOT NULL AND national_id != '' GROUP BY national_id HAVING COUNT(*) > 1)`, cs.params);
+      const recent = await get(`SELECT COUNT(*)::int as n FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.status = 'Reversed' AND ${loanScope.clause} AND p.created_at >= (CURRENT_DATE - INTERVAL '30 days')::text`, loanScope.params);
       return {
         featureId, kind: 'overview',
         signals: [
-          { label: 'Reversed Payments', count: reversals.n },
-          { label: 'Rapid Write-Offs', count: writeoffs.n },
+          { label: 'Reversed Payments', count: reversals.n, amount: Number(reversals.amt), last30: recent.n },
+          { label: 'Rapid Write-Offs', count: writeoffs.n, amount: Number(writeoffs.amt), note: `within ${settings.rapidWriteoffDays} days of disbursement` },
+          { label: 'Overpayments', count: overpay.n, amount: Number(overpay.amt) },
+          { label: 'Clients sharing an ID (your scope)', count: dupeInScope.n },
           { label: 'Duplicate Client Identities (company-wide)', count: dupeRows.length },
         ],
       };
     }
     case 'fraud-branch-risk-ranking': {
+      // Risk score = 3 × rapid write-offs + 2 × reversals + duplicate identities + PAR-30 % ÷ 5.
+      const bs = scopeClause(scope, 'b.id');
       const rows = await all(
-        `SELECT * FROM (
-           SELECT b.id, b.name,
-                  (SELECT COUNT(*) FROM payments p JOIN loans l2 ON l2.id = p.loan_id WHERE p.status='Reversed' AND l2.branch_id = b.id) as reversalcount,
-                  (SELECT COUNT(*) FROM loans l3 WHERE l3.branch_id = b.id AND l3.status='Written Off' AND l3.disbursed_at IS NOT NULL AND l3.written_off_at IS NOT NULL AND (l3.written_off_at::date - l3.disbursed_at::date) <= ?) as writeoffcount
-           FROM branches b
-         ) t ORDER BY (reversalcount + writeoffcount) DESC`,
-        [settings.rapidWriteoffDays]
+        `SELECT b.id, b.name,
+                (SELECT COUNT(*) FROM payments p JOIN loans l2 ON l2.id = p.loan_id WHERE p.status='Reversed' AND l2.branch_id = b.id)::int as reversalcount,
+                (SELECT COUNT(*) FROM loans l3 WHERE l3.branch_id = b.id AND l3.status='Written Off' AND l3.disbursed_at IS NOT NULL AND l3.written_off_at IS NOT NULL AND (l3.written_off_at::date - l3.disbursed_at::date) <= ?)::int as writeoffcount,
+                (SELECT COUNT(*) FROM clients c WHERE c.branch_id = b.id AND c.national_id IN (SELECT national_id FROM clients WHERE national_id IS NOT NULL AND national_id != '' GROUP BY national_id HAVING COUNT(*) > 1))::int as duplicatecount
+         FROM branches b WHERE ${bs.clause}`,
+        [settings.rapidWriteoffDays, ...bs.params]
       );
-      return { featureId, kind: 'branch-risk-list', branches: rows };
+      const g = await groupMetrics('branch', scope, { names: await namesInScope('branch', scope) });
+      const out = rows.map(r => { const m = g.rows.find(x => x.id === r.id) || { par30Pct: 0, outstanding: 0 };
+        return { ...r, par30pct: m.par30Pct, outstanding: m.outstanding, riskscore: Math.round((3 * r.writeoffcount + 2 * r.reversalcount + r.duplicatecount + m.par30Pct / 5) * 10) / 10 }; })
+        .sort((a, b) => b.riskscore - a.riskscore);
+      return { featureId, kind: 'branch-risk-list', branches: out, formula: 'Risk score = 3 × rapid write-offs + 2 × reversed payments + duplicate-identity clients + PAR-30 % ÷ 5' };
     }
     case 'fraud-staff-advance-pattern': {
       const rows = await all(
-        `SELECT u.id, u.name, COUNT(s.id) as requestcount, COALESCE(SUM(s.amount),0) as totalamount
+        `SELECT u.id, u.name, MAX(b.name) as branchname, MAX(COALESCE(r.name, u.role_id)) as rolename, MAX(u.basic_salary) as salary,
+                COUNT(s.id)::int as requestcount, COALESCE(SUM(s.amount),0) as totalamount, MAX(s.created_at) as lastat,
+                SUM(CASE WHEN s.status IN ('Approved','Paid','Disbursed') THEN 1 ELSE 0 END)::int as approvedcount
          FROM users u JOIN salary_advance_requests s ON s.user_id = u.id
+         LEFT JOIN branches b ON b.id = u.branch_id LEFT JOIN roles r ON r.id = u.role_id
          WHERE s.created_at >= (CURRENT_DATE - (? || ' days')::interval)::text
          GROUP BY u.id, u.name HAVING COUNT(s.id) >= ? ORDER BY requestcount DESC LIMIT 25`,
         [settings.advanceRequestWindowDays, settings.advanceRequestCountThreshold]
