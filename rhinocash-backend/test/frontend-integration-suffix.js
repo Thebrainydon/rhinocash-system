@@ -5833,7 +5833,7 @@ apiRequest = async function(method, path, body){
     for(let i=0; i<100 && !(DB.notifications||[]).length; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let notifHtml = renderModal();
     __assert(notifHtml.includes('Previous Notifications'), "the real Notifications panel genuinely renders with the requested title");
-    const realNotif = DB.notifications.find(n=>(n.message||'').includes(notifLoan.id));
+    const realNotif = DB.notifications.find(n=>n.title==='Loan rejected' && (n.message||'').includes('[TEST] not viable') && (n.message||'').includes('KES 5,000'));
     __assert(!!realNotif && !realNotif.read, "the real rejection notification genuinely appears here, genuinely unread");
 
     await markRead(realNotif.id);
