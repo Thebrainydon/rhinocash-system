@@ -1891,6 +1891,16 @@ async function initSchema() {
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('receipt-numbers-backfill') ON CONFLICT DO NOTHING`);
   }
+  // Dashboard map: exact branch positions (when set) and live location sharing.
+  await ensureColumn('branches', 'lat DOUBLE PRECISION');
+  await ensureColumn('branches', 'lng DOUBLE PRECISION');
+  await rawRun(`CREATE TABLE IF NOT EXISTS staff_live_locations (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, lat DOUBLE PRECISION NOT NULL, lng DOUBLE PRECISION NOT NULL,
+    accuracy DOUBLE PRECISION, share_until TEXT NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  await rawRun(`CREATE TABLE IF NOT EXISTS staff_location_pings (
+    id BIGSERIAL PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, lat DOUBLE PRECISION NOT NULL, lng DOUBLE PRECISION NOT NULL,
+    accuracy DOUBLE PRECISION, at TEXT NOT NULL DEFAULT iso_now())`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_location_pings_user_at ON staff_location_pings(user_id, at)`);
   // Usernames for signing in (see usernames.js): every account without one
   // gets one made from the person's name.
   await ensureColumn('user_accounts', 'username TEXT');

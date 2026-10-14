@@ -8317,6 +8317,18 @@ apiRequest = async function(method, path, body){
     __assert(String(printReceiptSheet).includes('/api/receipts/mark-printed'), "downloading receipts marks them printed");
   }
 
+  // ---- Dashboards: map, weather and live location ----
+  {
+    __assert(String(renderDashboard).includes('renderGeoWidget()'), "every dashboard carries the Map & Weather card");
+    const w = { current: { temp: 27, icon: '🌧️', text: 'Rain', wind: 10 }, days: [0, 1, 2, 3].map(i => ({ date: '2026-10-1' + (4 + i), icon: '⛅', tmax: 30, tmin: 20, rainChance: i ? 20 : 80 })), advice: 'Heavy rain likely today' };
+    const br = n => ({ id: 'b' + n, name: 'Branch ' + n, region: 'Coast', lat: -4, lng: 39, weather: w });
+    __assert(geoWeatherCard(br(1)).includes('27°') && geoWeatherCard(br(1)).includes('Heavy rain likely today'), "a branch weather card shows the temperature, forecast and field advice");
+    const many = geoWeatherTable(Array.from({ length: 9 }, (_, i) => br(i)));
+    __assert(many.includes('Rain today') && many.includes('Show all 9 branches') && (many.match(/<tr>/g) || []).length === 7, "many branches show as a compact weather table (6 rows, then Show all)");
+    __assert(GEO_SHARE_CHOICES.map(c => c[0]).join(',') === '15,60,480', "live location can be shared for 15 minutes, 1 hour or 8 hours");
+    __assert(String(geoStart).includes('/api/live-location/start') && String(geoStop).includes('/api/live-location/stop') && String(geoAsk).includes('/api/live-location/request'), "share, stop and ask-to-share use the live location API");
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

@@ -10,6 +10,8 @@
 // phone to the desktop layout.
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
 <style>
 :root{
   --navy:#1F3864; --navy-deep:#152647; --navy-soft:#2E4A7D;
@@ -443,6 +445,36 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .gf-ground{height:8px; background:linear-gradient(180deg, #7CB46B, #5A8F4A); border-radius:0 0 10px 10px;}
 .gf-foot{font-size:12px; color:#5E6B7E; margin-top:8px;} .gf-leaf{color:#B5651D; font-weight:700;}
 @keyframes gfGrow{from{transform:scale(.3) translateY(20px); opacity:0} to{transform:none; opacity:1}}
+
+/* Dashboard map, weather & live location */
+.geo-card .card-title small{font-weight:600;}
+.geo-share{display:flex; align-items:center; gap:8px; flex-wrap:wrap; border:1px solid #DCE8F3; background:#F6FAFE; border-radius:10px; padding:9px 12px; margin-bottom:10px; font-size:13px;}
+.geo-share select{border:1px solid #CBD3DE; border-radius:6px; padding:5px 8px; font-size:12.5px;}
+.geo-share.on{background:#EEF9F1; border-color:#C9EBD3; color:#1E6B3E;} .geo-share.on .btn{margin-left:auto;}
+.geo-live-dot{width:10px; height:10px; border-radius:50%; background:#2E9D62; box-shadow:0 0 0 0 rgba(46,157,98,.6); animation:geoPulse 1.6s infinite;}
+@keyframes geoPulse{0%{box-shadow:0 0 0 0 rgba(46,157,98,.6)}70%{box-shadow:0 0 0 10px rgba(46,157,98,0)}100%{box-shadow:0 0 0 0 rgba(46,157,98,0)}}
+.geo-grid{display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(0, 1fr); gap:12px;}
+.geo-map{height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--line); background:#E8EEF4; position:relative; z-index:0;}
+.geo-map-inner{width:100%; height:100%;}
+.geo-nomap{display:flex; align-items:center; justify-content:center; height:100%; color:#6B7789; font-size:13px; text-align:center; padding:12px;}
+.geo-sub-h{font-weight:800; color:#1F3A5F; font-size:13px; margin:2px 0 8px;} .geo-sub-h small{font-weight:600; color:#6B7789;}
+.geo-live{min-width:0;} .geo-ask{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;} .geo-ask select{flex:1 1 160px; border:1px solid #CBD3DE; border-radius:6px; padding:5px; font-size:12px;}
+.geo-wx-row{display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px;}
+.geo-wx-mini{display:flex; gap:10px; white-space:nowrap; font-size:12px;} .geo-wx-adv-s{font-size:12px; color:#8A5A00;}
+.geo-wx{border:1px solid #DCE8F3; border-radius:12px; padding:10px 12px; background:linear-gradient(180deg, #F3F9FF, #FFFFFF);}
+.geo-wx-top{display:flex; justify-content:space-between; align-items:flex-start;} .geo-wx-name{font-weight:800; color:#1C3557;} .geo-wx-reg{font-size:11px; color:#6B7789;}
+.geo-wx-now{display:flex; align-items:center; gap:4px;} .geo-wx-ic{font-size:26px;} .geo-wx-t{font-size:22px; font-weight:800; color:#1C3557;}
+.geo-wx-text{font-size:11.5px; color:#5E6B7E; margin:2px 0 8px;}
+.geo-wx-days{display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; text-align:center; font-size:12px; border-top:1px solid #E6EBF2; padding-top:6px;}
+.geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
+.geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
+.geo-pin-wrap{background:transparent; border:none;}
+.geo-pin{display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #BFD6EE; border-radius:999px; padding:3px 8px 3px 5px; font-size:13px; font-weight:700; color:#1C3557; box-shadow:0 2px 6px rgba(0,0,0,.18); white-space:nowrap; transform:translate(-50%, -100%);}
+.geo-pin span{font-size:11.5px;}
+.geo-person{width:34px; height:34px; border-radius:50%; background:#E0620D; color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; border:3px solid #fff; box-shadow:0 0 0 3px rgba(224,98,13,.35), 0 2px 8px rgba(0,0,0,.3);}
+.geo-person.me{background:#2E9D62; box-shadow:0 0 0 3px rgba(46,157,98,.35), 0 2px 8px rgba(0,0,0,.3);}
+.geo-pop-btn{margin-top:6px; border:1px solid #BFE0DA; background:#F2FBF9; color:#11706B; border-radius:6px; padding:4px 8px; font-weight:700; cursor:pointer;}
+@media (max-width:800px){ .geo-grid{grid-template-columns:1fr;} .geo-map{height:280px;} }
 /* Undisbursed Loans list */
 .ud-title{display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; color:#1C2D6B; padding-bottom:12px; border-bottom:1px solid #E6EBF2; margin-bottom:12px;}
 .ud-back{cursor:pointer; color:#1C2D6B; display:inline-flex;} .ud-back svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
@@ -3677,6 +3709,7 @@ function renderApp(){
   initPendingCharts();
   wireFilterRowScrollSync();
   initSignatureCanvas();
+  try{ geoMountMap(); }catch(e){ console.error(e); }
 }
 
 // ---- Shared auth-screen chrome (Login / Password Recovery / Forced
@@ -11598,7 +11631,173 @@ function renderBranchLoanSummaryPage(){
   return renderStaffPortfolioSummaryCard(rows, totals);
 }
 
-function renderDashboard(){
+// ==================== Dashboard: map, weather & live location ====================
+// Every staff dashboard shows the branches the user can see on a map with
+// today's weather and a 3-day forecast, and lets the user share their live
+// location for a chosen time (like WhatsApp). Supervisors see the live
+// locations of people in their branches/region and can ask an officer to
+// share. Sharing only happens while the person has switched it on, and
+// their phone keeps sending its position while Rhinocash is open.
+const GEO_SHARE_CHOICES = [[15, '15 minutes'], [60, '1 hour'], [480, '8 hours']];
+let geoMap = null, geoMapNode = null, geoLayer = null, geoDrawnStamp = null, geoWatchId = null, geoLastPing = 0, geoTimer = null;
+function geoState(){ return session.geo || (session.geo = { minutes: 60 }); }
+const geoTime = iso => iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase() : '—';
+function loadGeo(force){
+  if(!DB || session.role === 'Investor') return;
+  if(DB.geo && !force && Date.now() - DB.geo.at < 60000) return;
+  if(inFlight.has('geo-load')) return;
+  inFlight.add('geo-load');
+  Promise.all([
+    api.get('/api/geo/overview').catch(e => ({ error: (e && e.message) || 'Map data is not available' })),
+    api.get('/api/live-location').catch(() => ({ me: { sharing: false }, people: [] })),
+  ]).then(([overview, live]) => { if(DB){ DB.geo = { at: Date.now(), overview, live }; geoSyncWatch(); renderApp(); } })
+    .finally(() => inFlight.delete('geo-load'));
+  if(!geoTimer && typeof setInterval === 'function'){
+    // Every 30 s: refresh live positions on the dashboard; stop the phone's tracking after sign-out.
+    geoTimer = setInterval(() => {
+      if(!session.loggedIn){ geoStopWatch(); return; }
+      if(session.section === 'dashboard') loadGeo(true);
+      else geoSyncWatch();
+    }, 30000);
+  }
+}
+function geoWeatherCard(b){
+  const w = b.weather; if(!w) return '';
+  return `<div class="geo-wx"><div class="geo-wx-top"><div><div class="geo-wx-name">${escapeHtml(b.name)}</div><div class="geo-wx-reg">${escapeHtml(b.region || '')}</div></div><div class="geo-wx-now"><span class="geo-wx-ic">${w.current.icon}</span><span class="geo-wx-t">${w.current.temp}°</span></div></div>
+    <div class="geo-wx-text">${escapeHtml(w.current.text)} · wind ${w.current.wind} km/h${w.days[0] && w.days[0].rainChance != null ? ` · rain ${w.days[0].rainChance}%` : ''}</div>
+    <div class="geo-wx-days">${w.days.slice(1, 4).map(d => `<div><div class="geo-wx-d">${new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}</div><div>${d.icon}</div><div class="geo-wx-r">${d.tmax}°/${d.tmin}°</div>${d.rainChance != null ? `<div class="geo-wx-p">💧${d.rainChance}%</div>` : ''}</div>`).join('')}</div>
+    ${w.advice ? `<div class="geo-wx-adv">${escapeHtml(w.advice)}</div>` : ''}</div>`;
+}
+function renderGeoWidget(){
+  if(!DB || session.role === 'Investor') return '';
+  loadGeo();
+  const g = DB.geo; const st = geoState();
+  if(!g) return `<div class="card geo-card"><div class="card-title">Map &amp; Weather</div><div class="hint" style="padding:10px;">${loadingDotsHtml()}</div></div>`;
+  const me = (g.live && g.live.me) || { sharing: false };
+  const people = (g.live && g.live.people) || [];
+  const branches = (g.overview && g.overview.branches) || [];
+  const sup = session.role !== 'Loan Officer';
+  const share = me.sharing
+    ? `<div class="geo-share on"><span class="geo-live-dot"></span><span>Sharing your live location until <strong>${geoTime(me.until)}</strong></span><button type="button" class="btn btn-sm btn-red" onclick="geoStop()">Stop sharing</button></div>`
+    : `<div class="geo-share"><span>📍 Share my live location for</span><select onchange="geoState().minutes=Number(this.value)">${GEO_SHARE_CHOICES.map(c => `<option value="${c[0]}" ${st.minutes === c[0] ? 'selected' : ''}>${c[1]}</option>`).join('')}</select><button type="button" class="btn btn-sm btn-primary" onclick="geoStart()">Share live location</button></div>`;
+  const others = people.filter(p => p.userId !== session.userId);
+  const sharingIds = new Set(people.map(p => p.userId));
+  const askable = sup ? (DB.staff || []).filter(s => s.status === 'Active' && s.id !== session.userId && s.role === 'Loan Officer' && !sharingIds.has(s.id) && (!officerScopeBranchIds() || officerScopeBranchIds().includes(s.branch))) : [];
+  const liveList = sup ? `<div class="geo-live"><div class="geo-sub-h">Live staff <small>${others.length} sharing now</small></div>
+      ${others.length ? admTable(['Staff', 'Branch', 'Last update', 'Sharing until', ''], others.map(p => [`<strong>${escapeHtml(p.name)}</strong><div class="pg-sub">${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || p.roleId)}</div>`, escapeHtml(branchName(p.branchId)), escapeHtml(timeAgo(p.updatedAt)) + (p.accuracy ? `<div class="pg-sub">±${Math.round(p.accuracy)} m</div>` : ''), escapeHtml(geoTime(p.until)), `<button type="button" class="btn btn-sm btn-outline" onclick="geoFocus('${p.userId}')">Locate</button>`]), '') : `<div class="hint">Nobody in your ${session.role === 'Manager' ? 'branch' : 'branches'} is sharing their live location right now.</div>`}
+      ${askable.length ? `<div class="geo-ask"><select id="geo-ask-sel">${askable.map(s => `<option value="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(branchName(s.branch))}</option>`).join('')}</select><button type="button" class="btn btn-sm btn-outline" onclick="geoAsk()">Ask to share location</button></div>` : ''}</div>` : '';
+  const wx = branches.filter(b => b.weather);
+  const err = g.overview && (g.overview.error || g.overview.weatherError);
+  return `<div class="card geo-card">
+    <div class="card-title"><span>Map &amp; Weather <small>${branches.length} branch${branches.length === 1 ? '' : 'es'}</small></span><button type="button" class="btn btn-sm btn-outline" onclick="loadGeo(true)">↻ Refresh</button></div>
+    ${share}
+    <div class="geo-grid"><div id="geo-map-slot" class="geo-map"></div>${liveList}</div>
+    <div class="geo-sub-h" style="margin-top:12px;">Weather forecast <small>${escapeHtml((g.overview && g.overview.weatherSource) || '')}</small></div>
+    ${!wx.length ? `<div class="hint">${escapeHtml(err || 'No forecast yet.')}</div>` : wx.length <= 4 ? `<div class="geo-wx-row">${wx.map(geoWeatherCard).join('')}</div>` : geoWeatherTable(wx)}
+  </div>`;
+}
+// Many branches (regional / head office): one compact row per branch, the
+// wettest first, instead of a card each.
+function geoWeatherTable(wx){
+  const st = geoState();
+  const rain = b => (b.weather.days[0] && b.weather.days[0].rainChance) || 0;
+  const rows = wx.slice().sort((a, b) => rain(b) - rain(a));
+  const shown = st.allWx ? rows : rows.slice(0, 6);
+  const dayLbl = d => new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+  return admTable(['Branch', 'Now', 'Rain today', 'Next 3 days', 'Field advice'], shown.map(b => { const w = b.weather; return [
+    `<strong>${escapeHtml(b.name)}</strong><div class="pg-sub">${escapeHtml(b.region || '')}</div>`,
+    `<span class="geo-wx-ic">${w.current.icon}</span> <strong>${w.current.temp}°</strong><div class="pg-sub">${escapeHtml(w.current.text)}</div>`,
+    `${rain(b)}%`,
+    `<span class="geo-wx-mini">${w.days.slice(1, 4).map(d => `<span title="${escapeHtml(d.text || '')}">${dayLbl(d)} ${d.icon} ${d.tmax}°</span>`).join('')}</span>`,
+    w.advice ? `<span class="geo-wx-adv-s">${escapeHtml(w.advice)}</span>` : '—',
+  ]; }), '') + (rows.length > 6 ? `<div style="margin-top:8px;"><button type="button" class="btn btn-sm btn-outline" onclick="geoState().allWx=!geoState().allWx;renderApp()">${st.allWx ? 'Show fewer' : `Show all ${rows.length} branches`}</button></div>` : '');
+}
+// The map lives in one element that is moved into the dashboard each time
+// it is drawn, so it is not rebuilt (and does not flicker) on every update.
+function geoMountMap(){
+  if(typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  const slot = document.getElementById('geo-map-slot'); if(!slot) return;
+  if(typeof L === 'undefined'){ slot.innerHTML = '<div class="geo-nomap">The map could not load on this connection.</div>'; return; }
+  if(!geoMapNode){ geoMapNode = document.createElement('div'); geoMapNode.className = 'geo-map-inner'; }
+  if(geoMapNode.parentNode !== slot) slot.appendChild(geoMapNode);
+  if(!geoMap){
+    geoMap = L.map(geoMapNode, { scrollWheelZoom: false }).setView([-1.3, 37.9], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(geoMap);
+    geoLayer = L.layerGroup().addTo(geoMap);
+  }
+  setTimeout(() => { try{ geoMap.invalidateSize(); }catch(e){} }, 30);
+  if(DB && DB.geo && geoDrawnStamp !== DB.geo.at) geoDraw();
+}
+function geoDraw(){
+  const g = DB.geo; geoDrawnStamp = g.at; geoLayer.clearLayers();
+  const pts = [];
+  const canMove = ['Admin', 'Operational Manager'].includes(session.role);
+  ((g.overview && g.overview.branches) || []).filter(b => b.lat != null).forEach(b => {
+    const w = b.weather;
+    const icon = L.divIcon({ className: 'geo-pin-wrap', html: `<div class="geo-pin">🏢${w ? `<span>${w.current.icon} ${w.current.temp}°</span>` : ''}</div>`, iconSize: null });
+    const pop = `<strong>${escapeHtml(b.name)}</strong><br>${escapeHtml(b.region || '')}${w ? `<br>${w.current.icon} ${escapeHtml(w.current.text)}, ${w.current.temp}°C` : ''}${b.approximate ? '<br><small>Position: town centre (approximate)</small>' : ''}${canMove ? `<br><button class="geo-pop-btn" onclick="geoSetBranchHere('${b.id}')">Set to my current location</button>` : ''}`;
+    L.marker([b.lat, b.lng], { icon }).bindPopup(pop).addTo(geoLayer); pts.push([b.lat, b.lng]);
+  });
+  ((g.live && g.live.people) || []).forEach(p => {
+    const initials = String(p.name || '?').split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase();
+    if(p.trail && p.trail.length > 1) L.polyline(p.trail, { color: '#E0620D', weight: 3, opacity: .7, dashArray: '4 6' }).addTo(geoLayer);
+    const icon = L.divIcon({ className: 'geo-pin-wrap', html: `<div class="geo-person ${p.userId === session.userId ? 'me' : ''}">${escapeHtml(initials)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    const m = L.marker([p.lat, p.lng], { icon, zIndexOffset: 1000 }).bindPopup(`<strong>${escapeHtml(p.name)}</strong><br>${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || '')} · ${escapeHtml(branchName(p.branchId))}<br>Updated ${escapeHtml(timeAgo(p.updatedAt))}${p.accuracy ? ` (±${Math.round(p.accuracy)} m)` : ''}<br>Sharing until ${geoTime(p.until)}`).addTo(geoLayer);
+    m.__userId = p.userId; pts.push([p.lat, p.lng]);
+  });
+  if(pts.length && !geoMap.__fitted){ geoMap.fitBounds(pts, { padding: [30, 30], maxZoom: 12 }); geoMap.__fitted = true; }
+}
+function geoFocus(userId){
+  const p = ((DB.geo && DB.geo.live && DB.geo.live.people) || []).find(x => x.userId === userId); if(!p || !geoMap) return;
+  geoMap.setView([p.lat, p.lng], 15);
+  geoLayer.eachLayer(l => { if(l.__userId === userId && l.openPopup) l.openPopup(); });
+  const slot = document.getElementById('geo-map-slot'); if(slot && slot.scrollIntoView) slot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function geoHere(){
+  return new Promise((resolve, reject) => {
+    if(typeof navigator === 'undefined' || !navigator.geolocation) return reject(new Error('This device cannot share its location'));
+    navigator.geolocation.getCurrentPosition(p => resolve(p.coords), e => reject(new Error(e && e.code === 1 ? 'Allow location access for Rhinocash in your browser, then try again' : 'Your location could not be found — try again outdoors')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 });
+  });
+}
+async function geoStart(){
+  const minutes = geoState().minutes || 60;
+  await withRequest('geo-start', async ()=>{
+    let c; try{ c = await geoHere(); }catch(e){ toast(e.message); return; }
+    await api.post('/api/live-location/start', { minutes, lat: c.latitude, lng: c.longitude, accuracy: c.accuracy });
+    geoLastPing = Date.now();
+    toast(`Sharing your live location for ${GEO_SHARE_CHOICES.find(x => x[0] === minutes)[1]}`);
+    loadGeo(true);
+  });
+}
+async function geoStop(){ await withRequest('geo-stop', async ()=>{ await api.post('/api/live-location/stop', {}); geoStopWatch(); toast('Live location sharing stopped'); loadGeo(true); }); }
+async function geoAsk(){
+  const sel = typeof document !== 'undefined' && document.getElementById('geo-ask-sel'); if(!sel || !sel.value) return;
+  await withRequest('geo-ask', async ()=>{ const r = await api.post('/api/live-location/request', { userId: sel.value }); toast(r.message); });
+}
+async function geoSetBranchHere(branchId){
+  await withRequest('geo-branch-' + branchId, async ()=>{
+    let c; try{ c = await geoHere(); }catch(e){ toast(e.message); return; }
+    await api.put(`/api/geo/branches/${branchId}`, { lat: c.latitude, lng: c.longitude });
+    toast('Branch position saved'); loadGeo(true);
+  });
+}
+// While sharing is on, the phone sends its position (at most every 30 s).
+function geoSyncWatch(){
+  const me = DB && DB.geo && DB.geo.live && DB.geo.live.me;
+  const on = !!(me && me.sharing && new Date(me.until) > new Date());
+  if(on && geoWatchId === null && typeof navigator !== 'undefined' && navigator.geolocation){
+    geoWatchId = navigator.geolocation.watchPosition(pos => {
+      if(Date.now() - geoLastPing < 30000) return; geoLastPing = Date.now();
+      api.post('/api/live-location/ping', { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
+        .catch(e => { if(e && e.code === 'NOT_SHARING'){ geoStopWatch(); loadGeo(true); } });
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+  }
+  if(!on) geoStopWatch();
+}
+function geoStopWatch(){ if(geoWatchId !== null && typeof navigator !== 'undefined' && navigator.geolocation){ navigator.geolocation.clearWatch(geoWatchId); } geoWatchId = null; }
+// Every staff dashboard ends with the map, weather and live location card.
+function renderDashboard(){ return renderDashboardCore() + renderGeoWidget(); }
+function renderDashboardCore(){
   switch(session.role){
     case "Loan Officer": return renderOfficerDashboard();
     case "Admin": return renderAdminDashboard();
