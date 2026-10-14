@@ -206,6 +206,52 @@ body{
 table.rv-table th{width:32%; text-align:left; background:var(--blue-bg, #EEF3FA); color:var(--navy); font-size:12px; text-transform:uppercase; letter-spacing:0.3px; vertical-align:top;}
 table.rv-table td{vertical-align:top;}
 .rv-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);}
+/* Payments pages (reference layout) */
+.pay-card{padding:14px 16px;}
+.pay-head{display:flex; align-items:center; gap:10px; padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line);}
+.pay-back{width:26px; height:26px; border:1.5px solid var(--navy); border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--navy); cursor:pointer; font-size:14px; flex-shrink:0;}
+.pay-title{font-size:18px; font-weight:700; color:var(--navy);}
+.pay-right{margin-left:auto; font-weight:700; color:var(--navy);}
+.pay-filters{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0 10px;}
+.pay-search{border:1px solid var(--line); border-radius:4px; padding:6px 10px; font-size:12.5px; min-width:180px;}
+.pay-print{color:var(--blue);}
+table.pay-table th{background:#E8EEF8; color:var(--navy); font-size:12px; text-transform:none; letter-spacing:0;}
+table.pay-table tr:nth-child(even) td{background:#F5F8FD;}
+table.pay-table td{font-size:12.5px; vertical-align:top;}
+.pay-bullets{margin:0; padding-left:16px;} .pay-bullets li{margin:0;}
+.pay-sub{font-size:11.5px; color:var(--ink-soft);}
+.pay-link{color:#5B4FC4; font-weight:600; text-decoration:none; white-space:nowrap;}
+.pay-link-note{color:#5B4FC4; font-size:12px;}
+.mrg-panel{border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px; background:#FAFBFE;}
+.mrg-title{color:var(--navy);}
+.mrg-foot{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;}
+/* Receipt sheet (Payments › Receipts) */
+.rc-page{background:#fff; border:1px solid var(--line); border-radius:6px; padding:16px 18px 10px; margin-bottom:16px;}
+.rc-grid{display:grid; grid-template-columns:1fr 1fr; gap:18px 22px;}
+.rc-box{position:relative; overflow:hidden; font-family:Georgia,'Times New Roman',serif; font-size:11px; color:#222; padding:4px 2px 6px;}
+.rc-wm{position:absolute; left:50%; top:58%; width:78%; transform:translate(-50%,-50%); opacity:0.16; pointer-events:none; z-index:0;}
+.rc-in{position:relative; z-index:1;}
+.rc-head{font-weight:700; text-align:center; margin-bottom:4px; letter-spacing:0.5px;}
+.rc-line{display:flex; align-items:flex-end; gap:6px; margin-bottom:6px;}
+.rc-k{white-space:nowrap; color:#333;}
+.rc-v{flex:1 1 auto; border-bottom:1px dotted #777; color:#1F3A93; padding:0 4px; min-height:14px;}
+.rc-v.rc-date{flex:0 0 32%;}
+.rc-no{margin-left:auto; color:var(--rc-num, #E8692C); font-size:19px; font-weight:700; letter-spacing:1px; font-family:Arial,sans-serif;}
+.rc-tables{border-left:9px solid var(--rc-accent, #8DB23A); padding-left:0; margin-top:6px;}
+table.rc-t{width:100%; border-collapse:collapse; margin:0;}
+table.rc-t th, table.rc-t td{border:1px solid #333; padding:3px 6px; font-size:10.5px; text-align:left; background:transparent !important; color:#222; text-transform:none; letter-spacing:0; height:16px;}
+table.rc-t th{font-weight:700;}
+table.rc-t tr.rc-tot td{font-weight:700; text-align:center;} table.rc-t tr.rc-tot td:last-child{text-align:left;}
+table.rc-t.rc-sign{margin-top:6px;}
+.rc-v2{color:#1F3A93;}
+.rc-foot{text-align:center; font-style:italic; font-weight:700; font-size:11px; border-top:1px solid #333; margin-top:14px; padding-top:6px;}
+@media print{
+  @page{ size:A4; margin:10mm; }
+  .rc-sheet .no-print, .rc-toolbar{display:none !important;}
+  .rc-page{border:none; border-radius:0; padding:0; margin:0; page-break-after:always; break-after:page;}
+  .rc-page:last-child{page-break-after:auto; break-after:auto;}
+  .content{padding:0 !important;}
+}
 .chart-grid{display:grid; grid-template-columns:1fr; gap:0 16px; margin-top:4px;}
 @media (min-width:900px){ .chart-grid{grid-template-columns:1fr 1fr;} .chart-grid > :only-child{grid-column:1 / -1;} }
 .chart-grid > .card{min-width:0;}
@@ -1260,16 +1306,12 @@ const LABEL_ROUTES = {
   "Loan Products": {section:"dashboard"},
   // Payments
   "Unposted Payments": {section:"payments", subtab:"Unposted Payments"},
-  "Validate Payments": {section:"payments", subtab:"Unposted Payments"},
-  "Payment Validation": {section:"payments", subtab:"Unposted Payments"},
-  "Payment Queue": {section:"payments", subtab:"Unposted Payments"},
+  "Validate Payments": {section:"payments", subtab:"Validate Payments"},
+  "Payment Validation": {section:"payments", subtab:"Validate Payments"},
+  "Payment Queue": {section:"payments", subtab:"Validate Payments"},
   "Overpayments": {section:"payments", subtab:"Overpayments"},
-  // "Merged Payments" is the same real Processed Payments list — every
-  // posted payment already carries its own real principal/interest
-  // allocation split merged into one row (see renderProcessedPayments()),
-  // rather than a separate ledger this label would otherwise imply.
-  "Merged Payments": {section:"payments", subtab:"Processed Payments"},
-  "Validate Payment": {section:"payments", subtab:"Unposted Payments"},
+  "Merged Payments": {section:"payments", subtab:"Merged Payments"},
+  "Validate Payment": {section:"payments", subtab:"Validate Payments"},
   "Payment Exceptions": {section:"payments", subtab:"Overpayments"},
   "Prepayments": {section:"payments", subtab:"Prepayments"},
   "Processed Payments": {section:"payments", subtab:"Processed Payments"},
@@ -4838,9 +4880,10 @@ Object.assign(ADMIN_PAGES, {
     groups:[aG("Cash Handling",[aTog("allowCash","Accept cash repayments",true),aNum("maxCash","Maximum single cash payment (KES)",50000),aTog("receiptRequired","Printed receipt required",true),aSel("receivedBy","Cash received by",ADM_STAFF_ROLES,"Accountant")])] },
   "Payment Rules": { type:"settings", key:"payments.rules", sub:"General rules every payment must follow.", related:["Payments (all roles)"],
     groups:[aG("Rules",[aNum("minPayment","Minimum payment (KES)",50),aNum("backdateDays","Backdating allowed (days)",0),aTog("closedLoanPayments","Accept payments on closed loans",false),aSel("reversalApprover","Reversals approved by",ADM_STAFF_ROLES,"Accountant")])] },
-  "Receipt Settings": { type:"settings", key:"payments.receipts", sub:"What a printed or SMS receipt shows.", related:["Loan Officer · Receipts","Payments · Receipts"],
-    groups:[aG("Receipt Layout",[aF("header","Header line",{def:"RHINOCASH LTD"}),aF("footer","Footer","textarea",{def:"Thank you for repaying on time."}),aSel("paper","Paper size",["A4","80mm thermal","58mm thermal"],"80mm thermal")]),
-      aG("Shown on Receipt",[aTog("showBalance","Outstanding balance",true),aTog("showOfficer","Loan officer",true),aTog("smsReceipt","Send SMS receipt",true)])] },
+  "Receipt Settings": { type:"settings", key:"payments.receipts", sub:"How the printed receipt sheet looks for every user.", related:["Payments · Receipts"],
+    groups:[aG("Receipt Sheet",[aSel("perPage","Receipts per A4 page",["4","6","8"],"6"),aNum("startNumber","Receipt numbers start from",872000),aF("footer","Page footer",{def:"Payment Receipts"}),aF("header","Company line",{def:"RHINOCASH LTD"}),aTog("showHeader","Show company line on each receipt",false)]),
+      aG("Look",[aF("numberColor","Receipt number colour","color",{def:"#E8692C"}),aF("accent","Accent colour","color",{def:"#8DB23A"}),aTog("watermark","Company logo watermark",true)]),
+      aG("Shown on Receipt",[aTog("showOfficer","Loan officer",true),aTog("showSignatures","Signature lines",true),aTog("smsReceipt","Send SMS receipt",true)])] },
   "Collection Settings": { type:"settings", key:"payments.collection", sub:"Collection days, cut-off time and follow-up timing.", related:["Collection Sheet","Follow-Ups","Promises to Pay"],
     groups:[aG("Collection Calendar",[aF("days","Collection days","days",{def:["Mon","Tue","Wed","Thu","Fri"]}),aF("cutoff","Daily cut-off time","time",{def:"16:00"})]),
       aG("Follow-Up",[aNum("followUpAfter","Follow up after (days overdue)",1),aNum("escalateAfter","Escalate to manager after (days)",7),aNum("maxPromises","Maximum promises to pay per loan",3)])] },
@@ -9365,7 +9408,6 @@ Object.assign(ACC_PAGES, {
   "Bank Reconciliation": { view:'bankRecon', sub:'Compare the statement balance with the ledger and record the result.' },
   "Reconciliation": { view:'reconHub', sub:'Where every reconciliation stands: bank, M-Pesa, payments and suspense.' },
   "Payment Reconciliation": { view:'payRecon', sub:'Check that every client payment reached the ledger with the right amount.' },
-  "Merged Payments": { view:'merged', sub:'Clients who paid more than once on the same day, shown as one combined amount.' },
   "Payment Exceptions": { view:'payExceptions', sub:'Payments that need attention: duplicates, reversals, overpayments and delays.' },
   "Pending Approvals": { view:'pending', sub:'Everything waiting for the Accountant: loans, expenses, requisitions, payments and requests.' },
   "Loan Portfolio Report": { view:'portfolioReport', sub:'The loan book by product, branch, officer and how late repayments are.' },
@@ -18465,22 +18507,19 @@ function renderPayments(){
   const tabs = ["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Pay-in Summary","Payments Report","M-Pesa Integration","M-Pesa Transactions","M-Pesa Reconciliation","M-Pesa B2C Requests"];
   const active = session.subtab || "Record Payment";
   const tabsHtml = ""; // no top sub-menu bar: every payments page is its own sidebar item
-  if(active==="Unposted Payments" && session.role !== 'Loan Officer') return tabsHtml + renderUnposted();
+  // Every role shares the same payments pages; the server scopes the rows.
   if(active==="Unposted Payments") return renderLoanOfficerUnpostedPayments();
-  if(active==="Processed Payments" && session.role !== 'Loan Officer') return tabsHtml + renderProcessedPayments();
   if(active==="Processed Payments") return renderLoanOfficerProcessedPayments();
-  if(active==="Prepayments" && session.role !== 'Loan Officer') return tabsHtml + renderPrepayments();
   if(active==="Prepayments") return renderLoanOfficerPrepayments();
-  if(active==="Overpayments" && session.role !== 'Loan Officer') return tabsHtml + renderOverpayments();
   if(active==="Overpayments") return renderLoanOfficerOverpayments();
+  if(active==="Merged Payments") return renderMergedPayments();
   if(active==="Receipts" && session.selectedReceiptId) return tabsHtml + renderReceiptDetail(session.selectedReceiptId);
-  if(active==="Receipts" && session.role !== 'Loan Officer') return tabsHtml + renderReceiptsList();
-  if(active==="Receipts") return renderLoanOfficerReceipts();
+  if(active==="Receipts") return renderPayReceipts();
   if(active==="Pay-in Summary" && session.role !== 'Loan Officer') return tabsHtml + renderPayinSummary();
   if(active==="Pay-in Summary") return renderLoanOfficerPayinSummary();
   if(active==="Payments Report" && session.role !== 'Loan Officer') return tabsHtml + renderPaymentsReport();
   if(active==="Payments Report") return renderLoanOfficerPaymentsReport();
-  if(active==="Validate Payments") return renderLoanOfficerValidatePayments();
+  if(active==="Validate Payments") return session.role === 'Loan Officer' ? renderLoanOfficerValidatePayments() : renderUnposted();
   if(active==="M-Pesa Integration") return tabsHtml + renderMpesa();
   if(active==="M-Pesa Transactions") return tabsHtml + renderMpesaTransactions();
   if(active==="M-Pesa Reconciliation") return tabsHtml + renderMpesaReconciliation();
@@ -25268,6 +25307,7 @@ function assignC2bPayment(id, loanId){
   return withRequest('assign-c2b-'+id, async ()=>{
     await api.post(`/api/mpesa/c2b/${id}/match`, { loan_id: loanId });
     toast("Payment assigned and posted");
+    session.c2bAssignOpen = null;
     DB.c2bPaymentsBrowser = null;
     await loadC2bPaymentsBrowser();
   }, {mutates:true});
@@ -25315,6 +25355,30 @@ function renderC2bPaymentsModal(){
 // shows this submenu as literally the same page reached via that icon, so
 // reusing the identical state keeps the two views always in sync rather
 // than risking two copies drifting apart.
+// Shared by every payments page below.
+function payCanAssign(){ return ['Manager','Regional Manager','Operational Manager'].includes(session.role) || hasPermission(session.role,"Post Accounting Entries"); }
+function payTime(iso, withDate){
+  if(!iso) return '—';
+  const t = new Date(iso).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase();
+  return withDate ? `${fmtDDMMYYYY(String(iso).slice(0,10))} ${t}` : t;
+}
+const payPhone = p => String(p || '').replace(/^\+?254/, '');
+const payHead = (title, right, back) => `<div class="pay-head"><span class="pay-back" onclick="${back || "goTo('dashboard')"}">←</span><span class="pay-title">${title}</span>${right ? `<span class="pay-right">${right}</span>` : ''}</div>`;
+const payOfficers = () => (DB.staff || []).filter(s => s.role === 'Loan Officer' && s.status !== 'Inactive');
+function payOfficerSelect(value, onchange, label){
+  if(session.role === 'Loan Officer') return '';
+  return `<select class="btn btn-sm btn-outline" onchange="${onchange}"><option value="">${label || '-- Officer --'}</option>${payOfficers().map(o => `<option value="${o.id}" ${value === o.id ? 'selected' : ''}>${escapeHtml(o.name)}</option>`).join('')}</select>`;
+}
+function assignLoanOptions(clientNameHint){
+  const loans = activeLoans().slice().sort((x, y) => {
+    const xm = clientNameHint && clientName(x.clientId) === clientNameHint ? 0 : 1, ym = clientNameHint && clientName(y.clientId) === clientNameHint ? 0 : 1;
+    return xm - ym || clientName(x.clientId).localeCompare(clientName(y.clientId));
+  });
+  return loans.map(l => `<option value="${l.id}">${escapeHtml(clientName(l.clientId))} — ${escapeHtml(l.productName || '')} ${fmtNum(l.principal)}</option>`).join('');
+}
+// Unposted Payments: every paybill (M-Pesa C2B) receipt in the period —
+// branch roles see their branches' payments plus every payment not yet
+// linked to a loan, which they can assign.
 function renderLoanOfficerUnpostedPayments(){
   if(!session.c2bPaymentsState) session.c2bPaymentsState = { period:'today', q:'', page:1 };
   const st = session.c2bPaymentsState;
@@ -25325,27 +25389,38 @@ function renderLoanOfficerUnpostedPayments(){
   if(DB.c2bPaymentsBrowser.error) return `<div class="card">${c2bErrorHtml()}</div>`;
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
+  const withDate = st.period !== 'today';
+  const canAssign = payCanAssign();
+  const action = t => {
+    if(t.linkedApplication) return `<span class="pay-link-note">Linked to application</span>`;
+    if(t.matched || t.processed) return '';
+    if(!canAssign) return `<span class="badge red">Unassigned</span>`;
+    if(session.c2bAssignOpen === t.id) return `<div class="dt-act"><select id="c2b-assign-${t.id}" style="max-width:220px;"><option value="">Assign to loan…</option>${assignLoanOptions(t.clientName)}</select>
+      <button class="btn btn-sm btn-primary" onclick="assignC2bPayment('${t.id}', document.getElementById('c2b-assign-${t.id}').value)">Post</button><button class="btn btn-sm btn-outline" onclick="session.c2bAssignOpen=null; renderApp();">✕</button></div>`;
+    return `<a href="#" class="pay-link" onclick="session.c2bAssignOpen='${t.id}'; renderApp(); return false;">Assign</a>`;
+  };
   return `
-    <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Payments (Ksh ${fmtNum(d.totals.amount)})</span></div>
-      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
+    <div class="card pay-card">
+      ${payHead(`Payments (Ksh ${fmtNum(d.totals.amount)})`)}
+      <div class="pay-filters">
         <select onchange="session.c2bPaymentsState.period=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();" class="btn btn-sm btn-outline">
           ${C2B_PERIOD_OPTIONS.map(p=>`<option value="${p.value}" ${p.value===st.period?'selected':''}>${p.label}</option>`).join("")}
         </select>
         <span style="flex:1 1 auto;"></span>
-        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.c2bPaymentsState.q=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" onchange="session.c2bPaymentsState.q=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();" class="pay-search">
       </div>
-      <div class="table-wrap" style="margin-top:10px;"><table>
-        <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Account</th><th>Transaction</th><th>Amount</th><th>Date</th></tr>
+      <div class="table-wrap"><table class="pay-table">
+        <tr><th>Transaction</th><th>Client</th><th>Phone</th><th>Account</th><th>Amount</th><th>Paybill</th><th>Date</th><th>Action</th></tr>
         ${d.transactions.map(t=>`<tr>
-          <td>${t.matched ? escapeHtml(t.clientName||'—') : `<span class="badge red">Unassigned</span>`}</td>
-          <td>${escapeHtml(t.phone||'—')}</td>
-          <td>${escapeHtml(d.shortcode||'—')}</td>
-          <td class="hint">${escapeHtml(t.accountRef||'—')}</td>
           <td>${escapeHtml(t.transId)}</td>
+          <td>${t.clientName ? escapeHtml(t.clientName) : `<span class="hint">Unknown payer</span>`}</td>
+          <td>${escapeHtml(payPhone(t.phone) || '—')}</td>
+          <td>${escapeHtml(t.accountRef || '—')}</td>
           <td>${fmtNum(t.amount)}</td>
-          <td>${fmtDDMMYYYY(t.createdAt.slice(0,10))}</td>
-        </tr>`).join("") || `<tr><td colspan="7" class="empty">No payments match the selected filters.</td></tr>`}
+          <td>${escapeHtml(t.paybill || d.shortcode || '—')}</td>
+          <td>${payTime(t.createdAt, withDate)}</td>
+          <td>${action(t)}</td>
+        </tr>`).join("") || `<tr><td colspan="8" class="empty">No payments match the selected filters.</td></tr>`}
       </table></div>
       ${total>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.c2bPaymentsState.page=${page-1}; DB.c2bPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.c2bPaymentsState.page=${page+1}; DB.c2bPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
     </div>
@@ -25365,15 +25440,15 @@ function renderLoanOfficerUnpostedPayments(){
 // activity, realistically small enough that a second server-side
 // pagination layer over the union would be needless complexity.
 function defaultLoanOfficerProcessedPaymentsState(){
-  const to = todayISO();
-  const from = new Date(Date.now() - 86400000).toISOString().slice(0,10);
-  return { from, to, payMode:'', q:'', page:1 };
+  const today = todayISO();
+  return { from: today, to: today, payMode:'', officer:'', q:'', page:1 };
 }
 async function loadLoanOfficerProcessedPayments(){
   const st = session.loProcessedPaymentsState;
   return withRequest('load-lo-processed-payments:'+JSON.stringify(st), async ()=>{
     const params = new URLSearchParams({ status:'Posted', date_from:st.from, date_to:st.to, limit:500 });
     if(st.payMode) params.set('channel', st.payMode);
+    if(st.officer) params.set('officer_id', st.officer);
     if(st.q) params.set('q', st.q);
     const feeParams = new URLSearchParams({ date_from:st.from, date_to:st.to });
     if(st.q) feeParams.set('q', st.q);
@@ -25383,7 +25458,7 @@ async function loadLoanOfficerProcessedPayments(){
     ]);
     const paymentRows = paymentsRes.payments.map(p=>({
       kind:'payment', id:p.id, reference:p.reference, amount:Number(p.amount),
-      clientName:p.client_name, clientPhone:p.client_phone,
+      clientName:p.client_name, clientPhone:p.client_phone, clientIdNo:p.client_national_id,
       principal:Number(p.allocated_principal||0), interest:Number(p.allocated_interest||0), penalty:Number(p.allocated_penalty||0), fee:0,
       approvedBy:p.recorded_by, time:p.created_at,
     }));
@@ -25391,9 +25466,9 @@ async function loadLoanOfficerProcessedPayments(){
     // fee collection is always M-Pesa in this system (see the real STK
     // push flow in POST /api/loans/processing-fee/initiate), so fee rows
     // genuinely don't qualify when a different specific mode is selected.
-    const feeRows = (st.payMode && st.payMode!=='M-Pesa') ? [] : feeRes.feePayments.map(f=>({
+    const feeRows = (st.payMode && st.payMode!=='M-Pesa') ? [] : feeRes.feePayments.filter(f => !st.officer || ((DB.clients||[]).find(c => c.id === f.client_id) || {}).officerId === st.officer).map(f=>({
       kind:'fee', id:f.id, reference:f.mpesa_receipt_number||f.id, amount:Number(f.amount),
-      clientName:f.client_name, clientPhone:f.client_phone,
+      clientName:f.client_name, clientPhone:f.client_phone, clientIdNo:f.client_national_id,
       principal:0, interest:0, penalty:0, fee:Number(f.amount),
       approvedBy:f.confirmed_by, time:f.confirmed_at,
     }));
@@ -25405,32 +25480,32 @@ function renderLoanOfficerProcessedPayments(){
   const st = session.loProcessedPaymentsState || (session.loProcessedPaymentsState = defaultLoanOfficerProcessedPaymentsState());
   if(!DB.loProcessedPayments || DB.loProcessedPayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerProcessedPayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const d = DB.loProcessedPayments;
-  const pageSize = 25;
+  const pageSize = 50;
   const totalPages = Math.max(1, Math.ceil(d.rows.length/pageSize));
   const page = Math.min(st.page||1, totalPages);
   const pageRows = d.rows.slice((page-1)*pageSize, page*pageSize);
+  const oneDay = st.from === st.to;
+  const set = (k, v) => `session.loProcessedPaymentsState.${k}=${v}; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();`;
   return `
-    <div class="card">
-      <div class="card-title" style="justify-content:space-between; gap:8px;">
-        <span style="display:flex; align-items:center; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Processed pays from ${fmtDDMMYYYY(st.from)} to ${fmtDDMMYYYY(st.to)}</span></span>
-        <span>(Ksh ${fmtNum(d.total)})</span>
-      </div>
-      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
-        <input type="date" value="${st.from}" onchange="session.loProcessedPaymentsState.from=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+    <div class="card pay-card">
+      ${payHead(oneDay ? `Processed pays for ${fmtDDMMYYYY(st.from)}` : `Processed pays from ${fmtDDMMYYYY(st.from)} to ${fmtDDMMYYYY(st.to)}`, `(Ksh ${fmtNum(d.total)})`)}
+      <div class="pay-filters">
+        <input type="date" value="${st.from}" onchange="${set('from', 'this.value')}" class="btn btn-sm btn-outline">
         <span>To:</span>
-        <input type="date" value="${st.to}" onchange="session.loProcessedPaymentsState.to=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <input type="date" value="${st.to}" onchange="${set('to', 'this.value')}" class="btn btn-sm btn-outline">
         <span style="flex:1 1 auto;"></span>
-        <button class="btn btn-sm btn-outline" onclick="window.print && window.print()">🖨 Print</button>
+        <button class="btn btn-sm btn-outline pay-print" onclick="window.print && window.print()">🖨 Print</button>
       </div>
-      <div class="pill-row" style="align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
-        <select onchange="session.loProcessedPaymentsState.payMode=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline">
+      <div class="pay-filters">
+        ${payOfficerSelect(st.officer, set('officer', 'this.value'))}
+        <select onchange="${set('payMode', 'this.value')}" class="btn btn-sm btn-outline">
           <option value="" ${st.payMode===''?'selected':''}>-- Pay Mode --</option>
           ${["M-Pesa","Bank","Cash"].map(c=>`<option value="${c}" ${st.payMode===c?'selected':''}>${c}</option>`).join("")}
         </select>
         <span style="flex:1 1 auto;"></span>
-        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.loProcessedPaymentsState.q=this.value; session.loProcessedPaymentsState.page=1; DB.loProcessedPayments=null; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
+        <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" onchange="${set('q', 'this.value')}" class="pay-search">
       </div>
-      <div class="table-wrap" style="margin-top:10px;"><table>
+      <div class="table-wrap"><table class="pay-table">
         <tr><th>Transaction</th><th>Amount</th><th>Payment Details</th><th>Client</th><th>Approval</th><th>Time</th></tr>
         ${pageRows.map(r=>{
           const bullets = [];
@@ -25438,14 +25513,13 @@ function renderLoanOfficerProcessedPayments(){
           if(r.interest>0) bullets.push(`Interest - ${fmtNum(r.interest)}`);
           if(r.penalty>0) bullets.push(`Penalty - ${fmtNum(r.penalty)}`);
           if(r.fee>0) bullets.push(`Processing fee - ${fmtNum(r.fee)}`);
-          const clickable = r.kind==='payment';
-          return `<tr ${clickable?`class="clickable" onclick="goTo('payments','Receipts'); openReceipt('${r.id}')"`:''}>
+          return `<tr>
             <td>${escapeHtml(r.reference||'—')}</td>
             <td>${fmtNum(r.amount)}</td>
-            <td><ul style="margin:0; padding-left:16px;">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
-            <td>${escapeHtml(r.clientName||'—')}<br><span class="hint">${escapeHtml(r.clientPhone||'—')}</span></td>
-            <td>${r.approvedBy ? staffName(r.approvedBy) : 'System'}</td>
-            <td>${r.time ? `${fmtDDMMYYYY(r.time.slice(0,10))},${r.time.slice(11,16)}` : '—'}</td>
+            <td><ul class="pay-bullets">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
+            <td>${escapeHtml(r.clientName||'—')}<br><span class="pay-sub">${escapeHtml(r.clientIdNo||r.clientPhone||'')}</span></td>
+            <td>${r.approvedBy ? escapeHtml(staffName(r.approvedBy)) : 'System'}</td>
+            <td>${payTime(r.time, !oneDay)}</td>
           </tr>`;
         }).join("") || `<tr><td colspan="6" class="empty">No processed payments in this period.</td></tr>`}
       </table></div>
@@ -25479,27 +25553,30 @@ async function loadLoanOfficerPrepayments(){
 }
 function renderLoanOfficerPrepayments(){
   const st = session.loPrepaymentsState || (session.loPrepaymentsState = defaultLoanOfficerPrepaymentsState());
-  if(!DB.loPrepayments || DB.loPrepayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerPrepayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!DB.loPrepayments){ loadLoanOfficerPrepayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const byLoan = DB.loPrepayments.byLoan;
   let rows = Object.keys(byLoan).map(loanId=>{
     const loan = DB.loans.find(l=>l.id===loanId);
     return loan ? { loan, prepayment: byLoan[loanId] } : null;
   }).filter(Boolean);
+  if(st.officer) rows = rows.filter(r => r.loan.officerId === st.officer);
   if(st.q) rows = rows.filter(r=>clientName(r.loan.clientId).toLowerCase().includes(st.q.toLowerCase()));
   return `
-    <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Loan Prepayments</span></div>
-      <div class="pill-row" style="margin-top:8px;">
-        <input placeholder="🔍 Search Client" value="${escapeHtml(st.q)}" oninput="session.loPrepaymentsState.q=this.value; renderApp();" class="btn btn-sm btn-outline">
+    <div class="card pay-card">
+      ${payHead('Loan Prepayments')}
+      <div class="pay-filters">
+        ${payOfficerSelect(st.officer, "session.loPrepaymentsState.officer=this.value; renderApp();", '- Select Staff -')}
+        <span style="flex:1 1 auto;"></span>
+        <input placeholder="🔍 Search Client" value="${escapeHtml(st.q)}" onchange="session.loPrepaymentsState.q=this.value; renderApp();" class="pay-search">
       </div>
-      <div class="table-wrap" style="margin-top:10px;"><table>
+      <div class="table-wrap"><table class="pay-table">
         <tr><th>Client</th><th>Branch</th><th>Loan</th><th>Product</th><th>Officer</th><th>Disbursement</th><th>Prepayment</th></tr>
         ${rows.map(r=>`<tr class="clickable" onclick="openLoan('${r.loan.id}')">
           <td>${escapeHtml(clientName(r.loan.clientId))}</td>
           <td>${escapeHtml(branchName(r.loan.branchId))}</td>
           <td>${fmtNum(r.loan.principal)}</td>
           <td>${escapeHtml(r.loan.productName||'—')}</td>
-          <td>${staffName(r.loan.officerId)}</td>
+          <td>${escapeHtml(staffName(r.loan.officerId))}</td>
           <td>${r.loan.disbursedAt?fmtDDMMYYYY(r.loan.disbursedAt.slice(0,10)):'—'}</td>
           <td>${fmtNum(r.prepayment)}</td>
         </tr>`).join("") || `<tr><td colspan="7" class="empty">No prepayments found.</td></tr>`}
@@ -25532,6 +25609,15 @@ async function loadLoanOfficerOverpayments(){
     DB.loOverpayments = res;
   });
 }
+async function assignOverpayment(paymentId, loanId){
+  if(!loanId){ toast('Choose the loan'); return; }
+  await withRequest('ovp-assign-' + paymentId, async ()=>{
+    const r = await api.post(`/api/payments/${paymentId}/assign-overpay`, { loan_id: loanId });
+    toast(`Ksh ${fmtNum(r.payment.amount)} moved to the loan (${r.payment.reference})`);
+    session.ovpAssignOpen = null; DB.loOverpayments = null;
+    if(typeof refreshMyData === 'function') refreshMyData(true);
+  }, { mutates: true });
+}
 function renderLoanOfficerOverpayments(){
   const st = session.loOverpaymentsState || (session.loOverpaymentsState = defaultLoanOfficerOverpaymentsState());
   if(!DB.loOverpayments || DB.loOverpayments.stateKey !== JSON.stringify(st)){ loadLoanOfficerOverpayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
@@ -25539,9 +25625,9 @@ function renderLoanOfficerOverpayments(){
   const { page, totalPages, total, limit } = d.pagination;
   return `
     <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>Overpayments (Ksh ${fmtNum(d.totals.overpay)})</span></div>
-      <div class="pill-row" style="justify-content:flex-end; margin-top:8px;">
-        <input placeholder="🔍 Search Idno" value="${escapeHtml(st.idno)}" oninput="session.loOverpaymentsState.idno=this.value; session.loOverpaymentsState.page=1; DB.loOverpayments=null; renderApp();" class="btn btn-sm btn-outline">
+      ${payHead(`Overpayments (Ksh ${fmtNum(d.totals.overpay)})`)}
+      <div class="pay-filters"><span style="flex:1 1 auto;"></span>
+        <input placeholder="🔍 Search Idno" value="${escapeHtml(st.idno)}" onchange="session.loOverpaymentsState.idno=this.value; session.loOverpaymentsState.page=1; DB.loOverpayments=null; renderApp();" class="pay-search">
       </div>
       <div class="table-wrap" style="margin-top:10px;"><table>
         <tr><th>#</th><th>Client</th><th>Overpay</th><th>Transaction</th><th>Amount</th><th>Description</th><th>Date</th><th>Approval</th></tr>
@@ -25552,6 +25638,11 @@ function renderLoanOfficerOverpayments(){
           if(allocP>0) bullets.push(`Principal - ${fmtNum(allocP)}`);
           if(allocI>0) bullets.push(`Interest - ${fmtNum(allocI)}`);
           if(allocPen>0) bullets.push(`Penalty - ${fmtNum(allocPen)}`);
+          const otherLoans = (DB.loans||[]).filter(l => l.clientId === p.client_id && l.id !== p.loan_id && ['Active','Disbursed'].includes(l.status));
+          const assignCell = !payCanAssign() ? '' : session.ovpAssignOpen === p.id
+            ? (otherLoans.length ? `<div class="dt-act"><select id="ovp-loan-${p.id}">${otherLoans.map(l=>`<option value="${l.id}">${escapeHtml(l.productName||'Loan')} ${fmtNum(l.principal)}</option>`).join('')}</select><button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); assignOverpayment('${p.id}', document.getElementById('ovp-loan-${p.id}').value)">Move</button><button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); session.ovpAssignOpen=null; renderApp();">✕</button></div>`
+              : `<div class="hint">No other running loan for this client</div><a href="#" class="pay-link" onclick="event.stopPropagation(); session.ovpAssignOpen=null; renderApp(); return false;">Close</a>`)
+            : `<a href="#" class="pay-link" onclick="event.stopPropagation(); session.ovpAssignOpen='${p.id}'; renderApp(); return false;">Assign</a>`;
           return `<tr class="clickable" onclick="goTo('payments','Receipts'); openReceipt('${p.id}')">
             <td>${(page-1)*limit+i+1}</td>
             <td>${escapeHtml(p.client_name||'—')}${p.client_national_id?`<br><span class="hint">Idno: ${escapeHtml(p.client_national_id)}</span>`:''}</td>
@@ -25560,7 +25651,7 @@ function renderLoanOfficerOverpayments(){
             <td>${fmtNum(p.amount)}</td>
             <td><ul style="margin:0; padding-left:16px;">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
             <td>${p.created_at?`${fmtDDMMYYYY(p.created_at.slice(0,10))},${p.created_at.slice(11,16)}`:'—'}</td>
-            <td>${p.recorded_by ? staffName(p.recorded_by) : 'System'}</td>
+            <td onclick="event.stopPropagation();">${p.recorded_by ? escapeHtml(staffName(p.recorded_by)) : 'System'}<br>${assignCell}</td>
           </tr>`;
         }).join("") || `<tr><td colspan="8" class="empty">No overpayments found.</td></tr>`}
       </table></div>
@@ -25715,12 +25806,164 @@ function renderLoanOfficerReceiptDayGrid(day){
     </div>
   `;
 }
-function renderLoanOfficerReceipts(){
-  const st = session.loReceiptsState || (session.loReceiptsState = defaultLoanOfficerReceiptsState());
-  const key = JSON.stringify({ year: st.year, month: st.month });
-  if(!DB.loReceiptsMonth || DB.loReceiptsMonth.stateKey !== key){ loadLoanOfficerReceiptsMonth(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
-  return st.viewDay ? renderLoanOfficerReceiptDayGrid(st.viewDay) : renderLoanOfficerReceiptsList();
+// ==================== Merged Payments ====================
+// Several unassigned paybill payments from one client combined into one
+// payment on a loan (reference MERGED<n>), with the list of past merges.
+function mergedState(){ return session.mrgState || (session.mrgState = { q:'', open:false, sel:{}, loanId:'', tq:'' }); }
+async function loadMergedPayments(){
+  const st = mergedState();
+  await withRequest('load-merges', async ()=>{ const r = await api.get('/api/payments/merges' + (st.q ? '?q=' + encodeURIComponent(st.q) : '')); DB.mrgList = { key: st.q, merges: r.merges }; });
 }
+async function loadMergeable(){
+  const st = mergedState();
+  await withRequest('load-mergeable', async ()=>{ const r = await api.get('/api/payments/mergeable' + (st.tq ? '?q=' + encodeURIComponent(st.tq) : '')); DB.mrgTx = { key: st.tq, transactions: r.transactions }; });
+}
+function toggleMergePanel(){ const st = mergedState(); st.open = !st.open; st.sel = {}; st.loanId = ''; DB.mrgTx = null; renderApp(); }
+function toggleMergeTx(id, on){ const st = mergedState(); if(on) st.sel[id] = true; else delete st.sel[id]; renderApp(); }
+async function submitMerge(){
+  const st = mergedState(); const ids = Object.keys(st.sel);
+  if(ids.length < 2){ toast('Tick at least two payments to merge'); return; }
+  if(!st.loanId){ toast('Choose the loan to post the merged payment to'); return; }
+  const tx = (DB.mrgTx ? DB.mrgTx.transactions : []).filter(t => st.sel[t.id]);
+  const total = tx.reduce((t, x) => t + x.amount, 0);
+  if(typeof confirm === 'function' && !confirm(`Merge ${ids.length} payments (Ksh ${fmtNum(total)}) into one payment on this loan?`)) return;
+  await withRequest('merge-payments', async ()=>{
+    const r = await api.post('/api/payments/merge', { transaction_ids: ids, loan_id: st.loanId });
+    toast(`Merged into ${r.merge.reference} — Ksh ${fmtNum(r.merge.total)}`);
+    st.open = false; st.sel = {}; st.loanId = ''; DB.mrgTx = null; DB.mrgList = null; DB.c2bPaymentsBrowser = null;
+    if(typeof refreshMyData === 'function') refreshMyData(true);
+  }, { mutates: true });
+}
+function renderMergePanel(){
+  const st = mergedState();
+  if(!DB.mrgTx || DB.mrgTx.key !== st.tq){ loadMergeable(); return `<div class="mrg-panel"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const tx = DB.mrgTx.transactions;
+  const chosen = tx.filter(t => st.sel[t.id]);
+  const total = chosen.reduce((t, x) => t + x.amount, 0);
+  const hint = chosen.map(t => t.suggestedClient && t.suggestedClient.name).find(Boolean);
+  return `<div class="mrg-panel">
+    <div class="pay-filters"><strong class="mrg-title">Unassigned paybill payments</strong><span style="flex:1 1 auto;"></span>
+      <input placeholder="🔍 Phone, account or transaction" value="${escapeHtml(st.tq)}" onchange="session.mrgState.tq=this.value; DB.mrgTx=null; renderApp();" class="pay-search"></div>
+    <div class="table-wrap" style="max-height:340px; overflow:auto;"><table class="pay-table">
+      <tr><th></th><th>Transaction</th><th>Phone</th><th>Account</th><th>Amount</th><th>Date</th><th>Likely client</th></tr>
+      ${tx.map(t => `<tr><td><input type="checkbox" ${st.sel[t.id] ? 'checked' : ''} onchange="toggleMergeTx('${t.id}', this.checked)"></td><td>${escapeHtml(t.transId)}</td><td>${escapeHtml(payPhone(t.phone))}</td><td>${escapeHtml(t.accountRef || '—')}</td><td>${fmtNum(t.amount)}</td><td>${payTime(t.createdAt, true)}</td><td>${t.suggestedClient ? `${escapeHtml(t.suggestedClient.name)}<br><span class="pay-sub">${escapeHtml(t.suggestedClient.idNo || '')}</span>` : '<span class="hint">—</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No unassigned payments to merge.</td></tr>'}
+    </table></div>
+    <div class="mrg-foot">
+      <span><strong>${chosen.length}</strong> selected · <strong>Ksh ${fmtNum(total)}</strong></span>
+      <select onchange="session.mrgState.loanId=this.value; renderApp();" style="max-width:340px;"><option value="">Post to loan…</option>${assignLoanOptions(hint).replace(`value="${st.loanId}"`, `value="${st.loanId}" selected`)}</select>
+      <button class="btn btn-sm btn-primary" onclick="submitMerge()" ${chosen.length < 2 || !st.loanId ? 'disabled' : ''}>Merge ${chosen.length || ''} payments</button>
+    </div>
+  </div>`;
+}
+function renderMergedPayments(){
+  const st = mergedState();
+  if(!DB.mrgList || DB.mrgList.key !== st.q){ loadMergedPayments(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const list = DB.mrgList.merges;
+  const canMerge = payCanAssign();
+  return `<div class="card pay-card">
+    ${payHead(`Merged Payments`, canMerge ? `<button class="btn btn-sm ${st.open ? 'btn-outline' : 'btn-primary'}" onclick="toggleMergePanel()">${st.open ? '✕ Close' : '+ Merge Payments'}</button>` : '')}
+    ${st.open ? renderMergePanel() : ''}
+    <div class="pay-filters"><span style="flex:1 1 auto;"></span><input placeholder="🔍 Search client" value="${escapeHtml(st.q)}" onchange="session.mrgState.q=this.value; DB.mrgList=null; renderApp();" class="pay-search"></div>
+    <div class="table-wrap"><table class="pay-table">
+      <tr><th>Client</th><th>Transactions</th><th>Total Merged</th><th>Reference</th><th>Merged by</th><th>Date</th><th>Action</th></tr>
+      ${list.map(m => `<tr>
+        <td>${escapeHtml(m.clientName || '—')}<br><span class="pay-sub">Idno: ${escapeHtml(m.clientIdNo || '—')}</span></td>
+        <td><ul class="pay-bullets">${m.transactions.map(t => `<li>${escapeHtml(t.transId)} - ${fmtNum(t.amount)}</li>`).join('')}</ul></td>
+        <td><strong>${fmtNum(m.total)}</strong></td>
+        <td>${escapeHtml(m.reference || '—')}</td>
+        <td>${escapeHtml(m.createdBy)}</td>
+        <td>${payTime(m.createdAt, true)}</td>
+        <td><div class="dt-act">${m.loanId ? `<button class="btn btn-sm btn-outline" onclick="openLoan('${m.loanId}')">Loan</button>` : ''}${m.paymentId ? `<button class="btn btn-sm btn-outline" onclick="goTo('payments','Receipts'); openReceipt('${m.paymentId}')">Receipt</button>` : ''}</div></td>
+      </tr>`).join('') || '<tr><td colspan="7" class="empty">No merged payments yet.</td></tr>'}
+    </table></div>
+  </div>`;
+}
+
+// ==================== Payment Receipts ====================
+// Per-day list (receipts and how many are still unprinted) → a printable
+// sheet of receipts laid out as set in Admin › Receipt Settings. Printing
+// (Download) marks the receipts printed.
+function rcpState(){ const now = new Date(); return session.rcpState || (session.rcpState = { year: now.getFullYear(), month: now.getMonth() + 1, view: null }); }
+async function loadReceiptDays(){
+  const st = rcpState(); const key = st.year + '-' + st.month;
+  await withRequest('load-rcp-days-' + key, async ()=>{ const r = await api.get(`/api/receipts/days?year=${st.year}&month=${st.month}`); DB.rcpDays = { key, days: r.days }; });
+}
+async function loadReceiptSheet(){
+  const v = rcpState().view; const key = v.date + ':' + v.mode;
+  await withRequest('load-rcp-sheet-' + key, async ()=>{ const r = await api.get(`/api/receipts?date=${v.date}${v.mode === 'unprinted' ? '&unprinted=1' : ''}`); DB.rcpSheet = { key, receipts: r.receipts, settings: r.settings }; });
+}
+function openReceiptDay(date, mode, print){ const st = rcpState(); st.view = { date, mode, print: !!print }; DB.rcpSheet = null; renderApp(); }
+function closeReceiptDay(){ rcpState().view = null; DB.rcpSheet = null; DB.rcpDays = null; renderApp(); }
+async function printReceiptSheet(){
+  const sh = DB.rcpSheet; if(!sh) return;
+  if(typeof window !== 'undefined' && window.print) window.print();
+  const items = sh.receipts.filter(r => !r.printed).map(r => ({ kind: r.kind, id: r.id }));
+  if(!items.length) return;
+  await withRequest('rcp-mark', async ()=>{ const r = await api.post('/api/receipts/mark-printed', { receipts: items }); sh.receipts.forEach(x => { x.printed = true; }); DB.rcpDays = null; toast(`${r.marked} receipt${r.marked === 1 ? '' : 's'} marked printed`); });
+}
+function receiptBoxHtml(r, s){
+  const lines = [['Interest', r.interest], ['Principal', r.principal]];
+  if(r.penalty > 0) lines.push(['Penalty', r.penalty]);
+  lines.push(['Processing fee', r.fee]);
+  if(r.overpay > 0) lines.push(['Overpayment', r.overpay]);
+  const v = x => escapeHtml(x == null || x === '' ? '' : String(x));
+  return `<div class="rc-box" style="--rc-accent:${v(s.accent)}; --rc-num:${v(s.numberColor)};">
+    ${s.watermark ? `<img class="rc-wm" src="${LOGO_DATA_URI}" alt="">` : ''}
+    <div class="rc-in">
+      ${s.showHeader && s.header ? `<div class="rc-head">${v(s.header)}</div>` : ''}
+      <div class="rc-line"><span class="rc-k">Client Name</span><span class="rc-v">${v(r.clientName)}</span><span class="rc-k">Date</span><span class="rc-v rc-date">${fmtDDMMYYYY(String(r.date || '').slice(0, 10))}</span></div>
+      <div class="rc-line"><span class="rc-k">Client IDNO</span><span class="rc-v">${v(r.clientIdNo)}</span><span class="rc-no">${v(r.receiptNo)}</span></div>
+      ${s.showOfficer ? `<div class="rc-line"><span class="rc-k">Loan Officer</span><span class="rc-v">${v(r.officerName)}</span></div>` : ''}
+      <div class="rc-tables">
+        <table class="rc-t"><tr><th>Description</th><th>Transaction</th><th>Total</th></tr>
+          ${lines.map(([l, a]) => `<tr><td>${l}</td><td>${a > 0 ? v(r.transaction) : ''}</td><td>${a > 0 ? fmtNum(a) : ''}</td></tr>`).join('')}
+          <tr class="rc-tot"><td colspan="2">TOTALS</td><td>${fmtNum(r.total)}</td></tr></table>
+        <table class="rc-t rc-sign"><tr><td>Confirmed By <span class="rc-v2">${v(r.confirmedBy)}</span></td><td>Posting Status <span class="rc-v2">${v(r.postingStatus)}</span></td></tr>
+          ${s.showSignatures ? `<tr><td>Signature ........................</td><td>Signature ........................</td></tr>` : ''}</table>
+      </div>
+    </div></div>`;
+}
+function receiptSheetHtml(receipts, s, date){
+  const per = Number(s.perPage) || 6; const pages = [];
+  for(let i = 0; i < receipts.length; i += per) pages.push(receipts.slice(i, i + per));
+  const d = new Date(date + 'T00:00:00'); const label = `${d.toLocaleString('en-US', { month: 'short' })} ${d.getDate()},${d.getFullYear()}`;
+  return pages.map((pg, i) => `<div class="rc-page rc-per-${per}"><div class="rc-grid">${pg.map(r => receiptBoxHtml(r, s)).join('')}</div><div class="rc-foot">${escapeHtml(label)} ${escapeHtml(s.footer || 'Payment Receipts')}: Page ${i + 1}</div></div>`).join('');
+}
+function renderReceiptSheetPage(){
+  const st = rcpState(); const v = st.view; const key = v.date + ':' + v.mode;
+  if(!DB.rcpSheet || DB.rcpSheet.key !== key){ loadReceiptSheet(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const sh = DB.rcpSheet;
+  if(v.print){ v.print = false; setTimeout(() => printReceiptSheet(), 120); }
+  return `<div class="rc-sheet">
+    <div class="card pay-card rc-toolbar no-print">${payHead(`Receipts — ${fmtDDMMYYYY(v.date)} <span class="hint">(${sh.receipts.length} ${v.mode === 'unprinted' ? 'unprinted' : 'in total'})</span>`, `<button class="btn btn-sm btn-primary" onclick="printReceiptSheet()">⬇ Download / Print</button>`, 'closeReceiptDay()')}</div>
+    ${sh.receipts.length ? receiptSheetHtml(sh.receipts, sh.settings, v.date) : `<div class="card"><div class="empty">No ${v.mode === 'unprinted' ? 'unprinted ' : ''}receipts for this day.</div></div>`}
+  </div>`;
+}
+function renderPayReceipts(){
+  const st = rcpState();
+  if(st.view) return renderReceiptSheetPage();
+  const key = st.year + '-' + st.month;
+  if(!DB.rcpDays || DB.rcpDays.key !== key){ loadReceiptDays(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const days = DB.rcpDays.days;
+  const y = new Date().getFullYear();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `<div class="card pay-card">
+    ${payHead('Payment Receipts')}
+    <div class="pay-filters">
+      <select class="btn btn-sm btn-outline" onchange="session.rcpState.year=Number(this.value); DB.rcpDays=null; renderApp();">${[y, y - 1, y - 2].map(x => `<option value="${x}" ${x === st.year ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <select class="btn btn-sm btn-outline" onchange="session.rcpState.month=Number(this.value); DB.rcpDays=null; renderApp();">${MONTHS.map((m, i) => `<option value="${i + 1}" ${i + 1 === st.month ? 'selected' : ''}>${m} ${st.year}</option>`).join('')}</select>
+    </div>
+    <div class="table-wrap"><table class="pay-table">
+      <tr><th>#</th><th>Date</th><th>Receipts</th><th>Unprinted</th><th>Action</th></tr>
+      ${days.map((d, i) => `<tr>
+        <td>${i + 1}</td><td>${fmtDDMMYYYY(d.date)}</td><td>${d.receipts}</td>
+        <td>${d.unprinted} <a href="#" class="pay-link" onclick="openReceiptDay('${d.date}', '${d.unprinted ? 'unprinted' : 'all'}'); return false;">👁 View</a> | <a href="#" class="pay-link" onclick="openReceiptDay('${d.date}', 'unprinted', true); return false;">⬇ Download</a></td>
+        <td><a href="#" class="pay-link" onclick="openReceiptDay('${d.date}', 'all', true); return false;">☁ Download All</a></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="empty">No receipts in this month.</td></tr>'}
+    </table></div>
+  </div>`;
+}
+function renderLoanOfficerReceipts(){ return renderPayReceipts(); }
 
 // ==================== Pay-in Summary / "Daily Paybill Collection" (Loan Officer Payments menu) ====================
 // A real calendar of daily M-Pesa/Paybill collection totals for a

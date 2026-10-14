@@ -2130,7 +2130,7 @@ apiRequest = async function(method, path, body){
     await new Promise(r=>setTimeout(r,50)); renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Processed Payments page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
-    __assert(html.includes('Processed pays from') && html.includes('(Ksh') && html.includes('Pay Mode') && html.includes('Print'), "the real Processed Payments page genuinely renders with the requested title, Ksh-prefixed total, Pay Mode filter and Print button");
+    __assert(html.includes('Processed pays for') && html.includes('(Ksh') && html.includes('Pay Mode') && html.includes('Print'), "the real Processed Payments page genuinely renders with the requested title, Ksh-prefixed total, Pay Mode filter and Print button");
     __assert(html.includes(ppPayment.reference), "the real, just-recorded loan payment genuinely appears by its real reference number");
     __assert(html.includes('Principal') || html.includes('Interest'), "the real Payment Details bullets genuinely reflect the real allocated_principal/allocated_interest buckets");
     if(ppFeeClient) __assert(html.includes('Processing fee') && html.includes(ppFeeClient.client.name), "a real confirmed processing-fee collection genuinely appears merged into the same real list, not just loan-schedule payments");
@@ -2249,23 +2249,27 @@ apiRequest = async function(method, path, body){
     // per-day receipts browser merging real posted/overpaid loan payments
     // (GET /api/payments) with real confirmed processing-fee collections
     // (GET /api/loans/processing-fee/confirmed) for the selected month.
-    session.loReceiptsState = null; DB.loReceiptsMonth = null;
+    session.rcpState = null; DB.rcpDays = null; DB.rcpSheet = null;
     goTo('payments','Receipts');
-    await new Promise(r=>setTimeout(r,80)); renderApp();
+    for (let i = 0; i < 100 && !DB.rcpDays; i++) await new Promise(r=>setTimeout(r,30));
+    renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Payment Receipts list genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
-    __assert(html.includes('Payment Receipts') && html.includes('Receipts') && html.includes('Unprinted') && html.includes('Action'), "the real Payment Receipts list genuinely renders with the requested title and full column set");
-    __assert(DB.loReceiptsMonth && typeof DB.loReceiptsMonth.byDay === 'object', "the real receipts data genuinely loaded from the real backend endpoints, not fabricated client-side");
+    __assert(html.includes('Payment Receipts') && html.includes('Receipts') && html.includes('Unprinted') && html.includes('Action') && html.includes('Download All'), "the real Payment Receipts list genuinely renders with the requested title and full column set");
+    __assert(DB.rcpDays && Array.isArray(DB.rcpDays.days), "the real receipts data genuinely loaded from the real backend endpoints, not fabricated client-side");
     const todayStr = new Date().toISOString().slice(0,10);
-    __assert(Array.isArray(DB.loReceiptsMonth.byDay[todayStr]) && DB.loReceiptsMonth.byDay[todayStr].some(r=>r.reference===ppPayment.reference), "a real payment recorded earlier this same session genuinely appears in today's real receipts list");
-    __assert(DB.loReceiptsMonth.byDay[todayStr].some(r=>r.reference===opPayment.reference), "a real overpayment genuinely appears in the real receipts list too, not just plain Posted payments");
-
-    viewLoanOfficerReceiptDay(todayStr);
-    html = document.getElementById('root').innerHTML;
-    __assert(html.includes('Payment Receipts —') && html.includes('Client Name') && html.includes('Client ID NO.') && html.includes('Loan Officer') && html.includes('Description') && html.includes('Transaction') && html.includes('TOTALS') && html.includes('Confirmed By System') && html.includes('Posting Status'), "the real per-day receipt-slip grid genuinely renders with the requested fields");
-    __assert(html.includes(ppPayment.reference), "the real day-grid genuinely shows the real transaction reference for a real payment");
-    session.loReceiptsState.viewDay = null;
+    const todayRow = DB.rcpDays.days.find(d => d.date === todayStr);
+    __assert(todayRow && todayRow.receipts >= 2 && todayRow.unprinted >= 1, "today's receipts and unprinted count are listed");
+    openReceiptDay(todayStr, 'all');
+    for (let i = 0; i < 100 && !DB.rcpSheet; i++) await new Promise(r=>setTimeout(r,30));
     renderApp();
+    html = document.getElementById('root').innerHTML;
+    __assert(DB.rcpSheet.receipts.some(r => r.transaction === ppPayment.reference) && DB.rcpSheet.receipts.some(r => r.transaction === opPayment.reference), "a payment and an overpayment recorded earlier both have receipts");
+    __assert(html.includes('Client Name') && html.includes('Client IDNO') && html.includes('Loan Officer') && html.includes('Description') && html.includes('Transaction') && html.includes('TOTALS') && html.includes('Confirmed By') && html.includes('Posting Status') && html.includes('Payment Receipts: Page 1'), "the receipt sheet renders every field of the reference receipt");
+    __assert(html.includes(ppPayment.reference), "the receipt sheet shows the real transaction reference");
+    await printReceiptSheet();
+    __assert(DB.rcpSheet.receipts.every(r => r.printed), "Download marks the day's receipts printed");
+    closeReceiptDay();
 
     // Pay-in Summary / "Daily Paybill Collection" (Loan Officer Payments
     // menu): a real calendar of daily M-Pesa/Paybill totals, backed by the
@@ -8145,6 +8149,31 @@ apiRequest = async function(method, path, body){
     const pt = paymentsTable([{ id:'p1', reference:'REF1', amount:500, channel:'Cash', status:'Posted', date:'2026-10-01T10:00:00Z', allocated:{ principal:400, interest:100, penalty:0 } }]);
     for (const h of ['Branch','Loan Officer','Principal','Interest','Penalty','Recorded by','Action']) __assert(pt.includes(`<th>${h}</th>`), `the payments table shows ${h}`);
     __assert(pt.includes('openRecordView(') && pt.includes('Receipt'), "each payment row has View and Receipt actions");
+  }
+
+  // ---- Payments pages in the reference layout, for every role ----
+  {
+    __assert(LABEL_ROUTES['Merged Payments'].subtab === 'Merged Payments' && LABEL_ROUTES['Validate Payment'].subtab === 'Validate Payments', "Merged Payments and Validate Payment each open their own page");
+    const src = String(renderPayments);
+    for (const [label, fn] of [['Unposted Payments','renderLoanOfficerUnpostedPayments'], ['Processed Payments','renderLoanOfficerProcessedPayments'], ['Prepayments','renderLoanOfficerPrepayments'], ['Overpayments','renderLoanOfficerOverpayments'], ['Merged Payments','renderMergedPayments'], ['Receipts','renderPayReceipts']]) {
+      __assert(new RegExp(`active==="${label}"\\) return ${fn}\\(\\)`).test(src), `every role's ${label} opens the reference-style page`);
+    }
+    __assert(String(renderLoanOfficerUnpostedPayments).includes('<th>Transaction</th><th>Client</th><th>Phone</th><th>Account</th><th>Amount</th><th>Paybill</th><th>Date</th><th>Action</th>'), "Unposted Payments shows Transaction | Client | Phone | Account | Amount | Paybill | Date | Action");
+    __assert(String(renderLoanOfficerUnpostedPayments).includes('Linked to application'), "paybill payments for an application read 'Linked to application'");
+    __assert(String(renderLoanOfficerProcessedPayments).includes('Processed pays for') && String(renderLoanOfficerProcessedPayments).includes('payOfficerSelect('), "Processed Payments: title for the day, officer and pay-mode filters");
+    __assert(String(renderLoanOfficerPrepayments).includes("'- Select Staff -'"), "Prepayments has the staff filter");
+    __assert(String(renderLoanOfficerOverpayments).includes('assignOverpayment(') && typeof assignOverpayment === 'function', "Overpayments can be assigned to another loan");
+    __assert(String(renderMergePanel).includes('submitMerge()') && String(renderMergedPayments).includes('<th>Client</th><th>Transactions</th><th>Total Merged</th>'), "Merged Payments lists merges and has the merge tool");
+    const s0 = { perPage: 6, watermark: true, showOfficer: true, showSignatures: true, numberColor:'#E8692C', accent:'#8DB23A', footer:'Payment Receipts' };
+    const rc = { kind:'payment', id:'p1', receiptNo: 872128, date:'2026-10-13T10:00:00Z', clientName:'Kadzo Charo', clientIdNo:'26141632', officerName:'Juma Rumba', transaction:'UJDRDABDXD', interest:4, principal:96, penalty:0, fee:0, overpay:0, total:100, postingStatus:'Posted', confirmedBy:'System' };
+    const box = receiptBoxHtml(rc, s0);
+    for (const t of ['Client Name','Client IDNO','Loan Officer','Description','Transaction','Total','Interest','Principal','Processing fee','TOTALS','Confirmed By','Posting Status','Signature','872128','Kadzo Charo','26141632','Juma Rumba','UJDRDABDXD','rc-wm']) __assert(box.includes(t), `the receipt shows ${t}`);
+    const sheet = receiptSheetHtml(Array.from({ length: 7 }, (_, i) => Object.assign({}, rc, { id: 'p' + i, receiptNo: 872000 + i })), s0, '2026-10-13');
+    __assert((sheet.match(/class="rc-page/g) || []).length === 2 && sheet.includes('Oct 13,2026 Payment Receipts: Page 1') && sheet.includes('Page 2'), "receipts are laid out per A4 page with the dated page footer");
+    const s4 = Object.assign({}, s0, { perPage: 4, watermark: false, showOfficer: false });
+    __assert((receiptSheetHtml(Array.from({ length: 5 }, () => rc), s4, '2026-10-13').match(/class="rc-page/g) || []).length === 2 && !receiptBoxHtml(rc, s4).includes('rc-wm') && !receiptBoxHtml(rc, s4).includes('Loan Officer'), "Admin receipt settings change the sheet (per page, watermark, officer)");
+    __assert(ADMIN_PAGES['Receipt Settings'].groups.some(g => g.fields.some(f => f.k === 'perPage')) && ADMIN_PAGES['Receipt Settings'].groups.some(g => g.fields.some(f => f.k === 'startNumber')), "Admin › Receipt Settings controls the receipt sheet");
+    __assert(String(printReceiptSheet).includes('/api/receipts/mark-printed'), "downloading receipts marks them printed");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

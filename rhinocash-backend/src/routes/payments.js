@@ -91,6 +91,7 @@ async function allocate(loanId, amount, paymentId) {
 // gl_accounts sees consistent ids no matter which route posted the entry.
 function glAccountFor(channel) {
   const c = String(channel || 'Cash').toLowerCase();
+  if (c.includes('overpay')) return 'overpayment_suspense'; // a held overpayment moved onto another loan
   if (c.includes('mpesa') || c.includes('m-pesa')) return 'mpesa';
   if (c.includes('bank')) return 'bank';
   return 'cash';

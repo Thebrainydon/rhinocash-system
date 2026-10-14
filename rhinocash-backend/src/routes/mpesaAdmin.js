@@ -6,7 +6,7 @@
 'use strict';
 const { requireAuth, requirePermission, requireModule } = require('./../middleware');
 const { logAction } = require('./../audit');
-const { branchScopeSQL, hasModuleAccess, hasPermission } = require('./../rbac');
+const { branchScopeSQL, branchIdsInScope, hasModuleAccess, hasPermission } = require('./../rbac');
 const { all } = require('./../db');
 const mpesa = require('./../integrations/mpesa');
 
@@ -165,6 +165,13 @@ function register(router) {
       clauses.push('(msisdn LIKE ? OR bill_ref_number LIKE ? OR trans_id LIKE ?)');
       const like = `%${req.query.q}%`; params.push(like, like, like);
     }
+    // Branch roles see their own branches' payments plus every payment not
+    // yet linked to any loan (someone has to assign those).
+    const scopeIds = await branchIdsInScope(req.user);
+    if (scopeIds !== null) {
+      if (!scopeIds.length) clauses.push('matched_loan_id IS NULL');
+      else { clauses.push(`(matched_loan_id IS NULL OR matched_loan_id IN (SELECT id FROM loans WHERE branch_id IN (${scopeIds.map(() => '?').join(',')})))`); params.push(...scopeIds); }
+    }
     const where = clauses.join(' AND ');
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
@@ -191,17 +198,30 @@ function register(router) {
 
     const activeEnv = await mpesa.getActiveEnvironment();
     const activeConfig = activeEnv ? await mpesa.getMaskedConfig(activeEnv) : null;
+    const org = await get('SELECT paybill FROM organization_settings WHERE id = 1').catch(() => null);
+    const orgPaybill = (org && org.paybill) || null;
     // Deliberately NOT scoped by the from/to filter above — this is what
     // backs the topbar badge, which should always mean "needing attention
     // right now", not "needing attention within whatever date range is
     // currently selected in the panel".
     const unmatchedRow = await get(`SELECT COUNT(*) as cnt FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
 
+    // Payments made toward a loan application's processing fee, and the
+    // likely client of an unassigned payment (by phone / ID / client code).
+    const linked = {}; const guess = {};
+    const tIds = rows.map(r => r.trans_id).filter(Boolean);
+    if (tIds.length) (await all(`SELECT f.mpesa_receipt_number, c.name FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id WHERE f.mpesa_receipt_number IN (${tIds.map(() => '?').join(',')})`, tIds)).forEach(f => { linked[f.mpesa_receipt_number] = f.name; });
+    for (const r of rows.filter(x => !x.matched_loan_id && !linked[x.trans_id])) {
+      const c = await get(`SELECT name FROM clients WHERE (length(?) >= 9 AND RIGHT(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 9) = RIGHT(?, 9)) OR national_id = ? OR client_code = ? LIMIT 1`,
+        [String(r.msisdn || ''), String(r.msisdn || ''), r.bill_ref_number, r.bill_ref_number]);
+      if (c) guess[r.id] = c.name;
+    }
     res.json({
       transactions: rows.map(r => ({
         id: r.id, transId: r.trans_id, amount: r.amount, phone: r.msisdn, accountRef: r.bill_ref_number,
-        matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id,
-        clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : null,
+        matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id, processed: !!r.processed, matchMethod: r.match_method,
+        linkedApplication: !!linked[r.trans_id], paybill: (activeConfig && activeConfig.shortcode) || orgPaybill,
+        clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : (linked[r.trans_id] || guess[r.id] || null),
         createdAt: r.created_at,
       })),
       shortcode: activeConfig ? activeConfig.shortcode : null,

@@ -1829,6 +1829,30 @@ async function initSchema() {
   for (const [t, c] of [['loan_approvals', 'approver_id'], ['collection_activities', 'staff_id'], ['follow_ups', 'responsible_staff_id']]) {
     await rawRun(`ALTER TABLE ${t} ALTER COLUMN ${c} DROP NOT NULL`);
   }
+  // Payment receipts: every confirmed collection (loan payment or processing
+  // fee) carries a sequential receipt number and a printed timestamp; merged
+  // M-Pesa payments and overpayment transfers are recorded for audit.
+  await rawRun(`CREATE SEQUENCE IF NOT EXISTS receipt_no_seq START 1`);
+  await ensureColumn('payments', 'receipt_no BIGINT');
+  await ensureColumn('payments', 'printed_at TEXT');
+  await ensureColumn('payments', 'overpay_assigned_to TEXT');
+  await ensureColumn('loan_fee_payments', 'receipt_no BIGINT');
+  await ensureColumn('loan_fee_payments', 'printed_at TEXT');
+  await rawRun(`CREATE TABLE IF NOT EXISTS payment_merges (
+    id TEXT PRIMARY KEY, merge_no BIGINT NOT NULL, client_id TEXT REFERENCES clients(id), loan_id TEXT REFERENCES loans(id),
+    payment_id TEXT REFERENCES payments(id), total NUMERIC(14,2) NOT NULL, transactions_json TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id), created_at TEXT NOT NULL DEFAULT iso_now())`);
+  await rawRun(`CREATE SEQUENCE IF NOT EXISTS payment_merge_seq START 1`);
+  await rawRun(`CREATE SEQUENCE IF NOT EXISTS overpay_transfer_seq START 1`);
+  await rawRun(`ALTER TABLE payment_merges ALTER COLUMN created_by DROP NOT NULL`);
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'receipt-numbers-backfill'`))) {
+    const rows = await rawAll(`SELECT 'p' AS k, id, created_at AS at FROM payments WHERE status IN ('Posted','Overpayment') AND receipt_no IS NULL
+      UNION ALL SELECT 'f' AS k, id, confirmed_at AS at FROM loan_fee_payments WHERE status = 'Confirmed' AND receipt_no IS NULL ORDER BY at`);
+    for (const r of rows) {
+      await rawRun(`UPDATE ${r.k === 'p' ? 'payments' : 'loan_fee_payments'} SET receipt_no = nextval('receipt_no_seq') WHERE id = ?`, [r.id]);
+    }
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('receipt-numbers-backfill') ON CONFLICT DO NOTHING`);
+  }
   // Backs the single-active-session login block (see routes/auth.js /
   // routes/investors.js): a session only counts as "genuinely still in
   // use" — and so blocks a second login — while it has real, recent
