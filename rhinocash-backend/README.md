@@ -136,7 +136,8 @@ Only `DATABASE_URL` is required. Everything else has a sane default:
 | `SESSION_SECRET` | auto-generated, persisted to `data/.session_secret` | HMAC key for session tokens — set this explicitly in production |
 | `INITIAL_ADMIN_EMAIL` | `admin@rhinocash.co.ke` | seed-time only |
 | `INITIAL_ADMIN_PASSWORD` | randomly generated | seed-time only; set this if you want a known password instead of a generated one (still forced to change on first login) |
-| `CORS_ORIGIN` | `*` | tighten this to your frontend's real origin before going live |
+| `CORS_ORIGIN` | `*` | the web app's origin(s), comma-separated — production: `https://cbs.rhinocash.co.ke,https://rhinocash-app.onrender.com` |
+| `APP_BASE_URL` | _(unset)_ | public address of the web app, used in emails ("Sign in at …") — production: `https://cbs.rhinocash.co.ke` |
 | `RATE_LIMIT_PER_MINUTE` | `180` | general per-IP rate limit across the whole API |
 
 See `.env.example` for the full list, including M-Pesa/SMS/Email

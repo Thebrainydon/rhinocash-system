@@ -24816,7 +24816,7 @@ function renderMpesaConfigForm(env, config){
         <div class="field"><label>Consumer Secret ${config.consumerSecret?`(${escapeHtml(config.consumerSecret)})`:''}</label><input name="consumerSecret" type="password" placeholder="${config.consumerSecret?'Leave blank to keep current':'Enter Consumer Secret'}"></div>
         <div class="field"><label>Shortcode / Paybill</label><input name="shortcode" value="${escapeHtml(config.shortcode||'')}" placeholder="e.g. 174379"></div>
         <div class="field"><label>Passkey ${config.passkey?`(${escapeHtml(config.passkey)})`:''}</label><input name="passkey" type="password" placeholder="${config.passkey?'Leave blank to keep current':'Enter Passkey'}"></div>
-        <div class="field full"><label>Callback URL</label><input name="callbackUrl" value="${escapeHtml(config.callbackUrl||'')}" placeholder="https://your-domain.example.com/api/mpesa/callback/${env}"></div>
+        <div class="field full"><label>Callback URL</label><input name="callbackUrl" value="${escapeHtml(config.callbackUrl||'')}" placeholder="${escapeHtml(API_BASE)}/api/mpesa/callback/${env}"></div>
       </div>
       <button class="btn btn-primary btn-sm" type="submit">Save ${env==='production'?'Production':'Sandbox'} Configuration</button>
       ${config.configured ? `<button type="button" class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="withRequest('mpesa-test-${env}', ()=>testMpesaConnection('${env}'))">Test Connection</button>

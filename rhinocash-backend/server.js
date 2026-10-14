@@ -28,9 +28,19 @@ router.use((req, res, next) => {
   next();
 });
 
-// CORS (the frontend is served separately, e.g. as the existing static HTML app)
+// CORS (the frontend is served separately, e.g. as the existing static HTML app).
+// CORS_ORIGIN may list several origins separated by commas — e.g. the
+// production domain plus the original Render URL kept as a backup. The
+// request's Origin is echoed back only when it is on that list; unset keeps
+// the previous behaviour of allowing any origin.
+const CORS_ORIGINS = String(process.env.CORS_ORIGIN || '').split(',').map(o => o.trim().replace(/\/+$/, '')).filter(Boolean);
 router.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  if (!CORS_ORIGINS.length || CORS_ORIGINS.includes('*')) res.setHeader('Access-Control-Allow-Origin', '*');
+  else {
+    const origin = String(req.headers.origin || '').replace(/\/+$/, '');
+    res.setHeader('Access-Control-Allow-Origin', CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0]);
+    res.setHeader('Vary', 'Origin');
+  }
   // X-Filename is real and required — POST /api/uploads' raw-binary
   // contract reads the real filename from it (see the route below).
   // Missing it here silently fails the browser's own CORS preflight for

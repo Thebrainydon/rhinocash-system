@@ -46,18 +46,21 @@ async function deliver(cfg, to, subject, body) {
   return { ok: false, detail: `Email provider "${cfg.provider}" is not supported` };
 }
 
+// Public address of the Rhinocash web app (APP_BASE_URL), added to emails
+// so people know where to sign in. Left out when it isn't configured.
+const signInLine = () => { const u = String(process.env.APP_BASE_URL || '').trim().replace(/\/+$/, ''); return u ? `\n\nSign in at ${u}` : ''; };
 const TEMPLATES = {
   account_invitation: (ctx) => ({
     subject: 'Welcome to Rhinocash',
-    body: `Hello ${ctx.name},\n\nYour Rhinocash account has been created.\nEmail: ${ctx.email}\nTemporary password: ${ctx.tempPassword}\n\nYou'll be asked to set a new password on first login.`,
+    body: `Hello ${ctx.name},\n\nYour Rhinocash account has been created.\nEmail: ${ctx.email}\nTemporary password: ${ctx.tempPassword}\n\nYou'll be asked to set a new password on first login.${signInLine()}`,
   }),
   password_reset: (ctx) => ({
     subject: 'Your Rhinocash password has been reset',
-    body: `Hello ${ctx.name},\n\nYour temporary password is: ${ctx.tempPassword}\nYou'll be asked to change it on next login.\n\nIf you did not request this, contact your System Administrator immediately.`,
+    body: `Hello ${ctx.name},\n\nYour temporary password is: ${ctx.tempPassword}\nYou'll be asked to change it on next login.${signInLine()}\n\nIf you did not request this, contact your System Administrator immediately.`,
   }),
   monthly_statement: (ctx) => ({
     subject: `Your ${ctx.period} statement`,
-    body: `Hello ${ctx.name},\n\nYour statement for ${ctx.period} is attached/available in the portal.`,
+    body: `Hello ${ctx.name},\n\nYour statement for ${ctx.period} is attached/available in the portal.${signInLine()}`,
   }),
   system_notification: (ctx) => ({ subject: ctx.subject, body: ctx.body }),
 };
