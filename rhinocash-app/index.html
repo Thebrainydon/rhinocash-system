@@ -346,6 +346,91 @@ table.pg-matrix th.c{text-align:center;} table.pg-matrix tr.pg-th2 th{background
 canvas.sig-pad{width:100%; max-width:640px; height:190px; border:1.5px dashed #9EB7D3; border-radius:10px; background:#fff; touch-action:none; display:block; cursor:crosshair;}
 .la-foot{display:flex; justify-content:flex-end; border-top:1px solid var(--line); margin-top:16px; padding-top:12px;}
 @media (max-width:640px){ .la-grid{grid-template-columns:1fr;} }
+/* Loan application page (cards + tabs) */
+.ap-page{max-width:1100px;}
+.ap-back{display:block; width:100%; max-width:640px; margin:0 auto 16px; border:1px solid #D9E4EF; background:#fff; border-radius:999px; padding:11px 16px; font-weight:700; color:#1F5D99; font-size:14px; cursor:pointer; box-shadow:0 1px 3px rgba(20,40,70,.06);}
+.ap-eyebrow{font-size:12px; font-weight:800; letter-spacing:1px; text-transform:uppercase; color:#5E6B7E;}
+.ap-name{font-size:26px; font-weight:800; color:#1F5D99; margin:4px 0 2px; line-height:1.15;}
+.ap-idline{font-size:14px; color:#5E6B7E; margin-bottom:14px;}
+.ap-cards{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-bottom:16px;}
+.ap-card{position:relative; border:1px solid #DCE8F3; background:linear-gradient(180deg, #F6FAFE, #EEF5FC); border-radius:14px; padding:14px 16px; min-width:0;}
+.ap-card-l{font-size:11.5px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:#5E6B7E;}
+.ap-card-v{font-size:19px; font-weight:800; color:#1C3557; margin:6px 0 4px; overflow-wrap:anywhere;}
+.ap-card-s{font-size:13px; color:#6B7789;}
+.ap-edit{position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; border:1px solid #BFE0DA; background:#F2FBF9; color:#11706B; font-weight:700; border-radius:10px; padding:7px 12px; cursor:pointer; font-size:13px;}
+.ap-edit svg, .ap-tab-ic svg, .es-head-ic svg, .es-banner svg, .es-btn svg, .es-link-ic svg, .es-badge svg, .es-mini svg, .ap-sec-h svg{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px;}
+.ap-tabs{display:flex; gap:6px; border-bottom:1px solid #E1E8F0; margin-bottom:14px; overflow-x:auto;}
+.ap-tab{display:inline-flex; align-items:center; gap:6px; border:none; background:transparent; padding:10px 12px; font-size:13px; font-weight:700; color:#5E6B7E; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap;}
+.ap-tab.on{color:#1F5D99; border-bottom-color:#1F5D99;}
+.ap-box{border:1px solid #E1E8F0; border-radius:12px; padding:12px 16px; margin-bottom:12px;}
+.ap-box-l{font-size:13px; font-weight:700; color:#5E6B7E; margin-bottom:6px;} .ap-box-v{font-size:15px; color:#1C2433; line-height:1.6;}
+.ap-sec-h{display:flex; align-items:center; gap:6px; font-weight:800; color:#1F5D99; margin:4px 0 8px;}
+.ap-note{border-left:3px solid #2A9D8F; background:#F2FAF9; padding:9px 12px; border-radius:6px; font-size:12.5px;}
+.ap-total{text-align:right; font-size:13px; margin-top:6px; color:#5E6B7E;} .ap-total strong{color:#1C2433; margin-left:6px;}
+.ap-thumb{width:54px; height:42px; object-fit:cover; border-radius:6px; border:1px solid #E1E8F0;}
+@media (max-width:700px){
+  .ap-cards{grid-template-columns:1fr;}
+  .ap-name{font-size:24px;}
+  .ap-tabs{flex-direction:column; border:1px solid #DCE8F3; background:#F4F8FC; border-radius:14px; padding:8px; gap:8px; overflow:visible;}
+  .ap-tab{background:#fff; border:1px solid #E6EDF4; border-radius:10px; padding:13px 16px; font-size:15px; margin:0; justify-content:flex-start;}
+  .ap-tab.on{background:#EEF5FC; border-color:#BFD6EE; border-bottom-color:#BFD6EE;}
+}
+/* Loan form tab, signing page */
+.es-head{display:flex; gap:12px; align-items:flex-start; margin:4px 0 12px;} .es-head-ic{color:#1F5D99; margin-top:2px;} .es-head-ic svg{width:24px; height:24px;}
+.es-title{font-size:18px; font-weight:700; color:#1F5D99;} .es-sub{font-size:13px; color:#6B7789; margin-top:4px; line-height:1.5;}
+.es-banner{display:flex; align-items:center; gap:8px; border-radius:10px; padding:11px 14px; font-size:13.5px; margin:10px 0;}
+.es-blue{background:#EEF4FD; border:1px solid #CFDDF5; color:#2B57B5;} .es-green{background:#EEF9F1; border:1px solid #C9EBD3; color:#227A46;}
+.es-amber{background:#FFF8EA; border:1px solid #F4DDAA; color:#8A5A00;} .es-red{background:#FDEEEE; border:1px solid #F3C9C9; color:#A12A2A;}
+.es-actions{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:10px 0;}
+.es-btn{display:inline-flex; align-items:center; gap:7px; border-radius:9px; padding:10px 16px; font-weight:700; font-size:13.5px; cursor:pointer;}
+.es-primary{border:none; color:#fff; background:linear-gradient(90deg, #0F7C83, #1F5DA8); box-shadow:0 2px 6px rgba(31,93,168,.25);}
+.es-outline{border:1px solid #BFE0DA; background:#F7FCFB; color:#11706B;}
+.es-when{font-size:13px; color:#5E6B7E;}
+.es-linkcard{border:1px solid #DCE8F3; background:#F6FAFE; border-radius:14px; padding:14px; margin:12px 0;}
+.es-linkcard-h{display:flex; gap:10px;} .es-link-ic{color:#1F5D99;} .es-linkcard-t{font-weight:700; color:#1C3557;}
+.es-link-in{width:100%; box-sizing:border-box; margin-top:10px; border:1px solid #D6DCE5; border-radius:8px; padding:10px; font-size:13px; background:#fff;}
+.es-g-h{font-size:14px; color:#1C2433; margin-top:16px;} .es-g-sub{font-size:14px; color:#1C2433; margin-top:2px;}
+.es-badge{display:inline-flex; align-items:center; gap:4px; border:1px solid #DCE3EC; background:#F5F7FA; color:#5E6B7E; border-radius:6px; padding:2px 8px; font-size:11.5px; font-weight:700;}
+.es-badge.es-ok{background:#EEF9F1; border-color:#C9EBD3; color:#227A46;} .es-badge.es-blue{background:#EEF4FD; border-color:#CFDDF5; color:#2B57B5;}
+.es-mini{display:flex; align-items:center; gap:4px; margin-top:6px; border:1px solid #BFE0DA; background:#F7FCFB; color:#11706B; border-radius:7px; padding:4px 9px; font-size:11.5px; font-weight:700; cursor:pointer;}
+.es-prev-h{font-size:11.5px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:#5E6B7E; margin:18px 0 8px;}
+.es-prev{background:#EEF2F7; border-radius:14px; padding:12px;}
+.es-page{max-width:900px; margin:0 auto;}
+.es-who{font-size:13.5px; color:#5E6B7E; margin:0 0 10px;}
+.es-sigcard{border:1px solid #DCE3EC; background:#F7F9FC; border-radius:16px; padding:16px; margin:16px 0;}
+.es-sig-t{font-size:19px; font-weight:700; color:#1C2433;}
+.es-saved{display:inline-flex; align-items:center; gap:8px; border:1px solid #DCE3EC; background:#fff; border-radius:10px; padding:6px 10px; margin:10px 0 0; cursor:pointer; font-size:13px;} .es-saved img{height:34px; max-width:120px; object-fit:contain;}
+canvas.es-pad{max-width:none; height:200px; margin-top:12px; border:1.5px dashed #C9D3E0;}
+.es-sig-btns{display:grid; grid-template-columns:1fr auto; gap:10px; margin-top:12px;}
+.es-ghost{display:block; text-align:center; border:1px solid #D6DCE5; background:#fff; border-radius:10px; padding:11px 22px; font-size:15px; cursor:pointer; color:#33405A;}
+.es-otp-btn{border:none; background:#0E7C86; color:#fff; border-radius:9px; padding:12px 22px; font-size:15px; font-weight:600; cursor:pointer;}
+.es-note{font-size:13px; color:#227A46; margin-top:8px;}
+.es-otp-l{display:block; font-size:16px; color:#1C2433; margin:16px 0 6px;}
+.es-otp-in{width:100%; box-sizing:border-box; border:1px solid #D6DCE5; border-radius:8px; padding:12px 14px; font-size:16px; letter-spacing:2px;}
+.es-sign-btn{display:block; width:100%; margin:16px 0 8px; border:none; background:#0E7C86; color:#fff; border-radius:10px; padding:14px; font-size:16px; font-weight:600; cursor:pointer;}
+.es-done{text-align:center; border:1px solid #C9EBD3; background:#F3FBF5; border-radius:16px; padding:30px 18px;} .es-done-ic{font-size:40px; color:#227A46;} .es-done-t{font-size:20px; font-weight:800; color:#1C3557; margin:6px 0;}
+.es-public{min-height:100vh; background:#F2F5F9; padding:12px 16px 30px; box-sizing:border-box;}
+.es-public-top{display:flex; align-items:center; gap:10px; max-width:900px; margin:0 auto 12px; font-weight:800; color:#1C3557;} .es-public-top img{width:38px; height:38px; object-fit:contain;}
+/* Undisbursed Loans list */
+.ud-title{display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; color:#1C2D6B; padding-bottom:12px; border-bottom:1px solid #E6EBF2; margin-bottom:12px;}
+.ud-back{cursor:pointer; color:#1C2D6B; display:inline-flex;} .ud-back svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.ud-bar{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px;}
+.ud-bar select, .ud-bar input{border:1px solid #CBD3DE; border-radius:4px; padding:6px 8px; font-size:12.5px; background:#fff; color:#33405A; max-width:200px;}
+.ud-bar .btn{border-radius:4px;} .ud-grow{flex:1 1 auto;}
+.ud-approve{border:1px solid #A9D8D3; background:#F2FBF9; color:#11706B; font-weight:700; border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer;} .ud-approve.on{background:#11706B; color:#fff;}
+.ud-hint{font-size:12px; color:#6B7789; margin:0 0 8px;}
+table.ud-table th{background:#E6EEF8 !important; color:#1C2D6B; font-size:12px; vertical-align:bottom; text-transform:none; letter-spacing:0;}
+table.ud-table td{font-size:12.5px; vertical-align:top; color:#33405A;}
+table.ud-table tr:nth-child(odd) td{background:#F7FAFE;}
+.ud-nowrap{white-space:nowrap;} .ud-sub{font-size:11.5px; color:#6B7789; margin-top:2px;}
+.ud-client{color:#5B4FC4; font-weight:600; cursor:pointer;} .ud-client:hover{text-decoration:underline;}
+.ud-prod{font-weight:700; color:#1C2D6B;} .ud-sched{font-size:11.5px; color:#5B4FC4; cursor:pointer;}
+.ud-sigtag{display:inline-block; background:#F2541B; color:#fff; border-radius:999px; padding:2px 8px; font-size:10.5px; font-weight:700; margin-bottom:3px; cursor:pointer;}
+.ud-status{font-style:italic; color:#6B7789;} .ud-status.ud-warn{color:#E08A00;} .ud-status.ud-bad{color:#C0392B;} .ud-status.ud-good{color:#227A46;}
+.ud-acts{white-space:nowrap;} .ud-a{color:#5B4FC4; cursor:pointer; font-size:12px;} .ud-a.ud-del{color:#E0620D;} .ud-a.ud-ok{color:#227A46; font-weight:700;} .ud-dot{color:#9AA5B5;}
+.ud-disb select{font-size:11px; padding:2px; margin-right:4px;}
+@media (max-width:700px){ .ud-bar select, .ud-bar input{flex:1 1 140px; max-width:none;} }
+
 /* Counting save progress + success pop-up */
 .pct-wrap{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(15,30,50,0.18); z-index:9999;}
 .pct-card{width:min(360px, 86vw); background:#fff; border-radius:14px; padding:18px 20px; box-shadow:0 12px 40px rgba(0,0,0,0.18); text-align:center;}
@@ -2377,7 +2462,10 @@ function adaptLoan(l){
     rating:l.rating, ratingReason:l.rating_reason, ratedAt:l.rated_at,
     lastApproval: l.last_approval ? { name:l.last_approval.name, decision:l.last_approval.decision, createdAt:l.last_approval.created_at } : null,
     approvals: (l.approvals||[]).map(a=>({ name:a.name, decision:a.decision, createdAt:a.created_at, roleId:a.role_id })),
-    schedule: (l.schedule||[]).map(adaptScheduleRow) };
+    schedule: (l.schedule||[]).map(adaptScheduleRow),
+    applicationNo: l.application_no != null ? String(l.application_no) : null, businessType: l.business_type || '', selfGuaranteed: !!Number(l.self_guaranteed || 0),
+    guarantorIdNumber: l.guarantor_id_number || '', guarantorRelationship: l.guarantor_relationship || '', loanCategory: l.loan_category || '',
+    esignRequired: !!Number(l.esign_required || 0), createdBy: l.created_by || null };
 }
 function adaptPayment(p){
   return { id:p.id, loanId:p.loan_id, clientId:p.client_id, amount:p.amount, channel:p.channel, reference:p.reference,
@@ -2799,7 +2887,8 @@ async function createLoanApplication(data){
     processing_fee_id:data.processing_fee_id||data.processingFeeId||null,
     branch_id:data.branchId||null, officer_id:data.officerId||null,
     business_type:data.business_type||null, collaterals:data.collaterals||[], self_guaranteed:!!data.self_guaranteed,
-    client_signature_path:data.client_signature_path||null };
+    client_signature_path:data.client_signature_path||null,
+    guarantor_id_number:data.guarantor_id_number||null, guarantor_relationship:data.guarantor_relationship||null, esign:!!data.esign };
   const res = await api.post('/api/loans', payload);
   const loan = adaptLoan(res.loan);
   DB.loans.unshift(loan);
@@ -3433,7 +3522,11 @@ function buildCustomRoleSidebarMenu(){
 
 function renderApp(){
   const root = document.getElementById('root');
-  if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
+  if(!session.authenticated){
+    // A borrower or guarantor opening their signing link signs without logging in.
+    const esTok = esignTokenFromHash(); if(esTok){ renderPublicEsign(root, esTok); return; }
+    root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return;
+  }
   if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div>`; return; }
   // A real, server-computed gate (session.mustChangePassword, set from the
   // real login response) — blocks every normal screen, not just hidden UI,
@@ -15404,7 +15497,7 @@ function statusBadge(status){
     Pending:"amber", Approved:"blue", Active:"green", Disbursed:"green", Closed:"grey", Completed:"grey",
     Rejected:"red", Declined:"red", "Written Off":"red", Cancelled:"grey", Restructured:"blue", "CEO Approved":"blue",
     "Waiting for Manager":"amber", "Waiting for Regional Manager":"amber", "Waiting for Operational Manager":"amber", "Waiting for Accountant":"amber",
-    "Approved for Disbursement":"blue", "Disbursement Pending":"amber", "Returned for Correction":"red",
+    "Approved for Disbursement":"blue", "Disbursement Pending":"amber", "Returned for Correction":"red", "Pending signatures":"amber",
     Posted:"green", Unposted:"amber", Overpayment:"blue", Reversed:"grey", Paid:"green",
   };
   return `<span class="badge ${map[status]||'grey'}">${status}</span>`;
@@ -15420,6 +15513,8 @@ function renderLoanBook(){
   // page — no subtab bar above it, matching the requested design exactly.
   // The other two roles' Create Application forms are untouched.
   if(active==="Undisbursed Loans") return renderUndisbursedApprovalsPage();
+  if(active==="Loan Application") return renderLoanAppPage();
+  if(active==="Sign Loan Form") return renderEsignPage();
   if(active==="Create Application" && session.role==='Loan Officer') return renderLoanApplicationForm();
   if(active==="Create Application" && session.role==='Manager') return renderManagerCreateApplicationForm();
   if(active==="Create Application") return renderCreateLoanAppPage('wideLoanAppState', 'submitWideLoanApp');
@@ -15484,8 +15579,8 @@ function handleLoanCategoryChange(value, formEl, stateKey){
 // One page with two tabs — Loan Details and Guarantors & Collateral — kept
 // in one form so Save Application sends both. Every field writes to the
 // page's own state as it is typed, so a re-render (client lookup, adding a
-// security, switching tab) never loses what was entered. The client signs
-// on the Guarantors & Collateral tab before the application can be saved.
+// security, switching tab) never loses what was entered. After saving, the
+// borrower and guarantors sign the generated Loan Form (see Loan Form tab).
 const LOAN_SECURITY_CATEGORIES = ['Custom Securities', 'Household Items', 'Motor Vehicle (Logbook)', 'Land (Title Deed)', 'Business Stock', 'Wallet Holds'];
 const blankLoanSecurity = () => ({ category: LOAN_SECURITY_CATEGORIES[0], security_type: '', details: '', serial_no: '', photo_path: '', photo_name: '' });
 function loanAppState(k){
@@ -15596,10 +15691,8 @@ function renderCreateLoanAppPage(k, submitFn){
           ${!c ? `<div class="pg-empty" style="padding:18px;">Enter the client ID on <strong>&nbsp;Loan Details&nbsp;</strong> to load saved guarantors.</div>` : `
             <label class="la-check"><input type="checkbox" ${st.selfGuaranteed ? 'checked' : ''} onchange="session['${k}'].selfGuaranteed=this.checked; renderApp();"> Self guaranteed — the client covers this loan with wallet reserves</label>
             ${saved == null ? `<div class="hint">${loadingDotsHtml()}</div>` : saved.length ? `<div class="table-wrap"><table class="pg-table pg-mini"><tr><th></th><th>Guarantor</th><th>Contact</th><th>Loans guaranteed</th></tr>${saved.map((g, i) => `<tr><td><input type="radio" name="savedGuarantor" ${f.guarantor === g.name && f.guarantor_contact === (g.contact || '') ? 'checked' : ''} onchange="loanPickGuarantor('${k}',${i})" ${st.selfGuaranteed ? 'disabled' : ''}></td><td>${escapeHtml(g.name)}</td><td>${escapeHtml(g.contact || '—')}</td><td>${g.loans}</td></tr>`).join('')}</table></div>` : `<div class="hint" style="margin-bottom:6px;">No saved guarantors for this client yet — add one below.</div>`}
-            ${st.selfGuaranteed ? '' : `<div class="la-grid" style="margin-top:10px;"><div class="field"><label>Guarantor Name</label><input value="${v('guarantor')}" oninput="loanAppSet('${k}','guarantor',this.value)" placeholder="Guarantor name"></div><div class="field"><label>Guarantor Contact</label><input value="${v('guarantor_contact')}" oninput="loanAppSet('${k}','guarantor_contact',this.value)" placeholder="Guarantor phone"></div></div>`}`}
-          <div class="la-sec-head" style="margin-top:14px;"><span class="la-ic">✍</span><div><div class="la-h">Client Signature</div></div><span style="margin-left:auto;" class="pg-link" onclick="loanSigClear('${k}')">↺ Clear</span></div>
-          <canvas class="sig-pad" data-state="${k}" width="640" height="190"></canvas>
-          ${sigHintHtml(k, st.signatureDataUrl)}
+            ${st.selfGuaranteed ? '' : `<div class="la-grid" style="margin-top:10px;"><div class="field"><label>Guarantor Name</label><input value="${v('guarantor')}" oninput="loanAppSet('${k}','guarantor',this.value)" placeholder="Guarantor name"></div><div class="field"><label>Guarantor Contact</label><input value="${v('guarantor_contact')}" oninput="loanAppSet('${k}','guarantor_contact',this.value)" placeholder="Guarantor phone"></div>
+              <div class="field"><label>Guarantor ID Number</label><input value="${v('guarantor_id_number')}" oninput="loanAppSet('${k}','guarantor_id_number',this.value)" placeholder="National ID number"></div><div class="field"><label>Relationship</label><input value="${v('guarantor_relationship')}" oninput="loanAppSet('${k}','guarantor_relationship',this.value)" placeholder="e.g. Sister"></div></div>`}`}
         </div>
         <div class="la-foot"><button class="pg-primary" type="submit">Save Application</button></div>
       </form>
@@ -15615,20 +15708,16 @@ function submitCreateLoanApp(ev, k, needOfficer){
   if(needOfficer && !f.officerId){ toast('Select a loan officer'); return false; }
   const secs = (st.securities || []).filter(s => s.security_type || s.details);
   if(secs.some(s => !String(s.security_type).trim() || !String(s.details).trim())){ st.tab = 'guarantors'; renderApp(); toast('Each security needs a security type and details'); return false; }
-  if(loanSigCanvas(k) && !st.signatureDataUrl){ st.tab = 'guarantors'; renderApp(); toast('The client must sign on Guarantors & Collateral before saving'); return false; }
-  if(st.selfGuaranteed){ f.guarantor = ''; f.guarantor_contact = ''; }
-  else { f.guarantor = f.guarantor || st.f.guarantor || ''; f.guarantor_contact = f.guarantor_contact || st.f.guarantor_contact || ''; }
+  if(st.selfGuaranteed){ f.guarantor = ''; f.guarantor_contact = ''; f.guarantor_id_number = ''; f.guarantor_relationship = ''; }
+  else { ['guarantor', 'guarantor_contact', 'guarantor_id_number', 'guarantor_relationship'].forEach(n => { f[n] = String(f[n] || st.f[n] || '').trim(); }); }
+  // The borrower and guarantor sign the loan form afterwards, each with a code sent to their phone.
+  if(f.guarantor && !f.guarantor_contact){ st.tab = 'guarantors'; renderApp(); toast("Enter the guarantor's phone number — their signing code is sent there"); return false; }
   return withRequest('submit-loan-' + k, async () => {
-    if(st.signatureDataUrl && typeof fetch === 'function' && typeof File === 'function'){
-      const blob = await (await fetch(st.signatureDataUrl)).blob();
-      const up = await uploadFile(new File([blob], 'client-signature.png', { type: 'image/png' }));
-      f.client_signature_path = up.path;
-    }
     f.collaterals = secs.map(s => ({ category: s.category, security_type: s.security_type, details: s.details, serial_no: s.serial_no || null, photo_path: s.photo_path || null }));
     f.self_guaranteed = !!st.selfGuaranteed;
+    f.esign = true;
     if(!f.term && st.f.term) f.term = st.f.term;
     await createLoanApplication(f);
-    if(f.client_signature_path) await api.post(`/api/clients/${f.clientId}/documents`, { name: 'client-signature.png', doc_type: 'Client Signature', file_path: f.client_signature_path }).catch(() => {});
     session[k] = null;
     goToUndisbursedLoans();
     if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
@@ -15789,12 +15878,11 @@ function submitLoanApp(ev){ return submitCreateLoanApp(ev, 'loanAppState', false
 const LOAN_APP_CATEGORIES = ['All templates','Disbursed loans','Undisbursed loans','Pended loans','Declined loans'];
 const LOAN_APP_CATEGORY_STATUSES = {
   'Disbursed loans': ['Active','Disbursed','Completed','Written Off','Restructured'],
-  'Pended loans': ['Pending','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Returned for Correction'],
+  'Pended loans': ['Pending','Pending signatures','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Returned for Correction'],
   'Declined loans': ['Rejected'],
 };
 function defaultLoanApplicationsFilterState(){ return { category:'All templates', month:'', day:'', search:'' }; }
 function goToUndisbursedLoans(){
-  if(session.role === 'Loan Officer'){ session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' }; goTo('loanbook','Loan Applications'); return; }
   goTo('loanbook','Undisbursed Loans');
 }
 // ---- Undisbursed Loans: the approvals & disbursement desk ----
@@ -15803,41 +15891,96 @@ function goToUndisbursedLoans(){
 // Operational Manager → Accountant) approves, returns or rejects right
 // here; once a loan is Approved for Disbursement, staff who may disburse
 // release the money from the same page. The server re-checks every rule.
-const UNDISB_STAGES = ['Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Approved for Disbursement','Disbursement Pending','Returned for Correction','Pending'];
+const UNDISB_STAGES = ['Pending signatures','Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant','Approved for Disbursement','Disbursement Pending','Returned for Correction','Pending'];
 // The server's own effective permissions for this user (role default or
 // personal override); the older local matrix is only a fallback.
 function serverCan(permId, label){ const p = DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.permissions; return Array.isArray(p) ? p.includes(permId) : hasPermission(session.role, label); }
 function undisbMyStep(loan){ const r = STATUS_TO_REQUIRED_ROLE_ID[loan.status]; return !!r && (r === ROLE_DISPLAY_TO_ID[session.role] || session.role === 'Admin') && serverCan('approve_loans', 'Approve Loans'); }
 const undisbCanDisburse = () => serverCan('disburse_loans', 'Disburse Loans');
+// The list matches the reference design: date and creator, client (opens the
+// application page), branch, officer, product (with a Signatures tag while
+// the form is unsigned), amount, where it is waiting, and the actions this
+// user may take. Region / branch / officer filters follow the role.
+const UD_CATS = [['all', 'Undisbursed Loans'], ['signatures', 'Pending signatures'], ['approval', 'Awaiting approval'], ['ready', 'Ready to disburse'], ['returned', 'Returned for correction']];
+function udStatusText(l){
+  if(l.status === 'Pending signatures') return 'Pending signatures';
+  const r = STATUS_TO_REQUIRED_ROLE_ID[l.status]; if(r) return 'Waiting ' + (ROLE_ID_TO_DISPLAY[r] || r);
+  if(l.status === 'Approved for Disbursement') return 'Ready to disburse';
+  if(l.status === 'Disbursement Pending') return 'Disbursing…';
+  return l.status;
+}
+const udCanEdit = l => ['Waiting for Manager', 'Pending signatures'].includes(l.status) && l.officerId === session.userId;
+const udCanDelete = l => ['Pending signatures', 'Waiting for Manager', 'Returned for Correction'].includes(l.status) && !(l.approvals || []).some(a => a.decision === 'Approved' && l.status !== 'Returned for Correction')
+  && (l.officerId === session.userId || l.createdBy === session.userId || serverCan('approve_loans', 'Approve Loans'));
+function udDateCell(iso){ if(!iso) return '—'; const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}`; }
 function renderUndisbursedApprovalsPage(){
-  const f = session.undisbFilter || (session.undisbFilter = { q:'', branch:'' });
-  const q = (f.q || '').toLowerCase();
+  const f = session.undisbFilter && session.undisbFilter.cat ? session.undisbFilter : (session.undisbFilter = { cat: 'all', month: pgCurMonth(), day: '', approval: '', q: '' });
+  const brOf = id => (DB.branches || []).find(b => b.id === id) || {};
   const all = (DB.loans || []).filter(l => UNDISB_STAGES.includes(l.status));
-  const list = all.filter(l => (!f.branch || l.branchId === f.branch) && (!q || [clientName(l.clientId), l.productName, staffName(l.officerId), l.id].some(x => String(x || '').toLowerCase().includes(q))));
-  const mine = list.filter(undisbMyStep);
-  const ready = list.filter(l => l.status === 'Approved for Disbursement');
-  const others = list.filter(l => !mine.includes(l) && l.status !== 'Approved for Disbursement');
-  const sum = xs => xs.reduce((a, l) => a + Number(l.principal || 0), 0);
-  const stages = UNDISB_STAGES.filter(st => all.some(l => l.status === st));
-  const age = l => { const d = Math.floor((Date.now() - new Date(l.createdAt)) / 86400000); return d <= 0 ? 'Today' : d + ' day' + (d > 1 ? 's' : ''); };
-  const base = [['Client', l => `<strong>${escapeHtml(clientName(l.clientId))}</strong><div class="hint">${escapeHtml(l.productName || '')}</div>`], ['Amount', l => fmt(l.principal)], ['Loan officer', l => escapeHtml(staffName(l.officerId))], ['Branch', l => escapeHtml(branchName(l.branchId))], ['Submitted', l => escapeHtml(String(l.createdAt || '').slice(0, 10)) + `<div class="hint">${age(l)} ago</div>`]];
-  const card = (title, rows, cols, empty, note) => { const heads = cols.map(c => c[0]); return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${rows.length} · ${fmt(sum(rows))}</small></span>${generateMenuHtml(title, () => ({ headers: heads.filter(h => h), rows: rows.map(l => cols.filter(c => c[0]).map(c => String(c[1](l)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())) }))}</div>${note || ''}${admTable(heads, rows.map(l => cols.map(c => c[1](l))), empty)}</div>`; };
-  const actions = l => `<div class="pill-row" style="flex-wrap:nowrap;"><button class="btn btn-sm btn-primary" onclick="undisbDecide('${l.id}','approve')">Approve</button><button class="btn btn-sm btn-outline" onclick="undisbDecide('${l.id}','return')">Return</button><button class="btn btn-sm btn-red" onclick="undisbDecide('${l.id}','reject')">Reject</button><button class="btn btn-sm btn-outline" onclick="openLoanDetailsModal('${l.id}')">View</button></div>`;
-  const disb = l => undisbCanDisburse() ? `<div class="pill-row" style="flex-wrap:nowrap;"><select id="undisb-ch-${l.id}" class="btn btn-sm btn-outline"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa (B2C)</option></select><button class="btn btn-sm btn-primary" onclick="undisbDisburse('${l.id}')">Disburse</button></div>` : '<span class="hint">Waiting for disbursement</span>';
-  const branches = [...new Set(all.map(l => l.branchId))].map(id => ({ id, name: branchName(id) })).sort((a, b) => a.name.localeCompare(b.name));
-  return `<div class="adm-page">
-    <div class="card adm-head"><div class="ac-eyebrow">LoanBook</div><h2 class="adm-title">Undisbursed Loans</h2>
-      <div class="adm-sub">Approve, return or reject the loans waiting on you, and disburse loans that have completed approval.</div></div>
-    <div class="card"><div class="card-title">Overview</div><div class="adm-tiles">
-      ${admTile('Waiting for you', mine.length, fmt(sum(mine)))}${admTile('Ready to disburse', ready.length, fmt(sum(ready)))}${admTile('At other steps', others.length, fmt(sum(others)))}${admTile('All undisbursed', list.length, fmt(sum(list)))}</div></div>
-    ${admTwoCharts(admChart('undisb-stage-n', 'Loans by Stage', 'bar', stages, [{ label: 'Loans', data: stages.map(st => all.filter(l => l.status === st).length) }], { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }),
-      admChart('undisb-stage-amt', 'Amount by Stage (KES)', 'bar', stages, [{ label: 'KES', data: stages.map(st => sum(all.filter(l => l.status === st))) }]))}
-    <div class="card"><div class="pill-row adm-filters" style="margin-bottom:0;"><input placeholder="Search client, product, officer…" value="${escapeHtml(f.q)}" onchange="session.undisbFilter.q=this.value; renderApp();">
-      <select onchange="session.undisbFilter.branch=this.value; renderApp();"><option value="">All branches</option>${branches.map(b => `<option value="${b.id}" ${f.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select></div></div>
-    ${card('Waiting for your approval', mine, base.concat([['Stage', l => admBadge(l.status, 'amber')], ['', actions]]), serverCan('approve_loans', 'Approve Loans') ? 'Nothing is waiting for your approval.' : 'Your role does not approve loans.')}
-    ${card('Ready to disburse', ready, base.concat([['Approved', l => { const a = (l.approvals || []).filter(x => x.decision === 'Approved').slice(-1)[0]; return a ? escapeHtml(a.name) + `<div class="hint">${escapeHtml(String(a.createdAt).slice(0, 10))}</div>` : '—'; }], ['', disb]]), 'No loans are waiting to be disbursed.')}
-    ${card('At other approval steps', others, base.concat([['Stage', l => admBadge(l.status, l.status === 'Returned for Correction' ? 'red' : 'blue')]]), 'No other loans in the approval chain.')}
+  const inScope = all.filter(l => (!f.regionId || brOf(l.branchId).region === f.regionId) && (!f.branchId || l.branchId === f.branchId) && (!f.officerId || l.officerId === f.officerId));
+  const catOk = l => f.cat === 'all' || (f.cat === 'signatures' && l.status === 'Pending signatures') || (f.cat === 'approval' && !!STATUS_TO_REQUIRED_ROLE_ID[l.status])
+    || (f.cat === 'ready' && ['Approved for Disbursement', 'Disbursement Pending'].includes(l.status)) || (f.cat === 'returned' && l.status === 'Returned for Correction');
+  const apprOk = l => !f.approval || (f.approval === 'mine' ? undisbMyStep(l) && l.officerId !== session.userId : l.status === f.approval);
+  const dateOk = l => (!f.month || String(l.createdAt || '').slice(0, 7) === f.month) && (!f.day || Number(String(l.createdAt || '').slice(8, 10)) === Number(f.day));
+  const q = String(f.q || '').toLowerCase();
+  const client = l => (DB.clients || []).find(c => c.id === l.clientId) || {};
+  const textOk = l => !q || [clientName(l.clientId), l.productName, staffName(l.officerId), branchName(l.branchId), l.applicationNo, client(l).phone, client(l).idNumber].some(x => String(x || '').toLowerCase().includes(q));
+  const rows = inScope.filter(l => catOk(l) && apprOk(l) && dateOk(l) && textOk(l)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const hidden = f.month ? inScope.filter(l => catOk(l) && apprOk(l) && textOk(l) && !dateOk(l)).length : 0;
+  const total = rows.reduce((s, l) => s + Number(l.principal || 0), 0);
+  const monthLabel = f.month ? new Date(f.month + '-01T00:00:00').toLocaleString('en-US', { month: 'short', year: 'numeric' }) : 'all months';
+  const canApprove = serverCan('approve_loans', 'Approve Loans');
+  const approvalOpts = [['', '-- Filter Approval --']].concat(canApprove ? [['mine', 'Waiting for me']] : [], [['Pending signatures', 'Pending signatures']],
+    Object.keys(STATUS_TO_REQUIRED_ROLE_ID).map(s => [s, 'Waiting ' + ROLE_ID_TO_DISPLAY[STATUS_TO_REQUIRED_ROLE_ID[s]]]), [['Approved for Disbursement', 'Ready to disburse'], ['Returned for Correction', 'Returned for correction']]);
+  const set = (k, val) => `session.undisbFilter.${k}=${val}; renderApp();`;
+  const actions = l => {
+    const a = [];
+    if(udCanEdit(l)) a.push(`<span class="ud-a" onclick="openLoanEditModal('${l.id}')">Edit</span>`);
+    if(udCanDelete(l)) a.push(`<span class="ud-a ud-del" onclick="udDelete('${l.id}')">Delete</span>`);
+    if(undisbMyStep(l) && l.officerId !== session.userId) a.push(`<span class="ud-a ud-ok" onclick="undisbDecide('${l.id}','approve')">Approve</span>`, `<span class="ud-a" onclick="undisbDecide('${l.id}','return')">Return</span>`, `<span class="ud-a ud-del" onclick="undisbDecide('${l.id}','reject')">Reject</span>`);
+    if(l.status === 'Approved for Disbursement' && undisbCanDisburse()) a.push(`<span class="ud-disb"><select id="undisb-ch-${l.id}"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa</option></select><span class="ud-a ud-ok" onclick="undisbDisburse('${l.id}')">Disburse</span></span>`);
+    return a.length ? a.join(' <span class="ud-dot">·</span> ') : `<span class="ud-a" onclick="openLoan('${l.id}')">View</span>`;
+  };
+  const exportRows = () => ({ headers: ['#', 'Date', 'Created by', 'Client', 'Phone', 'ID number', 'Branch', 'Loan officer', 'Product', 'Amount', 'Duration', 'Status'],
+    rows: rows.map((l, i) => [i + 1, udDateCell(l.createdAt), staffName(l.createdBy || l.officerId), clientName(l.clientId), client(l).phone || '', client(l).idNumber || '', branchName(l.branchId), staffName(l.officerId), l.productName || '', Number(l.principal || 0), loanTermDaysLabel(l), udStatusText(l)]) });
+  const rowHtml = (l, i) => { const c = client(l); return `<tr>
+      <td>${i + 1}</td>
+      <td class="ud-nowrap">${escapeHtml(udDateCell(l.createdAt))}<div class="ud-sub">By ${escapeHtml(staffName(l.createdBy || l.officerId))}</div></td>
+      <td><span class="ud-client" onclick="openLoan('${l.id}')">${escapeHtml(clientName(l.clientId))}</span><div class="ud-sub">${[c.phone, c.idNumber ? 'ID ' + c.idNumber : ''].filter(Boolean).map(escapeHtml).join(' · ')}</div></td>
+      <td>${escapeHtml(branchName(l.branchId))}</td>
+      <td>${escapeHtml(staffName(l.officerId))}</td>
+      <td>${l.status === 'Pending signatures' ? `<span class="ud-sigtag" onclick="openLoan('${l.id}','form')">Signatures</span>` : ''}<div class="ud-prod">${escapeHtml(l.productName || '')}</div><span class="ud-sched" onclick="openInstallmentsModal('${l.id}')">Schedule</span></td>
+      <td class="ud-nowrap"><strong>${fmt(l.principal)}</strong><div class="ud-sub">${escapeHtml(loanTermDaysLabel(l))}</div></td>
+      <td><span class="ud-status ${l.status === 'Pending signatures' ? 'ud-warn' : l.status === 'Returned for Correction' ? 'ud-bad' : l.status === 'Approved for Disbursement' ? 'ud-good' : ''}">${escapeHtml(udStatusText(l))}</span></td>
+      <td class="ud-acts">${actions(l)}</td></tr>`; };
+  return `<div class="card pg-card ud-page">
+    <div class="ud-title"><span class="ud-back" onclick="pgBack()" title="Back"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M13.5 8.5L10 12l3.5 3.5"/></svg></span>Undisbursed Loans (${Number(total).toLocaleString('en-KE')})</div>
+    <div class="ud-bar">
+      <select onchange="${set('cat', 'this.value')}">${UD_CATS.map(c => `<option value="${c[0]}" ${f.cat === c[0] ? 'selected' : ''}>${c[1]}</option>`).join('')}</select>
+      ${scopeFilterSelects('undisbFilter', 'renderApp();')}
+      <span class="ud-grow"></span>
+      ${canApprove ? `<button type="button" class="ud-approve ${f.approval === 'mine' ? 'on' : ''}" onclick="session.undisbFilter.approval = session.undisbFilter.approval === 'mine' ? '' : 'mine'; session.undisbFilter.month=''; renderApp();">Approve Loans</button>` : ''}
+    </div>
+    <div class="ud-bar">
+      <select onchange="${set('month', 'this.value')}"><option value="" ${!f.month ? 'selected' : ''}>-- All months --</option>${pgMonthOptions(f.month)}</select>
+      <select onchange="${set('day', 'this.value')}"><option value="">-- Day --</option>${Array.from({ length: 31 }, (_, i) => i + 1).map(d => `<option value="${d}" ${String(d) === String(f.day) ? 'selected' : ''}>${d}</option>`).join('')}</select>
+      <select onchange="${set('approval', 'this.value')}">${approvalOpts.map(o => `<option value="${escapeHtml(o[0])}" ${f.approval === o[0] ? 'selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}</select>
+      <input placeholder="Search in ${escapeHtml(monthLabel)}" value="${escapeHtml(f.q || '')}" onchange="${set('q', 'this.value')}">
+      <span class="ud-grow"></span>
+      ${generateMenuHtml('Undisbursed Loans', exportRows)}
+    </div>
+    ${hidden ? `<div class="ud-hint">${hidden} older undisbursed loan${hidden === 1 ? '' : 's'} not shown — <span class="pg-link" onclick="${set('month', "''")}">show all months</span></div>` : ''}
+    <div class="table-wrap"><table class="ud-table">
+      <tr><th>#</th><th>Date</th><th>Client</th><th>Branch</th><th>Loan Officer</th><th>Product</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+      ${rows.map(rowHtml).join('') || `<tr><td colspan="9" class="empty">No undisbursed loans match these filters.</td></tr>`}
+    </table></div>
   </div>`;
+}
+async function udDelete(loanId){
+  const l = (DB.loans || []).find(x => x.id === loanId); if(!l) return;
+  if(typeof confirm === 'function' && !confirm(`Delete the application for ${clientName(l.clientId)} — ${fmt(l.principal)}? It will be cancelled and the client's processing fee can be used for a new application.`)) return;
+  const reason = typeof prompt === 'function' ? (prompt('Reason (optional):') || '') : '';
+  await withRequest('ud-del-' + loanId, async ()=>{ await apiRequest('DELETE', `/api/loans/${loanId}`, { reason }); await refreshLoan(loanId); toast('Application deleted'); }, { mutates: true });
 }
 async function undisbDecide(loanId, action){
   const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
@@ -15921,6 +16064,9 @@ function renderLoanEditModal(){
         <div class="field"><label>Loan Amount</label><input name="principal" type="number" required value="${st.principal}" placeholder="${product?`${fmt(product.minAmt)} - ${fmt(product.maxAmt)}`:'-'}"></div>
         <div class="field"><label>Guarantor Name</label><input name="guarantor" value="${escapeHtml(st.guarantor)}" placeholder="Guarantor name"></div>
         <div class="field"><label>Guarantor Contact</label><input name="guarantor_contact" value="${escapeHtml(st.guarantorContact)}" placeholder="Guarantor phone"></div>
+        <div class="field"><label>Guarantor ID Number</label><input name="guarantor_id_number" value="${escapeHtml(loan.guarantorIdNumber || '')}" placeholder="National ID number"></div>
+        <div class="field"><label>Relationship</label><input name="guarantor_relationship" value="${escapeHtml(loan.guarantorRelationship || '')}" placeholder="e.g. Sister"></div>
+        ${loan.esignRequired ? `<div class="hint">Saving changes regenerates the loan form — anyone who has signed signs again.</div>` : ''}
         <div class="field"><label>Loan Securities</label><textarea name="loan_securities" placeholder="e.g. Woofer, gas bed">${escapeHtml(st.loanSecurities)}</textarea></div>
         <div class="field"><label>Type of Loan (Optional)</label><select name="loan_category">
           <option value="" ${!st.loanCategory?'selected':''}>-- Select --</option>
@@ -15942,6 +16088,7 @@ function submitLoanEdit(ev){
     const res = await api.patch(`/api/loans/${loanId}`, f);
     const idx = DB.loans.findIndex(l=>l.id===loanId);
     if(idx>-1) DB.loans[idx] = adaptLoan(res.loan);
+    if(session.appView && session.appView.id === loanId) await laReload(loanId);
     closeModal();
     toast('Loan application updated');
   }, {mutates:true});
@@ -16047,14 +16194,319 @@ function renderLoanApplications(){
     ${session.selectedLoanId ? renderLoanDetail(session.selectedLoanId) : ""}
   `;
 }
-// Fetches the real, authoritative loan (status, schedule, approval history,
-// workflow definition) from the backend every time it's opened — the
-// list's cached copy may be stale (someone else may have approved it since).
-function openLoan(id){
-  session.selectedLoanId = id;
-  if(session.section!=="loanbook"){ session.section="loanbook"; session.subtab="Loan Applications"; }
-  renderApp(); window.scrollTo(0,0);
-  return withRequest('open-loan-'+id, async ()=>{ await refreshLoan(id); });
+// ==================== Loan application page ====================
+// Clicking a client's name on any loan list opens this page: four summary
+// cards, then Overview · Guarantors & Collateral · Charges & Docs ·
+// Approvals · Loan Form. The loan itself is re-fetched every time it opens
+// (someone else may have approved it since).
+const LA_ICON = {
+  overview: '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7 9.5h2M7 13h2M11.5 9.5h5.5M11.5 13h5.5"/></svg>',
+  guarantors: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M12 9v3.5"/><circle cx="12" cy="15.6" r=".6"/></svg>',
+  charges: '<svg viewBox="0 0 24 24"><rect x="3" y="6.5" width="18" height="11" rx="2"/><circle cx="12" cy="12" r="2.4"/><path d="M6 9.5v5M18 9.5v5"/></svg>',
+  approvals: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5z"/><path d="M8 9h8M8 12.5h5"/></svg>',
+  form: '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 15.5h6M9 8.5h2"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1z"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+};
+const LA_TABS = [['overview', 'Overview'], ['guarantors', 'Guarantors &amp; Collateral'], ['charges', 'Charges &amp; Docs'], ['approvals', 'Approvals'], ['form', 'Loan Form']];
+const laDate = iso => { if(!iso) return '—'; const d = new Date(iso); return isNaN(d) ? String(iso) : `${d.getDate()} ${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear()}`; };
+const laDateTime = iso => { if(!iso) return '—'; const d = new Date(iso); return isNaN(d) ? String(iso) : `${laDate(iso)}, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}`; };
+function openLoan(id, tab){
+  session.appView = { id, tab: tab || 'overview' };
+  session.selectedLoanId = null;
+  session.section = 'loanbook'; session.subtab = 'Loan Application'; session.sidebarOpen = false; session.recordView = null;
+  if(session.loggedIn) pushAppHistory('loanbook', 'Loan Application');
+  renderApp(); if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
+  return withRequest('open-loan-' + id, async ()=>{ await refreshLoan(id); await loadLoanAppExtras(id); });
+}
+async function loadLoanAppExtras(id){
+  const [c, e] = await Promise.all([
+    api.get(`/api/loans/${id}/collaterals`).catch(() => ({ collaterals: [] })),
+    api.get(`/api/loans/${id}/esign`).catch(() => null),
+  ]);
+  session.appExtras = session.appExtras || {};
+  session.appExtras[id] = { collaterals: (c && c.collaterals) || [], esign: e };
+}
+function laTab(t){ if(session.appView){ session.appView.tab = t; renderApp(); } }
+function laBackToList(){ if(typeof history !== 'undefined' && history.length > 1 && typeof history.back === 'function' && history.state && history.state.subtab === 'Loan Application') history.back(); else goToUndisbursedLoans(); }
+function renderLoanAppPage(){
+  const v = session.appView || {};
+  const l = (DB.loans || []).find(x => x.id === v.id);
+  if(!l) return `<div class="card pg-card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  const x = (session.appExtras || {})[l.id] || null;
+  const c = (DB.clients || []).find(y => y.id === l.clientId) || {};
+  const canEdit = ['Waiting for Manager', 'Pending signatures'].includes(l.status) && l.officerId === session.userId;
+  const card = (label, value, sub, extra) => `<div class="ap-card"><div class="ap-card-l">${label}</div><div class="ap-card-v">${value}</div><div class="ap-card-s">${sub}</div>${extra || ''}</div>`;
+  const tab = v.tab || 'overview';
+  return `<div class="card pg-card ap-page">
+    <button type="button" class="ap-back" onclick="laBackToList()">← Loan applications</button>
+    <div class="ap-eyebrow">Loan Application</div>
+    <div class="ap-name">${escapeHtml(clientName(l.clientId))}</div>
+    <div class="ap-idline">${[c.idNumber ? 'ID ' + c.idNumber : '', c.phone || ''].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+    <div class="ap-cards">
+      ${card('Amount', fmt(l.principal), escapeHtml(loanTermDaysLabel(l)), canEdit ? `<button type="button" class="ap-edit" onclick="openLoanEditModal('${l.id}')">${LA_ICON.pen} Edit</button>` : '')}
+      ${card('Product', escapeHtml(l.productName || ''), 'Application #' + escapeHtml(l.applicationNo || l.id.slice(-6).toUpperCase()))}
+      ${card('Branch', escapeHtml(branchName(l.branchId)), escapeHtml(staffName(l.officerId)))}
+      ${card('Status', escapeHtml(l.status), 'By ' + escapeHtml(staffName(l.createdBy || l.officerId)) + (l.createdAt ? ' · ' + escapeHtml(laDate(l.createdAt)) : ''))}
+    </div>
+    <div class="ap-tabs">${LA_TABS.map(t => `<button type="button" class="ap-tab ${tab === t[0] ? 'on' : ''}" onclick="laTab('${t[0]}')"><span class="ap-tab-ic">${LA_ICON[t[0]]}</span>${t[1]}</button>`).join('')}</div>
+    <div class="ap-body">${laTabBody(l, x, tab)}</div>
+  </div>`;
+}
+function laTabBody(l, x, tab){
+  const box = (label, value) => `<div class="ap-box"><div class="ap-box-l">${label}</div><div class="ap-box-v">${value}</div></div>`;
+  const wait = `<div class="hint" style="padding:14px;">${loadingDotsHtml()}</div>`;
+  const signers = (x && x.esign && x.esign.signers) || [];
+  if(tab === 'overview'){
+    const cols = x ? x.collaterals : [];
+    const secs = cols.length ? cols.map(s => s.security_type) : String(l.loanSecurities || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    return box('Business Type', escapeHtml(l.businessType || '—'))
+      + box('Loan Securities', secs.length ? secs.map(s => `<div>${escapeHtml(s)}</div>`).join('') : '—')
+      + (l.loanCategory ? box('Type of Loan', escapeHtml(l.loanCategory)) : '')
+      + (l.purpose ? box('Purpose', escapeHtml(l.purpose)) : '');
+  }
+  if(tab === 'guarantors'){
+    if(!x) return wait;
+    const sigOf = name => signers.find(s => s.role === 'guarantor' && s.name === name);
+    const gRows = l.guarantor && !l.selfGuaranteed ? [[`<strong>${escapeHtml(l.guarantor)}</strong>${l.guarantorIdNumber ? `<div class="pg-sub">ID ${escapeHtml(l.guarantorIdNumber)}</div>` : ''}`, escapeHtml(l.guarantorContact || '—'), escapeHtml(l.guarantorRelationship || '—'), (() => { const s = sigOf(l.guarantor); return s ? laSignerBadge(s, true) : '—'; })()]] : [];
+    const photo = p => { if(!p) return '—'; const uri = DB.docDataUris && DB.docDataUris[p]; if(!uri && typeof loadDocDataUri === 'function') loadDocDataUri(p); return uri ? `<img src="${uri}" alt="" class="ap-thumb">` : `<span class="hint">${loadingDotsHtml()}</span>`; };
+    return `<div class="ap-sec-h">${LA_ICON.guarantors} Guarantors</div>
+      ${l.selfGuaranteed ? `<div class="ap-note">Self guaranteed — the client covers this loan with wallet reserves.</div>` : admTable(['Guarantor', 'Contact', 'Relationship', 'Form signature'], gRows, 'No guarantor on this application.')}
+      <div class="ap-sec-h" style="margin-top:16px;">${LA_ICON.overview} Collateral</div>
+      ${admTable(['Security', 'Category', 'Details', 'Serial No', 'Photo'], x.collaterals.map(s => [`<strong>${escapeHtml(s.security_type)}</strong>`, escapeHtml(s.category), escapeHtml(s.details), escapeHtml(s.serial_no || '—'), photo(s.photo_path)]), escapeHtml(l.loanSecurities || 'No securities recorded.'))}`;
+  }
+  if(tab === 'charges'){
+    const e = x && x.esign; const b = signers.find(s => s.role === 'borrower');
+    const formState = !e || !e.form ? 'Not generated' : signers.length && signers.every(s => s.status === 'Signed') ? 'Signed by everyone' : b && b.status === 'Signed' ? 'Signed by the borrower — guarantors pending' : 'Waiting for the borrower to sign';
+    return `<div class="ap-sec-h">${LA_ICON.charges} Charges</div>
+      ${admTable(['Charge', 'Receipt', 'Amount'], Number(l.processingFee || 0) ? [['Processing Fee', escapeHtml(l.processingFeeReceipt || '—'), fmt(l.processingFee)]] : [], 'No charges on this application.')}
+      <div class="ap-total">Total charges <strong>${fmt(l.processingFee || 0)}</strong></div>
+      <div class="ap-sec-h" style="margin-top:16px;">${LA_ICON.form} Documents</div>
+      ${admTable(['Document', 'Status', ''], [['Loan Application Form', escapeHtml(formState), e && e.form ? `<span class="pg-link" onclick="laTab('form')">Open</span> · <span class="pg-link" onclick="laPrintForm('${l.id}')">Download</span>` : `<span class="pg-link" onclick="laTab('form')">Open</span>`]], '')}`;
+  }
+  if(tab === 'approvals'){
+    return (l.status === 'Pending signatures' ? `<div class="es-banner es-amber">Approval opens once the borrower and every guarantor have signed the loan form.</div>` : '') + renderLoanDetail(l.id);
+  }
+  return laFormTab(l, x);
+}
+// Status of one signer as a badge (guarantor table / documents).
+function laSignerBadge(s, withOpen){
+  if(s.status === 'Signed') return `<span class="es-badge es-ok">Signed</span>`;
+  if(s.status === 'Link sent') return `<span class="es-badge es-blue">${LA_ICON.link} ${s.linkSmsStatus === 'Sent' ? 'Link sent' : 'Link ready'}</span>${withOpen && s.token ? `<button type="button" class="es-mini" onclick="openEsignInApp('${s.token}','${session.appView ? session.appView.id : ''}')">${LA_ICON.link} Open link</button>` : ''}`;
+  return `<span class="es-badge">Not sent</span>`;
+}
+function esignUrl(token){
+  const loc = typeof location !== 'undefined' ? location : null;
+  const base = loc && loc.origin && loc.origin !== 'null' ? loc.origin + (loc.pathname || '/') : '';
+  return base + '#/esign/' + token;
+}
+function laFormTab(l, x){
+  const head = sub => `<div class="es-head"><span class="es-head-ic">${LA_ICON.form}</span><div><div class="es-title">Loan Application Form</div><div class="es-sub">${sub}</div></div></div>`;
+  if(!x) return `<div class="hint" style="padding:14px;">${loadingDotsHtml()}</div>`;
+  const e = x.esign;
+  if(!e || !e.required || !e.form){
+    const canGen = ['Waiting for Manager', 'Returned for Correction', 'Pending signatures'].includes(l.status) && !(l.approvals || []).some(a => a.decision === 'Approved');
+    return head('This application was saved before digital signing.') + (canGen ? `<button type="button" class="es-btn es-primary" onclick="laGenerate('${l.id}', true)">${LA_ICON.form} Generate Loan Form</button>` : `<div class="hint">The form can only be generated before approval starts.</div>`);
+  }
+  const b = e.signers.find(s => s.role === 'borrower') || {};
+  const gs = e.signers.filter(s => s.role === 'guarantor');
+  const signedG = gs.filter(s => s.status === 'Signed').length;
+  const bSigned = b.status === 'Signed';
+  const preview = bSigned || (session.esPreview && session.esPreview[l.id]);
+  const pending = l.status === 'Pending signatures';
+  const top = bSigned
+    ? `<div class="es-banner es-green">${LA_ICON.pen} Signed digitally · ${escapeHtml(laDateTime(b.signedAt))}</div>
+       <div class="es-actions"><button type="button" class="es-btn es-primary" onclick="laShowForm('${l.id}')">${LA_ICON.form} View Loan Form</button><span class="es-when">✓ ${escapeHtml(laDateTime(b.signedAt))}</span><button type="button" class="es-btn es-outline" onclick="laPrintForm('${l.id}')">⤓ Download signed form</button></div>`
+    : `<div class="es-banner es-blue">${LA_ICON.pen} Draft ready — send for digital sign</div>
+       ${pending ? `<div class="es-actions"><button type="button" class="es-btn es-primary" onclick="laGenerate('${l.id}')">${LA_ICON.form} Regenerate Loan Form</button><button type="button" class="es-btn es-primary" onclick="laSendBorrower('${l.id}')">Send for digital sign</button></div>` : ''}
+       <div class="es-actions"><button type="button" class="es-btn es-outline" onclick="laPrintForm('${l.id}')">⤓ Download for printing</button><button type="button" class="es-btn es-outline" onclick="laTogglePreview('${l.id}')">◉ ${preview ? 'Hide draft' : 'Preview draft'}</button></div>
+       <div class="es-when">Draft generated ${escapeHtml(laDateTime(e.generatedAt))}</div>
+       ${pending && b.token ? `<div class="es-linkcard"><div class="es-linkcard-h"><span class="es-link-ic">${LA_ICON.link}</span><div><div class="es-linkcard-t">Client signing link</div><div class="es-sub">Open this on your phone with the client present, or copy and share. Sending SMS is optional.</div></div></div>
+          <input class="es-link-in" readonly value="${escapeHtml(esignUrl(b.token))}" onclick="this.select()">
+          <div class="es-actions"><button type="button" class="es-btn es-outline" onclick="laCopyLink('${b.token}')">⧉ Copy link</button><button type="button" class="es-btn es-outline" onclick="openEsignInApp('${b.token}','${l.id}')">↗ Open link</button></div></div>` : ''}`;
+  const guarantors = l.selfGuaranteed || !gs.length ? `<div class="es-banner es-green">Self guaranteed — no guarantor signatures are needed.</div>` : `
+    <div class="es-g-h">Guarantor Form Signatures</div>
+    <div class="es-g-sub">Signed <strong>${signedG}</strong> of <strong>${gs.length}</strong> guarantor(s).</div>
+    ${signedG < gs.length ? `<div class="es-banner es-amber">Guarantor loan form signing is in progress. All guarantors must sign before first approval.</div>` : `<div class="es-banner es-green">All guarantors have signed.</div>`}
+    ${admTable(['Guarantor', 'Contact', 'Relationship', 'Status', 'Signed'], gs.map(s => [`<strong>${escapeHtml(s.name)}</strong>${s.idNumber ? `<div class="pg-sub">ID ${escapeHtml(s.idNumber)}</div>` : ''}`, escapeHtml(s.phone || '—'), escapeHtml(s.relationship || '—'), bSigned ? laSignerBadge(s, true) : '<span class="es-badge">Waiting for borrower</span>', s.status === 'Signed' ? escapeHtml(laDateTime(s.signedAt)) : '—']), '')}
+    ${bSigned && signedG < gs.length && pending ? `<div class="es-actions" style="justify-content:flex-end;"><button type="button" class="es-btn es-primary" onclick="laSendGuarantors('${l.id}')">Send / Remind Guarantor Sign Links</button></div>` : ''}`;
+  return head('Generate the form, then open or copy the client signing link for in-person signing, or send SMS before first approval.')
+    + top + guarantors
+    + (preview ? `<div class="es-prev-h" id="es-form-preview">Form Preview</div><div class="es-prev">${loanFormHtml(e.form, { photo: e.clientPhoto, signers: e.signers })}</div>` : '');
+}
+function laTogglePreview(id){ session.esPreview = session.esPreview || {}; session.esPreview[id] = !session.esPreview[id]; renderApp(); }
+function laShowForm(id){ if(typeof document !== 'undefined' && document.getElementById){ const el = document.getElementById('es-form-preview'); if(el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' }); } }
+async function laReload(id){ await refreshLoan(id); await loadLoanAppExtras(id); }
+async function laGenerate(id, first){
+  if(first && typeof confirm === 'function' && !confirm('Generate the loan form? The borrower and guarantors will then sign it before the application can be approved.')) return;
+  await withRequest('es-gen-' + id, async ()=>{
+    try{ await api.post(`/api/loans/${id}/esign/generate`, {}); }
+    catch(e){
+      if(!(e instanceof ApiError) || e.code !== 'SIGNED_ALREADY') throw e;
+      if(typeof confirm === 'function' && !confirm(e.message + ' Regenerate anyway?')) return;
+      await api.post(`/api/loans/${id}/esign/generate`, { confirmReset: true });
+    }
+    await laReload(id);
+    toast('Loan form generated');
+  });
+}
+async function laSendBorrower(id){ await withRequest('es-sendb-' + id, async ()=>{ const r = await api.post(`/api/loans/${id}/esign/send-borrower`, {}); await laReload(id); toast(r.message); }); }
+async function laSendGuarantors(id){ await withRequest('es-sendg-' + id, async ()=>{ const r = await api.post(`/api/loans/${id}/esign/send-guarantors`, {}); await laReload(id); toast(r.message); }); }
+function laCopyLink(token){
+  const url = esignUrl(token);
+  const done = () => toast('Signing link copied');
+  if(typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => toast(url));
+  else toast(url);
+}
+// Opens the form in its own window, ready to print or save as PDF.
+function laPrintForm(id){
+  const x = (session.appExtras || {})[id]; const e = x && x.esign;
+  if(!e || !e.form){ toast('Generate the loan form first'); return; }
+  if(typeof window === 'undefined' || typeof window.open !== 'function') return;
+  const w = window.open('', '_blank');
+  if(!w){ toast('Allow pop-ups for this site to download the form'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loan Application #${escapeHtml(e.form.applicationNo)}</title><style>body{font-family:Arial,Helvetica,sans-serif;margin:16px;color:#1C2433;background:#fff;}${LOAN_FORM_CSS}</style></head><body>${loanFormHtml(e.form, { photo: e.clientPhoto, signers: e.signers })}<script>setTimeout(function(){window.print();},500);<\/script></body></html>`);
+  w.document.close();
+}
+// The Loan Application Form itself: company header, client photo, the
+// sections, and (once signed) each signer's signature.
+const LOAN_FORM_CSS = `
+.lf{background:#fff;border:1px solid #E1E6EE;border-radius:12px;padding:14px;color:#1C2433;font-size:12.5px;max-width:880px;margin:0 auto;}
+.lf-top{display:flex;justify-content:space-between;gap:12px;border:1px solid #E1E6EE;border-radius:10px;padding:12px;}
+.lf-co{display:flex;gap:12px;align-items:flex-start;min-width:0;} .lf-logo{width:64px;height:64px;object-fit:contain;flex-shrink:0;}
+.lf-co-name{font-weight:800;font-size:15px;letter-spacing:.3px;color:#1C2433;} .lf-co-sub{font-size:11px;color:#5E6B7E;margin-top:2px;}
+.lf-photo{text-align:center;flex-shrink:0;width:118px;} .lf-photo img,.lf-nophoto{width:110px;height:96px;object-fit:cover;border-radius:6px;border:1px solid #E1E6EE;}
+.lf-nophoto{display:flex;align-items:center;justify-content:center;color:#9AA5B5;background:#F4F6FA;margin:0 auto;} .lf-photo-n{font-weight:700;font-size:11px;margin-top:4px;} .lf-photo-id{font-size:10px;color:#7A8698;}
+.lf-title{text-align:center;font-weight:800;letter-spacing:.6px;margin:14px 0 10px;font-size:13.5px;} .lf-title-sub{font-weight:400;font-size:10.5px;color:#7A8698;letter-spacing:0;margin-top:2px;}
+.lf-sec{border:1px solid #E1E6EE;border-radius:10px;margin-top:12px;overflow:hidden;} .lf-sec-h{background:#F6F8FB;padding:10px 12px;font-weight:700;font-size:13px;color:#1C2433;border-bottom:1px solid #E1E6EE;}
+.lf-sec-h span{font-size:10px;font-weight:600;letter-spacing:.8px;color:#7A8698;margin-right:16px;}
+.lf-sec > table, .lf-sec > .lf-p, .lf-sec > .lf-sigs, .lf-sec > .lf-sub-h{margin:10px 12px;} .lf-sec > table{width:calc(100% - 24px);}
+table.lf-kv, table.lf-t{border-collapse:collapse;} table.lf-kv th, table.lf-kv td, table.lf-t th, table.lf-t td{border:1px solid #E7EBF1;padding:8px 10px;text-align:left;vertical-align:top;font-size:12px;}
+table.lf-kv th{background:#FAFBFD;color:#5E6B7E;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;width:18%;} table.lf-kv td{width:32%;}
+table.lf-t th{background:#EEF4FB;color:#1F3A5F;font-size:11px;} .lf-total td{font-weight:800;background:#FAFBFD;}
+.lf-sub-h{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#5E6B7E;} .lf-hint{text-transform:none;font-weight:400;letter-spacing:0;}
+.lf-p{line-height:1.55;color:#33405A;} .lf-sigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;}
+.lf-sig{border:1px dashed #C9D3E0;border-radius:8px;padding:8px;text-align:center;} .lf-sig-img{height:70px;display:flex;align-items:center;justify-content:center;} .lf-sig-img img{max-height:70px;max-width:100%;}
+.lf-sig-name{font-weight:700;border-top:1px solid #C9D3E0;padding-top:4px;margin-top:4px;} .lf-sig-role,.lf-sig-at{font-size:10.5px;color:#7A8698;}
+@media (max-width:640px){ .lf{padding:8px;} .lf-top{flex-direction:column-reverse;align-items:center;} .lf-sec{overflow-x:auto;} table.lf-kv th, table.lf-kv td{display:block;width:auto;border-width:0 0 1px 0;} table.lf-kv tr{display:block;} }
+@media print{ .lf{border:none;max-width:none;} }`;
+if(typeof document !== 'undefined' && document.head && typeof document.createElement === 'function'){ const s = document.createElement('style'); s.textContent = LOAN_FORM_CSS; document.head.appendChild(s); }
+function loanFormHtml(f, o){
+  o = o || {};
+  if(!f || !f.client || !f.loan) return '';
+  const e = s => escapeHtml(s == null || s === '' ? '—' : String(s));
+  const money = n => 'KES ' + Number(n || 0).toLocaleString('en-KE', { maximumFractionDigits: 0 });
+  const kv = rows => `<table class="lf-kv">${rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><th>${r[2]}</th><td>${r[3]}</td></tr>`).join('')}</table>`;
+  const co = f.company || {};
+  const sigBox = s => `<div class="lf-sig"><div class="lf-sig-img">${s.signature ? `<img src="${s.signature}" alt="Signature">` : ''}</div><div class="lf-sig-name">${e(s.name)}</div><div class="lf-sig-role">${s.role === 'borrower' ? 'Borrower' : 'Guarantor' + (s.relationship ? ' · ' + escapeHtml(s.relationship) : '')}</div><div class="lf-sig-at">${s.status === 'Signed' ? 'Signed ' + escapeHtml(laDateTime(s.signedAt)) : 'Not signed yet'}</div></div>`;
+  return `<div class="lf">
+    <div class="lf-top"><div class="lf-co">${typeof LOGO_DATA_URI !== 'undefined' ? `<img class="lf-logo" src="${LOGO_DATA_URI}" alt="">` : ''}<div><div class="lf-co-name">${e(co.name).toUpperCase()}</div>${co.address ? `<div class="lf-co-sub">${escapeHtml(co.address)}</div>` : ''}<div class="lf-co-sub">${[co.phone ? 'Tel: ' + co.phone : '', co.email || ''].filter(Boolean).map(escapeHtml).join(' · ')}</div></div></div>
+      <div class="lf-photo">${o.photo ? `<img src="${o.photo}" alt="Client photo">` : '<div class="lf-nophoto">Photo</div>'}<div class="lf-photo-n">${e(f.client.name)}</div><div class="lf-photo-id">ID ${e(f.client.idNumber)}</div></div></div>
+    <div class="lf-title">LOAN APPLICATION FORM<div class="lf-title-sub">Application #${e(f.applicationNo)} · ${escapeHtml(laDate(f.applicationDate))}</div></div>
+    <div class="lf-sec"><div class="lf-sec-h"><span>SECTION I</span>Client Information</div>${kv([['Full name', e(f.client.name), 'ID number', e(f.client.idNumber)], ['Phone', e(f.client.phone), 'Branch', e(f.client.branch)], ['Loan officer', e(f.client.officer), 'Email', e(f.client.email)], ['Business type', e(f.client.businessType), 'Physical address', e(f.client.address)]])}</div>
+    <div class="lf-sec"><div class="lf-sec-h"><span>SECTION II</span>Loan Information</div>
+      ${kv([['Application no.', '#' + e(f.applicationNo), 'Application date', escapeHtml(laDate(f.applicationDate))], ['Loan product', e(f.loan.product), 'Loan amount', money(f.loan.amount)], ['Duration', e(f.loan.duration), 'Interest', e(f.loan.ratePct + '% flat')], ['Payment reference', e(f.loan.paymentReference), 'Total charges', money(f.loan.totalCharges)]])}
+      <div class="lf-sub-h">Charge breakdown</div>
+      <table class="lf-t"><tr><th>Charge</th><th>Amount</th></tr>${(f.loan.charges || []).map(c => `<tr><td>${e(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('') || '<tr><td>No charges</td><td>KES 0</td></tr>'}</table>
+      <div class="lf-sub-h">Repayment schedule <span class="lf-hint">(dates are confirmed at disbursement)</span></div>
+      <table class="lf-t"><tr><th>#</th><th>Date</th><th>Principal</th><th>Interest</th><th>Installment</th></tr>${(f.schedule || []).map(r => `<tr><td>${r.period}</td><td>${escapeHtml(laDate(r.dueDate))}</td><td>${money(r.principal)}</td><td>${money(r.interest)}</td><td>${money(r.installment)}</td></tr>`).join('')}<tr class="lf-total"><td colspan="4">Total repayable</td><td>${money(f.totalRepayable)}</td></tr></table></div>
+    <div class="lf-sec"><div class="lf-sec-h"><span>SECTION III</span>Guarantors &amp; Collateral</div>
+      ${f.selfGuaranteed ? '<div class="lf-p">Self guaranteed — the borrower covers this loan.</div>' : `<table class="lf-t"><tr><th>Guarantor</th><th>ID number</th><th>Phone</th><th>Relationship</th></tr>${(f.guarantors || []).map(g => `<tr><td>${e(g.name)}</td><td>${e(g.idNumber)}</td><td>${e(g.phone)}</td><td>${e(g.relationship)}</td></tr>`).join('') || '<tr><td colspan="4">No guarantor</td></tr>'}</table>`}
+      <table class="lf-t"><tr><th>Security</th><th>Category</th><th>Details</th><th>Serial no.</th></tr>${(f.collateral || []).map(c => `<tr><td>${e(c.type)}</td><td>${e(c.category)}</td><td>${e(c.details)}</td><td>${e(c.serial)}</td></tr>`).join('') || `<tr><td colspan="4">${e(f.loan.securities || 'None listed')}</td></tr>`}</table></div>
+    <div class="lf-sec"><div class="lf-sec-h"><span>SECTION IV</span>Declaration &amp; Signatures</div><div class="lf-p">${e(f.declaration)}</div>${(o.signers || []).length ? `<div class="lf-sigs">${o.signers.map(sigBox).join('')}</div>` : ''}</div>
+  </div>`;
+}
+// ==================== Signing the loan form ====================
+// The same page serves staff inside the app (Open link) and the borrower or
+// guarantor opening a shared link (#/esign/<token>) without signing in.
+// The signer draws or uploads a signature, gets a code by SMS on their own
+// registered phone, and confirms with "I Agree & Sign".
+function esignTokenFromHash(){ const h = typeof location !== 'undefined' ? String(location.hash || '') : ''; const m = /^#\/esign\/([A-Za-z0-9_-]{20,64})$/.exec(h); return m ? m[1] : null; }
+function openEsignInApp(token, loanId){
+  session.esign = { token, loanId: loanId || null, inApp: true, data: null, otp: '' };
+  session.esignPad = {};
+  session.section = 'loanbook'; session.subtab = 'Sign Loan Form'; session.sidebarOpen = false;
+  if(session.loggedIn) pushAppHistory('loanbook', 'Sign Loan Form');
+  renderApp(); if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
+  return loadEsign();
+}
+async function loadEsign(){
+  const st = session.esign; if(!st) return;
+  try{ st.data = await api.get('/api/esign/' + st.token); st.error = null; }
+  catch(e){ st.error = (e && e.message) || 'This signing link could not be opened'; }
+  renderApp();
+}
+function renderEsignPage(){
+  const st = session.esign;
+  if(!st) return `<div class="card pg-card"><div class="empty">No signing link is open.</div></div>`;
+  const back = st.inApp && st.loanId ? `<button type="button" class="ap-back" onclick="openLoan('${st.loanId}','form')">← Back to application</button>` : '';
+  if(st.error) return `<div class="es-page">${back}<div class="es-banner es-red">${escapeHtml(st.error)}</div></div>`;
+  if(!st.data) return `<div class="es-page"><div class="hint" style="padding:20px;">${loadingDotsHtml()}</div></div>`;
+  const d = st.data;
+  const who = d.signer.role === 'borrower' ? 'Borrower' : 'Guarantor' + (d.signer.relationship ? ' · ' + escapeHtml(d.signer.relationship) : '');
+  if(st.done || d.status === 'Signed') return `<div class="es-page">${back}<div class="es-done"><div class="es-done-ic">✓</div><div class="es-done-t">Signed — thank you, ${escapeHtml(d.signer.name)}</div><div class="es-sub">Your signature on loan application #${escapeHtml(d.form ? d.form.applicationNo : '')} has been recorded${d.signedAt ? ' on ' + escapeHtml(laDateTime(d.signedAt)) : ''}.</div></div></div>`;
+  return `<div class="es-page">${back}
+    <div class="es-who">Signing as <strong>${escapeHtml(d.signer.name)}</strong> · ${who}</div>
+    ${loanFormHtml(d.form, { photo: d.clientPhoto })}
+    <div class="es-sigcard">
+      <div class="es-sig-t">Your Signature</div>
+      <div class="es-sub">Draw below or reuse your saved signature image.</div>
+      ${d.savedSignature ? `<button type="button" class="es-saved" onclick="esUseImage(session.esign.data.savedSignature)"><img src="${d.savedSignature}" alt="Saved signature"><span>Use saved signature</span></button>` : ''}
+      <canvas class="sig-pad es-pad" data-state="esignPad" width="640" height="220"></canvas>
+      <div class="es-sig-btns"><button type="button" class="es-ghost" onclick="sigPadClear('esignPad')">Clear</button><label class="es-ghost es-upload">Upload<input type="file" accept="image/png,image/jpeg,image/webp" onchange="esUpload(this)" style="display:none;"></label></div>
+    </div>
+    <button type="button" class="es-otp-btn" onclick="esRequestOtp()">Request OTP</button>
+    ${st.otpMsg ? `<div class="es-note">${escapeHtml(st.otpMsg)}</div>` : ''}
+    <label class="es-otp-l" for="es-otp">OTP Code</label>
+    <input id="es-otp" class="es-otp-in" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Enter 6-digit OTP" value="${escapeHtml(st.otp || '')}" oninput="session.esign.otp=this.value.replace(/[^0-9]/g,'')">
+    <button type="button" class="es-sign-btn" onclick="esSign()">I Agree &amp; Sign</button>
+  </div>`;
+}
+// Draws an image (saved or uploaded signature) into the pad and keeps it.
+function esUseImage(src){
+  if(!src || typeof document === 'undefined' || typeof Image !== 'function') return;
+  const c = document.querySelector('canvas.sig-pad[data-state="esignPad"]'); if(!c || !c.getContext) return;
+  const img = new Image();
+  img.onload = () => {
+    const ctx = c.getContext('2d'); ctx.clearRect(0, 0, c.width, c.height);
+    const k = Math.min(c.width / img.width, c.height / img.height, 1); const w = img.width * k, h = img.height * k;
+    ctx.drawImage(img, (c.width - w) / 2, (c.height - h) / 2, w, h);
+    (session.esignPad || (session.esignPad = {})).signatureDataUrl = c.toDataURL('image/png');
+  };
+  img.src = src;
+}
+function esUpload(input){
+  const file = input && input.files && input.files[0]; if(!file) return;
+  if(file.size > 2 * 1024 * 1024){ toast('The image is too large (2MB max)'); return; }
+  const r = new FileReader(); r.onload = () => esUseImage(r.result); r.readAsDataURL(file);
+}
+async function esRequestOtp(){
+  const st = session.esign; if(!st) return;
+  await withRequest('es-otp', async ()=>{
+    const r = await api.post(`/api/esign/${st.token}/otp`, {});
+    st.otpMsg = r.message + (r.otpForTesting ? ` — code: ${r.otpForTesting}` : '');
+  });
+}
+async function esSign(){
+  const st = session.esign; if(!st) return;
+  const sig = session.esignPad && session.esignPad.signatureDataUrl;
+  if(!sig){ toast('Please sign in the box (or upload a signature) first'); return; }
+  if(!/^\d{6}$/.test(st.otp || '')){ toast('Enter the 6-digit OTP code'); return; }
+  await withRequest('es-sign', async ()=>{
+    const r = await api.post(`/api/esign/${st.token}/sign`, { signature: sig, otp: st.otp });
+    st.done = true; st.result = r; session.esignPad = {};
+    if(!st.inApp || !session.loggedIn) return;
+    if(st.loanId) await refreshLoan(st.loanId).catch(() => {});
+    if(r.allSigned){ toast('All signatures are in — the application is now waiting for approval'); goToUndisbursedLoans(); }
+    else { toast(`Signed. ${r.remaining} signature${r.remaining === 1 ? '' : 's'} still needed`); if(st.loanId) openLoan(st.loanId, 'form'); }
+  }, { progress: 'Signing the loan form', successMsg: 'Signed successfully' });
+}
+// Shown instead of the login screen when a signing link is opened.
+function renderPublicEsign(root, token){
+  if(!session.esign || session.esign.token !== token){ session.esign = { token, inApp: false, data: null, otp: '' }; session.esignPad = {}; loadEsign(); }
+  root.innerHTML = `<div class="es-public"><div class="es-public-top">${typeof LOGO_DATA_URI !== 'undefined' ? `<img src="${LOGO_DATA_URI}" alt="">` : ''}<span>Loan Application — Digital Signature</span></div>${renderEsignPage()}</div>
+    <div class="toast-wrap">${toasts.map(t => `<div class="toast${t.type === 'success' ? ' toast-success' : ''}">${escapeHtml(t.msg)}</div>`).join('')}</div>`;
+  setTimeout(() => { try{ initSignatureCanvas(); }catch(e){} }, 0);
 }
 function renderLoanDetail(id){
   const l = DB.loans.find(x=>x.id===id); if(!l) return "";

@@ -261,6 +261,13 @@ router.get('/uploads/:name', async (req, res, next) => {
       res.end(fs.readFileSync(p));
       return;
     }
+    // A photo of a security pledged on a loan: same scope as the loan itself.
+    const pledged = await get('SELECT l.branch_id FROM loan_collaterals c JOIN loans l ON l.id = c.loan_id WHERE c.photo_path = ? LIMIT 1', [filePath]);
+    if (pledged) {
+      try { await assertRecordInScope(req.user, pledged.branch_id, 'loan'); } catch (scopeErr) { return next(scopeErr); }
+      res.end(fs.readFileSync(p));
+      return;
+    }
     const avatarOwner = await get('SELECT id FROM users WHERE avatar_path = ?', [filePath]);
     if (avatarOwner) {
       // Staff avatars are organizational-directory-level data (like a
@@ -318,6 +325,7 @@ router.delete('/api/users/me/avatar', async (req, res, next) => {
   './src/routes/workplans',
   './src/routes/intelligence',
   './src/routes/receipts',
+  './src/routes/loanEsign',
 ].forEach(mod => require(mod).register(router));
 
 const server = http.createServer((req, res) => {

@@ -1848,6 +1848,28 @@ async function initSchema() {
     id TEXT PRIMARY KEY, loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
     category TEXT NOT NULL, security_type TEXT NOT NULL, details TEXT NOT NULL,
     serial_no TEXT, photo_path TEXT, created_at TEXT NOT NULL DEFAULT iso_now())`);
+  // Loan application e-signing: the form is fixed as a snapshot when it is
+  // generated; the borrower and each guarantor sign it through their own
+  // link, confirmed by a one-time code sent to their registered phone.
+  await ensureColumn('loans', 'esign_required INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('loans', 'esign_form_json TEXT');
+  await ensureColumn('loans', 'esign_form_hash TEXT');
+  await ensureColumn('loans', 'esign_generated_at TEXT');
+  await ensureColumn('loans', 'esign_generated_by TEXT');
+  await ensureColumn('loans', 'created_by TEXT');
+  await ensureColumn('loans', 'guarantor_id_number TEXT');
+  await ensureColumn('loans', 'guarantor_relationship TEXT');
+  await ensureColumn('loans', 'application_no BIGINT');
+  await rawRun(`CREATE SEQUENCE IF NOT EXISTS loan_application_no_seq START 100001`);
+  await rawRun(`CREATE TABLE IF NOT EXISTS loan_esign_signers (
+    id TEXT PRIMARY KEY, loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+    role TEXT NOT NULL, name TEXT NOT NULL, phone TEXT, id_number TEXT, relationship TEXT,
+    token TEXT NOT NULL UNIQUE, token_expires_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Pending', link_sent_at TEXT, link_sms_status TEXT,
+    otp_hash TEXT, otp_expires_at TEXT, otp_sent_at TEXT, otp_requests INTEGER NOT NULL DEFAULT 0, otp_failures INTEGER NOT NULL DEFAULT 0,
+    signature_path TEXT, signed_at TEXT, signed_ip TEXT, signed_user_agent TEXT, form_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT iso_now())`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_loan_esign_loan ON loan_esign_signers(loan_id)`);
   await rawRun(`CREATE TABLE IF NOT EXISTS payment_merges (
     id TEXT PRIMARY KEY, merge_no BIGINT NOT NULL, client_id TEXT REFERENCES clients(id), loan_id TEXT REFERENCES loans(id),
     payment_id TEXT REFERENCES payments(id), total NUMERIC(14,2) NOT NULL, transactions_json TEXT NOT NULL,
@@ -1862,6 +1884,12 @@ async function initSchema() {
       await rawRun(`UPDATE ${r.k === 'p' ? 'payments' : 'loan_fee_payments'} SET receipt_no = nextval('receipt_no_seq') WHERE id = ?`, [r.id]);
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('receipt-numbers-backfill') ON CONFLICT DO NOTHING`);
+  }
+  // Every loan application gets a short, readable number (#100001…).
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'loan-application-no-backfill'`))) {
+    const rows = await rawAll(`SELECT id FROM loans WHERE application_no IS NULL ORDER BY created_at, id`);
+    for (const r of rows) await rawRun(`UPDATE loans SET application_no = nextval('loan_application_no_seq') WHERE id = ?`, [r.id]);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('loan-application-no-backfill') ON CONFLICT DO NOTHING`);
   }
   // Backs the single-active-session login block (see routes/auth.js /
   // routes/investors.js): a session only counts as "genuinely still in

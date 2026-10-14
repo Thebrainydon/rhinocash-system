@@ -1540,7 +1540,7 @@ function register(router) {
       const categoryStatuses = {
         'Disbursed loans': ['Active', 'Disbursed', 'Completed', 'Written Off', 'Restructured'],
         'Undisbursed loans': ['Approved for Disbursement'],
-        'Pended loans': ['Pending', 'Waiting for Manager', 'Waiting for Regional Manager', 'Waiting for Operational Manager', 'Waiting for Accountant', 'Returned for Correction'],
+        'Pended loans': ['Pending', 'Pending signatures', 'Waiting for Manager', 'Waiting for Regional Manager', 'Waiting for Operational Manager', 'Waiting for Accountant', 'Returned for Correction'],
         'Declined loans': ['Rejected'],
       };
       const statuses = categoryStatuses[req.query.category];
@@ -2223,6 +2223,12 @@ function register(router) {
     for (const c of collaterals) {
       if (!String(c.security_type || '').trim() || !String(c.details || '').trim()) return next({ status: 400, message: 'Each security needs a security type and details' });
     }
+    // Applications saved from the app are signed digitally by the borrower
+    // and each guarantor, with a code sent to their registered phone — so
+    // both need a phone number on record.
+    const esign = !!b.esign;
+    if (esign && !client.phone) return next({ status: 400, message: 'The client has no phone number on record — add it on the client profile first (the signing code is sent there)' });
+    if (esign && !b.self_guaranteed && guarantor && !guarantorContact) return next({ status: 400, message: "Enter the guarantor's phone number — their signing code is sent there" });
     const branchId = await resolveWriteBranchId(req.user, b.branch_id || client.branch_id);
     // Real officer override — only for roles above Loan Officer, and only
     // for a real Loan Officer who genuinely belongs to the resolved branch
@@ -2245,16 +2251,19 @@ function register(router) {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
       [id, b.client_id, b.product_id, b.principal, termMonths, product.rate_pct, b.purpose || null, guarantor,
         guarantorContact, b.loan_securities || null, b.loan_category || null,
-        officerId, branchId, steps[0] ? steps[0].status_label : 'Waiting for Manager',
+        officerId, branchId, esign ? require('./loanEsign').PENDING : (steps[0] ? steps[0].status_label : 'Waiting for Manager'),
         feePayment ? feePayment.amount : 0, feePayment ? feePayment.mpesa_receipt_number : null]
     );
     if (feePayment) await run('UPDATE loan_fee_payments SET loan_id = ? WHERE id = ?', [id, feePayment.id]);
-    await run('UPDATE loans SET business_type = ?, self_guaranteed = ?, client_signature_path = ? WHERE id = ?',
-      [b.business_type || null, b.self_guaranteed ? 1 : 0, b.client_signature_path || null, id]);
+    await run(`UPDATE loans SET business_type = ?, self_guaranteed = ?, client_signature_path = ?, created_by = ?, guarantor_id_number = ?, guarantor_relationship = ?,
+      application_no = nextval('loan_application_no_seq') WHERE id = ?`,
+      [b.business_type || null, b.self_guaranteed ? 1 : 0, b.client_signature_path || null, req.user.id,
+        b.self_guaranteed ? null : (String(b.guarantor_id_number || '').trim() || null), b.self_guaranteed ? null : (String(b.guarantor_relationship || '').trim() || null), id]);
     for (const c of collaterals) {
       await run('INSERT INTO loan_collaterals (id, loan_id, category, security_type, details, serial_no, photo_path) VALUES (?,?,?,?,?,?,?)',
         ['lcol_' + crypto.randomUUID(), id, String(c.category || 'Custom Securities'), String(c.security_type).trim(), String(c.details).trim(), c.serial_no || null, c.photo_path || null]);
     }
+    if (esign) await require('./loanEsign').generate(id, req.user.id);
     await logAction(req, { action: 'Submitted loan application', module: 'loanbook', recordType: 'Loan', recordId: id, newValue: { principal: b.principal, client_id: b.client_id, branch_id: branchId } });
     const loanRow = await get('SELECT * FROM loans WHERE id = ?', [id]);
     loanRow.collaterals = await all('SELECT * FROM loan_collaterals WHERE loan_id = ? ORDER BY created_at', [id]);
@@ -2292,7 +2301,7 @@ function register(router) {
     const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
     if (loan.officer_id !== req.user.id) return next({ status: 403, message: 'You can only edit a loan application you created yourself' });
-    if (loan.status !== 'Waiting for Manager') return next({ status: 409, message: 'This loan can no longer be edited — it has already moved past the first real approval step' });
+    if (!['Waiting for Manager', 'Pending signatures'].includes(loan.status)) return next({ status: 409, message: 'This loan can no longer be edited — it has already moved past the first real approval step' });
     const b = req.body;
     const product = await get('SELECT * FROM loan_products WHERE id = ?', [loan.product_id]);
     if (!product) return next({ status: 400, message: 'Unknown loan product' });
@@ -2320,7 +2329,15 @@ function register(router) {
       `UPDATE loans SET principal = ?, guarantor = ?, guarantor_contact = ?, loan_securities = ?, loan_category = ? WHERE id = ?`,
       [principal, guarantor, guarantorContact, loanSecurities, loanCategory, loan.id]
     );
-    await logAction(req, { action: 'Edited loan application', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: { principal: loan.principal, guarantor: loan.guarantor, loan_category: loan.loan_category }, newValue: { principal, guarantor, loan_category: loanCategory } });
+    if (b.guarantor_id_number !== undefined || b.guarantor_relationship !== undefined) {
+      await run('UPDATE loans SET guarantor_id_number = COALESCE(?, guarantor_id_number), guarantor_relationship = COALESCE(?, guarantor_relationship) WHERE id = ?',
+        [b.guarantor_id_number !== undefined ? (String(b.guarantor_id_number).trim() || null) : null, b.guarantor_relationship !== undefined ? (String(b.guarantor_relationship).trim() || null) : null, loan.id]);
+    }
+    // A changed application needs a fresh form — signatures on the old one no longer apply.
+    const changed = Number(principal) !== Number(loan.principal) || guarantor !== loan.guarantor || guarantorContact !== loan.guarantor_contact || loanSecurities !== loan.loan_securities || loanCategory !== loan.loan_category
+      || (b.guarantor_id_number !== undefined && (String(b.guarantor_id_number).trim() || null) !== loan.guarantor_id_number) || (b.guarantor_relationship !== undefined && (String(b.guarantor_relationship).trim() || null) !== loan.guarantor_relationship);
+    if (loan.esign_required && changed) await require('./loanEsign').generate(loan.id, req.user.id);
+    await logAction(req, { action: 'Edited loan application', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: { principal: loan.principal, guarantor: loan.guarantor, loan_category: loan.loan_category }, newValue: { principal, guarantor, loan_category: loanCategory, formReissued: !!(loan.esign_required && changed) } });
     res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
@@ -2334,6 +2351,9 @@ function register(router) {
     await assertRecordInScope(req.user, loan.branch_id, 'loan');
     if (loan.officer_id === req.user.id) {
       const err = new Error('You cannot approve, reject, or return a loan you submitted yourself'); err.status = 403; throw err;
+    }
+    if (loan.status === 'Pending signatures') {
+      const err = new Error('This application is waiting for the borrower and guarantors to sign the loan form — it can be approved once everyone has signed'); err.status = 409; throw err;
     }
     const currentStep = steps.find(s => s.step_order === loan.current_step);
     if (!currentStep) { const err = new Error('Loan is not awaiting sequential approval'); err.status = 409; throw err; }

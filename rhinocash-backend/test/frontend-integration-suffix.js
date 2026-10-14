@@ -7,6 +7,19 @@
 // frontend, running headlessly.
 let __pass = 0, __fail = 0;
 function __assert(cond, msg) { if (cond) { __pass++; console.log('OK:', msg); } else { __fail++; console.error('FAIL:', msg); } }
+// An application saved from the app waits for the borrower (and any
+// guarantor) to sign its loan form; this signs it through the real signing
+// links, as the client would, so later steps can approve it.
+async function __signLatestLoanForm(loanId){
+  const l = loanId ? DB.loans.find(x => x.id === loanId) : DB.loans[0]; if(!l || l.status !== 'Pending signatures') return;
+  const info = await api.get(`/api/loans/${l.id}/esign`);
+  const sig = 'data:image/png;base64,' + Buffer.alloc(400, 7).toString('base64');
+  for (const role of ['borrower', 'guarantor']) for (const s of info.signers.filter(x => x.role === role && x.status !== 'Signed')) {
+    const o = await api.post(`/api/esign/${s.token}/otp`, {});
+    await api.post(`/api/esign/${s.token}/sign`, { signature: sig, otp: o.otpForTesting });
+  }
+  await refreshLoan(l.id);
+}
 const __srcForBanCheck = require('node:fs').readFileSync(__dirname + '/../../rhinocash-app/extracted.js', 'utf8');
 // extracted.js is only the <script> contents — CSS in index.html's own
 // <style> block (never extracted) needs the raw file itself to check.
@@ -313,7 +326,15 @@ apiRequest = async function(method, path, body){
     const loansBefore = DB.loans.length;
     await submitLoanApp({ preventDefault(){}, target:{} });
     __assert(DB.loans.length === loansBefore + 1, "submitLoanApp (real form handler) created a real loan application");
-    const loan = DB.loans[0];
+    let loan = DB.loans[0];
+    __assert(loan.status === "Pending signatures", "an application saved from the app first waits for the borrower to sign the loan form");
+    // The borrower signs through the real signing link (the code is shown because SMS is off in tests).
+    const esignInfo = await api.get(`/api/loans/${loan.id}/esign`);
+    const signToken = esignInfo.signers.find(s => s.role === 'borrower').token;
+    const otpRes = await api.post(`/api/esign/${signToken}/otp`, {});
+    const signed = await api.post(`/api/esign/${signToken}/sign`, { signature: 'data:image/png;base64,' + Buffer.alloc(400, 7).toString('base64'), otp: otpRes.otpForTesting });
+    __assert(signed.signed && signed.allSigned, "the borrower signs the loan form with the code sent to their phone");
+    loan = await refreshLoan(loan.id);
     __assert(loan.status === "Waiting for Manager", "new application starts at the real first workflow status: Waiting for Manager");
     __assert(loan.branchId === "br_kisumu", "loan correctly inherited the client's real branch, server-resolved");
 
@@ -503,6 +524,7 @@ apiRequest = async function(method, path, body){
     const loanForm2 = new Map([['clientId',testClient.id],['productId',product.id],['principal','20000'],['term','3'],['purpose','Restock'],['guarantor','']]);
     global.FormData = class { constructor(){ return loanForm2; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     const loan2 = DB.loans[0];
 
     form = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
@@ -3976,6 +3998,7 @@ apiRequest = async function(method, path, body){
     let manualLoanForm = new Map([['clientId',manualClient.id],['productId',manualStarterProduct.id],['principal','4000'],['term','1'],['loan_category','New Loan'],['guarantor','Manual Guarantor'],['guarantor_contact','0711222444'],['processing_fee_id',session.loanAppState.feePayment.id]]);
     global.FormData = class { constructor(){ return manualLoanForm; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     await new Promise(r=>setTimeout(r,150));
     __assert(DB.loans.some(l=>l.clientId===manualClient.id && l.productId===manualStarterProduct.id), "a real loan application submitted using the real manually-confirmed processing fee genuinely succeeds, exactly like a real STK-confirmed one would");
 
@@ -4002,6 +4025,7 @@ apiRequest = async function(method, path, body){
     const loansBeforeNoGuarantor = DB.loans.length;
     const toastsBeforeNoGuarantor = toasts.length;
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     __assert(DB.loans.length === loansBeforeNoGuarantor, "no real loan was created for a New Loan application missing its real guarantor — enforced server-side, not just a frontend 'required' attribute");
     __assert(toasts.length > toastsBeforeNoGuarantor && /[Gg]uarantor/.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing guarantor) genuinely surfaces to the officer as a real toast");
 
@@ -4027,6 +4051,7 @@ apiRequest = async function(method, path, body){
     const loansBeforeNoFee = DB.loans.length;
     const toastsBeforeNoFee = toasts.length;
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     __assert(DB.loans.length === loansBeforeNoFee, "no real loan was created for an application missing its real, required processing fee payment — enforced server-side");
     __assert(toasts.length > toastsBeforeNoFee && /processing fee/i.test(toasts[toasts.length-1].msg), "the real backend's rejection reason (missing processing fee) genuinely surfaces to the officer as a real toast");
 
@@ -4063,11 +4088,19 @@ apiRequest = async function(method, path, body){
     __assert(DB.loans.length === wkLoansBefore + 1, "the real weekly-product loan application genuinely submits with a real guarantor and a real confirmed processing fee present");
     __assert(sawDone, "a successful save reaches 100% and shows the success pop-up");
     __assert(pctEl.innerHTML === '', "the pop-up clears once the save has finished");
-    const wkFrontendLoan = DB.loans[0];
+    let wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
-    __assert(session.section === 'loanbook' && session.subtab === 'Loan Applications', "saving genuinely redirects to the real Loan Applications page — Undisbursed Loans is a real filtered VIEW of this same page, not a separate submenu");
-    __assert(session.loanAppFilterState && session.loanAppFilterState.category === 'Undisbursed loans', "the real redirect genuinely pre-selects the 'Undisbursed loans' category filter, matching the real reference design where this is an option filtered within the Loan Application submenu");
+    __assert(session.section === 'loanbook' && session.subtab === 'Undisbursed Loans', "saving redirects the Loan Officer to the Undisbursed Loans page, like every other role");
+    const udHtml = document.getElementById('root').innerHTML;
+    __assert(wkFrontendLoan.status === 'Pending signatures' && udHtml.includes('ud-sigtag') && udHtml.includes('Pending signatures') && udHtml.includes(escapeHtml(wkFrontendClient.name)), "the new application is listed as Pending signatures with the Signatures tag");
+    __assert(/Undisbursed Loans \([\d,]+\)/.test(udHtml) && udHtml.includes('-- Day --') && udHtml.includes('-- Filter Approval --') && udHtml.includes('>Actions<'), "the Undisbursed Loans page has the total in its title, the date/approval filters and an Actions column");
+    await __signLatestLoanForm();
+    wkFrontendLoan = DB.loans.find(l => l.id === wkFrontendLoan.id);
+    // The Loan Application list (the Loan Officer's own menu item) keeps its
+    // 'Undisbursed loans' category view.
+    session.loanAppFilterState = { category:'Undisbursed loans', month:'', day:'', search:'' };
+    goTo('loanbook', 'Loan Applications');
 
     // The real rendered, filtered Loan Applications table genuinely shows
     // this real loan with the exact requested columns — a real row number,
@@ -4093,7 +4126,7 @@ apiRequest = async function(method, path, body){
     // reference screenshots' staged Approvals/Disbursement columns —
     // never a stale leftover submission timestamp.
     __assert(!wkFrontendLoan.approvals || wkFrontendLoan.approvals.length === 0, "a freshly submitted real loan genuinely has no real approvals yet");
-    __assert(wkFrontendLoan.status === 'Waiting for Manager', "a freshly submitted real loan genuinely starts at the real first real approval step");
+    __assert(wkFrontendLoan.status === 'Waiting for Manager', "once the loan form is signed, the loan starts at the real first real approval step");
     __assert(undisbHtml.includes('Waiting Manager'), "the real Disbursement column genuinely shows a real, live 'Waiting Manager' label for a loan still at its first real approval step, not the loan's own real submission timestamp");
     __assert(loanDisbursementCellLabel(wkFrontendLoan).includes('Waiting Manager') && !loanDisbursementCellLabel(wkFrontendLoan).includes(fmtLoanDetailDateTime(wkFrontendLoan.createdAt)), "the real Disbursement cell's own rendered output for this loan is genuinely the live 'Waiting Manager' label, not its submission timestamp (checked directly against the cell function, since the Application column elsewhere in the same row legitimately shows that same timestamp)");
 
@@ -4197,6 +4230,8 @@ apiRequest = async function(method, path, body){
     __assert(!modal, "a real successful edit genuinely closes the modal");
     const editedLoan = DB.loans.find(l=>l.id===wkFrontendLoan.id);
     __assert(editedLoan && Number(editedLoan.principal)===4200 && editedLoan.guarantor==='Edited Real Guarantor', "the real edit genuinely persisted via the real backend and updated the real in-memory loan record — not just the modal's own local state");
+    __assert(editedLoan.status === 'Pending signatures', "editing an application re-issues its loan form, so the borrower and guarantor sign the new version");
+    await __signLatestLoanForm(wkFrontendLoan.id);
 
     // Once a real Manager approves, the real Edit control genuinely
     // disappears — enforced server-side (PATCH /api/loans/:id refuses a
@@ -5659,7 +5694,7 @@ apiRequest = async function(method, path, body){
 
     closeModal();
     openLoan(lsbLoan.id);
-    __assert(session.selectedLoanId === lsbLoan.id && session.section === 'loanbook', "clicking a real row's underlying openLoan() genuinely navigates to that real loan's detail page");
+    __assert(session.appView && session.appView.id === lsbLoan.id && session.section === 'loanbook' && session.subtab === 'Loan Application', "clicking a real row's underlying openLoan() genuinely navigates to that real loan's application page");
     session.loanStatusState = null;
     DB.loanStatusBrowser = null;
   }
@@ -5721,7 +5756,7 @@ apiRequest = async function(method, path, body){
 
     closeModal();
     openLoan(ppLoan.id);
-    __assert(session.selectedLoanId === ppLoan.id && session.section === 'loanbook', "clicking a real pending-payment row's underlying openLoan() genuinely navigates to that real loan");
+    __assert(session.appView && session.appView.id === ppLoan.id && session.section === 'loanbook', "clicking a real pending-payment row's underlying openLoan() genuinely navigates to that real loan");
     session.pendingPaymentsState = null;
     DB.pendingPaymentsBrowser = null;
   }
@@ -5979,6 +6014,7 @@ apiRequest = async function(method, path, body){
     const lsdLoanForm = new Map([['clientId',lsdClient.id],['productId',lsdProduct.id],['principal','22000'],['term','4'],['purpose','Stock'],['guarantor','']]);
     global.FormData = class { constructor(){ return lsdLoanForm; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     const lsdLoan = DB.loans.find(l=>l.clientId===lsdClient.id);
     __assert(lsdLoan && lsdLoan.principal === 22000, "sanity: a real, fresh 22,000 loan application is genuinely created");
 
@@ -6238,6 +6274,7 @@ apiRequest = async function(method, path, body){
     const bpLoanForm = new Map([['clientId',bpClient.id],['productId',bpProduct.id],['principal','15000'],['term','3'],['purpose','Stock'],['guarantor','']]);
     global.FormData = class { constructor(){ return bpLoanForm; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     const bpLoanApp = DB.loans.find(l=>l.clientId===bpClient.id);
 
     let mgrBp2 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
@@ -6423,6 +6460,7 @@ apiRequest = async function(method, path, body){
     const dgLoanForm = new Map([['clientId',dgClient.id],['productId',dgProduct.id],['principal','20000'],['term','3'],['purpose','Stock'],['guarantor','']]);
     global.FormData = class { constructor(){ return dgLoanForm; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     const dgLoanApp = DB.loans.find(l=>l.clientId===dgClient.id);
 
     let mgrDg2 = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
@@ -6460,6 +6498,7 @@ apiRequest = async function(method, path, body){
     const bbLoanForm = new Map([['clientId',bbClient.id],['productId',dgProduct.id],['principal','15000'],['term','3'],['purpose','Stock'],['guarantor','']]);
     global.FormData = class { constructor(){ return bbLoanForm; } };
     await submitLoanApp({ preventDefault(){}, target:{} });
+    await __signLatestLoanForm();
     const bbLoanApp = DB.loans.find(l=>l.clientId===bbClient.id);
     global.FormData = class { constructor(){ return mgrDg2; } };
     await doLogin({ preventDefault(){}, target:{} });
@@ -7856,9 +7895,20 @@ apiRequest = async function(method, path, body){
     __assert(SIDEBAR_MENUS.Manager.some(sec => sec.items.includes('Undisbursed Loans')), "approvers have an Undisbursed Loans page in LoanBook");
     sidebarNavigate('Undisbursed Loans');
     let html = document.getElementById('root').innerHTML;
-    __assert(html.includes('class="adm-title">Undisbursed Loans<') && html.includes('Waiting for your approval') && html.includes('Ready to disburse'), "Undisbursed Loans shows the approval and disbursement queues");
+    __assert(/Undisbursed Loans \([\d,]+\)/.test(html) && html.includes('Approve Loans') && html.includes('-- Filter Approval --') && html.includes('>Loan Officer<') && html.includes('>Actions<'), "Undisbursed Loans shows the list with its filters, the Approve Loans button and an Actions column");
+    session.undisbFilter.month = ''; renderApp(); html = document.getElementById('root').innerHTML;
     const waiting = (DB.loans || []).find(l => l.status === 'Waiting for Manager');
     if(waiting) __assert(undisbMyStep(waiting) && html.includes(`undisbDecide('${waiting.id}','approve')`), "a loan waiting for the Manager offers Approve on the Manager's desk");
+    if(waiting){
+      // Clicking the client opens the application page: four cards, five tabs.
+      await openLoan(waiting.id);
+      const ap = document.getElementById('root').innerHTML;
+      __assert(session.subtab === 'Loan Application' && (ap.match(/class="ap-card"/g) || []).length === 4 && ['Overview', 'Guarantors &amp; Collateral', 'Charges &amp; Docs', 'Approvals', 'Loan Form'].every(t => ap.includes(t)), "a loan's application page shows the Amount/Product/Branch/Status cards and its five tabs");
+      laTab('form');
+      __assert(document.getElementById('root').innerHTML.includes('Loan Application Form'), "the Loan Form tab shows the loan application form section");
+      laTab('approvals');
+      __assert(document.getElementById('root').innerHTML.includes(`approveLoan('${waiting.id}')`), "the Approvals tab offers the Manager's Approve action");
+    }
     const aForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
     global.FormData = class { constructor(){ return aForm; } };
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
@@ -8146,7 +8196,7 @@ apiRequest = async function(method, path, body){
     }
     session.role = 'Manager'; session.laTest = null;
     const page = renderCreateLoanAppPage('laTest', 'submitMgrLoanApp');
-    __assert(['Loan Details', 'Guarantors &amp; Collateral', 'Business Type', 'Security 1', 'Add Another Security', 'Client Guarantors', 'class="sig-pad"', 'Save Application'].every(x => page.includes(x)), "Create Loan Application has the Loan Details and Guarantors & Collateral tabs, securities, guarantors and a signature pad");
+    __assert(['Loan Details', 'Guarantors &amp; Collateral', 'Business Type', 'Security 1', 'Add Another Security', 'Client Guarantors', 'Save Application'].every(x => page.includes(x)) && !page.includes('class="sig-pad"'), "Create Loan Application has the Loan Details and Guarantors & Collateral tabs, securities and guarantors — no signature pad (the client signs the generated loan form instead)");
     loanSecAdd('laTest'); loanSecSet('laTest', 1, 'security_type', 'Fridge');
     __assert(session.laTest.securities.length === 2 && session.laTest.securities[1].security_type === 'Fridge', "another security can be added and filled in");
     loanAppSet('laTest', 'principal', '7000'); renderApp();
