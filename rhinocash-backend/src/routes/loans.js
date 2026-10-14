@@ -2367,6 +2367,11 @@ function register(router) {
 // the next required role, restricted to the ones with that loan's branch
 // in scope, so a Kisumu Manager doesn't get pinged about a Nairobi loan
 // that isn't theirs to approve anyway.
+// "#A0123 · Mary Achieng · KES 20,000" — how people recognise a loan.
+async function loanRef(loan) {
+  const c = await get('SELECT name FROM clients WHERE id = ?', [loan.client_id]).catch(() => null);
+  return [loan.application_no ? '#' + loan.application_no : null, c && c.name, 'KES ' + Number(loan.principal || 0).toLocaleString('en-KE')].filter(Boolean).join(' · ');
+}
 async function notifyNextApprovers(loan, nextStep) {
   if (!nextStep) return;
   const { branchIdsInScope } = require('./../rbac');
@@ -2374,7 +2379,7 @@ async function notifyNextApprovers(loan, nextStep) {
   for (const u of candidates) {
     const scope = await branchIdsInScope(u);
     if (scope === null || scope.includes(loan.branch_id)) {
-      await notify(u.id, 'loan', 'Loan awaiting your approval', `Loan ${loan.id} is now waiting for you (${nextStep.status_label}).`);
+      await notify(u.id, 'loan', 'Loan awaiting your approval', `Loan ${await loanRef(loan)} is now waiting for you (${nextStep.status_label}).`);
     }
   }
 }
@@ -2395,7 +2400,7 @@ async function notifyNextApprovers(loan, nextStep) {
       [loan.id, loan.current_step, req.user.id, req.user.role_id, 'Approved', req.body.comments || null, loan.status, newStatus]
     );
     await logAction(req, { action: 'Approved loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, previousValue: loan.status, newValue: newStatus });
-    await notify(loan.officer_id, 'loan', 'Loan approval progressed', `Loan ${loan.id} moved to "${newStatus}".`);
+    await notify(loan.officer_id, 'loan', 'Loan approval progressed', `Loan ${await loanRef(loan)} was approved by ${req.user.name} and moved to "${newStatus}".`);
     await notifyNextApprovers(loan, nextStep);
     res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
@@ -2412,7 +2417,7 @@ async function notifyNextApprovers(loan, nextStep) {
       [loan.id, loan.current_step, req.user.id, req.user.role_id, req.body.reason || null, loan.status, 'Rejected']
     );
     await logAction(req, { action: 'Rejected loan', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.reason });
-    await notify(loan.officer_id, 'loan', 'Loan rejected', `Loan ${loan.id} was rejected${req.body.reason ? ': ' + req.body.reason : '.'}`);
+    await notify(loan.officer_id, 'loan', 'Loan rejected', `Loan ${await loanRef(loan)} was rejected by ${req.user.name}${req.body.reason ? ': ' + req.body.reason : '.'}`);
     res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 
@@ -2428,7 +2433,7 @@ async function notifyNextApprovers(loan, nextStep) {
       [loan.id, loan.current_step, req.user.id, req.user.role_id, req.body.comments || null, loan.status]
     );
     await logAction(req, { action: 'Returned loan for correction', module: 'loanbook', recordType: 'Loan', recordId: loan.id, reason: req.body.comments });
-    await notify(loan.officer_id, 'loan', 'Loan returned for correction', `Loan ${loan.id} was returned${req.body.comments ? ': ' + req.body.comments : '.'}`);
+    await notify(loan.officer_id, 'loan', 'Loan returned for correction', `Loan ${await loanRef(loan)} was returned by ${req.user.name}${req.body.comments ? ': ' + req.body.comments : '.'}`);
     res.json({ loan: await get('SELECT * FROM loans WHERE id = ?', [loan.id]) });
   });
 

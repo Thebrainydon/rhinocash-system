@@ -68,6 +68,14 @@ async function disbursedByBranch(from, to, branchIds) {
     WHERE disbursed_at IS NOT NULL AND (disbursed_at)::date BETWEEN (?)::date AND (?)::date AND branch_id IN (${branchIds.map(() => '?').join(',')}) GROUP BY branch_id`, [from, to, ...branchIds]);
   return new Map(rows.map(r => [r.branch_id, { amount: Number(r.amt), loans: r.n }]));
 }
+// Branch disbursement targets set on the Targets Register (by a Regional
+// Manager or above) for one month; they replace the report's default.
+async function registerBranchTargets(month) {
+  const rows = await all(`SELECT DISTINCT ON (branch_id) branch_id, target_value FROM targets
+    WHERE metric = 'disbursement' AND recipient_user_id IS NULL AND branch_id IS NOT NULL AND period = ? AND status = 'Active'
+    ORDER BY branch_id, created_at DESC`, [month]);
+  return new Map(rows.map(r => [r.branch_id, Number(r.target_value)]));
+}
 function monthStatus(ach, isNew, nearPct) {
   if (isNew) return 'NEW';
   return ach >= 100 ? 'MET' : ach >= nearPct ? 'NEAR' : 'BELOW';
@@ -79,15 +87,16 @@ async function disbursementReport(user, month) {
   const branches = await scopeBranches(user);
   const { map: opened, first } = await openingMonths();
   const act = await disbursedByBranch(b.start, b.end, branches.map(x => x.id));
+  const set = await registerBranchTargets(b.month);
   const rows = [];
   for (const br of branches) {
     const o = opened.get(br.id);
     if (!o || o > b.month) continue; // not lending yet in this month
     const isNew = o === b.month && o !== first;
-    const target = isNew ? s.newBranchTarget : s.establishedTarget;
+    const target = set.has(br.id) ? set.get(br.id) : isNew ? s.newBranchTarget : s.establishedTarget;
     const actual = (act.get(br.id) || { amount: 0 }).amount, loans = (act.get(br.id) || { loans: 0 }).loans;
     const ach = pct(actual, target) || 0;
-    rows.push({ branchId: br.id, branch: br.name, region: br.region, actual, loans, target, variance: actual - target, achievementPct: ach, status: monthStatus(ach, isNew, s.nearPct), isNew });
+    rows.push({ branchId: br.id, branch: br.name, region: br.region, actual, loans, target, targetSource: set.has(br.id) ? 'register' : 'default', variance: actual - target, achievementPct: ach, status: monthStatus(ach, isNew, s.nearPct), isNew });
   }
   rows.sort((a, c) => a.achievementPct - c.achievementPct);
   const actual = rows.reduce((t, r) => t + r.actual, 0), target = rows.reduce((t, r) => t + r.target, 0);
@@ -281,7 +290,8 @@ function register(router) {
       if (!o || o > key) continue;
       const end = new Date(Date.UTC(b.y, m, 0)).toISOString().slice(0, 10);
       const a = (await disbursedByBranch(`${key}-01`, end, [br.id])).get(br.id) || { amount: 0, loans: 0 };
-      const isNew = o === key && o !== first; const target = isNew ? s.newBranchTarget : s.establishedTarget;
+      const isNew = o === key && o !== first; const set = await registerBranchTargets(key);
+      const target = set.has(br.id) ? set.get(br.id) : isNew ? s.newBranchTarget : s.establishedTarget;
       const ach = pct(a.amount, target) || 0;
       months.push({ month: key, actual: a.amount, loans: a.loans, target, variance: a.amount - target, achievementPct: ach, status: monthStatus(ach, isNew, s.nearPct) });
     }

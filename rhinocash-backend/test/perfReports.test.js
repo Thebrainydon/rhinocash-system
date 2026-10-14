@@ -96,6 +96,14 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   assert(up.status === 200 && (await api('GET', '/api/perf/disbursement-report', { token: t.ceo })).json.rows.find(r => r.branchId === me.branch_id).target === 1600000, '6: the CEO changes the established-branch target and the report follows');
   await api('PUT', '/api/perf/settings', { token: t.ceo, body: { establishedTarget: 1500000 } });
 
+  // A branch disbursement target set on the Targets Register replaces the report's default.
+  const tg = await api('POST', '/api/targets', { token: t.ceo, body: { metric: 'disbursement', branch_id: me.branch_id, target_value: 2000000, period: month } });
+  assert(tg.status === 201, 'register: a branch disbursement target is set on the Targets Register');
+  const dr2 = (await api('GET', '/api/perf/disbursement-report', { token: t.ceo })).json;
+  const m2 = dr2.rows.find(r => r.branchId === me.branch_id);
+  assert(m2 && m2.target === 2000000 && m2.targetSource === 'register' && dr2.rows.filter(r => r.branchId !== me.branch_id).every(r => r.targetSource === 'default'), 'register: the Disbursement Report uses it for that branch only');
+  const bd2 = (await api('GET', `/api/perf/branch/${me.branch_id}`, { token: t.ceo })).json;
+  assert(bd2.months.find(x => x.month === month).target === 2000000, 'register: the branch drill-down uses it for that month');
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

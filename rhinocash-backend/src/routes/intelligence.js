@@ -1148,6 +1148,8 @@ function register(router) {
 // fabricated one.
 const DASHBOARD_WIDGET_CATALOG = {
   loan_officer: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
     { key: "pie:My Clients' Loan Cycles", label: "My Clients' Loan Cycles (chart)" },
     { key: 'pie:My Loan Products Distribution', label: 'My Loan Products Distribution (chart)' },
@@ -1156,6 +1158,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'teamCollectionPerformance', label: "Team Collection Performance" },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
     { key: "pie:Branch Clients' Loan Cycles", label: "Branch Clients' Loan Cycles (chart)" },
@@ -1165,6 +1169,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   regional_manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'branchComparison', label: 'Regional Branch Comparison' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
@@ -1173,6 +1179,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   operational_manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'branchComparison', label: 'Organization Branch Comparison' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'orgCounts', label: 'Organization Counts' },
@@ -1184,9 +1192,13 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   accountant: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'postedUnpostedCollections', label: 'Posted/Unposted Collections' },
   ],
   ceo: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'ceo-branch-leaderboard', label: 'Branch Leaderboard' },
     { key: 'ceo-top-officers', label: 'Top Performing Officers' },
     { key: 'ceo-portfolio-quality', label: 'Portfolio Quality' },
@@ -1196,12 +1208,17 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   director: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'portfolioRisk', label: 'Portfolio Risk' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
-  hr: [],
+  hr: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
+  ],
 };
 const INVESTOR_WIDGET_CATALOG = [
   { key: 'investor-investment-timeline', label: 'Investment Timeline' },

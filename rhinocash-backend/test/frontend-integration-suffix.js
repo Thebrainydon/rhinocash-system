@@ -8398,6 +8398,14 @@ apiRequest = async function(method, path, body){
   // ---- SMS not set up yet: OTP codes are shown and filled in ----
   __assert(String(esRequestOtp).includes('if(r.otpForTesting) st.otp = r.otpForTesting') && String(otpConfirm).includes('input.value = r.otpForTesting'), "e-sign and money-request OTP boxes fill in the shown code while SMS is not set up");
 
+  // ---- New dashboard cards are switchable on Admin's widget settings ----
+  __assert(Object.keys(DASHBOARD_WIDGET_CATALOG).every(r => ['businessQuality', 'mapWeather'].every(k => DASHBOARD_WIDGET_CATALOG[r].some(w => w.key === k))), "every role's widget catalog lists Business Quality and Map, Weather & Live Location");
+  {
+    const savedWs = DB.workspaceState; DB.workspaceState = { hiddenWidgets: ['businessQuality', 'mapWeather'] };
+    __assert(renderBusinessQualityCard() === '' && renderGeoWidget() === '', "hiding them (role default or personal) removes the cards from the dashboard");
+    DB.workspaceState = savedWs;
+  }
+
   // ---- Create User: branch selection ----
   {
     const html = cuBranchFieldsHtml(DB.branches[0] && DB.branches[0].id, null);

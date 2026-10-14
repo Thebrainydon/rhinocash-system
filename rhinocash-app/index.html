@@ -2067,6 +2067,8 @@ const BUILT_INTELLIGENCE_CATEGORIES = new Set(["drilldown-analytics", "predictiv
 // checks these exact strings against each widget's own call site.
 const DASHBOARD_WIDGET_CATALOG = {
   loan_officer: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
     { key: "pie:My Clients' Loan Cycles", label: "My Clients' Loan Cycles (chart)" },
     { key: 'pie:My Loan Products Distribution', label: 'My Loan Products Distribution (chart)' },
@@ -2075,6 +2077,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'teamCollectionPerformance', label: "Team Collection Performance" },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
     { key: "pie:Branch Clients' Loan Cycles", label: "Branch Clients' Loan Cycles (chart)" },
@@ -2084,6 +2088,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   regional_manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'branchComparison', label: 'Regional Branch Comparison' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'pie:Client Loans Analysis', label: 'Client Loans Analysis (chart)' },
@@ -2092,6 +2098,8 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   operational_manager: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'branchComparison', label: 'Organization Branch Comparison' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'orgCounts', label: 'Organization Counts' },
@@ -2103,9 +2111,13 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   accountant: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'postedUnpostedCollections', label: 'Posted/Unposted Collections' },
   ],
   ceo: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'ceo-branch-leaderboard', label: 'Branch Leaderboard' },
     { key: 'ceo-top-officers', label: 'Top Performing Officers' },
     { key: 'ceo-portfolio-quality', label: 'Portfolio Quality' },
@@ -2115,12 +2127,17 @@ const DASHBOARD_WIDGET_CATALOG = {
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
   director: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
     { key: 'portfolioRisk', label: 'Portfolio Risk' },
     { key: 'branchPerformanceBars', label: 'Branch Performance Bars' },
     { key: 'staffPerformanceTable', label: 'Staff Performance Table' },
     { key: 'performanceIndicatorsTable', label: 'Performance Indicators Table' },
   ],
-  hr: [],
+  hr: [
+    { key: 'businessQuality', label: 'Business Quality (Performance KPIs)' },
+    { key: 'mapWeather', label: 'Map, Weather & Live Location' },
+  ],
 };
 const INVESTOR_WIDGET_CATALOG = [
   { key: 'investor-investment-timeline', label: 'Investment Timeline' },
@@ -5624,7 +5641,7 @@ function bqTilesHtml(d, sim){
 function bqCanOpenPage(){ return typeof resolveRoute === 'function' && !!resolveRoute('Business Quality') && menuLabelAllowed('Business Quality'); }
 // Dashboard card (every staff dashboard), right under the headline cards.
 function renderBusinessQualityCard(){
-  if(!DB || session.role === 'Investor') return '';
+  if(!DB || session.role === 'Investor' || isDashboardWidgetHidden('businessQuality')) return '';
   loadBusinessQuality();
   const b = DB.bq;
   const head = `<div class="card-title"><span>Business Quality <small>${b && b.data ? `${escapeHtml(b.data.label)} · ${escapeHtml(bqMonthLabel(b.data.period.month))}` : ''}</small></span>${bqCanOpenPage() ? `<button type="button" class="btn btn-sm btn-outline" onclick="sidebarNavigate('Business Quality')">Details</button>` : ''}</div>`;
@@ -6469,7 +6486,8 @@ function admIntegrationPage(kind){
   return `<div class="card"><div class="card-title">Status</div><div class="adm-tiles">
       ${admTile('Delivery', admBadge(state[0], state[1]))}${admTile('Provider', escapeHtml((def.providers.find(p => p[0] === c.provider) || [, '—'])[1]))}${admTile('Last test', escapeHtml(c.lastTestStatus), c.lastTestAt ? timeAgo(c.lastTestAt) : '')}${admTile('Sent (logged)', logs.filter(l => l.status === 'Sent').length)}</div>
       ${c.lastTestMessage ? `<div class="hint" style="margin-top:8px;">${escapeHtml(c.lastTestMessage)}</div>` : ''}
-      ${c.envFallback && !c.configured ? `<div class="hint" style="margin-top:8px;">Currently using settings from the server's environment variables. Saving here takes over from them.</div>` : ''}</div>
+      ${c.envFallback && !c.configured ? `<div class="hint" style="margin-top:8px;">Currently using settings from the server's environment variables. Saving here takes over from them.</div>` : ''}
+      ${kind === 'sms' && !(c.enabled && c.configured) && !c.envFallback ? `<div class="section-note" style="margin-top:10px; border-left:4px solid #F9A825;"><strong>OTP codes are shown on screen.</strong> Until SMS is switched on, one-time codes for money requests and loan e-signing are shown to the person and filled in for them. Once SMS is on, codes go only to their phone.</div>` : ''}</div>
     ${c.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red);"><strong>Re-enter the API key.</strong> The saved key can no longer be read because the server's encryption key changed.</div>` : ''}
     ${can ? `<div class="card"><div class="card-title">${escapeHtml(def.title)} settings</div>
       <form onsubmit="return admSaveIntegration(event,'${kind}')"><div class="form-grid">
@@ -12167,7 +12185,7 @@ function geoWeatherCard(b){
     ${w.advice ? `<div class="geo-wx-adv">${escapeHtml(w.advice)}</div>` : ''}</div>`;
 }
 function renderGeoWidget(){
-  if(!DB || session.role === 'Investor') return '';
+  if(!DB || session.role === 'Investor' || isDashboardWidgetHidden('mapWeather')) return '';
   loadGeo();
   const g = DB.geo; const st = geoState();
   if(!g) return `<div class="card geo-card"><div class="card-title">Map &amp; Weather</div><div class="hint" style="padding:10px;">${loadingDotsHtml()}</div></div>`;
@@ -23105,7 +23123,7 @@ function renderPerfDisbursement(){
   if(!d) return perfLoading(title); if(d.error) return perfError(title, d);
   const T = d.totals, R = d.rule;
   const rows = d.rows.map(r => ({ tone: r.status === 'NEW' ? (r.achievementPct >= 100 ? 'ok' : 'bad') : PERF_TONE[r.status],
-    cells: [`<strong>${escapeHtml(r.branch)}</strong>`, fmtNum(r.actual), fmtNum(r.target), perfSigned(r.variance), `<strong>${perfAch(r.achievementPct)}</strong>`, perfStatus(r.status), fmtNum(r.loans), perfViewBtn(`perfState().branchId='${r.branchId}'; renderApp();`)],
+    cells: [`<strong>${escapeHtml(r.branch)}</strong>`, fmtNum(r.actual), `${fmtNum(r.target)}${r.targetSource === 'register' ? '<div class="pg-sub">set on Targets Register</div>' : ''}`, perfSigned(r.variance), `<strong>${perfAch(r.achievementPct)}</strong>`, perfStatus(r.status), fmtNum(r.loans), perfViewBtn(`perfState().branchId='${r.branchId}'; renderApp();`)],
     export: [r.branch, r.actual, r.target, r.variance, r.achievementPct + '%', r.status, r.loans] }));
   rows.push({ cls: 'perf-total', cells: ['<strong>Total</strong>', `<strong>${fmtNum(T.actual)}</strong>`, `<strong>${fmtNum(T.target)}</strong>`, `<strong>${perfSigned(T.actual - T.target)}</strong>`, `<strong>${(T.achievementPct || 0).toFixed(1)}%</strong>`, '', `<strong>${fmtNum(T.loans)}</strong>`, ''],
     export: ['Total', T.actual, T.target, T.actual - T.target, (T.achievementPct || 0) + '%', '', T.loans] });
