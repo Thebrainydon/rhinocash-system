@@ -148,6 +148,7 @@ async function seedIntelligenceCatalog(run, opts = {}) {
     // What-If Simulation — real arithmetic projections on real current
     // data (never a forecast model). One feature id per scenario, shared
     // across every role that holds it, same pattern as every category above.
+    ['whatif-business-quality', 'whatif-simulation', 'Business Quality', 0],
     ['whatif-collection-rate', 'whatif-simulation', 'Collection Rate Simulation', 1],
     ['whatif-disbursement-volume', 'whatif-simulation', 'Disbursement Volume Simulation', 2],
     ['whatif-portfolio-growth', 'whatif-simulation', 'Portfolio Growth Simulation', 3],
@@ -246,6 +247,8 @@ async function seedIntelligenceCatalog(run, opts = {}) {
       'workspace-templates', 'workspace-widget-management', 'workspace-role-defaults',
     ],
   };
+  // Business Quality (the Performance KPI formulas) is for every role.
+  for (const feats of Object.values(roleGrants)) if (!feats.includes('whatif-business-quality')) feats.unshift('whatif-business-quality');
   for (const [role, feats] of Object.entries(roleGrants)) {
     for (const f of feats) {
       if (opts.grants === false) continue;

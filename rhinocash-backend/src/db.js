@@ -1925,6 +1925,13 @@ async function initSchema() {
     await require('./intelligenceCatalog').seedIntelligenceCatalog(rawRun);
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('intelligence-catalog-v1') ON CONFLICT DO NOTHING`);
   }
+  // What-If › Business Quality (Performance KPI formulas) for every role —
+  // once per database, so a later change on the Admin pages is kept.
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'intelligence-business-quality-v1'`)) && (await rawGet(`SELECT 1 FROM intelligence_categories WHERE id = 'whatif-simulation'`))) {
+    await rawRun(`INSERT INTO intelligence_features (id, category_id, label, sort_order) VALUES ('whatif-business-quality', 'whatif-simulation', 'Business Quality', 0) ON CONFLICT DO NOTHING`);
+    await rawRun(`INSERT INTO role_intelligence_access (role_id, feature_id) SELECT id, 'whatif-business-quality' FROM roles ON CONFLICT DO NOTHING`);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('intelligence-business-quality-v1') ON CONFLICT DO NOTHING`);
+  }
   // Every loan application gets a short, readable number (#100001…).
   if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'loan-application-no-backfill'`))) {
     const rows = await rawAll(`SELECT id FROM loans WHERE application_no IS NULL ORDER BY created_at, id`);

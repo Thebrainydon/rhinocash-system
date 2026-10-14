@@ -8322,6 +8322,18 @@ apiRequest = async function(method, path, body){
     __assert(String(printReceiptSheet).includes('/api/receipts/mark-printed'), "downloading receipts marks them printed");
   }
 
+  // ---- Business Quality (Performance KPI formulas) ----
+  {
+    __assert(BQ_FORMULAS.map(f => `${f.title} = ${f.formula}`).join(' | ') === 'Arrears Collection % = (Arrears Collected ÷ Current Arrears) × 100 | Disbursement Counts % = (Disbursement Counts ÷ Target) × 100 | Portfolio Quality (Book Quality – BQ) % = (Performing Loans ÷ Active Clients) × 100', "the three Performance KPI formulas are shown exactly");
+    const d = { label: 'My book', period: { month: '2026-10' }, arrearsCollection: { collected: 3000, outstanding: 1000, current: 4000, pct: 75 }, disbursementCounts: { count: 9, target: 10, pct: 90 }, portfolioQuality: { performing: 45, activeClients: 50, pct: 90 }, rows: [] };
+    const tiles = bqTilesHtml(d);
+    __assert(tiles.includes('75.0%') && tiles.includes('90.0%') && tiles.includes('KES 3,000') && tiles.includes('Active Clients'), "the KPI tiles show each %, numerator and denominator");
+    const sim = bqSimulate(d, { extraArrears: 1000, extraDisb: 1, extraPerforming: 10 });
+    __assert(sim.arrearsCollection === 100 && sim.disbursementCounts === 100 && sim.portfolioQuality === 100, "the What-if numbers move each KPI (capped at the arrears book / active clients)");
+    __assert(String(renderDashboard).includes('renderBusinessQualityCard()') && String(renderIntelligenceWhatIf).includes("whatif-business-quality"), "every dashboard shows Business Quality, and What-If has its own Business Quality page");
+    __assert(String(loadBusinessQuality).includes('/api/kpi/business-quality') && String(loadBusinessQualityPage).includes('/api/intelligence/whatif/'), "both read the server's figures for the user's own scope");
+  }
+
   // ---- Dashboards: map, weather and live location ----
   {
     __assert(String(renderDashboard).includes('renderGeoWidget()'), "every dashboard carries the Map & Weather card");

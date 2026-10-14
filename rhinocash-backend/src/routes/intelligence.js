@@ -632,6 +632,10 @@ async function computeWhatIf(featureId, req, deltaRaw) {
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
   switch (featureId) {
+    case 'whatif-business-quality': {
+      const { businessQualityFor, FORMULAS } = require('./../businessQuality');
+      return { featureId, kind: 'business-quality', formulas: FORMULAS, ...(await businessQualityFor(req.user, { month: req.query.month })) };
+    }
     case 'whatif-collection-rate': {
       const loanIds = (await all(
         `SELECT l.id FROM loans l WHERE ${loanScope.clause} ${officerId ? 'AND l.officer_id = ?' : ''}`,
@@ -881,6 +885,7 @@ function register(router) {
   router.get('/api/intelligence/whatif-simulation-models', requireAuth, requirePermission('manage_users'), requireAdminOnly('view Simulation Models'), async (req, res) => {
     res.json({
       models: [
+        { kind: 'whatif-business-quality', formula: 'Arrears Collection % = (Arrears Collected ÷ Current Arrears) × 100; Disbursement Counts % = (Disbursement Counts ÷ Target) × 100; Portfolio Quality (BQ) % = (Performing Loans ÷ Active Clients) × 100 — real figures for the caller\'s scope this month; the page lets the user try different numbers.' },
         { kind: 'whatif-collection-rate', formula: 'Real month-to-date expected/collected amounts (the same collectionTotals() Collection Rate/MTD pages use); delta is added in percentage points.' },
         { kind: 'whatif-disbursement-volume', formula: 'Real month-to-date disbursed principal; delta is a percentage change.' },
         { kind: 'whatif-portfolio-growth', formula: 'Real current outstanding loan balance in scope; delta is a percentage change.' },

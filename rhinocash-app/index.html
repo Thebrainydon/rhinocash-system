@@ -45,7 +45,30 @@ body{
 
 /* ---- Sidebar ---- */
 .sidebar{
-  width:264px; background:linear-gradient(180deg, var(--navy) 0%, var(--green) 100%); color:#EDEFF4; flex-shrink:0;
+  /* The menu space: the deep starry teal of the reference (darker at the top,
+     #023041, to #013b4e at the bottom) with small white stars. The upper
+     profile block keeps its own olive gradient (.side-profile). */
+  width:264px; color:#EDEFF4; flex-shrink:0;
+  background-color:#023446;
+  background-image:
+    radial-gradient(1.4px 1.4px at 18px 24px, rgba(255,255,255,0.85) 50%, transparent 100%),
+    radial-gradient(1px 1px at 62px 90px, rgba(255,255,255,0.55) 50%, transparent 100%),
+    radial-gradient(1.4px 1.4px at 140px 40px, rgba(255,255,255,0.75) 50%, transparent 100%),
+    radial-gradient(1px 1px at 210px 70px, rgba(255,255,255,0.5) 50%, transparent 100%),
+    radial-gradient(1px 1px at 96px 150px, rgba(255,255,255,0.7) 50%, transparent 100%),
+    radial-gradient(1px 1px at 180px 130px, rgba(255,255,255,0.45) 50%, transparent 100%),
+    radial-gradient(1px 1px at 30px 200px, rgba(255,255,255,0.6) 50%, transparent 100%),
+    radial-gradient(1.4px 1.4px at 240px 210px, rgba(255,255,255,0.8) 50%, transparent 100%),
+    radial-gradient(1px 1px at 120px 240px, rgba(255,255,255,0.5) 50%, transparent 100%),
+    radial-gradient(1px 1px at 70px 290px, rgba(255,255,255,0.65) 50%, transparent 100%),
+    radial-gradient(1px 1px at 200px 280px, rgba(255,255,255,0.55) 50%, transparent 100%),
+    radial-gradient(1.4px 1.4px at 150px 330px, rgba(255,255,255,0.8) 50%, transparent 100%),
+    radial-gradient(1px 1px at 20px 350px, rgba(255,255,255,0.45) 50%, transparent 100%),
+    radial-gradient(1px 1px at 250px 360px, rgba(255,255,255,0.6) 50%, transparent 100%),
+    linear-gradient(180deg, #023041 0%, #023648 55%, #013b4e 100%);
+  background-size:270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px,270px 380px, 100% 100%;
+  background-repeat:repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat,repeat, no-repeat;
+  background-attachment:local;
   display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto;
 }
 .brand{padding:22px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:space-between;}
@@ -469,6 +492,27 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
 .geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
 .geo-pin-wrap{background:transparent; border:none;}
+.bq-tiles{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;}
+.bq-tile{border:1px solid #DCE5F0; border-radius:12px; padding:12px 14px; background:#fff; border-top:4px solid #9AA6B8;}
+.bq-tile.good{border-top-color:#1E9E61;} .bq-tile.fair{border-top-color:#E0A21B;} .bq-tile.poor{border-top-color:#D64545;}
+.bq-t-title{font-weight:800; color:#1F3A5F; font-size:13px;}
+.bq-t-pct{font-size:28px; font-weight:800; color:#14243B; margin:4px 0 6px; display:flex; align-items:baseline; gap:8px;}
+.bq-t-sim{font-size:15px; color:#1D6FD8; font-weight:800;}
+.bq-bar{height:6px; border-radius:999px; background:#EDF1F6; overflow:hidden;} .bq-bar i{display:block; height:100%; background:#1F3A5F; border-radius:999px;}
+.bq-tile.good .bq-bar i{background:#1E9E61;} .bq-tile.fair .bq-bar i{background:#E0A21B;} .bq-tile.poor .bq-bar i{background:#D64545;}
+.bq-t-f{font-size:11.5px; color:#5E6B7E; margin-top:8px;}
+.bq-t-v{display:flex; flex-direction:column; gap:2px; font-size:12px; color:#33405A; margin-top:6px;}
+.bq-formulas{border:1px solid #E3E8EF; background:#FAFBFD; border-radius:10px; padding:10px 14px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;}
+.bq-f-h{grid-column:1 / -1; font-weight:800; color:#1F3A5F; font-size:13.5px;}
+.bq-f{font-size:13px; color:#22324A;} .bq-f div{color:#4A5870; margin-top:2px;}
+.bq-sim{display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; margin:12px 0; padding:10px 14px; border:1px dashed #C7D4E6; border-radius:10px; background:#F6FAFF;}
+.bq-sim .bq-f-h{flex-basis:100%;}
+.bq-sim-f{display:flex; flex-direction:column; gap:3px; font-size:12px; color:#4A5870;} .bq-sim-f input{width:150px;}
+.bq-pill{display:inline-block; min-width:56px; text-align:center; border-radius:999px; padding:2px 8px; font-weight:700; font-size:12px; background:#EEF1F5; color:#4A5870;}
+.bq-pill.good{background:#E3F6EC; color:#147A4A;} .bq-pill.fair{background:#FFF4DC; color:#8A5A00;} .bq-pill.poor{background:#FDE7E7; color:#B02E2E;}
+.bq-total td{background:#F4F7FB; font-weight:700;}
+.bq-head-acts{display:flex; gap:6px; align-items:center; flex-wrap:wrap;}
+@media (max-width:800px){ .bq-tiles, .bq-formulas{grid-template-columns:1fr;} }
 .geo-checked{display:inline-flex; align-items:center; gap:3px; color:#12805C; font-weight:700; font-size:12px; background:#E9F8F1; border-radius:999px; padding:2px 8px;}
 .geo-tickbar{display:flex; align-items:center; gap:6px; flex-wrap:wrap; background:#EEF5FF; border:1px solid #CFE0F5; border-radius:8px; padding:6px 8px; margin-bottom:6px; font-size:12.5px;}
 .geo-only{display:inline-flex; align-items:center; gap:4px; font-size:12px; margin-left:auto;}
@@ -5276,7 +5320,114 @@ function fmtWhatIfMetric(value, unit){
   if(unit==='%') return value.toFixed(1)+'%';
   return fmtNum(Math.round(value));
 }
+
+// ==================== Business Quality (Performance KPI formulas) ====================
+// Arrears Collection %, Disbursement Counts % and Portfolio Quality (BQ) %,
+// computed on the server for the user's own scope (see businessQuality.js).
+const BQ_FORMULAS = [
+  { key: 'arrearsCollection', title: 'Arrears Collection %', formula: '(Arrears Collected ÷ Current Arrears) × 100', num: d => fmt(d.collected), den: d => fmt(d.current), numL: 'Arrears Collected', denL: 'Current Arrears' },
+  { key: 'disbursementCounts', title: 'Disbursement Counts %', formula: '(Disbursement Counts ÷ Target) × 100', num: d => fmtNum(d.count), den: d => d.target ? fmtNum(d.target) : 'No target set', numL: 'Disbursement Counts', denL: 'Target' },
+  { key: 'portfolioQuality', title: 'Portfolio Quality (Book Quality – BQ) %', formula: '(Performing Loans ÷ Active Clients) × 100', num: d => fmtNum(d.performing), den: d => fmtNum(d.activeClients), numL: 'Performing Loans', denL: 'Active Clients' },
+];
+function bqTone(p){ return p == null ? 'none' : p >= 90 ? 'good' : p >= 70 ? 'fair' : 'poor'; }
+function bqPctText(p){ return p == null ? '—' : `${p.toFixed(1)}%`; }
+function bqMonthLabel(m){ return m ? new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''; }
+function loadBusinessQuality(force){
+  if(!DB || session.role === 'Investor') return;
+  if(DB.bq && !force && Date.now() - DB.bq.at < 120000) return;
+  if(inFlight.has('bq-load')) return;
+  inFlight.add('bq-load');
+  api.get('/api/kpi/business-quality').then(d => { if(DB){ DB.bq = { at: Date.now(), data: d }; renderApp(); } })
+    .catch(e => { if(DB){ DB.bq = { at: Date.now(), error: (e && e.message) || 'Business Quality is not available' }; renderApp(); } })
+    .finally(() => inFlight.delete('bq-load'));
+}
+function bqTilesHtml(d, sim){
+  return `<div class="bq-tiles">${BQ_FORMULAS.map(f => { const k = d[f.key] || {}; const p = k.pct; const sp = sim && sim[f.key];
+    return `<div class="bq-tile ${bqTone(p)}"><div class="bq-t-title">${escapeHtml(f.title)}</div>
+      <div class="bq-t-pct">${bqPctText(p)}${sp !== undefined && sp !== p ? `<span class="bq-t-sim">→ ${bqPctText(sp)}</span>` : ''}</div>
+      <div class="bq-bar"><i style="width:${Math.max(0, Math.min(100, p || 0))}%"></i></div>
+      <div class="bq-t-f">= ${escapeHtml(f.formula)}</div>
+      <div class="bq-t-v"><span>${escapeHtml(f.numL)}: <strong>${f.num(k)}</strong></span><span>${escapeHtml(f.denL)}: <strong>${f.den(k)}</strong></span></div></div>`; }).join('')}</div>`;
+}
+function bqCanOpenPage(){ return typeof resolveRoute === 'function' && !!resolveRoute('Business Quality') && menuLabelAllowed('Business Quality'); }
+// Dashboard card (every staff dashboard), right under the headline cards.
+function renderBusinessQualityCard(){
+  if(!DB || session.role === 'Investor') return '';
+  loadBusinessQuality();
+  const b = DB.bq;
+  const head = `<div class="card-title"><span>Business Quality <small>${b && b.data ? `${escapeHtml(b.data.label)} · ${escapeHtml(bqMonthLabel(b.data.period.month))}` : ''}</small></span>${bqCanOpenPage() ? `<button type="button" class="btn btn-sm btn-outline" onclick="sidebarNavigate('Business Quality')">Details</button>` : ''}</div>`;
+  if(!b) return `<div class="card bq-card">${head}<div class="hint" style="padding:10px;">${loadingDotsHtml()}</div></div>`;
+  if(b.error) return `<div class="card bq-card">${head}<div class="hint">${escapeHtml(b.error)}</div></div>`;
+  return `<div class="card bq-card">${head}${bqTilesHtml(b.data)}</div>`;
+}
+// Intelligence › What-If Simulation › Business Quality.
+function bqPageState(){ return session.bqPage || (session.bqPage = { month: new Date().toISOString().slice(0, 7), extraArrears: 0, extraDisb: 0, extraPerforming: 0 }); }
+function loadBusinessQualityPage(force){
+  const st = bqPageState(); const key = 'whatif-business-quality';
+  if(!DB.intelligenceWhatIf) DB.intelligenceWhatIf = {};
+  const have = DB.intelligenceWhatIf[key];
+  if(have && have.period && have.period.month === st.month && !force) return;
+  if(inFlight.has('bq-page')) return;
+  inFlight.add('bq-page');
+  api.get(`/api/intelligence/whatif/${key}?month=${encodeURIComponent(st.month)}`)
+    .then(d => { DB.intelligenceWhatIf[key] = d; renderApp(); })
+    .catch(e => { DB.intelligenceWhatIf[key] = { error: (e && e.message) || 'Business Quality could not load', period: { month: st.month } }; renderApp(); })
+    .finally(() => inFlight.delete('bq-page'));
+}
+function bqSimulate(d, st){
+  const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
+  const xa = Math.max(0, Number(st.extraArrears) || 0), xd = Math.max(0, Number(st.extraDisb) || 0), xp = Math.max(0, Number(st.extraPerforming) || 0);
+  const a = d.arrearsCollection, ds = d.disbursementCounts, q = d.portfolioQuality;
+  // Collecting more arrears moves money from "still owed" to "collected"; the arrears book stays the same.
+  return {
+    arrearsCollection: pct(Math.min(a.current, a.collected + xa), a.current),
+    disbursementCounts: pct(ds.count + xd, ds.target),
+    portfolioQuality: pct(Math.min(q.activeClients, q.performing + xp), q.activeClients),
+  };
+}
+function renderBusinessQualityPage(feature){
+  const st = bqPageState();
+  const d = DB.intelligenceWhatIf && DB.intelligenceWhatIf['whatif-business-quality'];
+  loadBusinessQualityPage();
+  const title = `<div class="card-title">${escapeHtml(feature.label)}</div>`;
+  if(!d || (d.period && d.period.month !== st.month && !d.error)) return `<div class="card">${title}<div class="empty">${loadingDotsHtml()}</div></div>`;
+  if(d.error) return `<div class="card">${title}<div class="hint">${escapeHtml(d.error)}</div></div>`;
+  const sim = bqSimulate(d, st);
+  const rows = d.rows || [];
+  const who = rows.length && rows[0].kind === 'officer' ? 'Loan Officer' : 'Branch';
+  const headers = [who, 'Arrears Collected', 'Current Arrears', 'Arrears Collection %', 'Disbursements', 'Target', 'Disbursement %', 'Performing Loans', 'Active Clients', 'BQ %'];
+  const rowCells = r => [r.name, fmt(r.arrearsCollection.collected), fmt(r.arrearsCollection.current), bqPctText(r.arrearsCollection.pct), fmtNum(r.disbursementCounts.count), r.disbursementCounts.target ? fmtNum(r.disbursementCounts.target) : '—', bqPctText(r.disbursementCounts.pct), fmtNum(r.portfolioQuality.performing), fmtNum(r.portfolioQuality.activeClients), bqPctText(r.portfolioQuality.pct)];
+  const pill = p => `<span class="bq-pill ${bqTone(p)}">${bqPctText(p)}</span>`;
+  const table = rows.length ? `<div class="table-wrap"><table><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr>
+      ${rows.map(r => `<tr><td><strong>${escapeHtml(r.name)}</strong></td><td>${fmt(r.arrearsCollection.collected)}</td><td>${fmt(r.arrearsCollection.current)}</td><td>${pill(r.arrearsCollection.pct)}</td><td>${fmtNum(r.disbursementCounts.count)}</td><td>${r.disbursementCounts.target ? fmtNum(r.disbursementCounts.target) : '—'}</td><td>${pill(r.disbursementCounts.pct)}</td><td>${fmtNum(r.portfolioQuality.performing)}</td><td>${fmtNum(r.portfolioQuality.activeClients)}</td><td>${pill(r.portfolioQuality.pct)}</td></tr>`).join('')}
+      <tr class="bq-total"><td><strong>Total · ${escapeHtml(d.label)}</strong></td><td>${fmt(d.arrearsCollection.collected)}</td><td>${fmt(d.arrearsCollection.current)}</td><td>${pill(d.arrearsCollection.pct)}</td><td>${fmtNum(d.disbursementCounts.count)}</td><td>${d.disbursementCounts.target ? fmtNum(d.disbursementCounts.target) : '—'}</td><td>${pill(d.disbursementCounts.pct)}</td><td>${fmtNum(d.portfolioQuality.performing)}</td><td>${fmtNum(d.portfolioQuality.activeClients)}</td><td>${pill(d.portfolioQuality.pct)}</td></tr></table></div>` : '';
+  const chart = rows.length ? admChart('bq-chart', `Business Quality by ${who.toLowerCase()}`, 'bar', rows.map(r => r.name), [
+    { label: 'Arrears Collection %', data: rows.map(r => r.arrearsCollection.pct || 0) },
+    { label: 'Disbursement Counts %', data: rows.map(r => r.disbursementCounts.pct || 0) },
+    { label: 'Portfolio Quality (BQ) %', data: rows.map(r => r.portfolioQuality.pct || 0) },
+  ]) : '';
+  const field = (k, label, step) => `<label class="bq-sim-f"><span>${label}</span><input type="number" min="0" step="${step}" value="${escapeHtml(String(st[k] || 0))}" oninput="bqPageState().${k}=this.value; bqSimRefresh()"></label>`;
+  return `<div class="card">
+    <div class="card-title"><span>${escapeHtml(feature.label)} <small>${escapeHtml(d.label)}</small></span>
+      <span class="bq-head-acts"><input type="month" value="${escapeHtml(st.month)}" max="${new Date().toISOString().slice(0, 7)}" onchange="bqPageState().month=this.value; loadBusinessQualityPage(true); renderApp();">
+      ${generateMenuHtml('Business Quality ' + st.month, () => ({ headers, rows: [...rows.map(rowCells), ['Total · ' + d.label, ...rowCells(d).slice(1)]] }))}</span></div>
+    <div class="bq-formulas"><div class="bq-f-h">Performance KPI Formulas</div>
+      ${BQ_FORMULAS.map((f, i) => `<div class="bq-f"><strong>${i + 1}. ${escapeHtml(f.title)}</strong><div>= ${escapeHtml(f.formula)}</div></div>`).join('')}</div>
+    <div id="bq-tiles-live">${bqTilesHtml(d, sim)}</div>
+    <div class="bq-sim"><div class="bq-f-h">What if…</div>
+      ${field('extraArrears', 'More arrears collected (KES)', 100)}${field('extraDisb', 'More loans disbursed', 1)}${field('extraPerforming', 'More loans brought back to performing', 1)}
+      <button type="button" class="btn btn-sm btn-outline" onclick="Object.assign(bqPageState(), { extraArrears: 0, extraDisb: 0, extraPerforming: 0 }); renderApp();">Reset</button></div>
+    ${table}
+  </div>${chart}`;
+}
+// Typing a what-if number updates the tiles in place (no full re-render, so the field keeps focus).
+function bqSimRefresh(){
+  const d = DB.intelligenceWhatIf && DB.intelligenceWhatIf['whatif-business-quality'];
+  const el = typeof document !== 'undefined' && document.getElementById('bq-tiles-live');
+  if(d && !d.error && el) el.innerHTML = bqTilesHtml(d, bqSimulate(d, bqPageState()));
+}
 function renderIntelligenceWhatIf(feature){
+  if(feature.id==='whatif-business-quality') return renderBusinessQualityPage(feature);
   if(feature.id==='whatif-simulation-models') return renderAdminWhatIfModels();
   if(feature.id==='whatif-simulation-bounds') return renderAdminWhatIfBounds();
   if(!DB.intelligenceWhatIf) DB.intelligenceWhatIf = {};
@@ -11958,7 +12109,7 @@ function geoStopWatch(){ if(geoWatchId !== null && typeof navigator !== 'undefin
 // The Map & Weather card sits right under a dashboard's headline cards
 // (where the dashboard marks <!--geo-slot-->), otherwise at the end.
 function renderDashboard(){
-  const core = renderDashboardCore(), geo = renderGeoWidget();
+  const core = renderDashboardCore(), geo = renderBusinessQualityCard() + renderGeoWidget();
   if(!core.includes('<!--geo-slot-->')) return core + geo;
   let placed = false;
   return core.replace(/<!--geo-slot-->/g, () => { if(placed) return ''; placed = true; return geo; });
