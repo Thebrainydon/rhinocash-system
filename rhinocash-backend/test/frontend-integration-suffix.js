@@ -8113,7 +8113,8 @@ apiRequest = async function(method, path, body){
     const bands = arrearsAgingBands([{ status:'Active', schedule:[{ dueDate: new Date(Date.now() - 3*86400000).toISOString().slice(0,10), totalDue:100, paidAmount:0, status:'Pending' }] }, { status:'Active', schedule:[{ dueDate: new Date(Date.now() - 45*86400000).toISOString().slice(0,10), totalDue:200, paidAmount:0, status:'Pending' }] }]);
     __assert(bands[0].n === 1 && bands[0].amt === 100 && bands[1].n === 0 && bands[2].n === 1 && bands[2].amt === 200, "arrears fall into the right ageing band");
     __assert(/function renderAdvancedDashboard[\s\S]*?dashOpsSummary\(st, null/.test(__srcForBanCheck) && /function renderRegionalManagerDashboard[\s\S]*?dashOpsSummary\(/.test(__srcForBanCheck), "the Operational and Regional Manager dashboards show the same payment, staff and ageing tiles");
-    __assert(__rawIndexHtml.includes('.adm-head .ac-eyebrow, .adm-head .adm-sub') && __rawIndexHtml.includes('display:none !important'), "page eyebrows and subtitles are hidden — one heading per page");
+    __assert(__rawIndexHtml.includes('.adm-head .adm-sub, .card-title small.desc-hidden{display:none !important;}'), "page subtitles are hidden — one heading per page");
+    __assert(typeof pgDecorateHead === 'function' && /pgDecorateHead\(content\)/.test(__srcForBanCheck) && __rawIndexHtml.includes('.adm-head.pg-auto > .pg-back'), "every page gets the drill-down header: round back button, menu label and title");
     __assert(typeof tidyPageLayout === 'function' && /tidyPageLayout\(\);[^\n]*\n\s*initPendingCharts\(\);/.test(__srcForBanCheck), "every render moves '+ New' buttons into the table toolbar and labels action columns");
     __assert(/\.sidebar\{ position:fixed;[^}]*transform:translateX\(-100%\)/.test(__rawIndexHtml) && __rawIndexHtml.includes(".hamburger{ display:inline-flex; }"), "the sidebar is a drawer opened from the menu button on every screen size");
     __assert(__rawIndexHtml.includes("m.setAttribute('content', 'width=1180')"), "phones show the desktop layout");
@@ -8125,6 +8126,19 @@ apiRequest = async function(method, path, body){
     __assert(otpRes && (otpRes.status || otpRes.otpForTesting !== undefined || otpRes.message), "the OTP request endpoint answers");
   }
 
+  // ---- Record page arranges fields by meaning ----
+  {
+    const g = rvClassify({ fields: [['Reference','AB12'], ['Requested by','Jane Doe'], ['Branch','Ukunda'], ['Amount','KES 2,300'], ['Expense account','5001 - Audit Fees'], ['Status','Pending'], ['Submitted on','14/10/2026'], ['Item 1','Tea · Cash Item · 1 × KES 2,300 = KES 2,300'], ['Account id','acct_interest_income'], ['Description','Office tea and sugar for the month']] });
+    __assert(g.who === 'Jane Doe' && g.where === 'Ukunda' && g.when === '14/10/2026', "a record page states who, where and when in one line");
+    __assert(g.money.length === 1 && g.money[0][0] === 'Amount' && g.details.some(f => f[0] === 'Expense account'), "money becomes figure tiles; an expense account stays a detail");
+    __assert(g.status.length === 1 && g.items.length === 1 && g.items[0].length === 3 && g.notes.length === 1, "status, items and notes get their own sections");
+    __assert(![...g.details, ...g.notes].some(f => f[0] === 'Account id'), "internal ids are left off the record page");
+    __assert(typeof renderRequisitionsPage === 'function' && /pgHead\('Accounts', 'Requisitions'/.test(__srcForBanCheck) && /pgHead\('Accounts', 'Vendor Payments'/.test(__srcForBanCheck) && /pgHead\('Internal Requisition', 'Requisition Form'/.test(__srcForBanCheck) && /pgHead\('Vendor Payment', 'Payment Form'/.test(__srcForBanCheck), "Requisitions and Vendor Payments use the reference page headers");
+    __assert(['Mpesa B2C','Paybill B2B','BuyGoods (Till)'].every(m => UTIL_METHOD_FIELDS[m]) && UTIL_METHOD_FIELDS['Paybill B2B'][0] === 'Paybill Number', "the payment form's fields follow the chosen payment method");
+    const c = diversifyChart({ type:'pie', data:{ labels:['Only'], datasets:[{ data:[3] }] }, options:{} }, 0, null);
+    __assert(c.type === 'bar', "a single-slice share chart is drawn as a bar");
+  }
+
   // ---- Cards → drill-down View pages, richer tables, charts below tables ----
   {
     const recs = [{ id:'r1', title:'Test record', status:'Pending', createdByName:'Jane', createdAt:'2026-10-01T10:00:00Z', details:'Some detail', data:{ source:'Bank' } }];
@@ -8134,7 +8148,7 @@ apiRequest = async function(method, path, body){
     const id = Number(t.match(/openRecordView\((\d+)\)/)[1]);
     session.section = 'director'; session.subtab = 'X'; openRecordView(id);
     const page = renderSection();
-    __assert(page.includes('rv-table') && page.includes('Some detail') && page.includes('Bank') && page.includes('closeRecordView()'), "View opens the record as its own page with every field and a Back button");
+    __assert(page.includes('pg-head') && page.includes('rv-sec') && page.includes('Some detail') && page.includes('Bank') && page.includes('closeRecordView()'), "View opens the record as its own page with every field and a Back button");
     closeRecordView();
     __assert(!session.recordView, "Back closes the record page");
     const bd = dirTable('By Branch', [{ k:'A', due:1000, got:600 }, { k:'B', due:500, got:500 }], [['Branch', r => r.k], ['Due', r => fmt(r.due)], ['Collected', r => fmt(r.got)]], 'none');

@@ -137,7 +137,17 @@ body{
 /* Admin (System Administrator) pages — bold blue headings throughout */
 .adm-head{padding-bottom:14px;}
 /* One heading per page: section eyebrows and explanatory subtitles are not shown. */
-.adm-head .ac-eyebrow, .adm-head .adm-sub, .card-title small.desc-hidden{display:none !important;}
+.adm-head .adm-sub, .card-title small.desc-hidden{display:none !important;}
+/* Drill-down header on every page (see pgDecorateHead) */
+.adm-head.pg-auto{position:relative; padding-left:58px !important; min-height:52px;}
+.adm-head.pg-auto > .pg-back{position:absolute; left:18px; top:50%; transform:translateY(-50%); margin:0;}
+.adm-head .ac-eyebrow{font-size:10.5px; letter-spacing:0.6px;}
+.adm-head .adm-title{font-size:20px;}
+.pg-auto-eyebrow{margin:0 0 1px 38px;}
+.card-title.pg-auto-title{justify-content:flex-start; gap:10px;}
+.card-title.pg-auto-title > .pg-back{margin:0; width:28px; height:28px; padding:0 !important; border-radius:50% !important; border:1.6px solid var(--ink) !important; background:transparent !important; min-width:0;}
+.pg-auto .pg-titles{display:flex; flex-direction:column; min-width:0;} .pg-auto .pg-titles > .pg-eyebrow{line-height:1.1;}
+.card-title.pg-auto-title > span:first-of-type, .card-title.pg-auto-title > .card-title-text{margin-right:auto;}
 .adm-head{padding:14px 18px;}
 .adm-head .adm-title{margin:0;}
 /* "+ New" buttons moved into a table's own toolbar (see tidyPageLayout). */
@@ -206,6 +216,79 @@ body{
 table.rv-table th{width:32%; text-align:left; background:var(--blue-bg, #EEF3FA); color:var(--navy); font-size:12px; text-transform:uppercase; letter-spacing:0.3px; vertical-align:top;}
 table.rv-table td{vertical-align:top;}
 .rv-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);}
+.rv-card .pg-actions .gen-dd{margin-left:4px;}
+.rv-figs{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; margin:4px 0 14px;}
+.rv-fig{border:1px solid var(--line); border-left:3px solid #1D6C8C; border-radius:8px; padding:9px 12px; background:#FAFCFE;}
+.rv-fig .pg-label{margin-bottom:3px;}
+.rv-fig-v{font-size:16px; font-weight:800; color:#1F3A5F;}
+.rv-cols{display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:14px;}
+.rv-sec{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:14px;}
+.rv-sec > .pg-label{color:#1F5D99; margin-bottom:10px;}
+.rv-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px 16px;}
+.rv-field .pg-label{font-size:9.5px; margin-bottom:2px; color:var(--ink-faint);}
+.rv-val{font-size:13px; color:var(--ink); font-weight:600; word-break:break-word;}
+.rv-timeline{list-style:none; margin:0; padding:0 0 0 4px; border-left:2px solid #D7E4F2;}
+.rv-timeline li{position:relative; display:flex; gap:12px; padding:5px 0 5px 14px; font-size:12.5px;}
+.rv-dot{position:absolute; left:-6px; top:10px; width:10px; height:10px; border-radius:50%; background:#1D6C8C; border:2px solid #fff;}
+.rv-tl-k{color:var(--ink-soft); min-width:130px;} .rv-tl-v{font-weight:600; color:var(--ink);}
+.rv-note{margin-bottom:8px; font-size:12.5px;} .rv-note .pg-label{display:block; margin-bottom:2px;}
+.pay-titles{display:flex; flex-direction:column;} .pay-titles .pg-eyebrow{line-height:1.1;}
+/* Page kit (reference design): header, filter panel, chips, forms */
+.pg-card{padding:16px 18px;}
+.pg-head{display:flex; align-items:flex-start; gap:12px; margin-bottom:14px;}
+.pg-back{width:28px; height:28px; border-radius:50%; border:1.6px solid var(--ink); background:transparent; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px; color:var(--ink); flex-shrink:0; margin-top:6px;}
+.pg-titles{flex:1; min-width:0;}
+.pg-eyebrow{font-size:10.5px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; color:var(--ink-soft);}
+.pg-title{font-size:20px; font-weight:700; color:#1F3A5F; margin-top:1px;}
+.pg-actions{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.pg-btn{display:inline-flex; align-items:center; gap:4px; border:1px solid #9ED3D0; background:#F0FAF9; color:#11706B; font-weight:700; font-size:12px; border-radius:6px; padding:6px 11px; cursor:pointer; white-space:nowrap;}
+.pg-btn:hover{background:#E0F4F2;}
+.pg-filters{display:flex; align-items:center; gap:8px; flex-wrap:wrap; border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:12px;}
+.pg-filters select, .pg-filters input{border:1px solid var(--line); border-radius:6px; padding:7px 10px; font-size:12.5px; background:#fff; color:var(--ink);}
+.pg-seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#F4F6FA;}
+.pg-seg button{border:none; background:transparent; padding:7px 12px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer;}
+.pg-seg button.on{background:#fff; color:#1F3A5F; box-shadow:0 1px 2px rgba(0,0,0,0.08);}
+.pg-empty{display:flex; flex-direction:column; align-items:center; gap:8px; padding:40px 20px 44px; color:var(--ink-soft); font-size:12.5px; text-align:center;}
+.pg-empty-ic{font-size:28px; opacity:0.75;}
+table.pg-table th{background:#E4F0FA !important; color:#1F3A5F; font-size:11.5px; text-transform:none; letter-spacing:0; vertical-align:bottom;}
+table.pg-table td{font-size:12.5px; vertical-align:top;}
+table.pg-table td strong{color:#1F3A5F;}
+.pg-sub{font-size:11px; color:var(--ink-faint); margin-top:2px;}
+.pg-acct{max-width:150px; font-size:12px; color:var(--ink-soft);}
+.pg-chip{border:1px solid #BFD9F2; background:#EEF6FD; color:#1F5D99; border-radius:6px; padding:4px 9px; font-size:11.5px; font-weight:700; cursor:pointer;}
+.pg-chip.on{background:#1F5D99; color:#fff; border-color:#1F5D99;}
+tr.pg-subrow td{background:#F7FAFE !important; padding:8px 12px 12px;}
+table.pg-mini{width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:6px;}
+table.pg-mini th{background:#F0F4FA !important; font-size:11px; color:#1F3A5F; padding:5px 8px;}
+table.pg-mini td{font-size:12px; padding:5px 8px;}
+.pg-link{color:#5B4FC4; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap;}
+.pg-box{border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:14px;}
+.pg-box-row{display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;} .pg-box-row .pg-link{margin-left:auto;}
+.pg-label{font-size:10.5px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px;}
+.pg-box-row .pg-label{margin:0;}
+.pg-select{min-width:220px; max-width:320px;}
+table.pg-form-table td{padding:6px;} table.pg-form-table input, table.pg-form-table select{width:100%;}
+.pg-card input:not([type=checkbox]):not([type=radio]), .pg-card select{border:1px solid #D6DCE5; border-radius:6px; padding:7px 9px; font-size:12.5px; background:#fff; color:var(--ink); box-sizing:border-box;}
+.pg-card input:focus, .pg-card select:focus{outline:none; border-color:#1D6C8C; box-shadow:0 0 0 2px rgba(29,108,140,0.15);}
+.pg-two input{width:100%;}
+.pg-card .pg-otp input{border:none; box-shadow:none;}
+.pg-x{cursor:pointer; color:var(--red); font-weight:800;}
+.pg-submit{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:12px;}
+.pg-otp{display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:6px; padding:0 10px 0 0;}
+.pg-otp input{border:none; padding:9px 10px; width:120px; font-size:12.5px; background:transparent;}
+.pg-primary{border:none; background:#1D6C8C; color:#fff; font-weight:700; font-size:12.5px; border-radius:7px; padding:9px 18px; cursor:pointer; box-shadow:0 2px 4px rgba(29,108,140,0.3);}
+.pg-methods{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+.pg-methods button{border:1px solid var(--line); background:#F6F7F9; border-radius:7px; padding:7px 12px; font-size:12px; font-weight:700; color:var(--ink-soft); cursor:pointer;}
+.pg-methods button.on{background:#fff; border-color:#1D6C8C; color:#1F3A5F; box-shadow:0 0 0 1px #1D6C8C inset;}
+.pg-two{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 260px)); gap:12px;}
+.pg-strong{font-weight:700; color:var(--ink); font-size:13px; margin-bottom:12px;}
+.pg-meta{font-size:12.5px; color:var(--ink-soft); margin:10px 0 12px;} .pg-meta strong{color:var(--ink);}
+table.pg-matrix th.c{text-align:center;} table.pg-matrix tr.pg-th2 th{background:#F3F8FD !important; color:#3D6FA3; font-weight:700;}
+.pg-notes{margin-top:12px; display:grid; gap:6px; font-size:12.5px;}
+.pg-cards{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;}
+.pg-rec{border:1px solid var(--line); border-radius:10px; padding:12px; background:#fff;}
+.pg-rec-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+.pg-rec-foot{display:flex; justify-content:space-between; align-items:center; margin-top:8px;}
 /* Payments pages (reference layout) */
 .pay-card{padding:14px 16px;}
 .pay-head{display:flex; align-items:center; gap:10px; padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--line);}
@@ -3023,6 +3106,7 @@ function tidyPageLayout(){
   if(typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
   const content = document.querySelector('.content'); if(!content || typeof content.querySelectorAll !== 'function') return;
   if(session.section !== 'dashboard') moveChartsBelowTables(content.querySelector('.adm-page') || content);
+  if(session.section !== 'dashboard') pgDecorateHead(content);
   content.querySelectorAll('.card-title small').forEach(sm => {
     const t = (sm.textContent || '').trim();
     if(t.split(/\s+/).length > 3 && !/\d/.test(t)) sm.classList.add('desc-hidden');
@@ -3053,6 +3137,37 @@ function tidyPageLayout(){
     bar.classList.add('fp-moved-out');
   });
 }
+// Every page shares the drill-down header: a round back button, the menu
+// the page belongs to as a small label, then the page title. Pages built
+// with pgHead()/payHead() already carry it; engine pages (.adm-head) and
+// pages headed by their first card's title get it added here.
+function pgMenuLabel(){
+  const act = document.querySelector('.side-subitem.active');
+  const sec = act && act.closest && act.closest('.side-section');
+  const lbl = sec && sec.querySelector('.side-section-label');
+  return lbl ? (lbl.textContent || '').trim() : '';
+}
+function pgDecorateHead(content){
+  if(content.querySelector('.pg-head, .pay-head, .pg-auto')) return;
+  const mkBack = () => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pg-back'; b.title = 'Back'; b.textContent = '←'; b.onclick = () => pgBack(); return b; };
+  const head = content.querySelector('.adm-head');
+  if(head){ head.classList.add('pg-auto'); head.insertBefore(mkBack(), head.firstChild);
+    if(!head.querySelector('.ac-eyebrow')){ const m = pgMenuLabel(); if(m){ const e = document.createElement('div'); e.className = 'ac-eyebrow'; e.textContent = m; head.insertBefore(e, head.children[1] || null); } }
+    return; }
+  const first = content.querySelector('.card'); if(!first) return;
+  // A page with its own round back control: label its title in place.
+  const ownBack = [...first.querySelectorAll('span, button, a')].slice(0, 6).find(el => (el.textContent || '').trim() === '←');
+  if(ownBack){
+    const t = ownBack.nextElementSibling; const m = pgMenuLabel();
+    first.classList.add('pg-auto');
+    if(t && m){ const w = document.createElement('div'); w.className = 'pg-titles'; t.parentNode.insertBefore(w, t); const e = document.createElement('div'); e.className = 'pg-eyebrow'; e.textContent = m; w.appendChild(e); w.appendChild(t); }
+    return;
+  }
+  const title = first.firstElementChild; if(!title || !title.classList.contains('card-title')) return;
+  first.classList.add('pg-auto');
+  const m = pgMenuLabel(); if(m){ const e = document.createElement('div'); e.className = 'pg-eyebrow pg-auto-eyebrow'; e.textContent = m; first.insertBefore(e, title); }
+  title.classList.add('pg-auto-title'); title.insertBefore(mkBack(), title.firstChild);
+}
 function wireFilterRowScrollSync(){
   if(typeof document.querySelectorAll !== 'function') return; // the headless frontend test harness's fake DOM has no real element tree to query
   document.querySelectorAll('.table-wrap').forEach(tw=>{
@@ -3082,6 +3197,8 @@ function diversifyChart(cfg, n, prevType){
   if(!cfg || !cfg.data || cfg.keepType) return cfg;
   if(cfg.type === 'doughnut') cfg.type = 'pie';
   const ds = cfg.data.datasets || [], labels = cfg.data.labels || [], o = cfg.options || (cfg.options = {});
+  // A share-of-whole chart with a single slice says nothing; show it as a bar.
+  if(['pie','polarArea','radar'].includes(cfg.type) && labels.length < 2){ cfg.type = 'bar'; cfg.keepType = true; return cfg; }
   const sc = o.scales || {};
   if(o.indexAxis === 'y' || (sc.x && sc.x.stacked) || (sc.y && sc.y.stacked) || sc.y1 || ds.some(d => d.type) || !ds.length) return cfg;
   const timeish = labels.length >= 3 && labels.filter(l => CHART_TIME_LABEL.test(String(l).trim())).length >= labels.length * 0.6;
@@ -3862,16 +3979,62 @@ function openRecordView(id){
   renderApp();
 }
 function closeRecordView(){ session.recordView = null; renderApp(); }
-function renderRecordView(v){
+// A record's own page, arranged by what each field is rather than as one
+// long list: who/where/when becomes the meta line, money becomes figure
+// tiles, approval fields sit together, "Item N" lines become an items
+// table, dates become a timeline and long text becomes notes. Whatever is
+// left stays in the details grid.
+const RV_MONEY = /^(?!.*(account|type|category|method|by$|status|date|ref)).*(amount|cost|total|balance|principal|interest|fee|penalt|salary|paid|due|arrears|price|value|budget|limit|income|expense|loan size|disbursed$|credit|debit|amt)/i;
+const RV_STATUS = /status|stage|decision|approv|decided by|state$|risk|grade|rating|priority|severity/i;
+const RV_DATE = /date|(^|\s)on$|(^|\s)at$|created|updated|submitted|time|deadline|period|month|since|expires|joined/i;
+const RV_NOTE = /note|reason|description|comment|remark|narration|memo|details$|message|summary/i;
+const RV_WHO = /^(requested by|submitted by|created by|creator|raised by|officer|loan officer|staff|employee|recorded by|posted by|from)$/i;
+const RV_WHERE = /^(branch|branch name|region)$/i;
+function rvClassify(v){
+  const g = { who:null, where:null, when:null, money:[], status:[], items:[], dates:[], notes:[], details:[] };
   const rows = v.fields.filter(f => f[1] != null && String(f[1]).trim() !== '' && String(f[1]).trim() !== '—');
+  const internalId = t => /^[a-z]{2,6}_[a-z0-9_-]{4,}$/i.test(t.trim());
+  rows.forEach(f => {
+    const k = dirPlain(f[0]), val = f[1], plain = dirPlain(val);
+    if(/(^|\s|_)id$/i.test(k) && internalId(plain)) return;
+    if(/^item\s*\d+$/i.test(k)) g.items.push(String(val).split(' · '));
+    else if(!g.who && RV_WHO.test(k) && !internalId(plain)) g.who = val;
+    else if(!g.where && RV_WHERE.test(k)) g.where = val;
+    else if(RV_STATUS.test(k)) g.status.push(f);
+    else if(RV_MONEY.test(k) && /\d/.test(plain) && plain.length < 40) g.money.push(f);
+    else if(RV_DATE.test(k) && /\d/.test(plain) && plain.length < 40) g.dates.push(f);
+    else if(RV_NOTE.test(k) || plain.length > 70) g.notes.push(f);
+    else g.details.push(f);
+  });
+  if(g.dates.length){ const c = g.dates.find(f => /created|submitted|recorded|opened|requested|^date$/i.test(dirPlain(f[0]))) || g.dates[0]; g.when = c[1]; }
+  return g;
+}
+function renderRecordView(v){
+  const g = rvClassify(v);
+  const all = v.fields.filter(f => f[1] != null && String(f[1]).trim() !== '' && String(f[1]).trim() !== '—');
+  const title = dirPlain(v.title) || 'Details';
+  const eyebrow = (session.subtab || (pgMenuLabelSafe()) || 'Record') + ' · Record';
+  const grid = list => `<div class="rv-grid">${list.map(f => `<div class="rv-field"><div class="pg-label">${escapeHtml(dirPlain(f[0]))}</div><div class="rv-val">${f[1]}</div></div>`).join('')}</div>`;
+  const meta = (g.who || g.where || g.when) ? `<div class="pg-meta">${g.who ? `From <strong>${g.who}</strong>` : 'Recorded'}${g.where ? `, <strong>${g.where}${/branch/i.test(dirPlain(g.where)) ? '' : ' Branch'}</strong>` : ''}${g.when ? ` on <strong>${g.when}</strong>` : ''}</div>` : '';
+  const sec = (label, body) => `<div class="rv-sec"><div class="pg-label">${label}</div>${body}</div>`;
+  const itemCols = Math.max(0, ...g.items.map(r => r.length));
   return `<div class="adm-page">
-    <div class="card adm-head rv-head"><button type="button" class="btn btn-sm btn-outline" onclick="closeRecordView()">← Back</button>
-      <h2 class="adm-title">${escapeHtml(dirPlain(v.title) || 'Details')}</h2>${v.badge || ''}</div>
-    <div class="card"><div class="card-title"><span>Details</span>${generateMenuHtml(dirPlain(v.title) || 'Details', () => ({ headers: ['Field', 'Value'], rows: rows.map(f => [dirPlain(f[0]), dirPlain(f[1])]) }))}</div>
-      <div class="table-wrap"><table class="rv-table">${rows.map(f => `<tr><th>${escapeHtml(dirPlain(f[0]))}</th><td>${f[1]}</td></tr>`).join('') || '<tr><td class="empty">Nothing more recorded.</td></tr>'}</table></div>
+    <div class="card pg-card rv-card">
+      ${pgHead(eyebrow, escapeHtml(title), `${v.badge || ''}${generateMenuHtml(title, () => ({ headers: ['Field', 'Value'], rows: all.map(f => [dirPlain(f[0]), dirPlain(f[1])]) }))}`, 'closeRecordView()')}
+      ${meta}
+      ${g.money.length ? `<div class="rv-figs">${g.money.map(f => `<div class="rv-fig"><div class="pg-label">${escapeHtml(dirPlain(f[0]))}</div><div class="rv-fig-v">${f[1]}</div></div>`).join('')}</div>` : ''}
+      <div class="rv-cols">
+        ${g.details.length ? sec('Details', grid(g.details)) : ''}
+        ${g.status.length ? sec('Approval &amp; Status', grid(g.status)) : ''}
+      </div>
+      ${g.items.length ? sec(`Items (${g.items.length})`, `<div class="table-wrap"><table class="pg-table pg-mini"><tr><th>#</th>${itemCols > 1 ? Array.from({ length: itemCols }, (_, i) => `<th>${['Description', 'Category', 'Qty × Cost', 'Total'][i] || ''}</th>`).join('') : '<th>Item</th>'}</tr>${g.items.map((r, i) => `<tr><td>${i + 1}</td>${Array.from({ length: Math.max(1, itemCols) }, (_, k) => `<td>${r[k] != null ? r[k] : ''}</td>`).join('')}</tr>`).join('')}</table></div>`) : ''}
+      ${g.dates.length ? sec('Timeline', `<ul class="rv-timeline">${g.dates.map(f => `<li><span class="rv-dot"></span><span class="rv-tl-k">${escapeHtml(dirPlain(f[0]))}</span><span class="rv-tl-v">${f[1]}</span></li>`).join('')}</ul>`) : ''}
+      ${g.notes.length ? sec('Notes', g.notes.map(f => `<div class="rv-note"><span class="pg-label">${escapeHtml(dirPlain(f[0]))}</span><div>${f[1]}</div></div>`).join('')) : ''}
+      ${!all.length ? pgEmpty('Nothing more recorded.') : ''}
       ${v.actionsHtml && dirPlain(v.actionsHtml) ? `<div class="rv-actions">${v.actionsHtml}</div>` : ''}
     </div></div>`;
 }
+function pgMenuLabelSafe(){ try{ return typeof document !== 'undefined' && typeof document.querySelector === 'function' ? pgMenuLabel() : ''; }catch(e){ return ''; } }
 function renderSection(){
   if(session.recordView && session.recordView.section === session.section && session.recordView.subtab === session.subtab) return renderRecordView(session.recordView);
   if(session.printLoanScheduleId) return renderLoanSchedulePrint(session.printLoanScheduleId);
@@ -19108,38 +19271,62 @@ function submitReqFilter(ev){
     filters.from = `${f.month}-01`; filters.to = `${f.month}-${String(last).padStart(2,'0')}`; }
   return loadRequisitions(filters);
 }
+// ==================== Page kit (reference design) ====================
+// Shared by list pages and their drill-down pages: a header with a round
+// back button, a small section label over the title and outlined actions
+// on the right; a bordered filter panel; an icon empty state; and
+// expandable "≡ N Items" chips that open a row's detail in place.
+function pgHead(eyebrow, title, actions, back){
+  return `<div class="pg-head"><button type="button" class="pg-back" onclick="${back || 'pgBack()'}" title="Back">←</button>
+    <div class="pg-titles">${eyebrow ? `<div class="pg-eyebrow">${escapeHtml(eyebrow)}</div>` : ''}<div class="pg-title">${title}</div></div>
+    ${actions ? `<div class="pg-actions">${actions}</div>` : ''}</div>`;
+}
+function pgBack(){ if(session.recordView){ closeRecordView(); return; } if(typeof history !== 'undefined' && history.length > 1 && typeof history.back === 'function') history.back(); else goTo('dashboard'); }
+const pgBtn = (label, onclick, icon) => `<button type="button" class="pg-btn" onclick="${onclick}">${icon || '+'} ${label}</button>`;
+const pgFilters = inner => `<div class="pg-filters">${inner}</div>`;
+const pgEmpty = (text, icon) => `<div class="pg-empty"><div class="pg-empty-ic">${icon || '🗂'}</div><div>${escapeHtml(text)}</div></div>`;
+function pgToggle(key){ session.pgOpen = session.pgOpen || {}; session.pgOpen[key] = !session.pgOpen[key]; renderApp(); }
+const pgIsOpen = key => !!(session.pgOpen && session.pgOpen[key]);
+const pgChip = (key, label) => `<button type="button" class="pg-chip ${pgIsOpen(key) ? 'on' : ''}" onclick="pgToggle('${key}')">≡ ${escapeHtml(label)}</button>`;
+const pgMonthOptions = (value) => { const out = []; const now = new Date(); for(let i = 0; i < 18; i++){ const d = new Date(now.getFullYear(), now.getMonth() - i, 1); const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; out.push(`<option value="${v}" ${v === value ? 'selected' : ''}>${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear()}</option>`); } return out.join(''); };
+const pgMonthRange = m => { if(!m) return {}; const [y, mo] = m.split('-').map(Number); return { from: `${m}-01`, to: `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}` }; };
+const pgCurMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const pgDateTime = iso => { if(!iso) return '—'; const d = new Date(iso); return `${d.getDate().toString().padStart(2, '0')} ${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear()}<div class="pg-sub">${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}</div>`; };
+const acctLabel = id => { const a = (DB.accounts || []).find(x => x.id === id); return a ? `${a.code ? a.code + ' - ' : ''}${a.name}` : '—'; };
+
+function reqFilterState(){ return session.reqFilter || (session.reqFilter = { status:'', month: pgCurMonth() }); }
+function applyReqFilter(){ const f = reqFilterState(); const out = Object.assign({}, pgMonthRange(f.month)); if(f.status) out.status = REQ_STATUS_FROM_DISPLAY[f.status] || f.status; return loadRequisitions(out); }
 function renderRequisitionsPage(){
   const state = DB.acctPages.req;
-  if(!state){ loadRequisitions({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  if(!state){ applyReqFilter(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
   const canPay = hasPermission(session.role, "Post Accounting Entries");
-  const f = state.filters;
+  const f = reqFilterState();
+  const L = state.requisitions;
+  const rowsHtml = L.map((r, i) => {
+    const acct = (DB.accounts||[]).find(a=>a.id===r.expense_account_id);
+    const items = r.items||[];
+    const no = String(r.id).slice(-6).toUpperCase();
+    const acts = `${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
+      ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
+      ${r.status==='Pending' ? `<button class="btn btn-sm btn-outline" onclick="withRequest('req-cancel-${r.id}', ()=>cancelRequisition('${r.id}'))">Cancel</button>` : ""}`;
+    const fields = [['Reference', no], ['Requested by', escapeHtml(staffName(r.submitted_by))], ['Branch', escapeHtml(branchName(r.branch_id))], ['Category', escapeHtml(r.category||'—')], ['Description', escapeHtml(r.description||'—')], ['Amount', fmt(r.amount)], ['Expense account', escapeHtml(acct?acctLabel(acct.id):'—')], ['Status', statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)], ['Decided by', escapeHtml(r.approved_by?staffName(r.approved_by):'—')], ['Decided on', r.approved_at?new Date(r.approved_at).toLocaleString('en-KE'):'—'], ['Decision note', escapeHtml(r.decision_reason||'—')], ['Expense posted', escapeHtml(r.expense_id||'—')], ['Submitted on', new Date(r.created_at).toLocaleString('en-KE')]]
+      .concat(items.map((it,k)=>[`Item ${k+1}`, `${escapeHtml(it.description)} · ${escapeHtml(it.category||'')} · ${it.qty} × ${fmt(it.unit_cost)} = ${fmt(Number(it.qty)*Number(it.unit_cost))}`]));
+    const key = 'req-items-' + r.id;
+    return `<tr><td><strong>${no}</strong></td><td>${pgDateTime(r.created_at)}</td><td>${escapeHtml(staffName(r.submitted_by))}<div class="pg-sub">${escapeHtml(branchName(r.branch_id))}</div></td>
+      <td>${items.length > 1 ? pgChip(key, items.length + ' Items') : escapeHtml((items[0] && items[0].description) || r.description || '—')}</td>
+      <td class="pg-acct">${escapeHtml(acct?acctLabel(acct.id):'—')}</td><td><strong>${fmt(r.amount)}</strong></td>
+      <td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}<div class="pg-sub">${items.length} item${items.length===1?'':'s'}${r.approved_by ? ' · ' + escapeHtml(staffName(r.approved_by)) : ''}</div></td>
+      <td><div class="dt-act">${viewButtonHtml('Requisition ' + no, fields, acts, statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status))}${acts}</div></td></tr>
+      ${items.length > 1 && pgIsOpen(key) ? `<tr class="pg-subrow"><td colspan="8"><table class="pg-mini"><tr><th>#</th><th>Item description</th><th>Category</th><th>Qnty</th><th>Unit Cost</th><th>Total</th></tr>${items.map((it,k)=>`<tr><td>${k+1}</td><td>${escapeHtml(it.description)}</td><td>${escapeHtml(it.category||'—')}</td><td>${it.qty}</td><td>${fmt(it.unit_cost)}</td><td>${fmt(Number(it.qty)*Number(it.unit_cost))}</td></tr>`).join('')}</table></td></tr>` : ''}`;
+  }).join('');
   return `
-    <div class="card">
-      <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
-        <span><span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="margin-right:8px;">←</span> Requisitions</span>
-        <span class="btn btn-primary btn-sm" onclick="openCreateRequisitionForm()">+ Create</span>
-      </div>
-      <form onsubmit="return submitReqFilter(event)" class="pill-row" style="flex-wrap:wrap; margin-bottom:12px;">
-        <select name="status">
-          <option value="">All statuses</option>
-          ${["Approved","Pending","Declined"].map(s=>`<option ${(REQ_STATUS_DISPLAY[f.status]||"")===s?'selected':''}>${s}</option>`).join("")}
-        </select>
-        <input name="month" type="month">
-        <button class="btn btn-sm btn-outline" type="submit">Apply</button>
-      </form>
-      <div class="table-wrap"><table><tr><th>Ref</th><th>Requested by</th><th>Branch</th><th>Items</th><th>Category</th><th>Description</th><th>Amount</th><th>Expense account</th><th>Status</th><th>Decided by</th><th>Date</th><th>Action</th></tr>
-      ${state.requisitions.map(r=>{
-        const acct = (DB.accounts||[]).find(a=>a.id===r.expense_account_id);
-        const items = r.items||[];
-        const acts = `${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
-        ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
-        ${r.status==='Pending' ? `<button class="btn btn-sm btn-outline" onclick="withRequest('req-cancel-${r.id}', ()=>cancelRequisition('${r.id}'))">Cancel</button>` : ""}`;
-        const fields = [['Reference', escapeHtml(String(r.id).slice(-8).toUpperCase())], ['Requested by', escapeHtml(staffName(r.submitted_by))], ['Branch', escapeHtml(branchName(r.branch_id))], ['Category', escapeHtml(r.category||'—')], ['Description', escapeHtml(r.description||'—')], ['Amount', fmt(r.amount)], ['Expense account', escapeHtml(acct?acct.name:'—')], ['Status', statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)], ['Decided by', escapeHtml(r.approved_by?staffName(r.approved_by):'—')], ['Decided on', r.approved_at?new Date(r.approved_at).toLocaleString('en-KE'):'—'], ['Decision note', escapeHtml(r.decision_reason||'—')], ['Expense posted', escapeHtml(r.expense_id||'—')], ['Submitted on', new Date(r.created_at).toLocaleString('en-KE')]]
-          .concat(items.map((it,i)=>[`Item ${i+1}`, `${escapeHtml(it.description)} · ${it.qty} × ${fmt(it.unit_cost)} = ${fmt(Number(it.qty)*Number(it.unit_cost))}`]));
-        return `<tr><td>${escapeHtml(String(r.id).slice(-8).toUpperCase())}</td><td>${escapeHtml(staffName(r.submitted_by))}</td><td>${branchName(r.branch_id)}</td><td>${items.length}</td><td>${escapeHtml(r.category||'—')}</td><td class="hint">${escapeHtml(r.description||(items[0]?items[0].description:'—'))}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(acct?acct.name:'—')}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${r.approved_by?escapeHtml(staffName(r.approved_by)):'—'}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
-        <td><div class="dt-act">${viewButtonHtml('Requisition ' + String(r.id).slice(-8).toUpperCase(), fields, acts, statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status))}${acts}</div></td></tr>`; }).join("") || `<tr><td colspan="12" class="empty">No requisitions match these filters.</td></tr>`}</table></div>
-      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status), br = admGroup(state.requisitions, r=>branchName(r.branch_id), r=>r.amount); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','pie',st[0],[{data:st[1]}])) + admChart('ch-req-branch','Amount by Branch (KES)','bar',br[0],[{label:'KES',data:br[1]}]); })()}
+    <div class="card pg-card">
+      ${pgHead('Accounts', 'Requisitions', pgBtn('Create New', 'openCreateRequisitionForm()'), "goTo('dashboard')")}
+      ${pgFilters(`<select onchange="reqFilterState().status=this.value; applyReqFilter();"><option value="">All statuses</option>${["Approved","Pending","Declined"].map(x=>`<option ${f.status===x?'selected':''}>${x}</option>`).join("")}</select>
+        <select onchange="reqFilterState().month=this.value; applyReqFilter();"><option value="">All months</option>${pgMonthOptions(f.month)}</select>`)}
+      ${L.length ? `<div class="table-wrap"><table class="pg-table"><tr><th>No</th><th>Date</th><th>Requested by</th><th>Items</th><th>Expense Account</th><th>Amount</th><th>Approval Status</th><th>Actions</th></tr>${rowsHtml}</table></div>` : pgEmpty('No requisitions found for this filter.', '🧺')}
     </div>
+    ${L.length ? (()=>{ const c = admGroup(L, r=>r.category, r=>r.amount), st = admGroup(L, r=>REQ_STATUS_DISPLAY[r.status]||r.status); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','pie',st[0],[{data:st[1]}])); })() : ''}
   `;
 }
 async function decideRequisition(id, decision, reason){
@@ -19196,36 +19383,31 @@ function renderCreateRequisitionPage(){
   const items = f.items;
   const expenseAccounts = (DB.accounts||[]).filter(a=>a.account_type==='Expense' && a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
   return `
-    <div class="card">
-      <div style="display:flex; align-items:center; margin-bottom:18px;">
-        <span class="btn btn-outline btn-sm" onclick="closeCreateRequisitionForm()" style="border-radius:50%; width:34px; height:34px; padding:0; justify-content:center;">←</span>
-        <h3 style="flex:1; text-align:center; margin:0 34px 0 0; text-decoration:underline; color:var(--navy);">Internal Requisition Form</h3>
-      </div>
+    <div class="card pg-card">
+      ${pgHead('Internal Requisition', 'Requisition Form', '', 'closeCreateRequisitionForm()')}
       <form onsubmit="return submitCreateRequisition(event)">
-        <div class="table-wrap"><table>
-          <tr><th>Item description</th><th>Category</th><th>Qty</th><th>Unit Cost</th><th></th></tr>
-          ${items.map((it,idx)=>`<tr>
-            <td><input value="${escapeHtml(it.description)}" oninput="updateRequisitionItemField(${idx},'description',this.value)" placeholder="e.g. Field notebooks" required></td>
-            <td><select onchange="updateRequisitionItemField(${idx},'category',this.value)">${REQUISITION_ITEM_CATEGORIES.map(c=>`<option ${it.category===c?'selected':''}>${c}</option>`).join("")}</select></td>
-            <td><input type="number" min="0.01" step="0.01" value="${it.qty}" style="width:70px;" oninput="updateRequisitionItemField(${idx},'qty',this.value)" required></td>
-            <td><input type="number" min="0.01" step="0.01" value="${it.unit_cost}" style="width:110px;" oninput="updateRequisitionItemField(${idx},'unit_cost',this.value)" required></td>
-            <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeRequisitionItemRow(${idx})">✕</span>`:""}</td>
-          </tr>`).join("")}
-        </table></div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin:12px 0;">
-          <select onchange="DB.requisitionForm.expense_account_id=this.value" required style="max-width:280px;">
-            <option value="">-- Expense Account --</option>
-            ${expenseAccounts.map(a=>`<option value="${a.id}" ${f.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
-          </select>
-          <span style="color:var(--blue); font-weight:700; cursor:pointer;" onclick="addRequisitionItemRow()">+ Add Row</span>
+        <div class="pg-box">
+          <div class="pg-box-row"><label class="pg-label">Expense Account</label>
+            <select onchange="DB.requisitionForm.expense_account_id=this.value" class="pg-select">
+              <option value="">-- Expense Account --</option>
+              ${expenseAccounts.map(a=>`<option value="${a.id}" ${f.expense_account_id===a.id?'selected':''}>${escapeHtml(acctLabel(a.id))}</option>`).join("")}
+            </select>
+            <span class="pg-link" onclick="addRequisitionItemRow()">+ Add Row</span></div>
+          <div class="table-wrap"><table class="pg-table pg-form-table">
+            <tr><th>Item description</th><th>Category</th><th>Qnty</th><th>Unit Cost</th>${items.length>1?'<th></th>':''}</tr>
+            ${items.map((it,idx)=>`<tr>
+              <td><input value="${escapeHtml(it.description)}" oninput="updateRequisitionItemField(${idx},'description',this.value)" placeholder="e.g. Field notebooks" required></td>
+              <td><select onchange="updateRequisitionItemField(${idx},'category',this.value)">${REQUISITION_ITEM_CATEGORIES.map(c=>`<option ${it.category===c?'selected':''}>${c}</option>`).join("")}</select></td>
+              <td><input type="number" min="0.01" step="0.01" value="${it.qty}" style="width:80px;" oninput="updateRequisitionItemField(${idx},'qty',this.value)" required></td>
+              <td><input type="number" min="0.01" step="0.01" value="${it.unit_cost}" style="width:120px;" oninput="updateRequisitionItemField(${idx},'unit_cost',this.value)" required></td>
+              ${items.length>1?`<td><span class="pg-x" onclick="removeRequisitionItemRow(${idx})">✕</span></td>`:''}
+            </tr>`).join("")}
+          </table></div>
         </div>
-        ${f.otpForTesting ? `<div class="hint" style="margin-bottom:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
-        <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
-            <input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px;" ${!f.otpRequested?'disabled':''}>
-            <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestRequisitionOtp()">↻ Request</span>
-          </div>
-          <button class="btn btn-green" type="submit">🎁 Request</button>
+        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+        <div class="pg-submit">
+          <div class="pg-otp"><input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="OTP Code" ${!f.otpRequested?'disabled':''}><span class="pg-link" onclick="requestRequisitionOtp()">↻ Request</span></div>
+          <button class="pg-primary" type="submit">🧺 Request</button>
         </div>
       </form>
     </div>
@@ -19276,50 +19458,45 @@ function submitUtilPaymentFilter(ev){
   return loadUtilityPayments(filters);
 }
 const UTIL_PAYMENT_STATUSES = ["Pending","CEO Approved","Paid","Declined","Cancelled"];
+const UTIL_STATUS_LABEL = { Pending:'Pending', 'CEO Approved':'CEO Approved', Paid:'Approved', Declined:'Declined', Cancelled:'Cancelled' };
+function utilFilterState(){ return session.utilFilter || (session.utilFilter = { status:'', month: pgCurMonth(), q:'', view:'table' }); }
+function applyUtilFilter(){ const f = utilFilterState(); const out = Object.assign({}, pgMonthRange(f.month)); if(f.status) out.status = f.status; if(f.q) out.q = f.q; return loadUtilityPayments(out); }
+function utilTotals(u){ const items = u.items||[]; return { items, total: items.reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0), accts: [...new Set(items.map(it=>it.expense_account_id).filter(Boolean))] }; }
 function renderUtilityPaymentsPage(){
   const state = DB.acctPages.util;
-  if(!state){ loadUtilityPayments({}); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
-  const f = state.filters;
+  if(!state){ applyUtilFilter(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const f = utilFilterState();
+  let L = state.utilityPayments;
+  if(f.q){ const q = f.q.toLowerCase(); L = L.filter(u => [u.mpesa_name, u.recipient_mpesa_number, u.submitted_by_name, String(u.payment_no||''), ...(u.items||[]).map(it=>it.description)].some(x => String(x||'').toLowerCase().includes(q))); }
+  const approvedNote = u => { const n = (u.items||[]).length; return `${n} Item${n===1?'':'s'} ${u.status==='Paid' ? 'Approved' : u.status==='CEO Approved' ? 'CEO approved' : (UTIL_STATUS_LABEL[u.status]||u.status).toLowerCase()}`; };
+  const tableHtml = `<div class="table-wrap"><table class="pg-table">
+    <tr><th>No</th><th>Date</th><th>Creator</th><th>Items</th><th>Journal Account</th><th>Total Cost</th><th>Approval Status</th><th>Actions</th></tr>
+    ${L.map(u => { const t = utilTotals(u); const ik = 'util-items-' + u.id, ak = 'util-acct-' + u.id;
+      return `<tr><td><strong>${escapeHtml(String(u.payment_no||'—'))}</strong></td><td>${pgDateTime(u.created_at)}</td>
+        <td>${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}<div class="pg-sub">${escapeHtml(branchName(u.branch_id))}</div></td>
+        <td>${t.items.length > 1 ? pgChip(ik, t.items.length + ' Items') : escapeHtml((t.items[0] && t.items[0].description) || u.item_description || '—')}</td>
+        <td class="pg-acct">${t.accts.length > 1 ? `<a href="#" class="pg-link" onclick="pgToggle('${ik}'); return false;">Multiple (${t.accts.length})</a>` : escapeHtml(t.accts[0] ? acctLabel(t.accts[0]) : '—')}</td>
+        <td><strong>${fmt(t.total)}</strong></td>
+        <td>${statusBadge(UTIL_STATUS_LABEL[u.status]||u.status)}<div class="pg-sub">${approvedNote(u)}</div></td>
+        <td><button class="pg-btn" onclick="openUtilityPaymentDetail('${u.id}')">↗ Open</button></td></tr>
+        ${t.items.length > 1 && pgIsOpen(ik) ? `<tr class="pg-subrow"><td colspan="8"><table class="pg-mini"><tr><th>#</th><th>Item/Service</th><th>Journal Account</th><th>Qty</th><th>Cost</th></tr>${t.items.map((it,k)=>`<tr><td>${k+1}</td><td>${escapeHtml(it.description)}</td><td>${escapeHtml(acctLabel(it.expense_account_id))}</td><td>${it.accountant_qty ?? it.ceo_qty ?? it.qty}</td><td>${fmt(it.accountant_cost ?? it.ceo_cost ?? it.cost)}</td></tr>`).join('')}</table></td></tr>` : ''}`; }).join('')}
+  </table></div>`;
+  const cardsHtml = `<div class="pg-cards">${L.map(u => { const t = utilTotals(u); return `<div class="pg-rec">
+      <div class="pg-rec-top"><strong>#${escapeHtml(String(u.payment_no||'—'))}</strong>${statusBadge(UTIL_STATUS_LABEL[u.status]||u.status)}</div>
+      <div class="pg-sub">${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))} · ${escapeHtml(branchName(u.branch_id))} · ${new Date(u.created_at).toLocaleDateString()}</div>
+      <ul class="pay-bullets">${t.items.slice(0,4).map(it=>`<li>${escapeHtml(it.description)} — ${fmt(it.accountant_cost ?? it.ceo_cost ?? it.cost)}</li>`).join('')}</ul>
+      <div class="pg-rec-foot"><strong>${fmt(t.total)}</strong><button class="pg-btn" onclick="openUtilityPaymentDetail('${u.id}')">↗ Open</button></div></div>`; }).join('')}</div>`;
   return `
-    <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
-        <span style="display:flex; align-items:center; gap:10px;">
-          <span class="btn btn-outline btn-sm page-back-btn" onclick="goTo('dashboard')">←</span>
-          <h3 style="margin:0; color:var(--navy);">Vendor/Utility Payments</h3>
-        </span>
-        <span class="pill-row">
-          <span class="btn btn-outline btn-sm" onclick="openBulkUploadModal()">⬆ Bulk Upload</span>
-          <span class="btn btn-outline btn-sm" onclick="openCreateUtilityPaymentForm()">+ Create New</span>
-        </span>
-      </div>
-      <form onsubmit="return submitUtilPaymentFilter(event)">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <select name="status" onchange="this.form.requestSubmit()" style="width:150px;">
-            <option value="">Select</option>
-            ${UTIL_PAYMENT_STATUSES.map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}
-          </select>
-          <input name="month" type="month" value="${f.from ? f.from.slice(0,7) : ''}" onchange="this.form.requestSubmit()" style="width:140px;">
-        </div>
-        <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
-          <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:200px;" onchange="this.form.requestSubmit()">
-        </div>
-      </form>
-      <div class="table-wrap"><table><tr><th>Ref #</th><th>Requested by</th><th>Branch</th><th>Items</th><th>Description</th><th>Method</th><th>Recipient</th><th>Total</th><th>Status</th><th>Date</th><th>Action</th></tr>
-        ${state.utilityPayments.map(u=>{
-          const items = u.items||[];
-          const total = items.reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
-          const created = new Date(u.created_at);
-          return `<tr><td>${escapeHtml(String(u.payment_no||'—'))}</td><td>${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}</td><td>${escapeHtml(branchName(u.branch_id))}</td><td>${items.length}</td>
-            <td class="hint">${escapeHtml(items.map(it=>it.description).slice(0,2).join(', ') + (items.length>2?` +${items.length-2}`:'') || u.item_description || '—')}</td>
-            <td>${escapeHtml(u.payment_method||'—')}</td><td>${escapeHtml(u.mpesa_name||'—')}${u.recipient_mpesa_number?`<div class="hint">${escapeHtml(u.recipient_mpesa_number)}</div>`:''}</td>
-            <td><strong>${fmt(total)}</strong></td><td>${statusBadge(u.status)}</td><td>${created.toLocaleDateString()} <span class="hint">${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></td>
-            <td><div class="dt-act"><button class="btn btn-sm btn-outline" onclick="openUtilityPaymentDetail('${u.id}')">View</button></div></td></tr>`;
-        }).join("") || `<tr><td colspan="11" class="empty">No vendor/utility payments match these filters.</td></tr>`}
-      </table></div>
-      ${(()=>{ const L = state.utilityPayments, tot = u => (u.items||[]).reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
-        const st = admGroup(L, u=>u.status), br = admGroup(L, u=>branchName(u.branch_id), tot), mo = admGroup(L, u=>String(u.created_at||'').slice(0,7), tot);
-        return admTwoCharts(admChart('ch-util-status','Payments by Status','pie',st[0],[{data:st[1]}]), admChart('ch-util-branch','Amount by Branch (KES)','bar',br[0],[{label:'KES',data:br[1]}])) + admChart('ch-util-month','Amount per Month (KES)','line',mo[0].sort(),[{label:'KES',data:mo[0].sort().map(k=>Math.round(L.filter(u=>String(u.created_at||'').slice(0,7)===k).reduce((s,u)=>s+tot(u),0)))}]); })()}
+    <div class="card pg-card">
+      ${pgHead('Accounts', 'Vendor Payments', pgBtn('Create New', 'openCreateUtilityPaymentForm()') + pgBtn('Bulk Upload', 'openBulkUploadModal()', '⤒'), "goTo('dashboard')")}
+      ${pgFilters(`<div class="pg-seg"><button type="button" class="${f.view!=='cards'?'on':''}" onclick="utilFilterState().view='table'; renderApp();">▦ Table</button><button type="button" class="${f.view==='cards'?'on':''}" onclick="utilFilterState().view='cards'; renderApp();">▣ Cards</button></div>
+        <select onchange="utilFilterState().status=this.value; applyUtilFilter();"><option value="">All statuses</option>${UTIL_PAYMENT_STATUSES.map(x=>`<option value="${x}" ${f.status===x?'selected':''}>${UTIL_STATUS_LABEL[x]||x}</option>`).join("")}</select>
+        <select onchange="utilFilterState().month=this.value; applyUtilFilter();"><option value="">All months</option>${pgMonthOptions(f.month)}</select>
+        <span style="flex:1 1 auto;"></span>
+        <input class="pay-search" placeholder="Search vendor or recipient" value="${escapeHtml(f.q)}" onchange="utilFilterState().q=this.value; renderApp();">`)}
+      ${L.length ? (f.view === 'cards' ? cardsHtml : tableHtml) : pgEmpty('No vendor payments found for this filter.', '🧾')}
     </div>
+    ${L.length ? (()=>{ const st = admGroup(L, u=>UTIL_STATUS_LABEL[u.status]||u.status), br = admGroup(L, u=>branchName(u.branch_id), u=>utilTotals(u).total); return admTwoCharts(admChart('ch-util-status','Payments by Status','pie',st[0],[{data:st[1]}]), admChart('ch-util-branch','Amount by Branch (KES)','bar',br[0],[{label:'KES',data:br[1]}])); })() : ''}
   `;
 }
 
@@ -19401,44 +19578,37 @@ function renderUtilityPaymentDetailPage(){
   const canCancel = ['Pending','CEO Approved'].includes(u.status) && (u.submitted_by===session.userId || session.role==='Admin');
   const rowTotal = it => Number(it.accountant_cost ?? it.ceo_cost ?? it.cost) || 0;
   const grandTotal = items.reduce((s,it)=>s+rowTotal(it),0);
+  const draft = DB.utilDecideDraft || {};
+  const num = v => v == null ? '—' : fmtNum(v);
+  const inp = (id, k, v, w) => `<input type="number" min="0.01" step="0.01" value="${v}" style="width:${w}px;" oninput="updateUtilDecideDraft('${id}','${k}',this.value)">`;
+  const time = created.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase();
   return `
-    <div class="card">
-      <div style="display:flex; align-items:center; margin-bottom:14px;">
-        <span class="btn btn-outline btn-sm page-back-btn" onclick="closeUtilityPaymentDetail()">←</span>
-        <h3 style="flex:1; text-align:center; margin:0 34px 0 0; color:var(--navy);">Vendor Payment #${u.payment_no||'—'}</h3>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
-        <div><strong>Recipient Details:</strong> ${escapeHtml(u.recipient_mpesa_number||'—')} - ${escapeHtml(u.recipient_name||u.mpesa_name||'—')}</div>
-        ${statusBadge(u.status)}
-      </div>
-      <div class="hint" style="margin-bottom:14px;">From ${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}, ${escapeHtml(branchName(u.branch_id))} Branch on ${created.toLocaleDateString()} - ${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-      <div class="table-wrap"><table>
-        <tr>
-          <th rowspan="2">Item details</th>
-          <th colspan="3">Qty Approvals</th>
-          <th colspan="3">Cost Approvals</th>
-          <th rowspan="2">Total</th>
-        </tr>
-        <tr><th>Request</th><th>CEO</th><th>Accountant</th><th>Request</th><th>CEO</th><th>Accountant</th></tr>
-        ${items.map(it=>`<tr>
-          <td>${escapeHtml(it.description)}</td>
+    <div class="card pg-card">
+      ${pgHead('Vendor Payment', `Payment ${escapeHtml(String(u.payment_no||'—'))}`, statusBadge(UTIL_STATUS_LABEL[u.status]||u.status), 'closeUtilityPaymentDetail()')}
+      <div class="pg-label">Recipient Details</div>
+      <div class="pg-strong">${escapeHtml(u.recipient_mpesa_number||'—')} - ${escapeHtml(u.mpesa_name||u.recipient_name||'—')} <span class="pg-sub">· ${escapeHtml(u.payment_method||'Mpesa B2C')}</span></div>
+      <div class="pg-meta">From <strong>${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}</strong>, <strong>${escapeHtml(branchName(u.branch_id))} Branch</strong> on <strong>${fmtReceiptDayLabel(String(u.created_at).slice(0,10))} - ${time}</strong></div>
+      <div class="table-wrap"><table class="pg-table pg-matrix">
+        <tr><th colspan="3">Item details</th><th colspan="3" class="c">Qty Approvals</th><th colspan="3" class="c">Cost Approvals</th><th>Totals</th></tr>
+        <tr class="pg-th2"><th>#</th><th>Description</th><th>Journal Account</th><th>Request</th><th>CEO</th><th>Accountant</th><th>Request</th><th>CEO</th><th>Accountant</th><th></th></tr>
+        ${items.map((it,k)=>`<tr>
+          <td>${k+1}</td><td>${escapeHtml(it.description)}</td><td>${escapeHtml(acctLabel(it.expense_account_id))}</td>
           <td>${it.qty}</td>
-          <td>${canCeoDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.qty ?? it.qty}" style="width:70px;" oninput="updateUtilDecideDraft('${it.id}','qty',this.value)">` : (it.ceo_qty ?? '—')}</td>
-          <td>${canAcctDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.qty ?? (it.ceo_qty ?? it.qty)}" style="width:70px;" oninput="updateUtilDecideDraft('${it.id}','qty',this.value)">` : (it.accountant_qty ?? '—')}</td>
-          <td>${fmt(it.cost)}</td>
-          <td>${canCeoDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.cost ?? it.cost}" style="width:90px;" oninput="updateUtilDecideDraft('${it.id}','cost',this.value)">` : (it.ceo_cost!=null ? fmt(it.ceo_cost) : '—')}</td>
-          <td>${canAcctDecide ? `<input type="number" min="0.01" step="0.01" value="${DB.utilDecideDraft[it.id]?.cost ?? (it.ceo_cost ?? it.cost)}" style="width:90px;" oninput="updateUtilDecideDraft('${it.id}','cost',this.value)">` : (it.accountant_cost!=null ? fmt(it.accountant_cost) : '—')}</td>
-          <td>${fmt(rowTotal(it))}</td>
+          <td>${canCeoDecide ? inp(it.id, 'qty', draft[it.id]?.qty ?? it.qty, 64) : num(it.ceo_qty)}</td>
+          <td>${canAcctDecide ? inp(it.id, 'qty', draft[it.id]?.qty ?? (it.ceo_qty ?? it.qty), 64) : num(it.accountant_qty)}</td>
+          <td>${fmtNum(it.cost)}</td>
+          <td>${canCeoDecide ? inp(it.id, 'cost', draft[it.id]?.cost ?? it.cost, 90) : num(it.ceo_cost)}</td>
+          <td>${canAcctDecide ? inp(it.id, 'cost', draft[it.id]?.cost ?? (it.ceo_cost ?? it.cost), 90) : num(it.accountant_cost)}</td>
+          <td><strong>${fmtNum(rowTotal(it))}</strong></td>
         </tr>`).join("")}
-        <tr><td colspan="7" style="text-align:right;"><strong>Grand Total</strong></td><td><strong>${fmt(grandTotal)}</strong></td></tr>
+        <tr class="pay-total"><td colspan="9"></td><td>${fmtNum(grandTotal)}</td></tr>
       </table></div>
-      <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:16px;">
-        ${canCancel ? `<button class="btn btn-outline" onclick="cancelUtilityPaymentRequest()">Cancel Request</button>` : ""}
-        ${canCeoDecide ? `<button class="btn btn-red" onclick="ceoDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green" onclick="ceoDecideUtilityPayment('Approved')">Approve</button>` : ""}
-        ${canAcctDecide ? `<button class="btn btn-red" onclick="accountantDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green" onclick="accountantDecideUtilityPayment('Approved')">Approve &amp; Pay</button>` : ""}
-      </div>
-      ${u.ceo_decision_reason ? `<div class="hint" style="margin-top:10px;">CEO note: ${escapeHtml(u.ceo_decision_reason)}</div>` : ""}
-      ${u.decision_reason ? `<div class="hint" style="margin-top:4px;">Accountant note: ${escapeHtml(u.decision_reason)}</div>` : ""}
+      ${(canCancel || canCeoDecide || canAcctDecide) ? `<div class="pg-submit" style="justify-content:flex-end;">
+        ${canCancel ? `<button class="btn btn-outline btn-sm" onclick="cancelUtilityPaymentRequest()">Cancel Request</button>` : ""}
+        ${canCeoDecide ? `<button class="btn btn-red btn-sm" onclick="ceoDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green btn-sm" onclick="ceoDecideUtilityPayment('Approved')">Approve</button>` : ""}
+        ${canAcctDecide ? `<button class="btn btn-red btn-sm" onclick="accountantDecideUtilityPayment('Declined')">Decline</button><button class="btn btn-green btn-sm" onclick="accountantDecideUtilityPayment('Approved')">Approve &amp; Pay</button>` : ""}
+      </div>` : ''}
+      ${u.ceo_decision_reason || u.decision_reason ? `<div class="pg-notes">${u.ceo_decision_reason ? `<div><span class="pg-label">CEO note</span> ${escapeHtml(u.ceo_decision_reason)}</div>` : ''}${u.decision_reason ? `<div><span class="pg-label">Accountant note</span> ${escapeHtml(u.decision_reason)}</div>` : ''}</div>` : ''}
     </div>
   `;
 }
@@ -19472,56 +19642,46 @@ function requestUtilPaymentOtp(){
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
   }, {mutates:true});
 }
+const UTIL_METHOD_FIELDS = { 'Mpesa B2C': ['Mpesa Number', '712345678', 'Recipient Name', 'Name on MPESA'], 'Paybill B2B': ['Paybill Number', 'e.g. 888880', 'Account Number', 'Account at the paybill'], 'BuyGoods (Till)': ['Till Number', 'e.g. 5123456', 'Business Name', 'Name on the till'] };
+const UTIL_METHOD_ICON = { 'Mpesa B2C':'📱', 'Paybill B2B':'🏦', 'BuyGoods (Till)':'🏪' };
 function renderCreateUtilityPaymentPage(){
   const f = DB.utilPaymentForm;
   const items = f.items;
-  // Unlike a requisition's Expense Account, a vendor payment's Journal
-  // Account isn't restricted to Expense-type accounts — it can post
-  // against a liability (e.g. a bank loan repayment, a client wallet
-  // top-up) just as legitimately as an expense.
-  const journalAccounts = (DB.accounts||[]).filter(a=>a.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name));
+  // A vendor payment's journal account can be any active account (an
+  // expense, or a liability such as a loan repayment).
+  const journalAccounts = (DB.accounts||[]).filter(a=>a.status!=='Inactive').sort((a,b)=>String(a.code||a.name).localeCompare(String(b.code||b.name)));
+  const mf = UTIL_METHOD_FIELDS[f.payment_method] || UTIL_METHOD_FIELDS['Mpesa B2C'];
   return `
-    <div class="card">
-      <div style="display:flex; align-items:center; margin-bottom:18px;">
-        <span class="btn btn-outline btn-sm page-back-btn" onclick="closeCreateUtilityPaymentForm()">←</span>
-        <h3 style="flex:1; text-align:center; margin:0 34px 0 0; text-decoration:underline; color:var(--navy);">Vendor Payment Form</h3>
-      </div>
+    <div class="card pg-card">
+      ${pgHead('Vendor Payment', 'Payment Form', '', 'closeCreateUtilityPaymentForm()')}
       <form onsubmit="return submitUtilityPayment(event)">
-        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
-          <div class="field" style="flex:0 0 140px;">
-            <label>Payment Method</label>
-            <select onchange="DB.utilPaymentForm.payment_method=this.value">
-              ${UTIL_PAYMENT_METHODS.map(m=>`<option ${f.payment_method===m?'selected':''}>${m}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field" style="flex:1; min-width:160px;">
-            <label>Recipient Mpesa Number &amp; Name</label>
-            <input value="${escapeHtml(f.recipient_mpesa_number)}" oninput="DB.utilPaymentForm.recipient_mpesa_number=this.value" placeholder="Number" style="margin-bottom:8px;">
-            <input value="${escapeHtml(f.recipient_name)}" oninput="DB.utilPaymentForm.recipient_name=this.value" placeholder="Name">
+        <div class="pg-box">
+          <div class="pg-label">Payment Method</div>
+          <div class="pg-methods">${UTIL_PAYMENT_METHODS.map(m=>`<button type="button" class="${f.payment_method===m?'on':''}" onclick="DB.utilPaymentForm.payment_method='${m}'; renderApp();">${UTIL_METHOD_ICON[m]||''} ${m}</button>`).join('')}</div>
+          <div class="pg-two">
+            <div><div class="pg-label">${mf[0]}</div><input value="${escapeHtml(f.recipient_mpesa_number)}" oninput="DB.utilPaymentForm.recipient_mpesa_number=this.value" placeholder="${mf[1]}"></div>
+            <div><div class="pg-label">${mf[2]}</div><input value="${escapeHtml(f.recipient_name)}" oninput="DB.utilPaymentForm.recipient_name=this.value" placeholder="${mf[3]}"></div>
           </div>
         </div>
-        <div class="table-wrap" style="margin-top:10px;"><table>
-          <tr><th>Item/Service description</th><th>Journal Account</th><th>Cost</th><th></th></tr>
-          ${items.map((it,idx)=>`<tr>
-            <td><input value="${escapeHtml(it.description)}" oninput="updateUtilItemField(${idx},'description',this.value)" placeholder="e.g. Office cleaning" required></td>
-            <td><select onchange="updateUtilItemField(${idx},'expense_account_id',this.value)">
-              <option value="">-- Select Account --</option>
-              ${journalAccounts.map(a=>`<option value="${a.id}" ${it.expense_account_id===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join("")}
-            </select></td>
-            <td><input type="number" min="0.01" step="0.01" value="${it.cost}" style="width:110px;" oninput="updateUtilItemField(${idx},'cost',this.value)" required></td>
-            <td>${items.length>1?`<span class="btn btn-outline btn-sm" onclick="removeUtilItemRow(${idx})">✕</span>`:""}</td>
-          </tr>`).join("")}
-        </table></div>
-        <div style="text-align:right; margin:10px 0;">
-          <span style="color:var(--blue); font-weight:700; cursor:pointer;" onclick="addUtilItemRow()">+ Add Row</span>
+        <div class="pg-box">
+          <div class="pg-box-row"><span class="pg-link" onclick="addUtilItemRow()">+ Add Row</span></div>
+          <div class="table-wrap"><table class="pg-table pg-form-table">
+            <tr><th>Item/Service description</th><th>Journal Account</th><th>Cost</th>${items.length>1?'<th></th>':''}</tr>
+            ${items.map((it,idx)=>`<tr>
+              <td><input value="${escapeHtml(it.description)}" oninput="updateUtilItemField(${idx},'description',this.value)" placeholder="e.g. Office cleaning" required></td>
+              <td><select onchange="updateUtilItemField(${idx},'expense_account_id',this.value)">
+                <option value="">-- Select Account --</option>
+                ${journalAccounts.map(a=>`<option value="${a.id}" ${it.expense_account_id===a.id?'selected':''}>${escapeHtml(acctLabel(a.id))}</option>`).join("")}
+              </select></td>
+              <td><input type="number" min="0.01" step="0.01" value="${it.cost}" style="width:120px;" oninput="updateUtilItemField(${idx},'cost',this.value)" required></td>
+              ${items.length>1?`<td><span class="pg-x" onclick="removeUtilItemRow(${idx})">✕</span></td>`:''}
+            </tr>`).join("")}
+          </table></div>
         </div>
-        ${f.otpForTesting ? `<div class="hint" style="margin-bottom:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
-        <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0 4px 0 12px;">
-            <input value="${escapeHtml(f.otp_code)}" oninput="DB.utilPaymentForm.otp_code=this.value" placeholder="OTP Code" style="border:none; padding:9px 4px; width:100px;" ${!f.otpRequested?'disabled':''}>
-            <span style="color:var(--blue); font-weight:700; cursor:pointer; padding:9px 8px; white-space:nowrap;" onclick="requestUtilPaymentOtp()">↻ Request</span>
-          </div>
-          <button class="btn btn-green" type="submit">🎁 Request</button>
+        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+        <div class="pg-submit">
+          <div class="pg-otp"><input value="${escapeHtml(f.otp_code)}" oninput="DB.utilPaymentForm.otp_code=this.value" placeholder="OTP Code" ${!f.otpRequested?'disabled':''}><span class="pg-link" onclick="requestUtilPaymentOtp()">↻ Request</span></div>
+          <button class="pg-primary" type="submit">Request</button>
         </div>
       </form>
     </div>
@@ -25383,7 +25543,7 @@ function payTime(iso, withDate){
   return withDate ? `${fmtDDMMYYYY(String(iso).slice(0,10))} ${t}` : t;
 }
 const payPhone = p => String(p || '').replace(/^\+?254/, '');
-const payHead = (title, right, back) => `<div class="pay-head"><span class="pay-back" onclick="${back || "goTo('dashboard')"}">←</span><span class="pay-title">${title}</span>${right ? `<span class="pay-right">${right}</span>` : ''}</div>`;
+const payHead = (title, right, back) => `<div class="pay-head"><span class="pay-back" onclick="${back || "goTo('dashboard')"}">←</span><div class="pay-titles"><div class="pg-eyebrow">Payments</div><span class="pay-title">${title}</span></div>${right ? `<span class="pay-right">${right}</span>` : ''}</div>`;
 const payOfficers = () => (DB.staff || []).filter(s => s.role === 'Loan Officer' && s.status !== 'Inactive');
 function payOfficerSelect(value, onchange, label){
   if(session.role === 'Loan Officer') return '';
