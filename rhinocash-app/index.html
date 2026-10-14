@@ -492,6 +492,29 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
 .geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
 .geo-pin-wrap{background:transparent; border:none;}
+.perf-card{padding:0; overflow:hidden;} .perf-card > *:not(.perf-banner){margin-left:18px; margin-right:18px;}
+.perf-banner{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; background:linear-gradient(180deg,#1E4B78,#1B4470); color:#fff; padding:18px 20px 16px; margin-bottom:14px;}
+.perf-title{font-size:22px; font-weight:800; letter-spacing:.3px;} .perf-sub{font-size:13.5px; opacity:.9; margin-top:4px;}
+.perf-tools{display:flex; gap:6px; flex-wrap:wrap; align-items:center;} .perf-tools input{border-radius:6px; border:1px solid #9FB6CF; padding:4px 6px;} .perf-tools .btn{background:#fff;}
+.perf-tiles{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:12px;}
+.perf-tile{border:1px solid #CFDAE6; border-radius:10px; padding:10px 12px; background:#EEF4FA;} .perf-tile.green{background:#E5F1DD;} .perf-tile.red{background:#FBE3DA;} .perf-tile.amber{background:#FFF1D2;}
+.perf-tile-l{font-size:11.5px; font-weight:800; color:#1F4E79; text-transform:uppercase;} .perf-tile-v{font-size:21px; font-weight:800; color:#14243B; margin-top:4px;}
+.perf-counts{font-weight:800; color:#1F4E79; font-size:14px; margin:4px 0 2px;} .perf-rule{font-size:12px; color:#5E6B7E; margin:4px 0 10px;}
+.perf-sec{font-weight:800; color:#1F4E79; font-size:15px; margin:14px 0 8px;}
+.perf-tbl-h{display:flex; justify-content:space-between; align-items:center; font-weight:800; color:#1F3A5F; margin:10px 0 6px; font-size:13.5px;}
+table.perf-tbl th{background:#1E4B78; color:#fff;} table.perf-tbl td{padding-top:7px; padding-bottom:7px;}
+.perf-row-bad td{background:#FBE3DA;} .perf-row-near td{background:#FFF1D2;} .perf-row-ok td{background:#E5F1DD;} .perf-row-new td{background:#E3EEFB;} .perf-row-flat td{background:#F6F7F9;}
+.perf-row-ceil td{background:#FBE3DA;} .perf-row-floor td{background:#E5F1DD;} .perf-row-flow td{background:#EEF4FA;} .perf-total td{background:#1E4B78 !important; color:#fff;}
+.perf-st{display:inline-block; font-weight:800; font-size:11.5px; padding:2px 8px; border-radius:999px; background:#EEF1F5; color:#4A5870;} .perf-st.ok{background:#D7EED0; color:#1E6B2E;} .perf-st.bad{background:#F7CFC2; color:#9A2A12;} .perf-st.near{background:#FFE4A8; color:#7A5200;} .perf-st.new{background:#D3E4F8; color:#1D4E89;}
+.perf-cell{display:inline-block; min-width:42px; text-align:center; border-radius:6px; padding:1px 6px; font-weight:700;} .perf-cell.ok{background:#D7EED0;} .perf-cell.bad{background:#F7CFC2;} .perf-cell.near{background:#FFE4A8;}
+.perf-trend{display:flex; flex-direction:column; gap:6px; margin-bottom:6px;} .perf-tr{display:grid; grid-template-columns:56px 1fr 60px; gap:8px; align-items:center; font-size:12.5px; font-weight:800; color:#1F3A5F;}
+.perf-tr-bar{background:#EEF2F7; border-radius:999px; height:14px; overflow:hidden;} .perf-tr-bar i{display:block; height:100%; background:#0EA5D9; border-radius:999px;} .perf-tr-v{text-align:right;}
+.perf-rules{margin:0 0 10px 18px; padding:0; font-size:13px; color:#22324A; line-height:1.7;}
+.perf-cps{border:1px solid #CFDAE6; background:#EEF4FA; border-radius:10px; padding:10px 14px; margin-bottom:16px !important;} .perf-cp{font-size:13px; padding:3px 0;} .perf-cp.cur{font-weight:700;}
+.perf-settings{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:8px; width:100%; background:#fff; color:#22324A; border-radius:10px; padding:12px; margin-top:8px;}
+.perf-set-h{grid-column:1/-1; font-weight:800; color:#1F3A5F;} .perf-f{display:flex; flex-direction:column; gap:2px; font-size:12px;} .perf-set-acts{grid-column:1/-1; display:flex; gap:6px;}
+@media (max-width:800px){ .perf-tiles{grid-template-columns:1fr 1fr;} .perf-title{font-size:18px;} }
+@media print{ .no-print{display:none !important;} .perf-card{box-shadow:none !important; border:none !important;} .content{padding:0 !important;} .perf-banner, .perf-tbl th, .perf-row-bad td, .perf-row-near td, .perf-row-ok td, .perf-total td, .perf-tile{-webkit-print-color-adjust:exact; print-color-adjust:exact;} }
 .ix-block{margin-top:12px;} .gen-auto{display:flex; justify-content:flex-end; margin:6px 0;} .gen-auto select{min-width:110px;}
 table.stmt td.num, table.stmt th.num{text-align:right; white-space:nowrap;} table.stmt tr.section td{background:#F7F9FC; color:#1F3A5F; padding-top:10px;}
 table.stmt tr.total td{border-top:1px solid #CBD5E1; font-weight:700;} table.stmt tr.grand td{border-top:2px solid #1F3A5F; border-bottom:3px double #1F3A5F; font-weight:800; background:#F4F7FB;} .ix-block-h{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; font-weight:800; color:#1F3A5F; font-size:13.5px;}
@@ -1444,6 +1467,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Rates","Loan Arrears","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
+    {section:"Performance & Targets", icon:"🎯", items:["My Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
   ],
@@ -1455,6 +1479,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1468,6 +1493,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","M-Pesa Transactions"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1480,6 +1506,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1506,6 +1533,7 @@ const SIDEBAR_MENUS = {
     {section:"Database & System", icon:"💾", items:["Database Status","Backup Management","Restore Management","System Logs","Error Logs","Storage Management","Cache Management","Queue Management","Scheduled Jobs","System Maintenance","Maintenance Mode"]},
     {section:"API & Developer Management", icon:"👨‍💻", items:["API Keys","API Clients","API Permissions","API Usage","API Logs","Webhook Management","Webhook Logs","API Rate Limits"]},
     {section:"Reports", icon:"📑", items:["System Reports","User Reports","Access Reports","Audit Reports","Security Reports","Configuration Reports","Data Reports"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","System Responsibilities","System Administration","M-Pesa Configuration","Governance Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1521,6 +1549,7 @@ const SIDEBAR_MENUS = {
     {section:"Financial Reports", icon:"📑", items:["Daily Financial Report","Cashflow Report","Income Statement","Balance Sheet","Trial Balance","General Ledger Report","Receivables Report","Payables Report","Loan Portfolio Report","Reconciliation Reports"]},
     {section:"Investor Accounts", icon:"💼", items:["Investor Directory","Investor Statements","Investor Ledger","Obligations"]},
     {section:"Budget & Planning", icon:"💰", items:["Annual Budget","Budget Monitoring","Budget Variance","Branch Budgets","Expense Budgets","Financial Forecasts"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance"]},
     {section:"My Account", icon:"🪪", items:["View Details","Financial Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1541,6 +1570,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","Executive Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1564,6 +1594,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
     {section:"My Account", icon:"🪪", items:["View Details","Governance Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1635,6 +1666,11 @@ const LABEL_ROUTES = {
   "View Branches": {section:"branches", subtab:"Company Branches"},
   "Loan Summary": {section:"branches", subtab:"Loan Summary"},
   // Business Analytics
+  "Disbursement Report": {section:"reports", subtab:"Disbursement Report"},
+  "Branch Performance Report": {section:"reports", subtab:"Branch Performance Report"},
+  "MTD Disbursement Performance": {section:"reports", subtab:"MTD Disbursement Performance"},
+  "Officer Targets": {section:"reports", subtab:"Officer Targets"},
+  "My Targets": {section:"reports", subtab:"My Targets"},
   "Loan Sizes": {section:"business-analytics", subtab:"Loan Sizes"},
   "Portfolio Breakdown": {section:"business-analytics", subtab:"Portfolio Breakdown"},
   "Targets & Accruals": {section:"business-analytics", subtab:"Targets & Accruals"},
@@ -2163,6 +2199,7 @@ function sidebarNavigate(itemLabel){
     if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
   });
   const route = resolveRoute(itemLabel);
+  if(session.perf && PERF_PAGES.includes(itemLabel)){ session.perf.branchId = null; session.perf.officerId = null; }
   if(session.loggedIn && DB) startNavLoading();
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
@@ -22739,8 +22776,221 @@ function renderOfficerComparisonChart(oc){
   });
   return `<div class="card"><div class="card-title">Officer Comparison <small>real collection rate, within your branch</small></div>${chartHtml}</div>`;
 }
+// ==================== Performance & Targets reports ====================
+// Disbursement Report (monthly, MET / NEAR / BELOW / NEW), Branch Performance
+// Report (each branch vs its own average), MTD Disbursement Performance
+// (ON TRACK / PUSH / CRITICAL), Officer Targets and the Loan Officer control
+// plan, with branch and officer drill-down pages, Print and Generate.
+const PERF_PAGES = ['Disbursement Report', 'Branch Performance Report', 'MTD Disbursement Performance', 'Officer Targets', 'My Targets'];
+function perfState(){ const t = new Date().toISOString(); return session.perf || (session.perf = { month: t.slice(0, 7), from: t.slice(0, 8) + '01', to: t.slice(0, 10), branchId: null, officerId: null, editing: false }); }
+function perfLoad(key, url){
+  if(!DB.perf) DB.perf = {};
+  if(DB.perf[key] || inFlight.has('perf:' + key)) return DB.perf[key];
+  inFlight.add('perf:' + key);
+  api.get(url).then(d => { DB.perf[key] = d; }).catch(e => { DB.perf[key] = { error: (e && e.message) || 'This report could not load' }; })
+    .finally(() => { inFlight.delete('perf:' + key); renderApp(); });
+  return null;
+}
+function perfReload(){ DB.perf = {}; renderApp(); }
+const perfMonthLabel = m => m ? new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase() : '';
+const perfShortMonth = m => new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+const perfM = v => v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(Math.round(v || 0));
+// Whole percent, but never round 99.x% up to 100% (it would read as met).
+const perfAch = v => { const r = Math.round(v); return (r >= 100 && v < 100) ? `${(Math.floor(v * 10) / 10).toFixed(1)}%` : `${r}%`; };
+const perfSigned = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(v))}`;
+const PERF_TONE = { MET: 'ok', NEW: 'new', NEAR: 'near', BELOW: 'bad', 'ON TRACK': 'ok', PUSH: 'near', CRITICAL: 'bad', 'ABOVE AVG': 'ok', 'BELOW AVG': 'bad', STABLE: 'flat',
+  'ON PACE': 'ok', OK: 'ok', BEHIND: 'near', 'OFF PACE': 'bad', OVER: 'bad', 'NO DATA': 'flat', 'NO ARREARS': 'ok' };
+function perfHeader(title, sub, tools){
+  return `<div class="perf-banner"><div><div class="perf-title">${escapeHtml(title)}</div>${sub ? `<div class="perf-sub">${escapeHtml(sub)}</div>` : ''}</div><div class="perf-tools no-print">${tools || ''}</div></div>`;
+}
+function perfTiles(list){ return `<div class="perf-tiles">${list.map(([l, v, tone]) => `<div class="perf-tile ${tone || ''}"><div class="perf-tile-l">${escapeHtml(l)}</div><div class="perf-tile-v">${v}</div></div>`).join('')}</div>`; }
+function perfPrintBtn(){ return `<button type="button" class="btn btn-sm btn-outline" onclick="window.print()">🖨 Print</button>`; }
+function perfMonthPicker(){ const st = perfState(); return `<input type="month" value="${st.month}" max="${new Date().toISOString().slice(0, 7)}" onchange="perfState().month=this.value; perfReload();">`; }
+function perfBackBtn(label){ return `<button type="button" class="btn btn-sm btn-outline no-print" onclick="perfState().branchId=null; perfState().officerId=null; renderApp();">← ${escapeHtml(label)}</button>`; }
+function perfStatus(s){ return `<span class="perf-st ${PERF_TONE[s] || 'flat'}">${escapeHtml(s)}</span>`; }
+// A styled report table (status-coloured rows) with Generate exporting the same rows.
+function perfTable(title, headers, rows, opts = {}){
+  const gen = generateMenuHtml(title, () => ({ headers: headers.filter(h => h !== '').map(h => h), rows: rows.map(r => r.export) }));
+  return `<div class="perf-tbl-h no-print"><span>${escapeHtml(title)}</span>${gen}</div><div class="table-wrap"><table class="perf-tbl"><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr>
+    ${rows.length ? rows.map(r => `<tr class="${r.tone ? 'perf-row-' + r.tone : ''}${r.cls ? ' ' + r.cls : ''}">${r.cells.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">${escapeHtml(opts.empty || 'Nothing to show for this period.')}</td></tr>`}</table></div>`;
+}
+function perfSettingsBlock(){
+  const s = DB.perf && DB.perf.settings;
+  if(!s || !s.canEdit) return '';
+  const st = perfState();
+  if(!st.editing) return `<button type="button" class="btn btn-sm btn-outline no-print" onclick="perfState().editing=true; renderApp();">⚙ Targets & rules</button>`;
+  const v = s.settings, o = v.officer;
+  const f = (name, label, val) => `<label class="perf-f"><span>${escapeHtml(label)}</span><input type="number" min="0" step="any" name="${name}" value="${val}"></label>`;
+  return `<form class="perf-settings no-print" onsubmit="return perfSaveSettings(event)">
+    <div class="perf-set-h">Branch reports</div>
+    ${f('establishedTarget', 'Established branch monthly target (KSh)', v.establishedTarget)}${f('newBranchTarget', 'New branch first-month target (KSh)', v.newBranchTarget)}${f('nearPct', 'NEAR from (%)', v.nearPct)}
+    ${f('mtdAmountTarget', 'MTD amount target per branch (KSh)', v.mtdAmountTarget)}${f('mtdLoanTarget', 'MTD loans target per branch', v.mtdLoanTarget)}${f('onTrackPct', 'ON TRACK from (%)', v.onTrackPct)}${f('criticalPct', 'CRITICAL below (%)', v.criticalPct)}${f('stableBandPct', 'STABLE band vs average (±%)', v.stableBandPct)}
+    <div class="perf-set-h">Loan officer plan (default per officer)</div>
+    ${[['newLoans', 'New loans'], ['repeatLoans', 'Repeat loans'], ['disbursement', 'Disbursement (KSh)'], ['mtdArrearsCeiling', 'MTD arrears ceiling (KSh)'], ['currentGcFloor', 'Current GC% floor'], ['previousGcFloor', 'Previous GC% floor'], ['duesCrFloor', 'Dues Cr floor (%)'],
+      ['arrearsReductionPct', 'Arrears reduction (%)'], ['performingLoans', 'Performing loans'], ['revenue', 'Revenue (KSh)'], ['bookQualityPct', 'Book quality (%)'], ['activeClients', 'Active clients'], ['cleanActiveClients', 'Clean active clients'], ['parCeilingPct', 'PAR ceiling (%)'], ['workingDays', 'Working days'], ['weeks', 'Planning weeks']]
+      .map(([k, l]) => f('officer.' + k, l, o[k])).join('')}
+    <div class="perf-set-acts"><button class="btn btn-sm btn-primary" type="submit">Save targets</button><button type="button" class="btn btn-sm btn-outline" onclick="perfState().editing=false; renderApp();">Cancel</button></div>
+    <div class="ix-note">An officer's own targets set on Targets & Accruals (new loans, repeat loans, disbursement, performing, revenue) take priority over these defaults.</div>
+  </form>`;
+}
+async function perfSaveSettings(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target); const body = { officer: {} };
+  for(const [k, v] of fd.entries()){ if(k.startsWith('officer.')) body.officer[k.slice(8)] = Number(v); else body[k] = Number(v); }
+  await withRequest('perf-settings', async ()=>{ await api.put('/api/perf/settings', body); toast('Report targets saved'); perfState().editing = false; perfReload(); });
+  return false;
+}
+function renderPerfReport(page){
+  const st = perfState();
+  perfLoad('settings', '/api/perf/settings');
+  if(page === 'My Targets') return renderPerfOfficerPlan(session.userId, true);
+  if(st.officerId) return renderPerfOfficerPlan(st.officerId, false);
+  if(st.branchId) return renderPerfBranch(st.branchId);
+  if(page === 'Disbursement Report') return renderPerfDisbursement();
+  if(page === 'Branch Performance Report') return renderPerfBranchPerformance();
+  if(page === 'MTD Disbursement Performance') return renderPerfMtd();
+  if(page === 'Officer Targets') return renderPerfOfficers();
+  return '';
+}
+const perfLoading = t => `<div class="card perf-card">${perfHeader(t)}<div class="empty">${loadingDotsHtml()}</div></div>`;
+const perfError = (t, d) => `<div class="card perf-card">${perfHeader(t)}<div class="empty">${escapeHtml(d.error)}</div></div>`;
+function perfViewBtn(js){ return `<button type="button" class="btn btn-sm btn-outline no-print" onclick="${js}">View</button>`; }
+
+function renderPerfDisbursement(){
+  const st = perfState();
+  const d = perfLoad('disb:' + st.month, `/api/perf/disbursement-report?month=${st.month}`);
+  const title = `${perfMonthLabel(st.month)} — DISBURSEMENT REPORT`;
+  if(!d) return perfLoading(title); if(d.error) return perfError(title, d);
+  const T = d.totals, R = d.rule;
+  const rows = d.rows.map(r => ({ tone: r.status === 'NEW' ? (r.achievementPct >= 100 ? 'ok' : 'bad') : PERF_TONE[r.status],
+    cells: [`<strong>${escapeHtml(r.branch)}</strong>`, fmtNum(r.actual), fmtNum(r.target), perfSigned(r.variance), `<strong>${perfAch(r.achievementPct)}</strong>`, perfStatus(r.status), fmtNum(r.loans), perfViewBtn(`perfState().branchId='${r.branchId}'; renderApp();`)],
+    export: [r.branch, r.actual, r.target, r.variance, r.achievementPct + '%', r.status, r.loans] }));
+  rows.push({ cls: 'perf-total', cells: ['<strong>Total</strong>', `<strong>${fmtNum(T.actual)}</strong>`, `<strong>${fmtNum(T.target)}</strong>`, `<strong>${perfSigned(T.actual - T.target)}</strong>`, `<strong>${(T.achievementPct || 0).toFixed(1)}%</strong>`, '', `<strong>${fmtNum(T.loans)}</strong>`, ''],
+    export: ['Total', T.actual, T.target, T.actual - T.target, (T.achievementPct || 0) + '%', '', T.loans] });
+  const ach = T.achievementPct || 0;
+  return `<div class="card perf-card">
+    ${perfHeader(title, `Established branches: KSh ${perfM(R.establishedTarget)} minimum | New branches: KSh ${perfM(R.newBranchTarget)} first month`, perfMonthPicker() + perfPrintBtn() + perfSettingsBlock())}
+    ${perfTiles([['Actual', fmtNum(T.actual), 'blue'], ['Min. Target', fmtNum(T.target), 'blue'], ['Achievement', `${ach.toFixed(1)}%`, ach >= 100 ? 'green' : 'red'], ['Active', T.active, 'amber']])}
+    <div class="perf-counts">MET ${T.met} &nbsp;|&nbsp; NEAR ${R.nearPct}–99% ${T.near} &nbsp;|&nbsp; BELOW &lt;${R.nearPct}% ${T.below} &nbsp;|&nbsp; NEW THIS MONTH ${T.newThisMonth}</div>
+    <div class="perf-rule">Target rule: branches already lending in ${R.firstMonth ? perfShortMonth(R.firstMonth) + ' ' + R.firstMonth.slice(0, 4) : 'the first month'} count as established; every other branch uses KSh ${perfM(R.newBranchTarget)} only in its opening month.</div>
+    ${perfTable('Branches', ['Branch', 'Actual', 'Target', 'Variance', 'Ach.', 'Status', 'Loans', 'Action'], rows, { empty: 'No branch was lending in this month.' })}
+  </div>` + (d.rows.length ? admChart('perf-disb', 'Achievement by branch', 'bar', d.rows.map(r => r.branch), [{ label: 'Achievement %', data: d.rows.map(r => r.achievementPct) }]) : '');
+}
+
+function renderPerfBranchPerformance(){
+  const st = perfState();
+  const d = perfLoad('bp:' + st.month, `/api/perf/branch-performance?month=${st.month}`);
+  const title = 'BRANCH PERFORMANCE REPORT';
+  if(!d) return perfLoading(title); if(d.error) return perfError(title, d);
+  const G = d.global; const max = Math.max(1, ...d.trend.map(t => t.amount));
+  const curName = perfShortMonth(d.month);
+  const rows = d.snapshot.map(r => ({ tone: PERF_TONE[r.status], cells: [`<strong>${escapeHtml(r.branch)}</strong>`, fmtNum(r.current), fmtNum(r.previous), fmtNum(r.average), r.vsAvgPct == null ? '—' : `<strong>${r.vsAvgPct > 0 ? '+' : ''}${r.vsAvgPct.toFixed(1)}%</strong>`, perfStatus(r.status), r.monthsActive, perfViewBtn(`perfState().branchId='${r.branchId}'; renderApp();`)],
+    export: [r.branch, r.current, r.previous, r.average, r.vsAvgPct == null ? '' : r.vsAvgPct + '%', r.status, r.monthsActive] }));
+  const first = d.months[0], last = d.months[d.months.length - 1];
+  return `<div class="card perf-card">
+    ${perfHeader(title, `${new Date(first + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long' })} – ${new Date(last + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}  |  ${new Date(last + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long' })} Management View`, perfMonthPicker() + perfPrintBtn())}
+    ${perfTiles([[`Global ${curName}`, fmtNum(G.current), 'blue'], ['Global Avg', fmtNum(G.average), 'blue'], [`${curName} vs previous`, perfSigned(G.vsPrevious), G.vsPrevious >= 0 ? 'green' : 'red'], [`${curName} vs avg`, G.vsAvgPct == null ? '—' : `${G.vsAvgPct > 0 ? '+' : ''}${G.vsAvgPct.toFixed(1)}%`, (G.vsAvgPct || 0) >= 0 ? 'green' : 'red']])}
+    <div class="perf-sec">GLOBAL MONTHLY TREND</div>
+    <div class="perf-trend">${d.trend.map(t => `<div class="perf-tr"><span class="perf-tr-m">${perfShortMonth(t.month)}</span><span class="perf-tr-bar"><i style="width:${Math.max(1, t.amount / max * 100)}%"></i></span><span class="perf-tr-v">${perfM(t.amount)}</span></div>`).join('')}</div>
+    <div class="perf-sec">BRANCH ${new Date(last + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long' }).toUpperCase()} SNAPSHOT</div>
+    <div class="perf-counts">ABOVE AVG ${d.counts.above} &nbsp;|&nbsp; STABLE ±${d.stableBandPct}% ${d.counts.stable} &nbsp;|&nbsp; BELOW AVG ${d.counts.below}</div>
+    ${perfTable('Branch snapshot', ['Branch', curName, 'Previous', 'Avg', 'vs Avg', 'Status', 'Months', 'Action'], rows)}
+    <div class="perf-rule">Management guide: focus follow-up on BELOW AVG branches; protect gains in ABOVE AVG branches. A branch's average covers the months it was lending this year.</div>
+  </div>`;
+}
+
+function renderPerfMtd(){
+  const st = perfState();
+  const d = perfLoad(`mtd:${st.from}:${st.to}`, `/api/perf/mtd?from=${st.from}&to=${st.to}`);
+  const title = 'MTD DISBURSEMENT PERFORMANCE';
+  if(!d) return perfLoading(title); if(d.error) return perfError(title, d);
+  const T = d.totals, G = d.targets;
+  const rows = d.rows.map(r => ({ tone: PERF_TONE[r.status], cells: [r.rank, `<strong>${escapeHtml(r.branch)}</strong>`, fmtNum(r.amount), `<strong>${perfAch(r.disbPct)}</strong>`, fmtNum(r.loans), perfAch(r.loanPct), fmtNum(r.gap), fmtNum(r.loanGap), perfStatus(r.status), perfViewBtn(`perfState().branchId='${r.branchId}'; renderApp();`)],
+    export: [r.rank, r.branch, r.amount, r.disbPct + '%', r.loans, r.loanPct + '%', r.gap, r.loanGap, r.status] }));
+  rows.push({ cls: 'perf-total', cells: ['', '<strong>TOTAL</strong>', `<strong>${fmtNum(T.amount)}</strong>`, `<strong>${(T.disbPct || 0).toFixed(0)}%</strong>`, `<strong>${fmtNum(T.loans)}</strong>`, `<strong>${(T.loanPct || 0).toFixed(0)}%</strong>`, `<strong>${fmtNum(T.gap)}</strong>`, '', '<strong>GLOBAL</strong>', ''],
+    export: ['', 'TOTAL', T.amount, (T.disbPct || 0) + '%', T.loans, (T.loanPct || 0) + '%', T.gap, '', 'GLOBAL'] });
+  const fmtD = x => new Date(x + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+  return `<div class="card perf-card">
+    ${perfHeader('MTD DISBURSEMENT PERFORMANCE', `${fmtD(d.from)} – ${fmtD(d.to)}  |  TARGET: KSh ${fmtNum(G.amount)} & ${fmtNum(G.loans)} LOANS PER BRANCH`,
+      `<input type="date" value="${d.from}" onchange="perfState().from=this.value; perfReload();"><input type="date" value="${d.to}" max="${new Date().toISOString().slice(0, 10)}" onchange="perfState().to=this.value; perfReload();">` + perfPrintBtn() + perfSettingsBlock())}
+    ${perfTiles([['Total Disbursed', `KSh ${perfM(T.amount)}`, 'blue'], ['Total Loans', fmtNum(T.loans), 'blue'], ['Global Disb %', `${(T.disbPct || 0).toFixed(1)}%`, (T.disbPct || 0) >= G.onTrackPct ? 'green' : 'amber'], ['Global Loan %', `${(T.loanPct || 0).toFixed(1)}%`, (T.loanPct || 0) >= G.onTrackPct ? 'green' : 'amber']])}
+    <div class="perf-counts">ON TRACK ${T.onTrack} &nbsp;|&nbsp; PUSH ${T.push} &nbsp;|&nbsp; CRITICAL ${T.critical}</div>
+    ${perfTable('Branches', ['#', 'Branch', 'Disb Amount', 'Disb %', 'Loans', 'Loan %', 'Disb Gap', 'Loan Gap', 'Status', 'Action'], rows)}
+    <div class="perf-rule">STATUS: ON TRACK ≥${G.onTrackPct}% &nbsp;|&nbsp; PUSH ${G.criticalPct}–${G.onTrackPct - 1}% &nbsp;|&nbsp; CRITICAL &lt;${G.criticalPct}%</div>
+  </div>`;
+}
+
+function renderPerfBranch(branchId){
+  const st = perfState();
+  const d = perfLoad(`br:${branchId}:${st.month}`, `/api/perf/branch/${branchId}?month=${st.month}`);
+  if(!d) return perfLoading('BRANCH'); if(d.error) return `<div class="card perf-card">${perfHeader('BRANCH')}${perfBackBtn('Back')}<div class="empty">${escapeHtml(d.error)}</div></div>`;
+  const Y = d.ytd; const ach = Y.target ? Y.actual / Y.target * 100 : 0;
+  const mrows = d.months.map(m => ({ tone: m.status === 'NEW' ? (m.achievementPct >= 100 ? 'ok' : 'bad') : PERF_TONE[m.status],
+    cells: [ixMonth(m.month), fmtNum(m.actual), fmtNum(m.target), perfSigned(m.variance), `<strong>${perfAch(m.achievementPct)}</strong>`, perfStatus(m.status), fmtNum(m.loans)],
+    export: [ixMonth(m.month), m.actual, m.target, m.variance, m.achievementPct + '%', m.status, m.loans] }));
+  const orows = d.officers.map(o => ({ cells: [`<strong>${escapeHtml(o.name)}</strong>`, fmtNum(o.loans), fmtNum(o.newloans), fmtNum(o.repeatloans), fmtNum(o.amount), ixPct(o.sharePct), perfViewBtn(`perfState().officerId='${o.id}'; renderApp();`)],
+    export: [o.name, o.loans, o.newloans, o.repeatloans, o.amount, o.sharePct + '%'] }));
+  const rrows = d.recent.map(l => ({ cells: [l.application_no ? '#' + l.application_no : '—', escapeHtml(l.client), escapeHtml(l.officer || '—'), fmtNum(l.principal), ixDate(l.disbursed_at)], export: [l.application_no || '', l.client, l.officer || '', Number(l.principal), ixDate(l.disbursed_at)] }));
+  return `<div class="card perf-card">
+    ${perfHeader(`${d.branch.name.toUpperCase()} — BRANCH VIEW`, `${d.branch.region || ''}${d.branch.openingMonth ? ' · lending since ' + ixMonth(d.branch.openingMonth) : ''} · ${perfMonthLabel(d.month)}`, perfBackBtn('Back to report') + perfMonthPicker() + perfPrintBtn())}
+    ${perfTiles([['Year-to-date actual', fmtNum(Y.actual), 'blue'], ['Year-to-date target', fmtNum(Y.target), 'blue'], ['Achievement', `${ach.toFixed(1)}%`, ach >= 100 ? 'green' : 'red'], ['Loans this year', fmtNum(Y.loans), 'amber']])}
+    ${perfTable('Months this year', ['Month', 'Actual', 'Target', 'Variance', 'Ach.', 'Status', 'Loans'], mrows)}
+    ${perfTable(`Loan officers — ${ixMonth(d.month)}`, ['Officer', 'Loans', 'New', 'Repeat', 'Disbursed', 'Share', 'Action'], orows, { empty: 'No active loan officers in this branch.' })}
+    ${perfTable(`Disbursements — ${ixMonth(d.month)}`, ['Application', 'Client', 'Officer', 'Amount', 'Date'], rrows, { empty: 'No disbursements this month.' })}
+  </div>` + (d.months.length ? admChart('perf-br-m', 'Actual vs target by month', 'bar', d.months.map(m => ixMonth(m.month)), [{ label: 'Actual', data: d.months.map(m => m.actual) }, { label: 'Target', data: d.months.map(m => m.target) }]) : '');
+}
+
+function renderPerfOfficers(){
+  const st = perfState();
+  const d = perfLoad('offs:' + st.month, `/api/perf/officers?month=${st.month}`);
+  const title = 'LOAN OFFICER TARGETS';
+  if(!d) return perfLoading(title); if(d.error) return perfError(title, d);
+  const k = (o, key) => (o.kpis[key] || {});
+  const cell = (o, key, f) => { const x = k(o, key); return `<span class="perf-cell ${PERF_TONE[x.status] || ''}">${x.actual == null ? '—' : f(x.actual)}</span>`; };
+  const rows = d.officers.map(o => ({ tone: o.scorePct >= 75 ? 'ok' : o.scorePct >= 50 ? 'near' : 'bad',
+    cells: [`<strong>${escapeHtml(o.name)}</strong><div class="pg-sub">${escapeHtml(branchName(o.branchId))}</div>`, `<strong>${o.onTrack}/${o.total}</strong>`, cell(o, 'newLoans', fmtNum), cell(o, 'repeatLoans', fmtNum), cell(o, 'totalLoans', fmtNum),
+      cell(o, 'disbursement', perfM), cell(o, 'currentGc', v => v + '%'), cell(o, 'performing', fmtNum), cell(o, 'bookQuality', v => v + '%'), cell(o, 'activeClients', fmtNum), cell(o, 'par', v => v + '%'), perfViewBtn(`perfState().officerId='${o.id}'; renderApp();`)],
+    export: [o.name, branchName(o.branchId), `${o.onTrack}/${o.total}`, k(o, 'newLoans').actual, k(o, 'repeatLoans').actual, k(o, 'totalLoans').actual, k(o, 'disbursement').actual, k(o, 'currentGc').actual, k(o, 'performing').actual, k(o, 'bookQuality').actual, k(o, 'activeClients').actual, k(o, 'par').actual] }));
+  return `<div class="card perf-card">
+    ${perfHeader(title, `${perfMonthLabel(d.month)} · on-track KPIs out of 15 per officer`, perfMonthPicker() + perfPrintBtn() + perfSettingsBlock())}
+    ${perfTiles([['Officers', d.officers.length, 'blue'], ['On track (≥75% of KPIs)', d.officers.filter(o => o.scorePct >= 75).length, 'green'], ['Needs support (<50%)', d.officers.filter(o => o.scorePct < 50).length, 'red'],
+      ['Loans this month', fmtNum(d.officers.reduce((s, o) => s + (k(o, 'totalLoans').actual || 0), 0)), 'amber']])}
+    ${perfTable('Officers', ['Officer', 'On track', 'New', 'Repeat', 'Total', 'Disb.', 'Current GC', 'Performing', 'BQ', 'Active Clients', 'PAR', 'Action'], rows, { empty: 'No active loan officers in your branches.' })}
+    <div class="perf-rule">Cell colours follow each officer's control plan: green on target or on pace, amber behind, red off pace or over a ceiling.</div>
+  </div>`;
+}
+
+function renderPerfOfficerPlan(officerId, self){
+  const st = perfState();
+  const d = perfLoad(`plan:${officerId}:${st.month}`, `/api/perf/officer/${officerId}?month=${st.month}`);
+  const title = 'LOAN OFFICER TARGETS';
+  if(!d) return perfLoading(title); if(d.error) return `<div class="card perf-card">${perfHeader(title)}${self ? '' : perfBackBtn('Back')}<div class="empty">${escapeHtml(d.error)}</div></div>`;
+  const s = DB.perf.settings && DB.perf.settings.settings ? DB.perf.settings.settings.officer : null;
+  const fv = (k, v) => v == null ? '—' : k.unit === 'money' ? perfM(v) : k.unit === 'pct' ? `${Number(v).toFixed(1).replace(/\.0$/, '')}%` : (Math.round(v * 10) / 10).toLocaleString('en-KE', { maximumFractionDigits: 1 });
+  const control = k => k.kind === 'ceiling' ? 'CEILING' : k.kind === 'floor' ? (k.key === 'duesCr' ? 'MON-SAT' : 'FLOOR') : k.kind === 'constant' ? 'CONSTANT' : k.kind === 'cumulative' ? 'CUMULATIVE' : `≥${fv(k, k.month)}`;
+  const tgt = (k, v) => k.kind === 'ceiling' ? `≤${fv(k, v)}` : (k.kind === 'flow' ? fv(k, v) : `≥${fv(k, v)}`);
+  const rows = d.kpis.map(k => ({ tone: k.kind === 'ceiling' ? 'ceil' : ['floor', 'constant'].includes(k.kind) ? 'floor' : 'flow',
+    cells: [`<strong>${escapeHtml(k.label)}</strong>${k.note ? `<div class="pg-sub">${escapeHtml(k.note)}</div>` : ''}`, `<strong>${tgt(k, k.month)}</strong>`, tgt(k, k.week), tgt(k, k.day), control(k),
+      k.kind === 'flow' || k.kind === 'cumulative' ? fv(k, k.paceTarget) : tgt(k, k.month), `<strong>${fv(k, k.actual)}</strong>`, perfStatus(k.status)],
+    export: [k.label, tgt(k, k.month), tgt(k, k.week), tgt(k, k.day), control(k), k.kind === 'flow' || k.kind === 'cumulative' ? fv(k, k.paceTarget) : tgt(k, k.month), fv(k, k.actual), k.status] }));
+  const by = key => d.kpis.find(k => k.key === key) || {};
+  const cp = d.checkpoints.map(c => `<div class="perf-cp ${c.week === d.currentWeek ? 'cur' : ''}"><strong>Week ${c.week}:</strong> New ${c.newLoans.toLocaleString('en-KE', { maximumFractionDigits: 1 })} | Repeat ${c.repeatLoans.toLocaleString('en-KE', { maximumFractionDigits: 1 })} | Total ${c.totalLoans.toLocaleString('en-KE', { maximumFractionDigits: 1 })} | Disb. KSh ${perfM(c.disbursement)}${c.week === d.currentWeek ? ` <span class="perf-st ${by('totalLoans').actual >= c.totalLoans ? 'ok' : 'near'}">now: ${fmtNum(by('totalLoans').actual)} loans · KSh ${perfM(by('disbursement').actual)}</span>` : ''}</div>`).join('');
+  const rules = s ? [`Production targets use ${s.weeks} planning weeks / ${s.workingDays} working days.`, `Dues Cr is collected Monday–Saturday; target ≥${s.duesCrFloor}% every day.`, `Performing loans must stay ≥${s.performingLoans} throughout the month.`,
+    `PAR must remain below ${s.parCeilingPct}% throughout the month.`, `BQ ≥${s.bookQualityPct}%, Active Clients ≥${s.activeClients} and Clean Active Clients ≥${s.cleanActiveClients} throughout.`, `MTD arrears must remain ≤KSh ${fmtNum(s.mtdArrearsCeiling)} at all times.`,
+    `Current-month GC ≥${s.currentGcFloor}% and previous-month GC ≥${s.previousGcFloor}% daily.`, `Arrears reduction: ≥${s.arrearsReductionPct}% monthly; pace ≥${Math.round(s.arrearsReductionPct / s.workingDays * 10) / 10}% cumulative per working day.`] : [];
+  return `<div class="card perf-card">
+    ${perfHeader('LOAN OFFICER TARGETS', `${d.officer.name} · Monthly • Weekly • Daily Control Plan · ${perfMonthLabel(d.month)}`, (self ? '' : perfBackBtn('Back')) + perfMonthPicker() + perfPrintBtn())}
+    ${perfTiles([['On track', `${d.onTrack} / ${d.total}`, d.scorePct >= 75 ? 'green' : d.scorePct >= 50 ? 'amber' : 'red'], ['Working day', `${d.workingDaysElapsed} of ${d.workingDays}`, 'blue'], ['Planning week', `${d.currentWeek}`, 'blue'], ['Loans this month', fmtNum(by('totalLoans').actual), 'amber']])}
+    ${perfTable('Control plan', ['KPI', 'Month', 'Week', 'Day', 'Control', 'Due by today', 'Actual', 'Status'], rows)}
+    ${d.targetsFromTargetsPage.length ? `<div class="perf-rule">Targets set on Targets & Accruals are used for: ${escapeHtml(d.targetsFromTargetsPage.join(', ').replace(/_/g, ' '))}.</div>` : ''}
+    <div class="perf-sec">KEY OPERATING RULES</div><ul class="perf-rules">${rules.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+    <div class="perf-cps"><div class="perf-sec" style="margin-top:0;">WEEKLY CUMULATIVE CHECKPOINTS</div>${cp}</div>
+  </div>`;
+}
+
 function renderReports(){
   if(session.role === "Investor") return renderInvestorReports();
+  if(PERF_PAGES.includes(session.subtab)) return renderPerfReport(session.subtab);
   if(!DB.reportsData) loadReportsData();
   const d = DB.reportsData;
   const cards = [

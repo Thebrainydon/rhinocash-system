@@ -8322,6 +8322,21 @@ apiRequest = async function(method, path, body){
     __assert(String(printReceiptSheet).includes('/api/receipts/mark-printed'), "downloading receipts marks them printed");
   }
 
+  // ---- Performance & Targets reports ----
+  {
+    for (const role of ['Manager', 'Regional Manager', 'Operational Manager', 'CEO', 'Director', 'Admin']) {
+      const sec = (SIDEBAR_MENUS[role] || []).find(x => x.section === 'Performance & Targets');
+      __assert(sec && ['Disbursement Report', 'Branch Performance Report', 'MTD Disbursement Performance', 'Officer Targets'].every(i => sec.items.includes(i)), `${role} has the Performance & Targets reports`);
+    }
+    __assert((SIDEBAR_MENUS['Loan Officer'].find(x => x.section === 'Performance & Targets') || { items: [] }).items.join() === 'My Targets', "a Loan Officer only has My Targets");
+    __assert(PERF_PAGES.every(p => resolveRoute(p) && resolveRoute(p).section === 'reports'), "every report page opens inside Reports");
+    __assert(perfAch(99.7) === '99.7%' && perfAch(100) === '100%' && perfAch(61.2) === '61%', "achievement just under 100% is never shown as 100%");
+    for (const fn of [renderPerfDisbursement, renderPerfBranchPerformance, renderPerfMtd, renderPerfBranch, renderPerfOfficers, renderPerfOfficerPlan]) {
+      __assert(String(fn).includes('perfPrintBtn()') && String(fn).includes('perfTable('), `${fn.name} has Print and a Generate-able table`);
+    }
+    __assert(String(renderPerfDisbursement).includes("perfState().branchId=") && String(renderPerfBranch).includes("perfState().officerId="), "branch rows drill down to the branch page, and officers to their control plan");
+  }
+
   // ---- Business Quality (Performance KPI formulas) ----
   {
     __assert(BQ_FORMULAS.map(f => `${f.title} = ${f.formula}`).join(' | ') === 'Arrears Collection % = (Arrears Collected ÷ Current Arrears) × 100 | Disbursement Counts % = (Disbursement Counts ÷ Target) × 100 | Portfolio Quality (Book Quality – BQ) % = (Performing Loans ÷ Active Clients) × 100', "the three Performance KPI formulas are shown exactly");

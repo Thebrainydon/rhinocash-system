@@ -329,6 +329,7 @@ router.delete('/api/users/me/avatar', async (req, res, next) => {
   './src/routes/menuPermissions',
   './src/routes/geo',
   './src/routes/kpi',
+  './src/routes/perfReports',
 ].forEach(mod => require(mod).register(router));
 
 const server = http.createServer((req, res) => {
