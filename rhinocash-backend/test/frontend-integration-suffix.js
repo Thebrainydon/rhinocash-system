@@ -3508,7 +3508,7 @@ apiRequest = async function(method, path, body){
     // real sidebar now legitimately has a "Active Loans" item label (under
     // Portfolio, per the real menu spec) — that's a navigation label, not a
     // staff-level KPI leaking into the actual Reports page body.
-    const investorReportsContent = html.split('<div class="content">')[1] || html;
+    const investorReportsContent = html.split('<div class="content')[1] || html;
     __assert(!investorReportsContent.includes('Active Loans'), "Investor's Reports page never shows staff-level portfolio KPIs");
 
     // Real API-level scope enforcement, not just UI hiding.
@@ -8106,7 +8106,7 @@ apiRequest = async function(method, path, body){
     __assert(bands[0].n === 1 && bands[0].amt === 100 && bands[1].n === 0 && bands[2].n === 1 && bands[2].amt === 200, "arrears fall into the right ageing band");
     __assert(/function renderAdvancedDashboard[\s\S]*?dashOpsSummary\(st, null/.test(__srcForBanCheck) && /function renderRegionalManagerDashboard[\s\S]*?dashOpsSummary\(/.test(__srcForBanCheck), "the Operational and Regional Manager dashboards show the same payment, staff and ageing tiles");
     __assert(__rawIndexHtml.includes('.adm-head .ac-eyebrow, .adm-head .adm-sub') && __rawIndexHtml.includes('display:none !important'), "page eyebrows and subtitles are hidden — one heading per page");
-    __assert(typeof tidyPageLayout === 'function' && /tidyPageLayout\(\)/.test(__srcForBanCheck.slice(__srcForBanCheck.indexOf('wireFilterRowScrollSync();'))), "every render moves '+ New' buttons into the table toolbar and labels action columns");
+    __assert(typeof tidyPageLayout === 'function' && /tidyPageLayout\(\);[^\n]*\n\s*initPendingCharts\(\);/.test(__srcForBanCheck), "every render moves '+ New' buttons into the table toolbar and labels action columns");
     __assert(/\.sidebar\{ position:fixed;[^}]*transform:translateX\(-100%\)/.test(__rawIndexHtml) && __rawIndexHtml.includes(".hamburger{ display:inline-flex; }"), "the sidebar is a drawer opened from the menu button on every screen size");
     __assert(__rawIndexHtml.includes("m.setAttribute('content', 'width=1180')"), "phones show the desktop layout");
     __assert(typeof otpConfirm === 'function' && (await otpConfirm('x')) === null, "the OTP dialog exists and resolves to nothing without a real page");
@@ -8115,6 +8115,36 @@ apiRequest = async function(method, path, body){
     }
     const otpRes = await api.post('/api/otp/request', {}).catch(e => e);
     __assert(otpRes && (otpRes.status || otpRes.otpForTesting !== undefined || otpRes.message), "the OTP request endpoint answers");
+  }
+
+  // ---- Cards → drill-down View pages, richer tables, charts below tables ----
+  {
+    const recs = [{ id:'r1', title:'Test record', status:'Pending', createdByName:'Jane', createdAt:'2026-10-01T10:00:00Z', details:'Some detail', data:{ source:'Bank' } }];
+    const t = dirTable('Records', recs, [['Title', r => escapeHtml(r.title)]], 'none');
+    __assert(t.includes('>Status<') && t.includes('>Recorded by<') && t.includes('>Recorded<'), "record tables gain Status, Recorded by and Recorded columns when the page leaves them out");
+    __assert(/onclick="openRecordView\(\d+\)"/.test(t) && t.includes('Action​'), "every record row gets a View button in the last Action column");
+    const id = Number(t.match(/openRecordView\((\d+)\)/)[1]);
+    session.section = 'director'; session.subtab = 'X'; openRecordView(id);
+    const page = renderSection();
+    __assert(page.includes('rv-table') && page.includes('Some detail') && page.includes('Bank') && page.includes('closeRecordView()'), "View opens the record as its own page with every field and a Back button");
+    closeRecordView();
+    __assert(!session.recordView, "Back closes the record page");
+    const bd = dirTable('By Branch', [{ k:'A', due:1000, got:600 }, { k:'B', due:500, got:500 }], [['Branch', r => r.k], ['Due', r => fmt(r.due)], ['Collected', r => fmt(r.got)]], 'none');
+    __assert(bd.includes('>Shortfall<') && bd.includes('KES 400') && bd.includes('>Share<'), "breakdown tables gain Shortfall and Share columns");
+    const at = admTable(['Product','Loans','Amount'], [['P1', 2, fmt(10000)], ['P2', 1, fmt(30000)]]);
+    __assert(at.includes('>Average<') && at.includes('>Share<') && at.includes('75.0%'), "admin breakdown tables gain Average and Share columns");
+    const kv = admTable(['When','Setting','Changed by'], [['x','y','z']]);
+    __assert(!kv.includes('>Share<'), "record lists are left alone");
+    const c1 = diversifyChart({ type:'bar', data:{ labels:['A','B','C'], datasets:[{ data:[1,2,3] }] }, options:{} }, 1, 'bar');
+    __assert(c1.type !== 'bar' && c1.type !== 'doughnut', "chart types vary on a page and never become a donut");
+    const c2 = diversifyChart({ type:'bar', data:{ labels:['A','B'], datasets:[{ data:[1,2] }] }, options:{ indexAxis:'y' } }, 1, null);
+    __assert(c2.type === 'bar', "horizontal / stacked charts keep their designed type");
+    const c3 = diversifyChart({ type:'doughnut', data:{ labels:['A','B'], datasets:[{ data:[1,2] }] }, options:{} }, 0, null);
+    __assert(c3.type !== 'doughnut', "a donut is always replaced");
+    __assert(typeof moveChartsBelowTables === 'function' && /moveChartsBelowTables\(/.test(String(tidyPageLayout)), "every page moves its charts below its tables");
+    const pt = paymentsTable([{ id:'p1', reference:'REF1', amount:500, channel:'Cash', status:'Posted', date:'2026-10-01T10:00:00Z', allocated:{ principal:400, interest:100, penalty:0 } }]);
+    for (const h of ['Branch','Loan Officer','Principal','Interest','Penalty','Recorded by','Action']) __assert(pt.includes(`<th>${h}</th>`), `the payments table shows ${h}`);
+    __assert(pt.includes('openRecordView(') && pt.includes('Receipt'), "each payment row has View and Receipt actions");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

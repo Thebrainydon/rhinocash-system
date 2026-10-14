@@ -185,6 +185,30 @@ body{
 .adm-flow-arrow{color:var(--blue); font-weight:800; font-size:18px;}
 .adm-kv{display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; flex-wrap:wrap;}
 .adm-kv span{color:var(--ink-soft); font-weight:700;}
+/* Summary figures: one slim strip instead of a card full of small cards. */
+.card:has(> .adm-tiles):not(:has(table, canvas, form, svg[viewBox])){background:transparent; border:none; padding:0; box-shadow:none;}
+.card:has(> .adm-tiles):not(:has(table, canvas, form, svg[viewBox])) > .card-title{display:none;}
+.adm-tiles{display:flex; flex-wrap:wrap; gap:0; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:16px; box-shadow:0 1px 2px rgba(16,24,40,0.04);}
+.adm-tile{flex:1 1 150px; border:none; border-right:1px solid var(--line); border-radius:0; padding:12px 16px 12px 20px; background:transparent; position:relative; min-width:0;}
+.adm-tile:last-child{border-right:none;}
+.adm-tile::before{content:""; position:absolute; left:8px; top:14px; bottom:14px; width:3px; border-radius:3px; background:#2E5C8A;}
+.adm-tile:nth-child(5n+2)::before{background:#2A9D8F;} .adm-tile:nth-child(5n+3)::before{background:#E9A23B;} .adm-tile:nth-child(5n+4)::before{background:#E76F51;} .adm-tile:nth-child(5n+5)::before{background:#7B5EA7;}
+.adm-tile-label{font-size:10.5px;} .adm-tile-value{font-size:19px;} .adm-tile .hint{font-size:11px; margin-top:2px;}
+.content:not(.sec-dashboard) .kpi-tile-grid, .content:not(.sec-dashboard) .kpi-grid{display:flex; flex-wrap:wrap; gap:0; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:16px;}
+.content:not(.sec-dashboard) .kpi-tile-grid .kpi, .content:not(.sec-dashboard) .kpi-grid .kpi{flex:1 1 150px; background:transparent !important; color:var(--ink); border-radius:0; border-right:1px solid var(--line); padding:12px 16px;}
+.content:not(.sec-dashboard) .kpi-tile-grid .kpi:last-child, .content:not(.sec-dashboard) .kpi-grid .kpi:last-child{border-right:none;}
+.content:not(.sec-dashboard) .kpi-tile-grid .kpi-label, .content:not(.sec-dashboard) .kpi-grid .kpi-label{color:var(--ink-soft) !important; opacity:1;}
+.content:not(.sec-dashboard) .kpi-tile-grid .kpi-value, .content:not(.sec-dashboard) .kpi-grid .kpi-value{color:var(--blue) !important; font-size:19px;}
+.content:not(.sec-dashboard) .kpi-tile-grid .kpi .hint, .content:not(.sec-dashboard) .kpi-grid .kpi .hint, .content:not(.sec-dashboard) .kpi-tile-grid .kpi-delta{color:var(--ink-faint) !important;}
+/* Record page opened from a row's View button */
+.rv-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+.rv-head .adm-title{flex:1; min-width:0;}
+table.rv-table th{width:32%; text-align:left; background:var(--blue-bg, #EEF3FA); color:var(--navy); font-size:12px; text-transform:uppercase; letter-spacing:0.3px; vertical-align:top;}
+table.rv-table td{vertical-align:top;}
+.rv-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);}
+.chart-grid{display:grid; grid-template-columns:1fr; gap:0 16px; margin-top:4px;}
+@media (min-width:900px){ .chart-grid{grid-template-columns:1fr 1fr;} .chart-grid > :only-child{grid-column:1 / -1;} }
+.chart-grid > .card{min-width:0;}
 .adm-two{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;}
 .adm-bar{height:8px; background:var(--blue-bg); border-radius:4px; min-width:80px; overflow:hidden;} .adm-bar span{display:block; height:100%; background:var(--blue);}
 .adm-steps{margin:0 0 10px 18px; padding:0; font-size:13px; line-height:1.7;}
@@ -2383,7 +2407,7 @@ function pieChartSvg(data, size){
     const [x2,y2] = polarPoint(cx,cy,r,end);
     paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${d.color}" stroke="var(--card)" stroke-width="1.5"></path>`;
   });
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
+  return `<svg class="chart-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
 }
 function pieLegend(data){
   const total = data.reduce((s,d)=>s+d.value,0) || 1;
@@ -2419,7 +2443,7 @@ function lineChart(points, opts){
   const dots = coords.map((c,i)=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="2.5" fill="var(--navy)"><title>${escapeHtml(points[i].label)}: ${fmt(points[i].value)}</title></circle>`).join("");
   const labelEvery = Math.max(1, Math.ceil(points.length/7));
   const labels = points.map((p,i)=> i%labelEvery===0 ? `<text x="${coords[i][0].toFixed(1)}" y="${h-4}" font-size="9" fill="var(--ink-faint)" text-anchor="middle">${escapeHtml(p.label)}</text>` : "").join("");
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="max-width:${w}px;">
+  return `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="max-width:${w}px;">
     <path d="${area}" fill="rgba(31,56,100,0.08)"></path>
     <path d="${path}" fill="none" stroke="var(--navy)" stroke-width="2"></path>
     ${dots}${labels}
@@ -2905,12 +2929,38 @@ function registerChart(id, config){ window.__pendingCharts.push({ id, config });
 // staying fixed in place while only the table underneath scrolls. Synced
 // proportionally (by scroll fraction, not raw pixels) since the filter
 // row and the table are generally different total widths.
+// Charts sit under the tables on every page: chart-only blocks are moved to
+// the end of the page, laid out two per row.
+function moveChartsBelowTables(root){
+  if(!root || typeof root.querySelectorAll !== 'function') return;
+  const tables = root.querySelectorAll('table'); if(!tables.length) return;
+  const lastTable = tables[tables.length - 1];
+  const CH = 'canvas, svg.chart-svg';
+  const isUnit = el => el.querySelector(CH) && !el.querySelector('table, form, input, select, textarea, .fp-body') && !el.closest('.dash-hero-profile, .fp-body, .rv-table');
+  const units = [];
+  root.querySelectorAll('.card').forEach(cd => {
+    if(!isUnit(cd) || units.some(u => u.contains(cd))) return;
+    if(!(cd.compareDocumentPosition(lastTable) & Node.DOCUMENT_POSITION_FOLLOWING)) return; // already below the tables
+    units.push(cd);
+  });
+  root.querySelectorAll('.card').forEach(cd => {
+    const tws = [...cd.children].filter(k => k.matches('.table-wrap') || k.querySelector(':scope > table') || k.tagName === 'TABLE');
+    if(!tws.length) return;
+    const lastTw = tws[tws.length - 1];
+    [...cd.children].forEach(k => { if(k.querySelector && k.querySelector(CH) && !k.querySelector('table') && (k.compareDocumentPosition(lastTw) & Node.DOCUMENT_POSITION_FOLLOWING) && !units.includes(k)) cd.appendChild(k); });
+  });
+  if(!units.length) return;
+  const grid = document.createElement('div'); grid.className = 'chart-grid';
+  units.forEach(u => { const wrap = u.parentNode; grid.appendChild(u); if(wrap && wrap.classList && wrap.classList.contains('adm-two') && !wrap.children.length) wrap.parentNode.removeChild(wrap); });
+  root.appendChild(grid);
+}
 // After each render: hide descriptive card subtitles (keeping short figures
 // such as "3 at Likoni"), and move every "+ New" form button into the
 // toolbar of the table it adds to, next to that table's filters/Generate.
 function tidyPageLayout(){
   if(typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
   const content = document.querySelector('.content'); if(!content || typeof content.querySelectorAll !== 'function') return;
+  if(session.section !== 'dashboard') moveChartsBelowTables(content.querySelector('.adm-page') || content);
   content.querySelectorAll('.card-title small').forEach(sm => {
     const t = (sm.textContent || '').trim();
     if(t.split(/\s+/).length > 3 && !/\d/.test(t)) sm.classList.add('desc-hidden');
@@ -2928,7 +2978,8 @@ function tidyPageLayout(){
     const bar = fp.querySelector(':scope > .fp-bar'); if(!bar) return;
     const btn = bar.querySelector('button'); if(!btn) return;
     let card = fp.nextElementSibling;
-    while(card && !(card.classList.contains('card') && card.querySelector('table'))){
+    const isList = el => el.classList.contains('card') && (el.querySelector('table') || (el.querySelector('.card-title') && el.querySelector('.empty, .gen-dd, select')) ) && !el.querySelector('canvas, form');
+    while(card && !isList(card)){
       if(card.classList.contains('fp')) { card = null; break; }
       card = card.nextElementSibling;
     }
@@ -2959,11 +3010,56 @@ function wireFilterRowScrollSync(){
     pill.addEventListener('scroll', ()=>{ if(syncing) return; syncing=true; mirror(pill, tw); syncing=false; });
   });
 }
+// Pages (not dashboards) mix chart types so no two neighbouring charts look
+// alike: trends alternate filled line / bars; small category breakdowns
+// rotate bar, pie, polar area and radar. Stacked, horizontal, combined and
+// dual-axis charts keep the type they were designed with. Never a donut.
+const CHART_TIME_LABEL = /^(\d{4}-\d{2}(-\d{2})?|\d{1,2}|\d{1,2}[\s\/-]\w{3}|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*(\s\d{2,4})?|w(ee)?k\s?\d+|q[1-4](\s\d{4})?|(mon|tue|wed|thu|fri|sat|sun)\w*)$/i;
+function chartAlpha(hex, a){ const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '')); if(!m) return hex; const n = parseInt(m[1], 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function diversifyChart(cfg, n, prevType){
+  if(!cfg || !cfg.data || cfg.keepType) return cfg;
+  if(cfg.type === 'doughnut') cfg.type = 'pie';
+  const ds = cfg.data.datasets || [], labels = cfg.data.labels || [], o = cfg.options || (cfg.options = {});
+  const sc = o.scales || {};
+  if(o.indexAxis === 'y' || (sc.x && sc.x.stacked) || (sc.y && sc.y.stacked) || sc.y1 || ds.some(d => d.type) || !ds.length) return cfg;
+  const timeish = labels.length >= 3 && labels.filter(l => CHART_TIME_LABEL.test(String(l).trim())).length >= labels.length * 0.6;
+  const single = ds.length === 1, nonneg = ds.every(d => (d.data || []).every(v => Number(v) >= 0));
+  let pool;
+  if(['bar','line'].includes(cfg.type)){
+    if(timeish) pool = ['line', 'bar'];
+    else if(single && nonneg && labels.length >= 2 && labels.length <= 8) pool = ['bar', 'pie', 'polarArea', 'radar'];
+    else if(labels.length >= 3 && labels.length <= 10) pool = ['bar', 'radar'];
+    else return cfg;
+  } else if(['pie','polarArea'].includes(cfg.type)) pool = ['pie', 'polarArea'];
+  else return cfg;
+  const order = pool.map((_, i) => pool[(n + i) % pool.length]);
+  const t = order.find(x => x !== prevType) || order[0];
+  const pal = typeof ADM_PALETTE !== 'undefined' ? ADM_PALETTE : ['#2E5C8A','#2A9D8F','#E9C46A','#F4A261','#E76F51'];
+  const baseColor = (d, i) => (Array.isArray(d.borderColor) ? d.borderColor[0] : d.borderColor) || (Array.isArray(d.backgroundColor) ? d.backgroundColor[0] : d.backgroundColor) || pal[i % pal.length];
+  cfg.type = t;
+  if(t === 'pie' || t === 'polarArea'){
+    ds.forEach(d => { d.backgroundColor = labels.map((_, j) => t === 'polarArea' ? chartAlpha(pal[j % pal.length], 0.75) : pal[j % pal.length]); d.borderColor = '#fff'; d.borderWidth = 1; delete d.fill; });
+    delete o.scales; o.plugins = Object.assign({ legend: { position: 'right' } }, o.plugins || {});
+  } else if(t === 'radar'){
+    ds.forEach((d, i) => { const c = baseColor(d, i); d.borderColor = c; d.backgroundColor = chartAlpha(c, 0.22); d.pointBackgroundColor = c; d.fill = true; });
+    o.scales = { r: { beginAtZero: true, ticks: { precision: 0, backdropColor: 'transparent' } } };
+  } else if(t === 'line'){
+    ds.forEach((d, i) => { const c = baseColor(d, i); d.borderColor = c; d.backgroundColor = chartAlpha(c, 0.18); d.fill = true; d.tension = 0.35; d.pointRadius = 3; d.pointBackgroundColor = c; });
+    o.scales = Object.assign({ y: { beginAtZero: true } }, o.scales && !o.scales.r ? o.scales : {});
+  } else {
+    ds.forEach((d, i) => { const c = baseColor(d, i); d.backgroundColor = c; d.borderColor = c; d.borderRadius = 4; delete d.fill; });
+    o.scales = Object.assign({ y: { beginAtZero: true } }, o.scales && !o.scales.r ? o.scales : {});
+  }
+  return cfg;
+}
 function initPendingCharts(){
   const pending = window.__pendingCharts; window.__pendingCharts = [];
-  pending.forEach(({id, config})=>{
+  const vary = session.section !== 'dashboard';
+  let prevType = null;
+  pending.forEach(({id, config}, n)=>{
     const canvas = document.getElementById(id);
     if(!canvas) return;
+    if(vary){ config = diversifyChart(config, n, prevType); prevType = config && config.type; }
     if(window.__chartInstances[id]){ window.__chartInstances[id].destroy(); delete window.__chartInstances[id]; }
     try{ window.__chartInstances[id] = new Chart(canvas, config); }catch(e){ console.error('Chart init failed', id, e); }
   });
@@ -3119,16 +3215,16 @@ function renderApp(){
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')" style="${DB.myAvatarDataUri?'padding:0; overflow:hidden;':''}">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`:session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
-        <div class="content">${renderSection()}</div>
+        <div class="content sec-${escapeHtml(String(session.section||""))}">${renderSection()}</div>
       </div>
     </div>
     <div class="toast-wrap">${toasts.map(t=>`<div class="toast${t.type==='success'?' toast-success':''}">${escapeHtml(t.msg)}</div>`).join("")}</div>
     <div class="toast-wrap-center">${centerToasts.map(t=>`<div class="toast-center${t.type==='success'?' toast-center-success':' toast-center-done'}">${escapeHtml(t.msg)}</div>`).join("")}</div>
     ${modal ? renderModal() : ""}
   `;
+  try{ tidyPageLayout(); }catch(e){ console.error(e); }
   initPendingCharts();
   wireFilterRowScrollSync();
-  try{ tidyPageLayout(); }catch(e){ console.error(e); }
   initSignatureCanvas();
 }
 
@@ -3616,7 +3712,7 @@ function goTo(section, subtab){
     toast("Access denied — you don't have permission to view this section.");
     session.sidebarOpen = false; renderApp(); return;
   }
-  session.section=section; session.subtab=subtab||null; session.sidebarOpen=false;
+  session.section=section; session.subtab=subtab||null; session.sidebarOpen=false; session.recordView=null;
   // Records this real navigation in the browser's own history so the
   // phone's back button walks back through it, instead of falling through
   // to the browser's default (a reload that wipes the in-memory session).
@@ -3670,7 +3766,52 @@ function toggleSideSection(label){
 }
 
 
+// ---- Row drill-down: a "View" button on a table row opens the record as
+// its own page (every field, the row's actions, and a Generate export). ----
+const viewJobs = new Map(); let viewJobSeq = 0;
+const VIEW_LABELS = { title:'Title', details:'Details', category:'Category', priority:'Priority', status:'Status', branchName:'Branch', branchId:'Branch', ownerName:'Assigned to', dueDate:'Due', startDate:'Start', amount:'Amount', score:'Score', outcome:'Outcome', createdByName:'Recorded by', createdAt:'Recorded on', updatedAt:'Last updated', decidedByName:'Decided by', decidedAt:'Decided on', refName:'Concerns', refType:'Type', period:'Period', subject:'Subject', kind:'Record type' };
+const viewHuman = k => VIEW_LABELS[k] || String(k).replace(/^data\./, '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+function viewValue(k, v){
+  if(v == null || v === '') return null;
+  if(typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if(typeof v === 'number') return /amount|balance|value|cost|salary|budget|principal|paid|total/i.test(k) ? fmt(v) : String(v);
+  if(typeof v !== 'string') return null;
+  if(/^\d{4}-\d{2}-\d{2}T/.test(v)) return new Date(v).toLocaleString('en-KE');
+  if(k === 'branchId') return escapeHtml(branchName(v) || v);
+  return escapeHtml(v).replace(/\n/g, '<br>');
+}
+// Fields of a record that are worth showing on its page, skipping ids/internals.
+function recordViewFields(r){
+  const out = []; if(!r || typeof r !== 'object') return out;
+  const skip = /^(id|_|__)|Id$|^(createdBy|updatedBy|ownerId|relatedId|isOpen|data|raw)$/;
+  Object.keys(r).forEach(k => { if(k === 'branchId' && r.branchName) return; if(skip.test(k) && k !== 'branchId') return; const v = viewValue(k, r[k]); if(v != null) out.push([viewHuman(k), v]); });
+  if(r.data && typeof r.data === 'object') Object.keys(r.data).forEach(k => { const v = viewValue(k, r.data[k]); if(v != null) out.push([viewHuman(k), v]); });
+  return out;
+}
+function viewButtonHtml(title, fields, actionsHtml, badge){
+  const id = ++viewJobSeq; viewJobs.set(id, { title, fields, actionsHtml: actionsHtml || '', badge: badge || '' });
+  if(viewJobs.size > 3000) viewJobs.delete(viewJobs.keys().next().value);
+  return `<button type="button" class="btn btn-sm btn-outline" onclick="openRecordView(${id})">View</button>`;
+}
+function openRecordView(id){
+  const v = viewJobs.get(id); if(!v) return;
+  session.recordView = Object.assign({ section: session.section, subtab: session.subtab }, v);
+  if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
+  renderApp();
+}
+function closeRecordView(){ session.recordView = null; renderApp(); }
+function renderRecordView(v){
+  const rows = v.fields.filter(f => f[1] != null && String(f[1]).trim() !== '' && String(f[1]).trim() !== '—');
+  return `<div class="adm-page">
+    <div class="card adm-head rv-head"><button type="button" class="btn btn-sm btn-outline" onclick="closeRecordView()">← Back</button>
+      <h2 class="adm-title">${escapeHtml(dirPlain(v.title) || 'Details')}</h2>${v.badge || ''}</div>
+    <div class="card"><div class="card-title"><span>Details</span>${generateMenuHtml(dirPlain(v.title) || 'Details', () => ({ headers: ['Field', 'Value'], rows: rows.map(f => [dirPlain(f[0]), dirPlain(f[1])]) }))}</div>
+      <div class="table-wrap"><table class="rv-table">${rows.map(f => `<tr><th>${escapeHtml(dirPlain(f[0]))}</th><td>${f[1]}</td></tr>`).join('') || '<tr><td class="empty">Nothing more recorded.</td></tr>'}</table></div>
+      ${v.actionsHtml && dirPlain(v.actionsHtml) ? `<div class="rv-actions">${v.actionsHtml}</div>` : ''}
+    </div></div>`;
+}
 function renderSection(){
+  if(session.recordView && session.recordView.section === session.section && session.recordView.subtab === session.subtab) return renderRecordView(session.recordView);
   if(session.printLoanScheduleId) return renderLoanSchedulePrint(session.printLoanScheduleId);
   switch(session.section){
     case "dashboard": return renderDashboard();
@@ -4974,7 +5115,25 @@ const admDuration = s => { s = Number(s)||0; const d=Math.floor(s/86400), h=Math
 function admTile(label, value, hint){
   return `<div class="adm-tile"><div class="adm-tile-label">${escapeHtml(label)}</div><div class="adm-tile-value">${value}</div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
+// Breakdown tables (rows per branch / officer / product / month …) gain the
+// figures a reader would otherwise work out: shortfall, average and share.
+const BREAKDOWN_FIRST = /^(branch|officer|loan officer|staff|product|month|region|channel|status|category|bucket|how late|type|department|day|week|quarter|year|period|source|area|investor|group|holder|class|line|item|stage|segment|purpose|gender|age)/i;
+function admDeriveCols(headers, rows){
+  if(!rows.length || !BREAKDOWN_FIRST.test(String(headers[0] || '').trim())) return [headers, rows];
+  const H = headers.map(h => String(h || '')); const heads = H.join('|').toLowerCase();
+  const idx = re => H.findIndex(h => re.test(h));
+  const num = (r, i) => { const n = parseFloat(dirPlain(r[i]).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : 0; };
+  const due = idx(/^(due|expected)\b/i), got = idx(/^collected\b/i), money = idx(/amount|outstanding|collected|arrears|balance|principal|portfolio|exposure|owed|disbursed|capital|budget|spent|income|revenue|expense/i), cnt = idx(/^(loans|count|payments|clients|requests|no\. of)/i);
+  const extra = [];
+  if(due >= 0 && got >= 0 && !/shortfall|gap|variance/.test(heads)) extra.push(['Shortfall', r => fmt(Math.max(0, num(r, due) - num(r, got)))]);
+  if(money >= 0 && cnt >= 0 && !/average|avg/.test(heads) && /kes/i.test(dirPlain(rows[0][money]))) extra.push(['Average', r => { const n = num(r, cnt); return n ? fmt(num(r, money) / n) : '—'; }]);
+  if(money >= 0 && !/share|%|rate|ratio|achievement|par|position/.test(heads)){ const total = rows.reduce((t, r) => t + Math.max(0, num(r, money)), 0); if(total > 0) extra.push(['Share', r => (Math.max(0, num(r, money)) / total * 100).toFixed(1) + '%']); }
+  if(!extra.length) return [headers, rows];
+  const actAt = H.length && !H[H.length - 1].trim() ? H.length - 1 : H.length;
+  return [H.slice(0, actAt).concat(extra.map(e => e[0]), H.slice(actAt)), rows.map(r => r.slice(0, actAt).concat(extra.map(e => e[1](r)), r.slice(actAt)))];
+}
 function admTable(headers, rows, emptyText){
+  [headers, rows] = admDeriveCols(headers, rows || []);
   return `<div class="table-wrap"><table><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr>
     ${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${c==null||c===''?'—':c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty">${escapeHtml(emptyText||'Nothing recorded yet.')}</td></tr>`}</table></div>`;
 }
@@ -7582,9 +7741,43 @@ const dirCanWrite = () => ['Director','CEO'].includes(session.role);
 const dirGuard = (...v) => { if(admPending(...v)) return admLoading(); const f = admFailed(...v); return f ? admError(f.__error) : null; };
 const dirGen = (title, headers, rows) => generateMenuHtml(title, () => ({ headers, rows }));
 const dirPlain = v => String(v == null ? '' : v).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+// Common record facts a table should not leave out (status, who recorded it
+// and when), added when the page's own columns don't already cover them.
+function dirAutoCols(list, cols){
+  const heads = cols.map(c => String(c[0] || '').toLowerCase()).join('|');
+  const has = k => list.some(r => r && typeof r === 'object' && r[k] != null && r[k] !== '');
+  const add = [];
+  if(has('status') && !/status|state|stage/.test(heads) && list.some(r => typeof r.status === 'string')) add.push(['Status', r => r.status ? statusBadge(r.status) : '—']);
+  if(has('createdByName') && !/\bby\b|raised|owner|lead|presenter|directed|recorded|staff|employee/.test(heads)) add.push(['Recorded by', r => escapeHtml(r.createdByName || '—')]);
+  if(has('createdAt') && !/recorded|created|raised on|submitted|logged|when/.test(heads)) add.push(['Recorded', r => r.createdAt ? escapeHtml(new Date(r.createdAt).toLocaleDateString('en-KE')) : '—']);
+  // Breakdown tables (branch / officer / product / month rows) get the
+  // figures a reader works out by hand: shortfall, average and share.
+  if(list.length && !list.some(r => r && r.id)){
+    const num = (c, r) => { const t = dirPlain(c[1](r)).replace(/[^0-9.\-]/g, ''); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
+    const H = cols.map(c => String(c[0] || ''));
+    const find = re => cols[H.findIndex(h => re.test(h))];
+    const due = find(/^(due|expected)\b/i), got = find(/^collected\b/i), money = find(/amount|outstanding|collected|arrears|balance|principal|portfolio|exposure|owed|disbursed|value|capital|budget|spent/i), cnt = find(/^(loans|count|payments|clients|requests)\b/i);
+    if(due && got && !/shortfall|gap|variance/.test(heads)) add.push(['Shortfall', r => fmt(Math.max(0, num(due, r) - num(got, r)))]);
+    if(money && cnt && !/average|avg/.test(heads) && /kes|amount|principal|outstanding|disbursed/i.test(money[0] + ' ' + dirPlain(money[1](list[0])))) add.push(['Average', r => { const n = num(cnt, r); return n ? fmt(num(money, r) / n) : '—'; }]);
+    if(money && !/share|%|rate|ratio|achievement|par/.test(heads)){ const total = list.reduce((t, r) => t + Math.max(0, num(money, r)), 0); if(total > 0) add.push(['Share', r => (Math.max(0, num(money, r)) / total * 100).toFixed(1) + '%']); }
+  }
+  return add;
+}
+const DIR_ACT_HEAD = 'Action\u200b'; // the row-actions column (distinct from data columns named "Action")
 function dirTable(title, list, cols, empty, extra){
-  const headers = cols.map(c => c[0]).filter(Boolean);
-  return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${list.length}</small></span>${dirGen(title, headers, list.map(r => cols.filter(c => c[0]).map(c => dirPlain(c[1](r)))))}</div>${extra || ''}
+  list = list || [];
+  const actIdx = cols.findIndex(c => !c[0]);
+  const base = actIdx >= 0 ? cols.filter((_, i) => i !== actIdx) : cols;
+  const actFn = actIdx >= 0 ? cols[actIdx][1] : null;
+  const withView = list.some(r => r && typeof r === 'object' && r.id);
+  cols = base.concat(dirAutoCols(list, base));
+  if(actFn || withView) cols = cols.concat([[DIR_ACT_HEAD, r => {
+    const acts = actFn ? actFn(r) : '';
+    const view = r && r.id ? viewButtonHtml(dirPlain(cols[0] ? cols[0][1](r) : '') || title, cols.filter(c => c[0] !== DIR_ACT_HEAD).map(c => [c[0], c[1](r)]).concat(recordViewFields(r).filter(f => !cols.some(c => c[0] === f[0]))), acts, r.status ? statusBadge(r.status) : '') : '';
+    return (view || acts) ? `<div class="dt-act">${view}${acts || ''}</div>` : '';
+  }]]);
+  const headers = cols.map(c => c[0]).filter(h => h && h !== DIR_ACT_HEAD);
+  return `<div class="card"><div class="card-title"><span>${escapeHtml(title)} <small>${list.length}</small></span>${dirGen(title, headers, list.map(r => cols.filter(c => c[0] && c[0] !== DIR_ACT_HEAD).map(c => dirPlain(c[1](r)))))}</div>${extra || ''}
     ${admTable(cols.map(c => c[0]), list.map(r => cols.map(c => c[1](r))), empty)}</div>`;
 }
 const dirTiles = t => `<div class="card"><div class="card-title">Overview</div><div class="adm-tiles">${t.map(x => admTile(x[0], x[1], x[2])).join('')}</div></div>`;
@@ -18258,9 +18451,12 @@ function renderPortfolioMonitoring(){
     </div>
     <div class="card">
       <div class="card-title">Loans by Status</div>
-      <div class="table-wrap"><table><tr><th>Status</th><th>Count</th></tr>
-      ${Object.entries(byStatus).map(([s,c])=>`<tr><td>${statusBadge(s)}</td><td>${c}</td></tr>`).join("")}</table></div>
+      <div class="table-wrap"><table><tr><th>Status</th><th>Loans</th><th>Share</th><th>Principal</th><th>Outstanding</th><th>In Arrears</th><th>Average Size</th><th>Branches</th><th>Action</th></tr>
+      ${Object.entries(byStatus).map(([st,c])=>{ const L = DB.loans.filter(l=>l.status===st); const prin = L.reduce((t,l)=>t+l.principal,0); const out = L.reduce((t,l)=>t+loanBalance(l),0); const arr = L.filter(l=>loanArrearsDays(l)>0);
+        return `<tr><td>${statusBadge(st)}</td><td>${c}</td><td>${DB.loans.length?(c/DB.loans.length*100).toFixed(1):'0.0'}%</td><td>${fmt(prin)}</td><td>${fmt(out)}</td><td>${arr.length} · ${fmt(arr.reduce((t,l)=>t+loanArrearsAmount(l),0))}</td><td>${fmt(c?prin/c:0)}</td><td>${new Set(L.map(l=>l.branchId)).size}</td>
+        <td><div class="dt-act">${viewButtonHtml(st + ' loans', L.slice(0,60).map(l=>[escapeHtml(clientName(l.clientId)), `${escapeHtml(l.productName||'')} · ${fmt(l.principal)} · ${escapeHtml(branchName(l.branchId)||'')} · ${escapeHtml(staffName(l.officerId))}`]))}<button class="btn btn-sm btn-outline" onclick="goTo('loanbook','View Loans')">Loans</button></div></td></tr>`; }).join("")}</table></div>
     </div>
+    ${(()=>{ const ks = Object.keys(byStatus); return admTwoCharts(admChart('pm-status','Loans by Status','pie',ks,[{data:ks.map(k=>byStatus[k])}]), admChart('pm-prin','Principal by Status (KES)','bar',ks,[{label:'KES',data:ks.map(k=>Math.round(DB.loans.filter(l=>l.status===k).reduce((t,l)=>t+l.principal,0)))}])); })()}
   `;
 }
 
@@ -18453,9 +18649,7 @@ function renderRecordPayment(){
     </div>
     <div class="card">
       <div class="card-title">Recent Payments</div>
-      <div class="table-wrap"><table><tr><th>Ref</th><th>Client</th><th>Loan</th><th>Amount</th><th>Channel</th><th>Status</th><th></th></tr>
-      ${DB.payments.slice(0,10).map(p=>`<tr><td>${p.reference}</td><td>${clientName(p.clientId)}</td><td>${p.loanId}</td><td>${fmt(p.amount)}</td><td>${p.channel}</td><td>${statusBadge(p.status)}</td>
-        <td>${(p.status==="Posted"||p.status==="Overpayment") && CAN_REVERSE_PAYMENT(session.role) ? `<button class="btn btn-sm btn-red" onclick="const r=prompt('Reason for reversal:'); if(r!==null && confirm('Reverse this payment?')) withRequest('reverse-${p.id}', ()=>reversePayment('${p.id}', r))">Reverse</button>` : ""}</td></tr>`).join("")}</table></div>
+      ${paymentsTable(DB.payments.slice(0,10), { empty:'No payments recorded yet.' })}
     </div>
   `;
 }
@@ -18468,26 +18662,59 @@ function submitPayment(ev){
     prefillLoanId = null;
   });
 }
+// ---- One shared payments table: every payments page shows the same
+// facts (who paid, which loan/branch/officer, how it was allocated, who
+// recorded it) with View / Loan / Receipt / Post / Reverse as permitted. ----
+function payCtx(p){
+  const loanId = p.loanId || p.loan_id; const loan = DB.loans.find(l => l.id === loanId) || {};
+  const alloc = p.allocated || { principal: p.allocated_principal || 0, interest: p.allocated_interest || 0, penalty: p.allocated_penalty || 0 };
+  return { loanId, loan, clientId: p.clientId || p.client_id || loan.clientId, date: p.date || p.created_at, by: p.recordedBy || p.recorded_by, alloc };
+}
+function paymentActions(p, opts){
+  const c = payCtx(p); opts = opts || {};
+  const btns = [];
+  if(opts.post && p.status === 'Unposted') btns.push(`<button class="btn btn-sm btn-green" onclick="withRequest('post-${p.id}', ()=>postPayment('${p.id}'))">Post</button>`);
+  if(c.loan.id) btns.push(`<button class="btn btn-sm btn-outline" onclick="openLoan('${c.loanId}')">Loan</button>`);
+  if(p.status === 'Posted' || p.status === 'Overpayment') btns.push(`<button class="btn btn-sm btn-outline" onclick="goTo('payments','Receipts'); openReceipt('${p.id}')">Receipt</button>`);
+  if(opts.reverse !== false && (p.status === 'Posted' || p.status === 'Overpayment') && CAN_REVERSE_PAYMENT(session.role)) btns.push(`<button class="btn btn-sm btn-red" onclick="const r=prompt('Reason for reversal:'); if(r!==null && confirm('Reverse this payment?')) withRequest('reverse-${p.id}', ()=>reversePayment('${p.id}', r))">Reverse</button>`);
+  return btns.join('');
+}
+function paymentsTable(rows, opts){
+  opts = opts || {};
+  const head = ['Ref','Client','Loan','Branch','Loan Officer','Amount','Principal','Interest','Penalty','Channel','Status','Date','Recorded by','Action'];
+  return `<div class="table-wrap"><table><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr>
+    ${rows.map(p => { const c = payCtx(p); const acts = paymentActions(p, opts);
+      const fields = [['Reference', escapeHtml(p.reference||'—')], ['Client', escapeHtml(clientName(c.clientId))], ['Loan', escapeHtml(c.loanId||'—') + (c.loan.productName?` · ${escapeHtml(c.loan.productName)}`:'')], ['Loan principal', c.loan.principal?fmt(c.loan.principal):'—'], ['Branch', escapeHtml(branchName(c.loan.branchId)||'—')], ['Loan officer', escapeHtml(c.loan.officerId?staffName(c.loan.officerId):'—')], ['Amount', fmt(p.amount)], ['Allocated to principal', fmt(c.alloc.principal||0)], ['Allocated to interest', fmt(c.alloc.interest||0)], ['Allocated to penalty', fmt(c.alloc.penalty||0)], ['Channel', escapeHtml(p.channel||'—')], ['Status', statusBadge(p.status)], ['Date', c.date?new Date(c.date).toLocaleString('en-KE'):'—'], ['Recorded by', escapeHtml(c.by?staffName(c.by):'System')]];
+      return `<tr><td>${escapeHtml(p.reference||'—')}</td><td>${escapeHtml(clientName(c.clientId))}</td><td class="hint">${escapeHtml(c.loanId||'—')}</td><td>${escapeHtml(branchName(c.loan.branchId)||'—')}</td><td>${escapeHtml(c.loan.officerId?staffName(c.loan.officerId):'—')}</td>
+        <td><strong>${fmt(p.amount)}</strong></td><td>${fmt(c.alloc.principal||0)}</td><td>${fmt(c.alloc.interest||0)}</td><td>${fmt(c.alloc.penalty||0)}</td><td>${escapeHtml(p.channel||'—')}</td><td>${statusBadge(p.status)}</td>
+        <td>${c.date?new Date(c.date).toLocaleDateString():'—'}</td><td>${escapeHtml(c.by?staffName(c.by):'System')}</td>
+        <td><div class="dt-act">${viewButtonHtml('Payment ' + (p.reference||''), fields, acts, statusBadge(p.status))}${acts}</div></td></tr>`; }).join('') || `<tr><td colspan="${head.length}" class="empty">${escapeHtml(opts.empty || 'No payments.')}</td></tr>`}</table></div>`;
+}
+function paymentsCharts(prefix, rows){
+  const ch = admGroup(rows, p => p.channel, p => p.amount), br = admGroup(rows, p => branchName((payCtx(p).loan || {}).branchId) || '—', p => p.amount), day = admGroup(rows, p => String(payCtx(p).date || '').slice(0, 10), p => p.amount);
+  const days = day[0].map((k, i) => [k, day[1][i]]).sort((a, b) => a[0] < b[0] ? -1 : 1).slice(-31);
+  return admTwoCharts(admChart(prefix + '-ch', 'Amount by Channel (KES)', 'pie', ch[0], [{ data: ch[1] }]), admChart(prefix + '-br', 'Amount by Branch (KES)', 'bar', br[0], [{ label: 'KES', data: br[1] }])) + admChart(prefix + '-day', 'Amount per Day (KES)', 'line', days.map(d => d[0]), [{ label: 'KES', data: days.map(d => d[1]) }]);
+}
 function renderUnposted(){
   const rows = DB.payments.filter(p=>p.status==="Unposted");
-  return `<div class="card"><div class="card-title">Unposted Payments <small>awaiting confirmation before allocation</small></div>
-    <div class="table-wrap"><table><tr><th>Ref</th><th>Client</th><th>Loan</th><th>Amount</th><th>Channel</th><th></th></tr>
-    ${rows.map(p=>`<tr><td>${p.reference}</td><td>${clientName(p.clientId)}</td><td>${p.loanId}</td><td>${fmt(p.amount)}</td><td>${p.channel}</td>
-      <td><button class="btn btn-sm btn-green" onclick="withRequest('post-${p.id}', ()=>postPayment('${p.id}'))">Post Now</button></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No unposted payments.</td></tr>`}</table></div></div>`;
+  return `<div class="card"><div class="card-title">Unposted Payments <small>${rows.length}</small></div>
+    ${paymentsTable(rows, { post:true, empty:'No unposted payments.' })}</div>${paymentsCharts('unp', rows)}`;
 }
 function renderOverpayments(){
   const rows = DB.payments.filter(p=>p.status==="Overpayment");
-  return `<div class="card"><div class="card-title">Overpayments <small>amounts exceeding the outstanding balance</small></div>
-    <div class="table-wrap"><table><tr><th>Ref</th><th>Client</th><th>Loan</th><th>Amount</th><th>Channel</th></tr>
-    ${rows.map(p=>`<tr><td>${p.reference}</td><td>${clientName(p.clientId)}</td><td>${p.loanId}</td><td>${fmt(p.amount)}</td><td>${p.channel}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No overpayments.</td></tr>`}</table></div></div>`;
+  return `<div class="card"><div class="card-title">Overpayments <small>${rows.length}</small></div>
+    ${paymentsTable(rows, { empty:'No overpayments.' })}</div>${paymentsCharts('ovp', rows)}`;
 }
 function renderPayinSummary(){
   const byChannel = {};
   DB.payments.filter(p=>p.status!=="Unposted").forEach(p=>{ byChannel[p.channel]=(byChannel[p.channel]||{count:0,total:0}); byChannel[p.channel].count++; byChannel[p.channel].total+=p.amount; });
   return `<div class="card"><div class="card-title">Pay-in Summary <small>all posted payments by channel</small></div>
     ${admTwoCharts(admChart('ch-payin-count','Payments by Channel','pie',Object.keys(byChannel),[{data:Object.values(byChannel).map(v=>v.count)}]), admChart('ch-payin-amt','Amount by Channel (KES)','bar',Object.keys(byChannel),[{label:'KES',data:Object.values(byChannel).map(v=>Math.round(v.total))}]))}
-    <div class="table-wrap"><table><tr><th>Channel</th><th>No. of Payments</th><th>Total Amount</th></tr>
-    ${Object.entries(byChannel).map(([c,v])=>`<tr><td>${c}</td><td>${v.count}</td><td>${fmt(v.total)}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No payments yet.</td></tr>`}</table></div></div>`;
+    ${(()=>{ const posted = DB.payments.filter(p=>p.status!=="Unposted"); const grand = posted.reduce((t,p)=>t+p.amount,0);
+      return `<div class="table-wrap"><table><tr><th>Channel</th><th>No. of Payments</th><th>Total Amount</th><th>Share</th><th>Average</th><th>Largest</th><th>This Month</th><th>Last Payment</th><th>Action</th></tr>
+      ${Object.entries(byChannel).map(([c,v])=>{ const list = posted.filter(p=>p.channel===c); const last = list.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))[0]; const mtd = list.filter(p=>isThisMonth(p.date)).reduce((t,p)=>t+p.amount,0);
+        return `<tr><td><strong>${escapeHtml(c)}</strong></td><td>${v.count}</td><td>${fmt(v.total)}</td><td>${grand?(v.total/grand*100).toFixed(1):'0.0'}%</td><td>${fmt(v.count?v.total/v.count:0)}</td><td>${fmt(Math.max(0,...list.map(p=>p.amount)))}</td><td>${fmt(mtd)}</td><td>${last?new Date(last.date).toLocaleDateString():'—'}</td>
+        <td><div class="dt-act">${viewButtonHtml(c + ' payments', [['Channel', escapeHtml(c)], ['Payments', String(v.count)], ['Total', fmt(v.total)], ['This month', fmt(mtd)]].concat(list.slice(0,25).map(p=>[p.reference||'Payment', `${fmt(p.amount)} · ${escapeHtml(clientName(p.clientId))} · ${new Date(p.date).toLocaleDateString()}`])))}</div></td></tr>`; }).join("") || `<tr><td colspan="9" class="empty">No payments yet.</td></tr>`}</table></div>`; })()}</div>`;
 }
 // ---- Real, server-paginated payment list views ----
 // One shared loader + pagination control for every payment list page
@@ -18570,9 +18797,9 @@ function openReceipt(paymentId){ session.selectedReceiptId = paymentId; renderAp
 function renderReceiptsList(){
   const rows = DB.payments.filter(p=>p.status==="Posted"||p.status==="Overpayment");
   return `<div class="card"><div class="card-title">Receipts <small>one real receipt per posted payment</small></div>
-    <div class="table-wrap"><table><tr><th>Receipt No.</th><th>Client</th><th>Amount</th><th>Date</th><th></th></tr>
-    ${rows.map(p=>`<tr class="clickable" onclick="openReceipt('${p.id}')"><td>${p.reference}</td><td>${clientName(p.clientId)}</td><td>${fmt(p.amount)}</td><td>${new Date(p.date).toLocaleDateString()}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openReceipt('${p.id}')">View</button></td></tr>`).join("") || `<tr><td colspan="5" class="empty">No receipts yet — a receipt exists for every posted payment, and only for a real one.</td></tr>`}</table></div></div>`;
+    <div class="table-wrap"><table><tr><th>Receipt No.</th><th>Client</th><th>Loan</th><th>Branch</th><th>Loan Officer</th><th>Amount</th><th>Channel</th><th>Status</th><th>Date</th><th>Action</th></tr>
+    ${rows.map(p=>{ const c = payCtx(p); return `<tr><td>${escapeHtml(p.reference||'—')}</td><td>${escapeHtml(clientName(c.clientId))}</td><td class="hint">${escapeHtml(c.loanId||'—')}</td><td>${escapeHtml(branchName(c.loan.branchId)||'—')}</td><td>${escapeHtml(c.loan.officerId?staffName(c.loan.officerId):'—')}</td><td><strong>${fmt(p.amount)}</strong></td><td>${escapeHtml(p.channel||'—')}</td><td>${statusBadge(p.status)}</td><td>${new Date(p.date).toLocaleDateString()}</td>
+      <td><div class="dt-act"><button class="btn btn-sm btn-outline" onclick="openReceipt('${p.id}')">View</button>${c.loan.id?`<button class="btn btn-sm btn-outline" onclick="openLoan('${c.loanId}')">Loan</button>`:''}</div></td></tr>`; }).join("") || `<tr><td colspan="10" class="empty">No receipts yet.</td></tr>`}</table></div></div>${paymentsCharts('rcp', rows)}`;
 }
 function renderReceiptDetail(paymentId){
   const p = DB.payments.find(x=>x.id===paymentId);
@@ -18642,8 +18869,7 @@ function renderPaymentsReport(){
       <div class="kpi"><div class="kpi-label">Total Filtered Results</div><div class="kpi-value">${fmt(state.totals.amount)}</div></div>
       <div class="kpi"><div class="kpi-label">Total Transactions</div><div class="kpi-value">${state.totals.count}</div></div>
     </div>
-    <div class="table-wrap"><table><tr><th>Ref</th><th>Loan</th><th>Amount</th><th>Channel</th><th>Status</th><th>Date</th></tr>
-    ${rows.map(p=>`<tr><td>${p.reference}</td><td>${p.loan_id}</td><td>${fmt(p.amount)}</td><td>${p.channel}</td><td>${statusBadge(p.status)}</td><td>${new Date(p.created_at).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No payments match these filters.</td></tr>`}</table></div>
+    ${paymentsTable(rows, { empty:'No payments match these filters.' })}
     ${renderPaginationControls('report','loadPaymentsReport',f)}
     <span style="margin-top:10px;display:inline-flex;">${generateDropdownHtml('exportPaymentsReportCSV()')}</span>
   </div>`;
@@ -18842,12 +19068,18 @@ function renderRequisitionsPage(){
         <input name="month" type="month">
         <button class="btn btn-sm btn-outline" type="submit">Apply</button>
       </form>
-      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','pie',st[0],[{data:st[1]}])); })()}<div class="table-wrap"><table><tr><th>Category</th><th>Amount</th><th>Description</th><th>Branch</th><th>Status</th><th>Date</th><th></th></tr>
-      ${state.requisitions.map(r=>`<tr><td>${r.category}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(r.description||'—')}</td><td>${branchName(r.branch_id)}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
-        <td>${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
+      <div class="table-wrap"><table><tr><th>Ref</th><th>Requested by</th><th>Branch</th><th>Items</th><th>Category</th><th>Description</th><th>Amount</th><th>Expense account</th><th>Status</th><th>Decided by</th><th>Date</th><th>Action</th></tr>
+      ${state.requisitions.map(r=>{
+        const acct = (DB.accounts||[]).find(a=>a.id===r.expense_account_id);
+        const items = r.items||[];
+        const acts = `${r.status==='Pending' ? `<button class="btn btn-sm btn-green" onclick="withRequest('req-approve-${r.id}', ()=>decideRequisition('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="const rs=prompt('Reason:'); if(rs!==null) withRequest('req-reject-${r.id}', ()=>decideRequisition('${r.id}','Rejected',rs))">Reject</button>` : ""}
         ${canPay && r.status==='Approved' ? `<button class="btn btn-sm btn-primary" onclick="withRequest('req-pay-${r.id}', ()=>payRequisition('${r.id}'))">Pay</button>` : ""}
-        ${r.status==='Pending' ? `<button class="btn btn-sm btn-outline" onclick="withRequest('req-cancel-${r.id}', ()=>cancelRequisition('${r.id}'))">Cancel</button>` : ""}
-        ${r.expense_id ? `<span class="hint">→ ${r.expense_id}</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No requisitions match these filters.</td></tr>`}</table></div>
+        ${r.status==='Pending' ? `<button class="btn btn-sm btn-outline" onclick="withRequest('req-cancel-${r.id}', ()=>cancelRequisition('${r.id}'))">Cancel</button>` : ""}`;
+        const fields = [['Reference', escapeHtml(String(r.id).slice(-8).toUpperCase())], ['Requested by', escapeHtml(staffName(r.submitted_by))], ['Branch', escapeHtml(branchName(r.branch_id))], ['Category', escapeHtml(r.category||'—')], ['Description', escapeHtml(r.description||'—')], ['Amount', fmt(r.amount)], ['Expense account', escapeHtml(acct?acct.name:'—')], ['Status', statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)], ['Decided by', escapeHtml(r.approved_by?staffName(r.approved_by):'—')], ['Decided on', r.approved_at?new Date(r.approved_at).toLocaleString('en-KE'):'—'], ['Decision note', escapeHtml(r.decision_reason||'—')], ['Expense posted', escapeHtml(r.expense_id||'—')], ['Submitted on', new Date(r.created_at).toLocaleString('en-KE')]]
+          .concat(items.map((it,i)=>[`Item ${i+1}`, `${escapeHtml(it.description)} · ${it.qty} × ${fmt(it.unit_cost)} = ${fmt(Number(it.qty)*Number(it.unit_cost))}`]));
+        return `<tr><td>${escapeHtml(String(r.id).slice(-8).toUpperCase())}</td><td>${escapeHtml(staffName(r.submitted_by))}</td><td>${branchName(r.branch_id)}</td><td>${items.length}</td><td>${escapeHtml(r.category||'—')}</td><td class="hint">${escapeHtml(r.description||(items[0]?items[0].description:'—'))}</td><td>${fmt(r.amount)}</td><td class="hint">${escapeHtml(acct?acct.name:'—')}</td><td>${statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status)}</td><td>${r.approved_by?escapeHtml(staffName(r.approved_by)):'—'}</td><td>${new Date(r.created_at).toLocaleDateString()}</td>
+        <td><div class="dt-act">${viewButtonHtml('Requisition ' + String(r.id).slice(-8).toUpperCase(), fields, acts, statusBadge(REQ_STATUS_DISPLAY[r.status]||r.status))}${acts}</div></td></tr>`; }).join("") || `<tr><td colspan="12" class="empty">No requisitions match these filters.</td></tr>`}</table></div>
+      ${(()=>{ const c = admGroup(state.requisitions, r=>r.category, r=>r.amount), st = admGroup(state.requisitions, r=>r.status), br = admGroup(state.requisitions, r=>branchName(r.branch_id), r=>r.amount); return admTwoCharts(admChart('ch-req-cat','Amount by Category','bar',c[0],[{label:'KES',data:c[1]}]), admChart('ch-req-status','By Status','pie',st[0],[{data:st[1]}])) + admChart('ch-req-branch','Amount by Branch (KES)','bar',br[0],[{label:'KES',data:br[1]}]); })()}
     </div>
   `;
 }
@@ -19013,32 +19245,21 @@ function renderUtilityPaymentsPage(){
           <input name="q" value="${escapeHtml(f.q||'')}" placeholder="🔎 Search" style="width:200px;" onchange="this.form.requestSubmit()">
         </div>
       </form>
-      <div style="display:flex; flex-direction:column; gap:12px;">
+      <div class="table-wrap"><table><tr><th>Ref #</th><th>Requested by</th><th>Branch</th><th>Items</th><th>Description</th><th>Method</th><th>Recipient</th><th>Total</th><th>Status</th><th>Date</th><th>Action</th></tr>
         ${state.utilityPayments.map(u=>{
-          const total = (u.items||[]).reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
+          const items = u.items||[];
+          const total = items.reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
           const created = new Date(u.created_at);
-          return `
-          <div class="card" style="border:1px solid var(--line); box-shadow:none;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-              <div><strong>From ${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))} for ${escapeHtml(branchName(u.branch_id))}</strong></div>
-              ${statusBadge(u.status)}
-            </div>
-            <div class="table-wrap"><table><tr><th>Item</th><th>Qty</th><th>Cost</th></tr>
-              ${(u.items||[]).map(it=>`<tr><td>${escapeHtml(it.description)}</td><td>${it.accountant_qty ?? it.ceo_qty ?? it.qty}</td><td>${fmt(it.accountant_cost ?? it.ceo_cost ?? it.cost)}</td></tr>`).join("")}
-            </table></div>
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:8px;">
-              <span class="hint">Ref #${u.payment_no||'—'} · ${created.toLocaleDateString()} - ${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:6px;">
-              <span>${(u.items||[]).length} Item(s) ${escapeHtml(u.status)}</span>
-              <strong>${fmt(total)}</strong>
-            </div>
-            <div style="text-align:right; margin-top:10px;">
-              <span class="btn btn-outline btn-sm" onclick="openUtilityPaymentDetail('${u.id}')">Open</span>
-            </div>
-          </div>`;
-        }).join("") || `<div class="empty">No vendor/utility payments match these filters.</div>`}
-      </div>
+          return `<tr><td>${escapeHtml(String(u.payment_no||'—'))}</td><td>${escapeHtml(u.submitted_by_name || staffName(u.submitted_by))}</td><td>${escapeHtml(branchName(u.branch_id))}</td><td>${items.length}</td>
+            <td class="hint">${escapeHtml(items.map(it=>it.description).slice(0,2).join(', ') + (items.length>2?` +${items.length-2}`:'') || u.item_description || '—')}</td>
+            <td>${escapeHtml(u.payment_method||'—')}</td><td>${escapeHtml(u.mpesa_name||'—')}${u.recipient_mpesa_number?`<div class="hint">${escapeHtml(u.recipient_mpesa_number)}</div>`:''}</td>
+            <td><strong>${fmt(total)}</strong></td><td>${statusBadge(u.status)}</td><td>${created.toLocaleDateString()} <span class="hint">${created.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></td>
+            <td><div class="dt-act"><button class="btn btn-sm btn-outline" onclick="openUtilityPaymentDetail('${u.id}')">View</button></div></td></tr>`;
+        }).join("") || `<tr><td colspan="11" class="empty">No vendor/utility payments match these filters.</td></tr>`}
+      </table></div>
+      ${(()=>{ const L = state.utilityPayments, tot = u => (u.items||[]).reduce((s,it)=>s+Number(it.accountant_cost ?? it.ceo_cost ?? it.cost),0);
+        const st = admGroup(L, u=>u.status), br = admGroup(L, u=>branchName(u.branch_id), tot), mo = admGroup(L, u=>String(u.created_at||'').slice(0,7), tot);
+        return admTwoCharts(admChart('ch-util-status','Payments by Status','pie',st[0],[{data:st[1]}]), admChart('ch-util-branch','Amount by Branch (KES)','bar',br[0],[{label:'KES',data:br[1]}])) + admChart('ch-util-month','Amount per Month (KES)','line',mo[0].sort(),[{label:'KES',data:mo[0].sort().map(k=>Math.round(L.filter(u=>String(u.created_at||'').slice(0,7)===k).reduce((s,u)=>s+tot(u),0)))}]); })()}
     </div>
   `;
 }
