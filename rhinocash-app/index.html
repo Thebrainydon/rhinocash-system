@@ -5,9 +5,9 @@
 <title>Rhinocash — Microfinance Management System</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script data-role="viewport">
-// Phones and small tablets show the full desktop layout (scaled to fit),
-// the way the reference system does, instead of a single stacked column.
-(function(){ try{ var w = Math.min(screen.width || 9999, screen.height || 9999); if(w < 900){ var m = document.querySelector('meta[name="viewport"]'); if(m) m.setAttribute('content', 'width=1180'); } }catch(e){} })();
+// Plain responsive viewport: phones get the mobile layout, computers the
+// desktop layout, and the browser's own "Desktop site" option switches a
+// phone to the desktop layout.
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -931,6 +931,27 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 @media (max-width: 420px){
   .kpi-grid{ grid-template-columns:1fr 1fr; }
 }
+/* Phones: mobile layout */
+.two-col > *, .form-grid > *, .rv-cols > *, .dash-two > *{min-width:0;}
+.table-wrap{max-width:100%;}
+@media (max-width:700px){
+  .topbar{padding:10px 12px; gap:8px;}
+  .topbar-pills{display:none;}
+  .topbar-right{gap:8px;}
+  .bell{font-size:17px;}
+  .content{padding:14px 12px 50px;}
+  .card{padding:14px 14px;}
+  .form-grid, .two-col, .la-grid, .pg-two, .rv-cols{grid-template-columns:1fr !important;}
+  .kpi-tile-grid, .kpi-grid{grid-template-columns:repeat(2, minmax(0, 1fr)) !important;}
+  .pg-head{flex-wrap:wrap;} .pg-actions{width:100%; justify-content:flex-start;}
+  .pg-filters select, .pg-filters input, .pay-search{min-width:0; flex:1 1 140px;}
+  .modal-overlay{padding:14px 10px;} .modal{padding:18px 16px; max-width:100% !important;}
+  .ed-tl, .ed-tr{display:none;}
+  .ed-money{width:30px;} .ed-flower{font-size:16px;}
+  .edge-decor .ed{opacity:.7;}
+  table td, table th{padding:8px 8px;}
+}
+@media (max-width:420px){ .topbar-brand{display:none;} }
 </style>
 </head>
 <body>

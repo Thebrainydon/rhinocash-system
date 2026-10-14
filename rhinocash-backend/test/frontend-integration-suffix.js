@@ -8120,7 +8120,7 @@ apiRequest = async function(method, path, body){
     __assert(typeof pgDecorateHead === 'function' && /pgDecorateHead\(content\)/.test(__srcForBanCheck) && __rawIndexHtml.includes('.adm-head.pg-auto > .pg-back'), "every page gets the drill-down header: round back button, menu label and title");
     __assert(typeof tidyPageLayout === 'function' && /tidyPageLayout\(\);[^\n]*\n\s*initPendingCharts\(\);/.test(__srcForBanCheck), "every render moves '+ New' buttons into the table toolbar and labels action columns");
     __assert(/\.sidebar\{ position:fixed;[^}]*transform:translateX\(-100%\)/.test(__rawIndexHtml) && __rawIndexHtml.includes(".hamburger{ display:inline-flex; }"), "the sidebar is a drawer opened from the menu button on every screen size");
-    __assert(__rawIndexHtml.includes("m.setAttribute('content', 'width=1180')"), "phones show the desktop layout");
+    __assert(__rawIndexHtml.includes('<meta name="viewport" content="width=device-width, initial-scale=1.0">') && !__rawIndexHtml.includes("'width=1180'"), "phones get the mobile layout; the browser's own Desktop site option gives the desktop layout");
     __assert(typeof otpConfirm === 'function' && (await otpConfirm('x')) === null, "the OTP dialog exists and resolves to nothing without a real page");
     for (const fn of ['dirCreate', 'accSaveFinReq', 'accSaveRefund', 'accProposeWriteOff']) {
       __assert(String(eval(fn)).includes('otpConfirm('), `${fn} asks for the OTP before sending the money request`);
