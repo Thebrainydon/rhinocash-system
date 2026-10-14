@@ -268,10 +268,11 @@ function register(router) {
       r = await sms.send('system_notification', s.phone, { body: `Rhinocash: your code to sign loan application #${loan.application_no || ''} is ${code}. It expires in ${OTP_MINUTES} minutes. Do not share it with anyone except your loan officer at signing.` }, { relatedType: 'Loan', relatedId: loan.id });
     } catch { r = { status: 'FAILED' }; }
     if (r.status === 'Sent') return res.json({ sent: true, to: maskPhone(s.phone), message: `Code sent to ${maskPhone(s.phone)}` });
-    // Outside production (local testing) the code is shown when no SMS
-    // provider is set up; in production the signer must receive it by SMS.
-    if (r.status === 'NOT_CONFIGURED' && process.env.NODE_ENV !== 'production') {
-      return res.json({ sent: false, to: maskPhone(s.phone), otpForTesting: code, message: 'SMS is not switched on in this test environment — the code is shown here instead' });
+    // Until an SMS provider is switched on (Admin › Integrations › SMS) the
+    // random code is shown on screen instead, so signing is not blocked.
+    // Once SMS is on, the code only ever goes to the signer's phone.
+    if (r.status === 'NOT_CONFIGURED') {
+      return res.json({ sent: false, to: maskPhone(s.phone), otpForTesting: code, message: 'SMS is not set up yet, so your code is shown here' });
     }
     await run('UPDATE loan_esign_signers SET otp_hash = NULL WHERE id = ?', [s.id]);
     return next({ status: 409, code: 'SMS_UNAVAILABLE', message: r.status === 'NOT_CONFIGURED' ? 'SMS is not switched on, so the code cannot be sent. Ask your System Administrator to switch on SMS (Admin › Integrations › SMS).' : 'The code could not be sent by SMS — please try again' });

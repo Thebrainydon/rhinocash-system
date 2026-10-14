@@ -2588,7 +2588,9 @@ function otpConfirm(title, summary){
     const done = v => { if(wrap.parentNode) wrap.parentNode.removeChild(wrap); resolve(v); };
     const send = async () => {
       say('Sending code…'); setTopProgress(true);
-      try{ const r = await api.post('/api/otp/request', {}); say(r.otpForTesting ? `SMS is not set up — test code <strong>${escapeHtml(r.otpForTesting)}</strong>` : 'Code sent to your phone · valid 5 minutes'); }
+      try{ const r = await api.post('/api/otp/request', {});
+        if(r.otpForTesting) input.value = r.otpForTesting; // SMS not set up yet: the code is shown and filled in
+        say(r.otpForTesting ? `SMS is not set up yet — your code is <strong>${escapeHtml(r.otpForTesting)}</strong>` : 'Code sent to your phone · valid 5 minutes'); }
       catch(e){ say(escapeHtml((e && e.message) || 'Could not send the code'), true); }
       finally{ setTopProgress(false); try{ input.focus(); }catch(e){} }
     };
@@ -17359,7 +17361,9 @@ async function esRequestOtp(){
   const st = session.esign; if(!st) return;
   await withRequest('es-otp', async ()=>{
     const r = await api.post(`/api/esign/${st.token}/otp`, {});
-    st.otpMsg = r.message + (r.otpForTesting ? ` — code: ${r.otpForTesting}` : '');
+    // SMS not set up yet: the code is shown and filled in for the signer.
+    if(r.otpForTesting) st.otp = r.otpForTesting;
+    st.otpMsg = r.message + (r.otpForTesting ? `: ${r.otpForTesting}` : '');
   });
 }
 async function esSign(){
@@ -21124,6 +21128,7 @@ function requestRequisitionOtp(){
     const res = await api.post('/api/requisitions/request-otp', {});
     DB.requisitionForm.otpRequested = true;
     DB.requisitionForm.otpForTesting = res.otpForTesting || null;
+    if(res.otpForTesting) DB.requisitionForm.otp_code = res.otpForTesting;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
   }, {mutates:true});
 }
@@ -21153,7 +21158,7 @@ function renderCreateRequisitionPage(){
             </tr>`).join("")}
           </table></div>
         </div>
-        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not set up yet — your code: <strong>${f.otpForTesting}</strong></div>` : ""}
         <div class="pg-submit">
           <div class="pg-otp"><input value="${escapeHtml(f.otp_code)}" oninput="DB.requisitionForm.otp_code=this.value" placeholder="OTP Code" ${!f.otpRequested?'disabled':''}><span class="pg-link" onclick="requestRequisitionOtp()">↻ Request</span></div>
           <button class="pg-primary" type="submit">🧺 Request</button>
@@ -21388,6 +21393,7 @@ function requestUtilPaymentOtp(){
     const res = await api.post('/api/requisitions/request-otp', {});
     DB.utilPaymentForm.otpRequested = true;
     DB.utilPaymentForm.otpForTesting = res.otpForTesting || null;
+    if(res.otpForTesting) DB.utilPaymentForm.otp_code = res.otpForTesting;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
   }, {mutates:true});
 }
@@ -21427,7 +21433,7 @@ function renderCreateUtilityPaymentPage(){
             </tr>`).join("")}
           </table></div>
         </div>
-        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+        ${f.otpForTesting ? `<div class="hint" style="margin:8px 0;">SMS is not set up yet — your code: <strong>${f.otpForTesting}</strong></div>` : ""}
         <div class="pg-submit">
           <div class="pg-otp"><input value="${escapeHtml(f.otp_code)}" oninput="DB.utilPaymentForm.otp_code=this.value" placeholder="OTP Code" ${!f.otpRequested?'disabled':''}><span class="pg-link" onclick="requestUtilPaymentOtp()">↻ Request</span></div>
           <button class="pg-primary" type="submit">Request</button>
@@ -21510,6 +21516,7 @@ function requestBulkUploadOtp(){
     const res = await api.post('/api/requisitions/request-otp', {});
     DB.bulkUploadForm.otpRequested = true;
     DB.bulkUploadForm.otpForTesting = res.otpForTesting || null;
+    if(res.otpForTesting) DB.bulkUploadForm.otp_code = res.otpForTesting;
     toast(res.status === 'NOT_CONFIGURED' ? "SMS isn't configured here — using the test code shown below" : "OTP sent to your M-Pesa number");
   }, {mutates:true});
 }
@@ -21548,7 +21555,7 @@ function renderBulkUploadModal(){
       </div>
       <button class="btn btn-green" type="button" onclick="submitBulkUpload()">⬆ Upload</button>
     </div>
-    ${f.otpForTesting ? `<div class="hint" style="margin-top:10px;">SMS is not configured in this environment — test OTP code: <strong>${f.otpForTesting}</strong></div>` : ""}
+    ${f.otpForTesting ? `<div class="hint" style="margin-top:10px;">SMS is not set up yet — your code: <strong>${f.otpForTesting}</strong></div>` : ""}
   `;
 }
 

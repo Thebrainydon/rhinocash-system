@@ -1378,6 +1378,7 @@ apiRequest = async function(method, path, body){
     DB.requisitionForm.description = 'New tablet';
     await requestRequisitionOtp();
     __assert(DB.requisitionForm.otpRequested && DB.requisitionForm.otpForTesting, "requestRequisitionOtp() through the real UI function genuinely requested a real OTP and surfaced the test code (SMS not configured in this environment)");
+    __assert(DB.requisitionForm.otp_code === DB.requisitionForm.otpForTesting, "while SMS is not set up, the random code is filled in for the user");
     DB.requisitionForm.otp_code = DB.requisitionForm.otpForTesting;
     await submitCreateRequisition({ preventDefault(){}, target:{} });
     const newReq = DB.acctPages.req.requisitions.find(r=>r.description==='New tablet');
@@ -8384,6 +8385,9 @@ apiRequest = async function(method, path, body){
     __assert(bad === 2, "a 400 (the caller's own input) can be retried straight away");
     void savedToasts;
   }
+
+  // ---- SMS not set up yet: OTP codes are shown and filled in ----
+  __assert(String(esRequestOtp).includes('if(r.otpForTesting) st.otp = r.otpForTesting') && String(otpConfirm).includes('input.value = r.otpForTesting'), "e-sign and money-request OTP boxes fill in the shown code while SMS is not set up");
 
   // ---- Create User: branch selection ----
   {
