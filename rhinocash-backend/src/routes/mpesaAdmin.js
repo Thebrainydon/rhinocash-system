@@ -7,7 +7,7 @@
 const { requireAuth, requirePermission, requireModule } = require('./../middleware');
 const { logAction } = require('./../audit');
 const { branchScopeSQL, branchIdsInScope, hasModuleAccess, hasPermission } = require('./../rbac');
-const { all } = require('./../db');
+const { all, get } = require('./../db');
 const mpesa = require('./../integrations/mpesa');
 
 function requireAdminRole(req, res, next) {
@@ -45,6 +45,16 @@ function validEnv(req, res, next) {
     return next({ status: 400, message: 'environment must be "sandbox" or "production"' });
   }
   next();
+}
+
+// Branch roles see their own branches' paybill payments plus every payment
+// not yet linked to any loan (someone has to assign those).
+async function c2bScope(user, clauses, params) {
+  const scopeIds = await branchIdsInScope(user);
+  if (scopeIds === null) return;
+  if (!scopeIds.length) { clauses.push('matched_loan_id IS NULL'); return; }
+  clauses.push(`(matched_loan_id IS NULL OR matched_loan_id IN (SELECT id FROM loans WHERE branch_id IN (${scopeIds.map(() => '?').join(',')})))`);
+  params.push(...scopeIds);
 }
 
 function register(router) {
@@ -165,13 +175,7 @@ function register(router) {
       clauses.push('(msisdn LIKE ? OR bill_ref_number LIKE ? OR trans_id LIKE ?)');
       const like = `%${req.query.q}%`; params.push(like, like, like);
     }
-    // Branch roles see their own branches' payments plus every payment not
-    // yet linked to any loan (someone has to assign those).
-    const scopeIds = await branchIdsInScope(req.user);
-    if (scopeIds !== null) {
-      if (!scopeIds.length) clauses.push('matched_loan_id IS NULL');
-      else { clauses.push(`(matched_loan_id IS NULL OR matched_loan_id IN (SELECT id FROM loans WHERE branch_id IN (${scopeIds.map(() => '?').join(',')})))`); params.push(...scopeIds); }
-    }
+    await c2bScope(req.user, clauses, params);
     const where = clauses.join(' AND ');
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
@@ -224,7 +228,7 @@ function register(router) {
         clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : (linked[r.trans_id] || guess[r.id] || null),
         createdAt: r.created_at,
       })),
-      shortcode: activeConfig ? activeConfig.shortcode : null,
+      shortcode: (activeConfig && activeConfig.shortcode) || orgPaybill,
       pagination: { page, limit, total: totalsRow.cnt, totalPages: Math.max(1, Math.ceil(totalsRow.cnt / limit)) },
       totals: { count: totalsRow.cnt, amount: totalsRow.amt, unmatchedCount: unmatchedRow.cnt },
     });
@@ -239,6 +243,7 @@ function register(router) {
     const clauses = ['1=1']; const params = [];
     if (req.query.from) { clauses.push('(created_at)::date >= ?'); params.push(req.query.from); }
     if (req.query.to) { clauses.push('(created_at)::date <= ?'); params.push(req.query.to); }
+    await c2bScope(req.user, clauses, params);
     const where = clauses.join(' AND ');
     const rows = await all(
       `SELECT (created_at)::date::text as day, COUNT(*) as cnt, COALESCE(SUM(amount),0) as amt
@@ -247,9 +252,10 @@ function register(router) {
     );
     const activeEnv = await mpesa.getActiveEnvironment();
     const activeConfig = activeEnv ? await mpesa.getMaskedConfig(activeEnv) : null;
+    const org = await get('SELECT paybill FROM organization_settings WHERE id = 1').catch(() => null);
     res.json({
       days: rows.map(r => ({ date: r.day, count: r.cnt, amount: r.amt })),
-      shortcode: activeConfig ? activeConfig.shortcode : null,
+      shortcode: (activeConfig && activeConfig.shortcode) || (org && org.paybill) || null,
     });
   });
 

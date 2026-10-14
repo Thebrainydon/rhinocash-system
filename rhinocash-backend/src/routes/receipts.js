@@ -155,6 +155,83 @@ function register(router) {
     res.json({ marked });
   });
 
+  // ---------- payments report (per loan officer, per month) ----------
+  // Principal / interest / penalties come from posted payments on the
+  // officer's loans; processing fees from confirmed fee payments of the
+  // officer's clients; checkoff is money received through the Checkoff
+  // channel. Total income = interest + processing fees + penalties.
+  const monthRange = (req, next) => {
+    const year = parseInt(req.query.year, 10), month = parseInt(req.query.month, 10);
+    if (!(year > 2000 && month >= 1 && month <= 12)) { next({ status: 400, message: 'Choose the year and month' }); return null; }
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+    return { from, to };
+  };
+  router.get('/api/payments/staff-report', requireAuth, notInvestor, requireModule('payments'), async (req, res, next) => {
+    const r = monthRange(req, next); if (!r) return;
+    const sc = await scope(req.user);
+    const pay = await all(`SELECT l.officer_id AS officer, COALESCE(SUM(p.allocated_principal),0) AS principal, COALESCE(SUM(p.allocated_interest),0) AS interest,
+        COALESCE(SUM(p.allocated_penalty),0) AS penalty, COALESCE(SUM(CASE WHEN LOWER(p.channel) LIKE 'check%' THEN p.amount ELSE 0 END),0) AS checkoff, COUNT(*) AS n
+      FROM payments p JOIN loans l ON l.id = p.loan_id
+      WHERE p.status IN ('Posted','Overpayment') AND (p.created_at)::date >= (?)::date AND (p.created_at)::date <= (?)::date ${sc.pay.length ? 'AND ' + sc.pay.join(' AND ') : ''}
+      GROUP BY l.officer_id`, [r.from, r.to, ...sc.payParams]);
+    const fees = await all(`SELECT COALESCE(c.officer_id, f.initiated_by) AS officer, COALESCE(SUM(f.amount),0) AS fee
+      FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id
+      WHERE f.status = 'Confirmed' AND (f.confirmed_at)::date >= (?)::date AND (f.confirmed_at)::date <= (?)::date ${sc.fee.length ? 'AND ' + sc.fee.join(' AND ') : ''}
+      GROUP BY COALESCE(c.officer_id, f.initiated_by)`, [r.from, r.to, ...sc.feeParams]);
+    const by = {};
+    const row = id => by[id || ''] || (by[id || ''] = { officerId: id || null, principal: 0, interest: 0, checkoff: 0, fee: 0, penalty: 0 });
+    pay.forEach(x => { const o = row(x.officer); o.principal += Number(x.principal) || 0; o.interest += Number(x.interest) || 0; o.penalty += Number(x.penalty) || 0; o.checkoff += Number(x.checkoff) || 0; });
+    fees.forEach(x => { row(x.officer).fee += Number(x.fee) || 0; });
+    const ids = Object.keys(by).filter(Boolean);
+    const names = {};
+    if (ids.length) (await all(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids)).forEach(u => { names[u.id] = u.name; });
+    const round = v => Math.round(v * 100) / 100;
+    const staff = Object.values(by).map(o => {
+      const totalIncome = o.interest + o.fee + o.penalty;
+      return { ...o, name: o.officerId ? (names[o.officerId] || 'Unknown staff') : 'Unassigned', principal: round(o.principal), interest: round(o.interest), fee: round(o.fee), penalty: round(o.penalty), checkoff: round(o.checkoff), totalIncome: round(totalIncome), totals: round(o.principal + totalIncome) };
+    }).sort((a, b) => b.totals - a.totals);
+    const totals = staff.reduce((t, o) => { ['principal', 'interest', 'checkoff', 'fee', 'penalty', 'totalIncome', 'totals'].forEach(k => { t[k] = round((t[k] || 0) + o[k]); }); return t; }, {});
+    res.json({ from: r.from, to: r.to, staff, totals });
+  });
+
+  router.get('/api/payments/staff-report/detail', requireAuth, notInvestor, requireModule('payments'), async (req, res, next) => {
+    const r = monthRange(req, next); if (!r) return;
+    const bucket = String(req.query.bucket || '');
+    if (!['principal', 'interest', 'penalty', 'checkoff', 'fee'].includes(bucket)) return next({ status: 400, message: 'Unknown column' });
+    const officer = req.query.officer_id ? String(req.query.officer_id) : null;
+    await assignReceiptNumbers();
+    const settings = await receiptSettings();
+    const sc = await scope(req.user);
+    let rows;
+    if (bucket === 'fee') {
+      const w = [`f.status = 'Confirmed'`, '(f.confirmed_at)::date >= (?)::date', '(f.confirmed_at)::date <= (?)::date', ...sc.fee]; const ps = [r.from, r.to, ...sc.feeParams];
+      if (officer) { w.push('COALESCE(c.officer_id, f.initiated_by) = ?'); ps.push(officer); }
+      rows = (await all(`SELECT f.id, f.confirmed_at AS at, f.mpesa_receipt_number AS reference, f.amount, f.receipt_no, c.name AS client_name, c.national_id, b.name AS branch_name,
+          ln.disbursed_at, u.name AS approved_by
+        FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id LEFT JOIN branches b ON b.id = c.branch_id
+        LEFT JOIN loans ln ON ln.id = f.loan_id LEFT JOIN users u ON u.id = f.confirmed_by
+        WHERE ${w.join(' AND ')} ORDER BY f.confirmed_at`, ps)).map(x => ({ ...x, amount: Number(x.amount) || 0 }));
+    } else {
+      const amountExpr = bucket === 'checkoff' ? 'p.amount' : `p.allocated_${bucket}`;
+      const w = [`p.status IN ('Posted','Overpayment')`, '(p.created_at)::date >= (?)::date', '(p.created_at)::date <= (?)::date', ...sc.pay]; const ps = [r.from, r.to, ...sc.payParams];
+      w.push(bucket === 'checkoff' ? `LOWER(p.channel) LIKE 'check%'` : `${amountExpr} > 0`);
+      if (officer) { w.push('l.officer_id = ?'); ps.push(officer); }
+      rows = (await all(`SELECT p.id, p.created_at AS at, p.reference, ${amountExpr} AS amount, p.receipt_no, c.name AS client_name, c.national_id, b.name AS branch_name,
+          l.disbursed_at, u.name AS approved_by
+        FROM payments p JOIN loans l ON l.id = p.loan_id LEFT JOIN clients c ON c.id = p.client_id LEFT JOIN branches b ON b.id = l.branch_id
+        LEFT JOIN users u ON u.id = p.recorded_by
+        WHERE ${w.join(' AND ')} ORDER BY p.created_at`, ps)).map(x => ({ ...x, amount: Number(x.amount) || 0 }));
+    }
+    let officerName = null;
+    if (officer) { const u = await get('SELECT name FROM users WHERE id = ?', [officer]); officerName = u ? u.name : null; }
+    res.json({
+      bucket, officerName, total: Math.round(rows.reduce((t, x) => t + x.amount, 0) * 100) / 100,
+      rows: rows.map(x => ({ id: x.id, date: x.at, transaction: x.reference || '—', amount: x.amount, disbursedAt: x.disbursed_at || null, clientName: x.client_name, clientIdNo: x.national_id,
+        branch: x.branch_name, receiptNo: x.receipt_no != null ? settings.startNumber + Number(x.receipt_no) : null, approval: x.approved_by || 'System' })),
+    });
+  });
+
   // ---------- merged payments ----------
   // Unassigned M-Pesa paybill transactions that can still be merged.
   router.get('/api/payments/mergeable', requireAuth, notInvestor, requireModule('payments'), async (req, res) => {

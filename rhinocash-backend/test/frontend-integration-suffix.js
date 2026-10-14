@@ -2299,12 +2299,14 @@ apiRequest = async function(method, path, body){
     // never find and wire it, unlike every other real filter+table page.
     // Now restructured to the same standalone-row pattern every other
     // page already uses, confirmed directly against the real source.
-    __assert(__srcForBanCheck.includes('<span>Daily Paybill Collection</span>\n      </div>\n      <div class="pill-row" style="gap:8px;">'), "the real year/month filter row on Daily Paybill Collection is genuinely its own standalone row (a direct sibling of both the card title and the table), not nested inside the card title anymore");
+    __assert(__srcForBanCheck.includes('<span class="pay-title">Daily Paybill Collection</span>') && __srcForBanCheck.includes('class="pay-right pay-filters"'), "the Daily Paybill Collection year/month pickers sit on the right of the title, as in the reference");
 
     printLoanOfficerPayinSummaryDay(todayC2bStr);
-    await new Promise(r=>setTimeout(r,80)); renderApp();
+    for (let i = 0; i < 100 && !(DB.loPayinSummaryDay && DB.loPayinSummaryDay.day === todayC2bStr); i++) await new Promise(r=>setTimeout(r,30));
+    renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('MPESA Payments') && html.includes('RHINOCASH LTD') && html.includes('Printed on') && html.includes(c2bTransId), "the real per-day printable statement genuinely shows the real transaction and letterhead");
+    __assert(html.includes('<th>No</th><th>Paybill</th><th>Transaction</th><th>Name</th><th>Phone</th><th>Account</th><th>Amount</th><th>Approval</th>') && html.includes('MPESA Payments: Page 1'), "the M-Pesa day statement has the reference columns and a dated page footer");
     session.loPayinSummaryState.printDay = null;
     renderApp();
 
@@ -2318,22 +2320,24 @@ apiRequest = async function(method, path, body){
     html = document.getElementById('root').innerHTML;
     __assert(!html.includes('class="subtabs"'), "the real Payments Report page genuinely has no subtab bar above it, like every other real Loan Officer submenu page in this flow");
     __assert(html.includes('Payments Report') && html.includes('Staff') && html.includes('Principal') && html.includes('Interest') && html.includes('Checkoff') && html.includes('Processing Fee') && html.includes('Penalties') && html.includes('Total Income') && html.includes('Totals'), "the real Payments Report summary genuinely renders with the requested title and full column set");
-    __assert(DB.loPaymentsReportMonth && Array.isArray(DB.loPaymentsReportMonth.paymentRows), "the real Payments Report data genuinely loaded from the real backend endpoints, not fabricated client-side");
-    const reportSums = loPaymentsReportSums(DB.loPaymentsReportMonth);
-    __assert(Math.abs(reportSums.totalIncome - (reportSums.interest+reportSums.fee+reportSums.penalty)) < 0.01, "the real Total Income genuinely sums Interest+Processing Fee+Penalties, not a separately fabricated figure");
-    __assert(Math.abs(reportSums.totals - (reportSums.principal+reportSums.totalIncome)) < 0.01, "the real Totals genuinely sums Principal+Total Income, not a separately fabricated figure");
+    __assert(DB.loPaymentsReportMonth && Array.isArray(DB.loPaymentsReportMonth.staff), "the real Payments Report data genuinely loaded from the real backend endpoints, not fabricated client-side");
+    const meRow = DB.loPaymentsReportMonth.staff[0];
+    __assert(meRow && Math.abs(meRow.totalIncome - (meRow.interest+meRow.fee+meRow.penalty)) < 0.01, "the real Total Income genuinely sums Interest+Processing Fee+Penalties, not a separately fabricated figure");
+    __assert(meRow && Math.abs(meRow.totals - (meRow.principal+meRow.totalIncome)) < 0.01, "the real Totals genuinely sums Principal+Total Income, not a separately fabricated figure");
 
-    session.loPaymentsReportState.drillDown = 'principal';
+    openPaymentsReportDetail(meRow.officerId, 'principal', meRow.name);
+    for (let i = 0; i < 100 && !DB.payReportDetail; i++) await new Promise(r=>setTimeout(r,30));
     renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Principal Payments for') && html.includes('Date') && html.includes('Transaction') && html.includes('Disbursement') && html.includes('Client') && html.includes('Id No') && html.includes('Branch') && html.includes('Receipt') && html.includes('Approval'), "the real Principal drill-down genuinely renders with the requested title and full column set");
     __assert(html.includes(ppPayment.reference), "the real Principal drill-down genuinely shows a real just-recorded payment's real reference");
 
-    session.loPaymentsReportState.drillDown = 'fee';
+    openPaymentsReportDetail(meRow.officerId, 'fee', meRow.name);
+    for (let i = 0; i < 100 && !DB.payReportDetail; i++) await new Promise(r=>setTimeout(r,30));
     renderApp();
     html = document.getElementById('root').innerHTML;
     __assert(html.includes('Processing fee Payments for'), "the real Processing fee drill-down genuinely renders with its own real title");
-    __assert(DB.loPaymentsReportMonth.feeRows.length > 0, "the real Processing fee drill-down genuinely has real confirmed fee data to show, not fabricated client-side");
+    __assert(DB.payReportDetail && DB.payReportDetail.rows.length > 0, "the real Processing fee drill-down genuinely has real confirmed fee data to show, not fabricated client-side");
 
     session.loPaymentsReportState.drillDown = null;
     renderApp();

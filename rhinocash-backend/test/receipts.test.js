@@ -157,6 +157,23 @@ async function driveLoanToDisbursed(t, principal, term) {
   const row = c2b.json.transactions.find(x => x.transId === left);
   assert(c2b.status === 200 && row && row.matched === false && 'linkedApplication' in row && 'paybill' in row, '5: unassigned payments show to the branch with paybill and application link');
 
+  // 6. Payments report: one row per loan officer per month, with drill-downs
+  const rep = await api('GET', `/api/payments/staff-report?year=${yy}&month=${mm}`, { token: t.manager });
+  assert(rep.status === 200 && Array.isArray(rep.json.staff) && rep.json.totals, '6: the monthly payments report loads');
+  const officerRow = rep.json.staff.find(o => o.principal > 0);
+  assert(officerRow && officerRow.name && Math.abs(officerRow.totalIncome - (officerRow.interest + officerRow.fee + officerRow.penalty)) < 0.01 && Math.abs(officerRow.totals - (officerRow.principal + officerRow.totalIncome)) < 0.01, '6: total income = interest + fees + penalties; totals add principal');
+  const sum = k => rep.json.staff.reduce((x, o) => x + o[k], 0);
+  assert(Math.abs(sum('totals') - rep.json.totals.totals) < 0.05, '6: the Totals row adds up the staff rows');
+  const det = await api('GET', `/api/payments/staff-report/detail?year=${yy}&month=${mm}&bucket=principal&officer_id=${officerRow.officerId}`, { token: t.manager });
+  assert(det.status === 200 && det.json.officerName === officerRow.name && Math.abs(det.json.total - officerRow.principal) < 0.05, "6: the Principal drill-down lists exactly that officer's principal");
+  assert(det.json.rows.every(r => r.transaction && r.clientName && r.receiptNo && r.branch && r.approval), '6: each drill-down row has transaction, client, branch, receipt and approval');
+  assert((await api('GET', `/api/payments/staff-report/detail?year=${yy}&month=${mm}&bucket=nope`, { token: t.manager })).status === 400, '6: an unknown column is rejected');
+  assert((await api('GET', `/api/payments/staff-report?year=x&month=1`, { token: t.manager })).status === 400, '6: a bad month is rejected');
+  const own = await api('GET', `/api/payments/staff-report?year=${yy}&month=${mm}`, { token: t.officer });
+  assert(own.status === 200 && own.json.staff.every(o => !o.officerId || o.officerId === own.json.staff[0].officerId), '6: a Loan Officer sees only their own row');
+  const daily = await api('GET', `/api/mpesa/c2b/daily-summary?from=${today}&to=${today}`, { token: t.manager });
+  assert(daily.status === 200 && Array.isArray(daily.json.days), '6: the daily paybill collection calendar loads');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();
