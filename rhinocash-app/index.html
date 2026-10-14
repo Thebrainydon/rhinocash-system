@@ -11955,7 +11955,14 @@ function geoSyncWatch(){
 }
 function geoStopWatch(){ if(geoWatchId !== null && typeof navigator !== 'undefined' && navigator.geolocation){ navigator.geolocation.clearWatch(geoWatchId); } geoWatchId = null; }
 // Every staff dashboard ends with the map, weather and live location card.
-function renderDashboard(){ return renderDashboardCore() + renderGeoWidget(); }
+// The Map & Weather card sits right under a dashboard's headline cards
+// (where the dashboard marks <!--geo-slot-->), otherwise at the end.
+function renderDashboard(){
+  const core = renderDashboardCore(), geo = renderGeoWidget();
+  if(!core.includes('<!--geo-slot-->')) return core + geo;
+  let placed = false;
+  return core.replace(/<!--geo-slot-->/g, () => { if(placed) return ''; placed = true; return geo; });
+}
 function renderDashboardCore(){
   switch(session.role){
     case "Loan Officer": return renderOfficerDashboard();
@@ -12081,6 +12088,7 @@ function renderHRDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Workforce Composition</div></div></div>
@@ -12162,6 +12170,7 @@ function renderOfficerDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head">
@@ -12603,6 +12612,7 @@ function renderManagerDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="card">
@@ -12667,6 +12677,7 @@ function renderAdvancedDashboard(){
 
     ${dashOpsSummary(st, null, 'Org-wide')}
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head">
@@ -12819,6 +12830,7 @@ function renderRegionalManagerDashboard(){
 
     ${dashOpsSummary(st, myBranches.length ? myBranches : [me.branch], me.regionName || 'Your Region')}
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head">
@@ -13044,6 +13056,7 @@ function renderAdminDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
@@ -13422,6 +13435,7 @@ function renderAccountantDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
@@ -13682,6 +13696,7 @@ function renderCEODashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>
@@ -13889,6 +13904,7 @@ function renderDirectorDashboard(){
       </div>
     </div>
 
+    <!--geo-slot-->
     ${dashNotificationsPreview()}
 
     <div class="section-head"><div><div class="section-head-label">Company-wide</div><div class="section-head-title">Today's Collections</div></div></div>

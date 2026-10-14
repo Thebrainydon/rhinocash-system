@@ -8325,6 +8325,8 @@ apiRequest = async function(method, path, body){
   // ---- Dashboards: map, weather and live location ----
   {
     __assert(String(renderDashboard).includes('renderGeoWidget()'), "every dashboard carries the Map & Weather card");
+    __assert(String(renderOfficerDashboard).includes('<!--geo-slot-->\n    ${dashNotificationsPreview()}'), "on the Loan Officer dashboard the Map & Weather card sits right under the headline cards, above Notifications");
+    __assert(String(renderDashboard).includes("replace(/<!--geo-slot-->/g"), "the card is placed once, at the dashboard's slot");
     const w = { current: { temp: 27, icon: '🌧️', text: 'Rain', wind: 10 }, days: [0, 1, 2, 3].map(i => ({ date: '2026-10-1' + (4 + i), icon: '⛅', tmax: 30, tmin: 20, rainChance: i ? 20 : 80 })), advice: 'Heavy rain likely today' };
     const br = n => ({ id: 'b' + n, name: 'Branch ' + n, region: 'Coast', lat: -4, lng: 39, weather: w });
     __assert(geoWeatherCard(br(1)).includes('27°') && geoWeatherCard(br(1)).includes('Heavy rain likely today'), "a branch weather card shows the temperature, forecast and field advice");
