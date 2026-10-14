@@ -34,6 +34,7 @@ async function accountInfoFor(employeeId) {
     hasAccount: !!acct,
     accountCreatedAt: acct ? acct.created_at : null,
     accountLastLoginAt: acct ? acct.last_login_at : null,
+    username: acct ? acct.username : null,
   };
 }
 
@@ -45,9 +46,11 @@ async function publicUser(u) {
 
 function register(router) {
   router.post('/api/auth/login', async (req, res, next) => {
-    const { email, password } = req.body;
+    // The login box takes a username or an email address.
+    const email = String(req.body.email || req.body.username || req.body.identifier || '').trim();
+    const { password } = req.body;
     const ip = req.socket ? req.socket.remoteAddress : null;
-    if (!email || !password) return next({ status: 400, message: 'Email and password are required' });
+    if (!email || !password) return next({ status: 400, message: 'Username or email and password are required' });
 
     // Real login identifier is the System Account's own login_email — an
     // Employee with no account at all (or whose account uses a different
@@ -55,17 +58,20 @@ function register(router) {
     // exactly like a genuinely unknown address, never leaking which case
     // it was. Still merged with the real Employee row for everything else
     // login already needs (name, employment status, role_id, etc.).
+    const byEmail = email.includes('@');
     const user = await get(
       `SELECT u.*, ua.status AS account_status, ua.login_email, ua.created_at AS account_created_at
-       FROM user_accounts ua JOIN users u ON u.id = ua.employee_id WHERE ua.login_email = ?`,
-      [String(email).toLowerCase()]
+       FROM user_accounts ua JOIN users u ON u.id = ua.employee_id WHERE ${byEmail ? 'ua.login_email = ?' : "regexp_replace(lower(ua.username), '[^a-z0-9]', '', 'g') = ?"}`,
+      [byEmail ? email.toLowerCase() : require('./../usernames').usernameKey(email)]
     );
     if (!user) {
       await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'no such user', ip]);
       return next({ status: 401, message: 'Invalid credentials' });
     }
+    // Failed-attempt counting is per account, whichever identifier was typed.
+    const loginKey = user.login_email || email;
     if (user.account_status !== 'Active') {
-      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, `account ${user.account_status}`, ip]);
+      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [loginKey, `account ${user.account_status}`, ip]);
       await logAction({ user }, { action: 'Blocked login — account not active', module: 'auth', recordType: 'User', recordId: user.id, newValue: user.account_status });
       return next({ status: 403, message: `This account is ${user.account_status.toLowerCase()}. Contact your Admin.`, code: 'ACCOUNT_NOT_ACTIVE' });
     }
@@ -83,10 +89,10 @@ function register(router) {
       }
     }
     if (!verifyPassword(password, user.password_hash, user.password_salt)) {
-      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'bad password', ip]);
+      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [loginKey, 'bad password', ip]);
       const recentFailsRow = await get(
         `SELECT COUNT(*) as n FROM login_attempts WHERE email = ? AND success = 0 AND cleared_at IS NULL AND created_at > iso_offset(interval '-15 minutes')`,
-        [email]
+        [loginKey]
       );
       if (recentFailsRow.n >= 5) return next({ status: 429, message: 'Too many failed attempts. Try again later.' });
       return next({ status: 401, message: 'Invalid credentials' });
@@ -105,11 +111,11 @@ function register(router) {
       [user.id]
     );
     if (activeSession) {
-      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'already logged in elsewhere', ip]);
+      await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [loginKey, 'already logged in elsewhere', ip]);
       return next({ status: 409, message: `Your account is currently logged in on ${describeBrowser(activeSession.user_agent)}. Kindly logout first to access your account.`, code: 'ALREADY_LOGGED_IN' });
     }
 
-    await run('INSERT INTO login_attempts (email, success, ip) VALUES (?,1,?)', [email, ip]);
+    await run('INSERT INTO login_attempts (email, success, ip) VALUES (?,1,?)', [loginKey, ip]);
     await run("UPDATE users SET last_login_at = iso_now() WHERE id = ?", [user.id]);
     await run("UPDATE user_accounts SET last_login_at = iso_now() WHERE employee_id = ?", [user.id]);
 

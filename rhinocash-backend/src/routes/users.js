@@ -82,6 +82,16 @@ async function knownAccessLevels() {
   return [...new Set(STANDARD_ACCESS_LEVELS.concat(used))];
 }
 
+// The username asked for on Create User, or one made from the person's name.
+async function pickUsername(wanted, name, employeeId) {
+  const { uniqueUsername, usernameKey, takenBy, USERNAME_RE } = require('./../usernames');
+  const w = String(wanted || '').trim();
+  if (!w) return uniqueUsername(name, employeeId);
+  if (!USERNAME_RE.test(w)) throw Object.assign(new Error('A username is 2–40 letters or numbers (dots, dashes and spaces allowed)'), { status: 400 });
+  if (await takenBy(usernameKey(w), employeeId)) throw Object.assign(new Error('That username is already taken — choose another'), { status: 409 });
+  return w.toLowerCase().replace(/\s+/g, '.');
+}
+
 function register(router) {
   // List — real server-side search/filter/pagination, deterministic order.
   // Every authenticated user with 'staff' module access can see the
@@ -416,13 +426,14 @@ function register(router) {
       if (!loginEmail || !EMAIL_RE.test(loginEmail)) return next({ status: 400, message: 'A valid login email is required' });
       const existingLogin = await get('SELECT employee_id FROM user_accounts WHERE login_email = ?', [loginEmail]);
       if (existingLogin) return next({ status: 409, message: 'That login email is already in use by another System Account' });
+      let username; try { username = await pickUsername(b.username, employee.name, employee.id); } catch (e) { return next(e); }
 
       const tempPassword = generateTempPassword();
       const { hash, salt } = hashPassword(tempPassword);
       await transaction(async () => {
         await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now(), role_id=?, access_level=? WHERE id=?',
           [hash, salt, roleId, accessLevel, employee.id]);
-        await run('INSERT INTO user_accounts (employee_id, login_email, status) VALUES (?,?,?)', [employee.id, loginEmail, 'Active']);
+        await run('INSERT INTO user_accounts (employee_id, login_email, status, username) VALUES (?,?,?,?)', [employee.id, loginEmail, 'Active', username]);
         await notify(employee.id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash System Account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
         await logAction(req, {
           action: 'Created user account', module: 'users', recordType: 'User', recordId: employee.id,
@@ -451,6 +462,7 @@ function register(router) {
     const { role, accessLevel, departmentId, branchId, regionId, reportingManagerId, staffCode, entryDate } = resolved;
 
     const id = 'usr_' + crypto.randomUUID();
+    let username; try { username = await pickUsername(b.username, b.name, id); } catch (e) { return next(e); }
     const tempPassword = generateTempPassword();
     const { hash, salt } = hashPassword(tempPassword);
     let created;
@@ -471,7 +483,7 @@ function register(router) {
           entryDate,
         ]
       );
-      await run('INSERT INTO user_accounts (employee_id, login_email, status) VALUES (?,?,?)', [id, normalizedEmail, 'Active']);
+      await run('INSERT INTO user_accounts (employee_id, login_email, status, username) VALUES (?,?,?,?)', [id, normalizedEmail, 'Active', username]);
       created = await get('SELECT * FROM users WHERE id = ?', [id]);
       await notify(id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
       await logAction(req, {

@@ -91,9 +91,25 @@ async function roleMenuFeatures(roleId) {
 async function effectiveMenuFeatures(user) {
   const base = await roleMenuFeatures(user.role_id);
   const overrideRows = await all('SELECT feature_id FROM user_menu_access WHERE user_id = ?', [user.id]);
-  if (overrideRows.length === 0) return base;
   const overrideSet = new Set(overrideRows.map(r => r.feature_id));
-  return base.filter(f => overrideSet.has(f));
+  const granted = new Set(overrideRows.length ? base.filter(f => overrideSet.has(f)) : base);
+  // Menu permissions set on Role Permissions (role first, then the user's
+  // own) switch the matching menu features off or back on.
+  const settings = await all(`SELECT scope, item_key, allowed FROM menu_permission_settings
+    WHERE (scope = 'role' AND subject_id = ?) OR (scope = 'user' AND subject_id = ?) ORDER BY CASE scope WHEN 'role' THEN 0 ELSE 1 END`, [user.role_id, user.id]).catch(() => []);
+  if (settings.length && base.length) {
+    const feats = await all('SELECT f.id, f.label, c.label AS section FROM menu_features f JOIN menu_categories c ON c.id = f.category_id');
+    const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    for (const st of settings) {
+      const [section, item] = String(st.item_key).split('›');
+      const hits = feats.filter(f => item === '*' ? norm(f.section) === norm(section) : norm(f.label) === norm(item));
+      for (const f of hits) {
+        if (!st.allowed) granted.delete(f.id);
+        else if (base.includes(f.id)) granted.add(f.id);
+      }
+    }
+  }
+  return base.filter(f => granted.has(f));
 }
 
 async function hasMenuAccess(user, featureId) {
@@ -217,6 +233,8 @@ async function computeFinalAccess(user) {
     permissions: await effectivePermissions(user),
     intelligence: await effectiveIntelligenceFeatures(user),
     menus: await effectiveMenuFeatures(user),
+    // Menu & submenu permissions (Admin › Role Permissions) for this user's sidebar.
+    menuSettings: await require('./routes/menuPermissions').mySettings(user).catch(() => ({ role: {}, user: {} })),
     finalLine: `${role ? role.name : user.role_id} — ${user.access_level}`,
     // Which real sidebar tree / dashboard layout this user's role reuses
     // (see STRUCTURAL_TEMPLATE_IDS in routes/users.js) — every real

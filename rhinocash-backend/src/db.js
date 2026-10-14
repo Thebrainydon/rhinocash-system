@@ -1870,6 +1870,12 @@ async function initSchema() {
     signature_path TEXT, signed_at TEXT, signed_ip TEXT, signed_user_agent TEXT, form_hash TEXT,
     created_at TEXT NOT NULL DEFAULT iso_now())`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_loan_esign_loan ON loan_esign_signers(loan_id)`);
+  // Menu & submenu permissions: every sidebar menu and submenu of every role
+  // is on by default; the System Administrator can switch any of them off
+  // (or back on) for a whole role, or for one user.
+  await rawRun(`CREATE TABLE IF NOT EXISTS menu_permission_settings (
+    scope TEXT NOT NULL, subject_id TEXT NOT NULL, item_key TEXT NOT NULL, allowed INTEGER NOT NULL,
+    updated_by TEXT, updated_at TEXT NOT NULL DEFAULT iso_now(), PRIMARY KEY (scope, subject_id, item_key))`);
   await rawRun(`CREATE TABLE IF NOT EXISTS payment_merges (
     id TEXT PRIMARY KEY, merge_no BIGINT NOT NULL, client_id TEXT REFERENCES clients(id), loan_id TEXT REFERENCES loans(id),
     payment_id TEXT REFERENCES payments(id), total NUMERIC(14,2) NOT NULL, transactions_json TEXT NOT NULL,
@@ -1884,6 +1890,22 @@ async function initSchema() {
       await rawRun(`UPDATE ${r.k === 'p' ? 'payments' : 'loan_fee_payments'} SET receipt_no = nextval('receipt_no_seq') WHERE id = ?`, [r.id]);
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('receipt-numbers-backfill') ON CONFLICT DO NOTHING`);
+  }
+  // Usernames for signing in (see usernames.js): every account without one
+  // gets one made from the person's name.
+  await ensureColumn('user_accounts', 'username TEXT');
+  await rawRun(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_username ON user_accounts ((regexp_replace(lower(username), '[^a-z0-9]', '', 'g'))) WHERE username IS NOT NULL`);
+  {
+    const { uniqueUsername } = require('./usernames');
+    const missing = await rawAll(`SELECT ua.employee_id, u.name FROM user_accounts ua JOIN users u ON u.id = ua.employee_id WHERE ua.username IS NULL ORDER BY ua.created_at, ua.employee_id`);
+    for (const m of missing) await rawRun('UPDATE user_accounts SET username = ? WHERE employee_id = ?', [await uniqueUsername(m.name, m.employee_id, rawGet), m.employee_id]);
+  }
+  // Intelligence menus: databases seeded before Intelligence existed had no
+  // catalog or grants, so nobody saw the Intelligence menus. Done once per
+  // database (later changes made on Admin pages are never overwritten).
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'intelligence-catalog-v1'`)) && (await rawGet('SELECT 1 FROM roles LIMIT 1'))) {
+    await require('./intelligenceCatalog').seedIntelligenceCatalog(rawRun);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('intelligence-catalog-v1') ON CONFLICT DO NOTHING`);
   }
   // Every loan application gets a short, readable number (#100001…).
   if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'loan-application-no-backfill'`))) {

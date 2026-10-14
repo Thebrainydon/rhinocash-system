@@ -411,6 +411,38 @@ canvas.es-pad{max-width:none; height:200px; margin-top:12px; border:1.5px dashed
 .es-done{text-align:center; border:1px solid #C9EBD3; background:#F3FBF5; border-radius:16px; padding:30px 18px;} .es-done-ic{font-size:40px; color:#227A46;} .es-done-t{font-size:20px; font-weight:800; color:#1C3557; margin:6px 0;}
 .es-public{min-height:100vh; background:#F2F5F9; padding:12px 16px 30px; box-sizing:border-box;}
 .es-public-top{display:flex; align-items:center; gap:10px; max-width:900px; margin:0 auto 12px; font-weight:800; color:#1C3557;} .es-public-top img{width:38px; height:38px; object-fit:contain;}
+
+/* Role Permissions (menus & submenus) */
+.rp-wrap{max-height:70vh; overflow:auto;}
+table.rp-table th{position:sticky; top:0; z-index:2;}
+table.rp-table td:first-child, table.rp-table th:first-child{position:sticky; left:0; background:#fff; z-index:1; min-width:180px;}
+table.rp-table th:first-child{z-index:3; background:#1F3A5F;}
+tr.rp-sec td{background:#EEF3FA !important; font-weight:800; color:#1F3A5F; font-size:12px;} tr.rp-sec td:first-child{background:#EEF3FA !important;}
+tr.rp-act td{background:#F6F2FC !important; color:#5B3E96;}
+.rp-item{padding-left:22px !important; font-size:12.5px;}
+.rp-sec-ic{margin-right:2px;} .rp-na{text-align:center; color:#B8C1CE;}
+.rp-cell{display:inline-flex; align-items:center; justify-content:center; width:26px; height:24px; border-radius:6px; border:1px solid transparent; font-weight:800; font-size:12px; background:transparent; cursor:default;}
+button.rp-cell{cursor:pointer;} .rp-cell.on{color:#227A46; background:#EEF9F1; border-color:#C9EBD3;} .rp-cell.off{color:#C0392B; background:#FDEEEE; border-color:#F3C9C9;}
+.rp-cell.pend{box-shadow:0 0 0 2px #F2A900;} .rp-cell.muted{opacity:.45;}
+table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table tr.rp-sec td:first-child{text-align:left;}
+.rp-chk{display:inline-flex; align-items:center; gap:6px; font-size:12.5px;}
+.rp-save{position:sticky; bottom:10px; z-index:20; display:flex; align-items:center; gap:10px; justify-content:flex-end; background:#1F3A5F; color:#fff; border-radius:12px; padding:10px 14px; margin:10px auto 0; max-width:640px; box-shadow:0 6px 20px rgba(0,0,0,.2);}
+.rp-save span{margin-right:auto;} .rp-save .btn-outline{background:#fff;}
+.rp-user{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px;}
+.rp-sel{border:1px solid #CBD3DE; border-radius:6px; padding:4px 6px; font-size:12px;} .rp-sel.pend{border-color:#F2A900; box-shadow:0 0 0 2px rgba(242,169,0,.25);}
+
+.login-btn{display:inline-flex; align-items:center; justify-content:center; gap:8px;}
+.login-btn.busy{opacity:1 !important; cursor:progress;} .login-btn.ok{background:#2E9D62 !important;}
+.login-btn-spin{animation:loginSpin 1s linear infinite; flex-shrink:0;} @keyframes loginSpin{to{transform:rotate(360deg)}}
+
+/* Portfolio growth forest */
+.gf-card{overflow:hidden;} .gf-badge{font-weight:800; font-size:12px; border-radius:999px; padding:3px 10px;} .gf-badge.up{background:#EEF9F1; color:#227A46;} .gf-badge.down{background:#FDEEEE; color:#C0392B;}
+.gf-forest{display:flex; align-items:flex-end; gap:4px; overflow-x:auto; padding:10px 4px 0; min-height:96px; background:linear-gradient(180deg, #EAF6FF 0%, #F6FBF2 100%); border-radius:10px 10px 0 0;}
+.gf-tree{flex:1 0 34px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; line-height:1;} .gf-tree span{display:block; transition:font-size .4s ease; animation:gfGrow .6s ease-out both;}
+.gf-lbl{font-size:9.5px; color:#5E6B7E; margin-top:3px; white-space:nowrap;}
+.gf-ground{height:8px; background:linear-gradient(180deg, #7CB46B, #5A8F4A); border-radius:0 0 10px 10px;}
+.gf-foot{font-size:12px; color:#5E6B7E; margin-top:8px;} .gf-leaf{color:#B5651D; font-weight:700;}
+@keyframes gfGrow{from{transform:scale(.3) translateY(20px); opacity:0} to{transform:none; opacity:1}}
 /* Undisbursed Loans list */
 .ud-title{display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; color:#1C2D6B; padding-bottom:12px; border-bottom:1px solid #E6EBF2; margin-bottom:12px;}
 .ud-back{cursor:pointer; color:#1C2D6B; display:inline-flex;} .ud-back svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
@@ -534,7 +566,9 @@ table.rc-t.rc-sign{margin-top:6px;}
 .topbar-pill{display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:20px; font-size:11.5px; font-weight:700; border:1px solid; white-space:nowrap;}
 .topbar-pill.branch{color:var(--blue); border-color:rgba(46,92,138,0.3); background:var(--blue-bg);}
 .topbar-pill.access{color:var(--green); border-color:rgba(47,125,92,0.3); background:var(--green-bg);}
-.topbar-right{display:flex; align-items:center; gap:10px; flex-shrink:0;}
+.topbar-right{display:flex; align-items:center; gap:10px; flex-shrink:1; min-width:0; flex-wrap:wrap; justify-content:flex-end; row-gap:6px;}
+/* Branch & access badges sit just left of the icons on a computer… */
+.topbar-right > .topbar-pills{order:0; margin-right:4px;} .topbar-right > :not(.topbar-pills){order:1;}
 .role-select{
   border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 10px; font-size:12.5px;
   color:var(--ink); font-weight:600; cursor:pointer;
@@ -1021,8 +1055,10 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 .table-wrap{max-width:100%;}
 @media (max-width:700px){
   .topbar{padding:10px 12px; gap:8px;}
-  .topbar-pills{display:none;}
   .topbar-right{gap:8px;}
+  /* …and on their own row right below the icons on a phone. */
+  .topbar-right > .topbar-pills{order:2; width:100%; justify-content:flex-end; margin-right:0;}
+  .topbar-pill{font-size:10.5px; padding:3px 9px;}
   .bell{font-size:17px;}
   .content{padding:14px 12px 50px;}
   .card{padding:14px 14px;}
@@ -1967,7 +2003,34 @@ function resolveRoute(itemLabel){
   }
   return undefined;
 }
+// ---- Menu & submenu permissions (Admin › Role Permissions) ----
+// Every menu (section) and submenu (item) a role has is on unless the
+// System Administrator switched it off for the role or for this user; the
+// user's own setting wins over the role's.
+const menuKey = (section, item) => `${section}›${item}`;
+function menuSettingsMine(){
+  if(session.role === 'Investor') return (DB && DB.investorMenuSettings) || { role:{}, user:{} };
+  return (DB && DB.me && DB.me.finalAccess && DB.me.finalAccess.menuSettings) || { role:{}, user:{} };
+}
+function menuItemOn(settings, section, item){
+  const pick = k => settings.user && k in settings.user ? settings.user[k] : settings.role && k in settings.role ? settings.role[k] : undefined;
+  if(pick(menuKey(section, '*')) === false) return false;
+  return item === '*' ? true : pick(menuKey(section, item)) !== false;
+}
+function applyMenuPermissions(menu, settings){
+  const st = settings || menuSettingsMine();
+  if(!st || (!Object.keys(st.role || {}).length && !Object.keys(st.user || {}).length)) return menu;
+  return menu.filter(sec => menuItemOn(st, sec.section, '*')).map(sec => ({ ...sec, items: sec.items.filter(it => menuItemOn(st, sec.section, it)) })).filter(sec => sec.items.length);
+}
+function menuLabelAllowed(label){
+  if(!DB) return true;
+  const st = menuSettingsMine(); if(!Object.keys(st.role || {}).length && !Object.keys(st.user || {}).length) return true;
+  const full = SIDEBAR_MENUS[session.role] || [];
+  const owners = full.filter(sec => sec.items.includes(label));
+  return !owners.length || owners.some(sec => menuItemOn(st, sec.section, label));
+}
 function sidebarNavigate(itemLabel){
+  if(!menuLabelAllowed(itemLabel)){ toast('This menu has been switched off for your account.'); return; }
   // "Create a Lead" is a quick action reachable from anywhere, not a page
   // — it opens the real Create Client Lead modal on top of whatever the
   // user is currently looking at, same as "Create Loan Application" etc.
@@ -2482,7 +2545,7 @@ function adaptStaff(u){
     // Employee <-> User Account split — real, always-fresh System Account
     // state (see auth.js's accountInfoFor()/publicUser()), not re-derived
     // from `status` above (which stays the Employee's own employment status).
-    systemAccount:u.systemAccount, hasAccount:u.hasAccount,
+    systemAccount:u.systemAccount, hasAccount:u.hasAccount, username:u.username || '',
     moduleAccess: (u.finalAccess && u.finalAccess.modules) || null };
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
@@ -2533,6 +2596,7 @@ async function loadCoreData(){
   // authenticated principal needs it purely to render their own already-
   // granted items.
   calls.push(api.get('/api/intelligence/catalog').then(r=>{ DB.intelligenceCatalog = { categories: r.categories, features: r.features }; }).catch(()=>{ DB.intelligenceCatalog = { categories: [], features: [] }; }));
+  if(session.role === 'Investor') calls.push(api.get('/api/investor-portal/menu-settings').then(r=>{ DB.investorMenuSettings = r; }).catch(()=>{}));
   // Personalizable Workspaces state (hidden dashboard widgets, saved
   // views, default landing page) — same dual-audience reasoning as the
   // catalog above: harmless to fetch even for a principal with no
@@ -3034,6 +3098,7 @@ async function addStaffMember(data){
     role_id: data.roleId || ROLE_DISPLAY_TO_ID[data.role] || "loan_officer",
     access_level: data.accessLevel || ACCESS_LEVEL_BY_ROLE[data.role] || undefined,
     staff_code: data.staffCode || undefined,
+    username: data.username || undefined,
     national_id: data.nationalId || undefined,
     gender: data.gender || undefined,
     date_of_birth: data.dateOfBirth || undefined,
@@ -3540,9 +3605,9 @@ function renderApp(){
   // before whichever entry is this role's own "My Account" section.
   const intelSections = buildIntelligenceSections();
   const myAccountIdx = baseMenu.findIndex(s=>s.section==="My Account");
-  const menu = !intelSections.length ? baseMenu
+  const menu = applyMenuPermissions(!intelSections.length ? baseMenu
     : myAccountIdx===-1 ? [...baseMenu, ...intelSections]
-    : [...baseMenu.slice(0,myAccountIdx), ...intelSections, ...baseMenu.slice(myAccountIdx)];
+    : [...baseMenu.slice(0,myAccountIdx), ...intelSections, ...baseMenu.slice(myAccountIdx)]);
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
   // rendered for every role (Investor included) below.
@@ -3588,9 +3653,9 @@ function renderApp(){
           <div class="topbar-left">
             <div class="hamburger" onclick="toggleSidebar()">☰</div>
             <div class="topbar-brand">RHINOCASH LTD</div>
-            ${topbarPillsHtml()}
           </div>
           <div class="topbar-right">
+            ${topbarPillsHtml()}
             ${session.role!=="Investor" ? `<div class="bell" onclick="openTicketsPanel()" title="Tickets">💬</div>` : ""}
             <div class="bell" onclick="openNotificationsPanel()" title="Notifications">🔔${unread>0?`<span class="bell-dot">${unread}</span>`:""}</div>
             ${NAV_PERMISSIONS[session.role]?.includes('loanbook') ? `<div class="bell" onclick="openLoanStatusPanel()" title="Loan Status">📅✓</div>` : ""}
@@ -3676,7 +3741,6 @@ function renderLogin(){
     <div class="login-subtitle">Enter your details below to continue securely.</div>
     ${session.justLoggedOut && !session.loggingIn ? `<div class="login-success-banner">You have been securely logged out.</div>` : ""}
     ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ""}
-    ${loginStatusBanner()}
     <form onsubmit="return doLogin(event)">
       <div class="login-field">
         ${fieldIcon(ICON_PERSON)}
@@ -3687,7 +3751,7 @@ function renderLogin(){
         <input name="password" type="password" placeholder="Password" autocomplete="current-password" required ${session.loggingIn?'disabled':''}>
         <button type="button" class="eye-toggle" onclick="toggleLoginPasswordVisibility(this)" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_EYE}</svg></button>
       </div>
-      <button class="login-btn" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? (session.loginPhase==='success' ? 'Redirecting…' : 'Please wait…') : '▸ Login'}</button>
+      <button class="login-btn ${session.loggingIn ? 'busy' : ''} ${session.loginPhase==='success' ? 'ok' : ''}" type="submit" ${session.loggingIn?'disabled':''}>${session.loggingIn ? loginButtonPhase() : '▸ Login'}</button>
     </form>
     <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
     <div class="login-security-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Your sign-in is protected with session security and one-time verification where required.</div>
@@ -3701,6 +3765,12 @@ function renderLogin(){
 // once that check has genuinely succeeded and the app is moving into the
 // real dashboard (doLogin() sets session.loginPhase accordingly). Both
 // phases share the same spinning clockwise-arrows icon.
+// The login progress ("Processing… please wait", then "Login successful…
+// redirecting") is shown on the Login button itself, nowhere else.
+function loginButtonPhase(){
+  const spinner = `<svg class="login-btn-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>`;
+  return `${spinner}<span>${session.loginPhase === 'success' ? 'Login successful… redirecting' : 'Processing… please wait'}</span>`;
+}
 function loginStatusBanner(){
   if(!session.loggingIn) return "";
   const spinner = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>`;
@@ -4023,7 +4093,7 @@ async function doLogin(ev){
   ev.preventDefault();
   if(session.loggingIn) return false; // duplicate-submit guard
   const f = Object.fromEntries(new FormData(ev.target));
-  if(!f.username || !f.password){ loginError = "Please enter your email and password."; renderApp(); return false; }
+  if(!f.username || !f.password){ loginError = "Please enter your username or email and your password."; renderApp(); return false; }
   loginError = "";
   session.loggingIn = true;
   session.loginPhase = null;
@@ -6906,7 +6976,8 @@ Object.assign(RG_VIEWS, {
     const opened = F.branches.filter(b => b.createdAt && b.createdAt >= yearAgo);
     const regs = [...new Set(F.branches.map(b => b.region || 'No region'))].sort().map(name => { const bs = F.branches.filter(b => (b.region || 'No region') === name);
       return { name, branches: bs.length, opened: bs.filter(b => b.createdAt && b.createdAt >= yearAgo).length, clients: dirSum(bs, b => b.clients), loans12: dirSum(bs, b => b.loans12), disbursed: dirSum(bs, b => b.disbursed12), outstanding: dirSum(bs, b => b.outstanding) }; });
-    return `${dirTiles([['New clients (12 months)', fmtNum(dirSum(M, m => m.newClients))], ['Client growth (last 6 vs first 6 months)', accPct(gr(m => m.newClients))], ['Disbursed (12 months)', fmt(dirSum(M, m => m.disbursed))], ['Lending growth (last 6 vs first 6 months)', accPct(gr(m => m.disbursed))], ['Loan book now', fmt(F.portfolio.outstanding)], ['Branches opened (12 months)', opened.length]])}
+    let cumLend = 0; const forest = growthForestHtml(M.map(m => ({ label: accM(m.month), value: (cumLend += Number(m.disbursed || 0)) })), 'Portfolio Growth');
+    return `${forest}${dirTiles([['New clients (12 months)', fmtNum(dirSum(M, m => m.newClients))], ['Client growth (last 6 vs first 6 months)', accPct(gr(m => m.newClients))], ['Disbursed (12 months)', fmt(dirSum(M, m => m.disbursed))], ['Lending growth (last 6 vs first 6 months)', accPct(gr(m => m.disbursed))], ['Loan book now', fmt(F.portfolio.outstanding)], ['Branches opened (12 months)', opened.length]])}
       ${admTwoCharts(admChart('om-gr-c', 'New Clients per Month', 'bar', M.map(m => accM(m.month)), [{ label: 'New clients', data: M.map(m => m.newClients) }]),
         admChart('om-gr-cum', 'Clients Added (cumulative, 12 months)', 'line', M.map(m => accM(m.month)), [{ label: 'Clients added', data: cumClients, fill: true, tension: 0.3 }]))}
       ${admChart('om-gr-d', 'Loans Disbursed per Month (KES)', 'line', M.map(m => accM(m.month)), [{ label: 'Disbursed', data: M.map(m => Math.round(m.disbursed)), fill: false, tension: 0.25 }, { label: 'Collected', data: M.map(m => Math.round(m.collected)), fill: false, tension: 0.25 }])}
@@ -8651,7 +8722,7 @@ const DIR_VIEWS = {
     const loans = DB.loans || []; const port = months.map(m => dirSum(loans.filter(l => l.disbursedAt && String(l.disbursedAt).slice(0, 7) <= m), l => l.principal));
     const pct = (a, b) => b ? Math.round((a - b) / b * 100) : null;
     const last = months.length - 1;
-    return `${dirTiles([['New clients (latest month)', fmtNum(by('newClients')[last] || 0), pct(by('newClients')[last], by('newClients')[last - 1]) == null ? '' : pct(by('newClients')[last], by('newClients')[last - 1]) + '% vs previous'], ['New loans (latest month)', fmtNum(by('newLoans')[last] || 0)], ['New loan value (latest month)', fmt(by('newLoanValue')[last] || 0)], ['Cumulative disbursed', fmt(port[last] || 0)]])}
+    return `${growthForestHtml(months.map((m, i) => ({ label: rgMonthLabel(m), value: port[i] })), 'Portfolio Growth')}${dirTiles([['New clients (latest month)', fmtNum(by('newClients')[last] || 0), pct(by('newClients')[last], by('newClients')[last - 1]) == null ? '' : pct(by('newClients')[last], by('newClients')[last - 1]) + '% vs previous'], ['New loans (latest month)', fmtNum(by('newLoans')[last] || 0)], ['New loan value (latest month)', fmt(by('newLoanValue')[last] || 0)], ['Cumulative disbursed', fmt(port[last] || 0)]])}
       ${admTwoCharts(admChart('dir-gr-c', 'New Clients and Loans per Month', 'bar', months.map(rgMonthLabel), [{ label: 'New clients', data: by('newClients'), backgroundColor: '#2E5C8A' }, { label: 'New loans', data: by('newLoans'), backgroundColor: '#2A9D8F' }]),
         admChart('dir-gr-v', 'Cumulative Amount Disbursed (KES)', 'line', months.map(rgMonthLabel), [{ label: 'Disbursed to date', data: port, fill: true, tension: 0.3 }]))}
       ${dirTable('Growth by month', months.slice().reverse(), [['Month', m => rgMonthLabel(m)], ['New clients', m => fmtNum((gr.find(x => x.month === m) || {}).newClients || 0)], ['New loans', m => fmtNum((gr.find(x => x.month === m) || {}).newLoans || 0)], ['New loan value', m => fmt((gr.find(x => x.month === m) || {}).newLoanValue || 0)], ['Change in new loans', m => { const i = months.indexOf(m); const p = pct(by('newLoans')[i], by('newLoans')[i - 1]); return p == null ? '—' : admBadge((p >= 0 ? '+' : '') + p + '%', p >= 0 ? 'green' : 'red'); }]], 'No data yet.')}`;
@@ -9121,8 +9192,8 @@ const INV_VIEWS = {
     return `${dirTiles([['Net profit (12 months)', fmt(f.last12NetProfit)], ['Net profit (all time)', fmt(f.netProfit)], ['Profit margin (all time)', (f.interestIncome + f.feeIncome) > 0 ? invPct(f.netProfit / (f.interestIncome + f.feeIncome) * 100) : '—'], ['Profitable months (of 12)', R.monthly.filter(m => m.netProfit > 0).length]])}
       ${invMonthlyChart('inv-prof', 'Income, Expenses and Net Profit (KES)', R, { sets: [{ label: 'Income', data: R.monthly.map(m => Math.round(m.interestIncome + m.feeIncome)), backgroundColor: '#2A9D8F' }, { label: 'Expenses', data: R.monthly.map(m => Math.round(m.expenses)), backgroundColor: '#E76F51' }, { label: 'Net profit', data: R.monthly.map(m => Math.round(m.netProfit)), type: 'line', borderColor: '#2E5C8A', fill: false }] })}
       ${dirTable('Profit by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['Income', m => fmt(m.interestIncome + m.feeIncome)], ['Expenses', m => fmt(m.expenses)], ['Net profit', m => m.netProfit >= 0 ? fmt(m.netProfit) : `<span style="color:var(--red); font-weight:700;">${fmt(m.netProfit)}</span>`]], '—')}`; },
-  growth: R => { let cum = 0; const clients = R.monthly.map(m => (cum += m.newClients));
-    return `${dirTiles([['Registered clients', fmtNum(R.company.clients)], ['Active clients', fmtNum(R.company.activeClients)], ['New clients (12 months)', fmtNum(dirSum(R.monthly, m => m.newClients))], ['Loans disbursed (12 months)', fmtNum(dirSum(R.monthly, m => m.disbursedLoans))]])}
+  growth: R => { let cum = 0; const clients = R.monthly.map(m => (cum += m.newClients)); let lent = 0;
+    return `${growthForestHtml(R.monthly.map(m => ({ label: invM(m.month), value: (lent += Number(m.disbursed || 0)) })), 'Portfolio Growth')}${dirTiles([['Registered clients', fmtNum(R.company.clients)], ['Active clients', fmtNum(R.company.activeClients)], ['New clients (12 months)', fmtNum(dirSum(R.monthly, m => m.newClients))], ['Loans disbursed (12 months)', fmtNum(dirSum(R.monthly, m => m.disbursedLoans))]])}
       ${admTwoCharts(invMonthlyChart('inv-gr-c', 'New Clients per Month', R, { sets: [{ label: 'New clients', data: R.monthly.map(m => m.newClients), backgroundColor: '#3D8BD9' }] }),
         invMonthlyChart('inv-gr-cum', 'Clients Added (cumulative, 12 months)', R, { type: 'line', sets: [{ label: 'Clients added', data: clients, fill: true, tension: 0.3 }] }))}
       ${dirTable('Growth by month', R.monthly.slice().reverse(), [['Month', m => invM(m.month)], ['New clients', m => fmtNum(m.newClients)], ['Loans disbursed', m => fmtNum(m.disbursedLoans)], ['Amount disbursed', m => fmt(m.disbursed)]], '—')}`; },
@@ -20133,6 +20204,22 @@ function submitReqFilter(ev){
 // back button, a small section label over the title and outlined actions
 // on the right; a bordered filter panel; an icon empty state; and
 // expandable "≡ N Items" chips that open a row's detail in place.
+// Portfolio growth as a growing forest: one tree per month, sized by that
+// month's portfolio, alternating 🌲 and 🌴; the badge shows the growth from
+// the first month to the last.
+function growthForestHtml(points, title){
+  const pts = (points || []).filter(p => p && isFinite(p.value)); if(pts.length < 2) return '';
+  const max = Math.max(...pts.map(p => p.value), 1);
+  const first = pts[0], last = pts[pts.length - 1];
+  const pct = first.value > 0 ? Math.round((last.value / first.value - 1) * 100) : null;
+  const up = pct == null ? last.value >= first.value : pct >= 0;
+  const trees = pts.map((p, i) => { const k = Math.max(0.18, p.value / max); const size = Math.round(14 + k * 46);
+    return `<div class="gf-tree" title="${escapeHtml(p.label)}: ${escapeHtml(fmt(p.value))}"><span style="font-size:${size}px; filter:saturate(${0.6 + k * 0.6});">${i % 2 ? '🌴' : '🌲'}</span><div class="gf-lbl">${escapeHtml(p.label)}</div></div>`; }).join('');
+  return `<div class="card gf-card"><div class="card-title"><span>${escapeHtml(title || 'Portfolio Growth')} 🌲🌴</span>
+      <span class="gf-badge ${up ? 'up' : 'down'}">${pct == null ? (last.value > 0 ? '▲ New growth' : 'Not started') : (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '%'}</span></div>
+    <div class="gf-forest">${trees}</div><div class="gf-ground"></div>
+    <div class="gf-foot">${escapeHtml(first.label)}: <strong>${escapeHtml(fmt(first.value))}</strong> → ${escapeHtml(last.label)}: <strong>${escapeHtml(fmt(last.value))}</strong>${up ? '' : ' <span class="gf-leaf">🍂 shrinking</span>'}</div></div>`;
+}
 function pgHead(eyebrow, title, actions, back){
   return `<div class="pg-head"><button type="button" class="pg-back" onclick="${back || 'pgBack()'}" title="Back">←</button>
     <div class="pg-titles">${eyebrow ? `<div class="pg-eyebrow">${escapeHtml(eyebrow)}</div>` : ''}<div class="pg-title">${title}</div></div>
@@ -22194,19 +22281,23 @@ function renderCompanyEmployeesPage(){
 function defaultRolesFilters(){ return { q:'', accessLevel:'', status:'', roleType:'' }; }
 async function loadRolesPage(){
   return withRequest('load-roles', async ()=>{
-    const [rolesRes, permsRes, modsRes] = await Promise.all([
+    const [rolesRes, permsRes, modsRes, invRes] = await Promise.all([
       api.get('/api/roles?with_counts=1'),
       api.get('/api/permissions'),
       api.get('/api/modules'),
+      api.get('/api/investors').catch(() => null),
     ]);
-    DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, modulesTotal: modsRes.modules.length, allPermissions: permsRes.permissions, allModules: modsRes.modules };
+    const invs = invRes ? (invRes.investors || []) : null;
+    DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, modulesTotal: modsRes.modules.length, allPermissions: permsRes.permissions, allModules: modsRes.modules,
+      investorCount: invs ? invs.length : null, investorActive: invs ? invs.filter(i => (i.status || 'Active') === 'Active').length : null };
   });
 }
 function renderRolesSummary(roles){
-  const total = roles.length;
-  const active = roles.filter(r=>r.status==='Active').length;
+  // Investor is a role too (it signs in to its own portal, outside the staff roles table).
+  const total = roles.length + 1;
+  const active = roles.filter(r=>r.status==='Active').length + 1;
   const inactive = total - active;
-  const system = roles.filter(r=>r.is_system).length;
+  const system = roles.filter(r=>r.is_system).length + 1;
   const custom = total - system;
   return `<div class="adm-tiles" style="margin-bottom:6px;">
     ${admTile('Total Roles', total)}${admTile('Active Roles', active)}${admTile('Inactive Roles', inactive)}${admTile('System Roles', system)}${admTile('Custom Roles', custom)}
@@ -22240,13 +22331,30 @@ function renderRolesPage(){
         <button class="btn btn-sm btn-primary" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; goTo('staff','Role Permissions');">Permissions</button>
         ${!r.is_system && session.role === 'Admin' ? `<button class="btn btn-sm btn-red" onclick="deleteCustomRole('${r.id}')" ${r.userCount ? 'disabled title="Move its users to another role first"' : ''}>Delete</button>` : ''}
       </td>
-    </tr>`).join("");
+    </tr>`).join("") + (() => {
+      // The Investor role: investors sign in to the Investor Portal.
+      const iq = String(f.q || '').toLowerCase();
+      if((f.status && f.status !== 'Active') || (f.roleType && f.roleType !== 'System') || (f.accessLevel && f.accessLevel !== 'Investor Portal Access') || (iq && !'investor portal capital partner'.includes(iq))) return '';
+      const invMenus = (SIDEBAR_MENUS.Investor || []); const nItems = invMenus.reduce((n, s) => n + s.items.length, 0);
+      const openPerms = `session.rp=Object.assign(rpState(), { view:'role', roleId:'investor' }); goTo('staff','Role Permissions');`;
+      return `<tr class="clickable" onclick="${openPerms}">
+        <td style="min-width:200px;"><strong style="font-size:14px;">Investor</strong> <span class="hint">investor</span><div class="dt-desc">${escapeHtml(ROLE_DESCRIPTIONS.Investor || 'Capital partners — sign in to the Investor Portal to follow their investment, returns and statements.')}</div></td>
+        <td>Investor Portal Access</td>
+        <td><strong>${state.investorCount == null ? '—' : state.investorCount}</strong><div class="hint">${state.investorActive == null ? 'portal accounts' : state.investorActive + ' active'}</div></td>
+        <td><div class="hint">Portal only</div></td>
+        <td>${meter(invMenus.length, invMenus.length)}<div class="hint">${nItems} submenus</div></td>
+        <td><span class="badge blue">System</span></td>
+        <td><span class="badge green">Active</span></td>
+        <td onclick="event.stopPropagation();" class="dt-act wrap">
+          <button class="btn btn-sm btn-outline" onclick="sidebarNavigate('Investor Directory')">View</button>
+          <button class="btn btn-sm btn-primary" onclick="${openPerms}">Permissions</button>
+        </td></tr>`; })();
   return `
     <div class="card">
       <div class="dt-head">
         <div>
           <h3>Roles</h3>
-          <div class="hint" style="margin-top:4px; max-width:640px;">Every staff role, what it may do and who holds it. Investors sign in to their own portal, so they are registered under Investor Accounts rather than given a staff role.</div>
+          <div class="hint" style="margin-top:4px; max-width:640px;">Every role, what it may do and who holds it — including Investors, who sign in to their own portal.</div>
         </div>
         <div class="dt-toolbar">
           <button class="btn btn-primary btn-sm" onclick="openModal('create-role')">+ Create Role</button>
@@ -22592,26 +22700,183 @@ function rolePermToolbar(current){
   return `<div class="dt-toolbar">${b('Roles', 'Roles')}${b('Role Permissions', 'Role Permissions')}${b('Permission Matrix', 'Permission Matrix')}<button class="btn btn-sm btn-primary" onclick="openModal('create-role')">+ Create Role</button></div>`;
 }
 const dtTick = on => on ? '<span class="dt-yes">✓</span>' : '<span class="dt-no">—</span>';
+// ---- Role Permissions: every menu & submenu of every role, plus actions ----
+// By role: one column per role (Investor included), one row per menu and
+// submenu, with the 13 action permissions on top. By user: one person's
+// menus with their role's setting and their own, and their actions.
+// Changes are collected first and saved together.
+function rpMenuIntel(roleId){
+  const cat = DB.intelligenceCatalog; const g = DB.acctPages.roleIntel && DB.acctPages.roleIntel[roleId];
+  if(!cat || !g || !g.size) return [];
+  return (cat.categories || []).map(c => ({ section: c.label, icon: c.icon, items: (cat.features || []).filter(f => f.category_id === c.id && g.has(f.id) && BUILT_INTELLIGENCE_CATEGORIES.has(f.category_id)).map(f => f.label) })).filter(s => s.items.length);
+}
+function rpMenuFor(r){
+  if(r.id === 'investor') return SIDEBAR_MENUS.Investor || [];
+  const base = SIDEBAR_MENUS[r.name] || templateMenu(r.structural_template) || [];
+  const intel = rpMenuIntel(r.id); const i = base.findIndex(s => s.section === 'My Account');
+  return !intel.length ? base : i === -1 ? base.concat(intel) : base.slice(0, i).concat(intel, base.slice(i));
+}
+function rpRoles(){
+  const rs = DB.acctPages.roles;
+  return rs.roles.slice().sort((a, b) => (b.is_system - a.is_system) || a.name.localeCompare(b.name))
+    .map(r => ({ id: r.id, name: r.name, level: r.default_access_level, menu: rpMenuFor(r) }))
+    .concat([{ id: 'investor', name: 'Investor', level: 'Investor Portal Access', menu: rpMenuFor({ id: 'investor' }) }]);
+}
+// Sections in first-seen order, each with the union of its submenus.
+function rpCatalog(roles){
+  const secs = []; const byName = {};
+  roles.forEach(r => r.menu.forEach(s => {
+    let e = byName[s.section]; if(!e){ e = byName[s.section] = { section: s.section, icon: s.icon, items: [] }; secs.push(e); }
+    s.items.forEach(it => { if(!e.items.includes(it)) e.items.push(it); });
+  }));
+  return secs;
+}
+function loadMenuPerms(){
+  const rs = DB.acctPages.roles; if(!rs) return;
+  withRequest('load-menu-perms', async ()=>{
+    const [mp, intel] = await Promise.all([
+      api.get('/api/menu-permissions'),
+      Promise.all(rs.roles.map(r => api.get(`/api/roles/${r.id}/intelligence`).then(x => [r.id, new Set(x.featureIds || [])]).catch(() => [r.id, new Set()]))),
+    ]);
+    DB.acctPages.menuPerms = { stamp: rs, settings: mp.settings || { role: {}, user: {} } };
+    DB.acctPages.roleIntel = Object.fromEntries(intel);
+  });
+}
+function rpState(){ return session.rp || (session.rp = { view: 'role', roleId: '', section: '', q: '', offOnly: false, userId: '', userQ: '', pending: {}, permPending: {} }); }
+const rpPendKey = (scope, subject, key) => scope + '|' + subject + '|' + key;
+function rpSaved(scope, subject, key){ const s = DB.acctPages.menuPerms.settings[scope]; const m = s && s[subject]; return m && key in m ? m[key] : undefined; }
+function rpValue(scope, subject, key){ const st = rpState(); const pk = rpPendKey(scope, subject, key); return pk in st.pending ? st.pending[pk] : rpSaved(scope, subject, key); }
+// Role-level: on unless switched off (section or item).
+function rpRoleOn(roleId, section, item){ if(rpValue('role', roleId, menuKey(section, '*')) === false) return false; return item === '*' || rpValue('role', roleId, menuKey(section, item)) !== false; }
+function rpToggleRole(roleId, idx){
+  const key = (session.rpKeys || [])[idx]; if(!key) return;
+  const st = rpState(); const pk = rpPendKey('role', roleId, key);
+  const target = rpValue('role', roleId, key) !== false ? false : null; // off, or back to the default (on)
+  const saved = rpSaved('role', roleId, key) === false ? false : null;
+  if(target === saved) delete st.pending[pk]; else st.pending[pk] = target;
+  renderApp();
+}
+function rpSetUser(userId, idx, val){
+  const key = (session.rpKeys || [])[idx]; if(!key) return;
+  const st = rpState(); const pk = rpPendKey('user', userId, key);
+  const v = val === 'on' ? true : val === 'off' ? false : null;
+  const saved = rpSaved('user', userId, key);
+  if((saved === undefined && v === null) || saved === v) delete st.pending[pk]; else st.pending[pk] = v;
+  renderApp();
+}
+function rpSetPerm(pid, val){ const st = rpState(); if(val === '') delete st.permPending[pid]; else st.permPending[pid] = val; renderApp(); }
+function rpDiscard(){ const st = rpState(); st.pending = {}; st.permPending = {}; renderApp(); }
+async function rpSave(){
+  const st = rpState(); const groups = {};
+  Object.entries(st.pending).forEach(([pk, v]) => { const [scope, subject, ...rest] = pk.split('|'); const g = groups[scope + '|' + subject] || (groups[scope + '|' + subject] = { scope, subjectId: subject, changes: [] }); g.changes.push({ key: rest.join('|'), allowed: v === undefined ? null : v }); });
+  await withRequest('rp-save', async ()=>{
+    for(const g of Object.values(groups)) await api.put('/api/menu-permissions', g);
+    for(const [pid, v] of Object.entries(st.permPending)){
+      if(v === 'default') await api.del(`/api/users/${st.userId}/permissions/${pid}`);
+      else await api.put(`/api/users/${st.userId}/permissions/${pid}`, { allowed: v === 'allow' });
+    }
+    const mp = await api.get('/api/menu-permissions'); DB.acctPages.menuPerms.settings = mp.settings || { role: {}, user: {} };
+    if(st.userId && Object.keys(st.permPending).length){ const fa = await api.get(`/api/users/${st.userId}/final-access`); session.rpUserAccess = { id: st.userId, fa: fa.finalAccess }; }
+    st.pending = {}; st.permPending = {};
+    if(DB.me && DB.me.id){ try{ const me = await api.get('/api/auth/me'); if(me && me.user && me.user.finalAccess) DB.me.finalAccess = me.user.finalAccess; }catch(e){} }
+  }, { mutates: true, progress: 'Saving permissions', successMsg: 'Permissions saved' });
+}
+function rpSelectUser(id){
+  const st = rpState(); st.userId = id; st.permPending = {}; session.rpUserAccess = null; renderApp();
+  if(!id) return;
+  return withRequest('rp-user-' + id, async ()=>{ const r = await api.get(`/api/users/${id}/final-access`); session.rpUserAccess = { id, fa: r.finalAccess }; });
+}
 function renderRolePermissionsPage(){
   const rs = DB.acctPages.roles; const pm = permMatrixState();
   if(!rs || !pm) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
-  const st = session.rolePermissionsState || (session.rolePermissionsState = defaultRolePermissionsState());
-  const roles = rs.roles.slice().sort((a, b) => (b.is_system - a.is_system) || a.name.localeCompare(b.name));
+  const mpm = DB.acctPages.menuPerms;
+  if(!mpm || mpm.stamp !== rs){ if(!inFlight.has('load-menu-perms')) loadMenuPerms(); return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`; }
+  const st = rpState(); const canEdit = session.role === 'Admin';
+  const roles = rpRoles(); const catalog = rpCatalog(roles);
   const perms = rs.allPermissions || [];
+  const nItems = catalog.reduce((n, s) => n + s.items.length, 0);
+  const offCount = Object.values(mpm.settings.role || {}).reduce((n, m) => n + Object.values(m).filter(v => v === false).length, 0) + Object.values(mpm.settings.user || {}).reduce((n, m) => n + Object.values(m).filter(v => v === false).length, 0);
+  const pendingN = Object.keys(st.pending).length + Object.keys(st.permPending).length;
+  session.rpKeys = [];
+  const kid = key => { session.rpKeys.push(key); return session.rpKeys.length - 1; };
+  const seg = `<div class="pg-seg"><button class="${st.view === 'role' ? 'on' : ''}" onclick="rpState().view='role'; renderApp();">By role</button><button class="${st.view === 'user' ? 'on' : ''}" onclick="rpState().view='user'; renderApp();">By user</button></div>`;
+  const head = `<div class="dt-head"><div><h3>Role Permissions</h3></div>${rolePermToolbar('Role Permissions')}</div>
+    <div class="adm-tiles">${admTile('Roles', roles.length)}${admTile('Menus', catalog.length)}${admTile('Submenus', nItems)}${admTile('Action permissions', perms.length)}${admTile('Switched off', offCount)}</div>`;
+  const saveBar = pendingN ? `<div class="rp-save"><span><strong>${pendingN}</strong> change${pendingN === 1 ? '' : 's'} not saved</span><button class="btn btn-sm btn-outline" onclick="rpDiscard()">Discard</button><button class="btn btn-sm btn-primary" onclick="rpSave()">Save changes</button></div>` : '';
+  if(st.view === 'user') return `<div class="card">${head}<div class="dt-filters">${seg}</div>${rpUserView(roles, perms, pm, kid, canEdit)}</div>${saveBar}`;
+  // ---- By role ----
+  const shownRoles = st.roleId ? roles.filter(r => r.id === st.roleId) : roles;
+  const q = String(st.q || '').toLowerCase();
+  const inRole = (r, s, it) => r.menu.some(x => x.section === s && (it === '*' || x.items.includes(it)));
+  const cell = (r, s, it) => {
+    if(!inRole(r, s, it)) return `<td class="rp-na">—</td>`;
+    const key = menuKey(s, it); const pk = rpPendKey('role', r.id, key);
+    const on = it === '*' ? rpValue('role', r.id, key) !== false : rpRoleOn(r.id, s, it);
+    const parentOff = it !== '*' && rpValue('role', r.id, menuKey(s, '*')) === false;
+    const cls = `rp-cell ${on ? 'on' : 'off'}${pk in st.pending ? ' pend' : ''}${parentOff ? ' muted' : ''}`;
+    return `<td>${canEdit && !parentOff ? `<button class="${cls}" onclick="rpToggleRole('${r.id}',${kid(key)})" title="${on ? 'On — click to switch off' : 'Off — click to switch on'}">${on ? '✓' : '✕'}</button>` : `<span class="${cls}">${on ? '✓' : '✕'}</span>`}</td>`;
+  };
+  const sections = catalog.filter(s => !st.section || s.section === st.section);
+  const rowsHtml = sections.map(s => {
+    const items = s.items.filter(it => shownRoles.some(r => inRole(r, s.section, it)) && (!q || it.toLowerCase().includes(q) || s.section.toLowerCase().includes(q))
+      && (!st.offOnly || shownRoles.some(r => inRole(r, s.section, it) && !rpRoleOn(r.id, s.section, it))));
+    if(!items.length || !shownRoles.some(r => inRole(r, s.section, '*'))) return '';
+    return `<tr class="rp-sec"><td><span class="rp-sec-ic">${s.icon || '▸'}</span> ${escapeHtml(s.section)} <span class="hint">menu · ${items.length}</span></td>${shownRoles.map(r => cell(r, s.section, '*')).join('')}</tr>`
+      + items.map(it => `<tr><td class="rp-item">${escapeHtml(it)}</td>${shownRoles.map(r => cell(r, s.section, it)).join('')}</tr>`).join('');
+  }).join('');
   const cats = {}; perms.forEach(p => { const c = PERMISSION_CATEGORIES[p.id] || 'Other'; (cats[c] = cats[c] || []).push(p); });
-  const q = (session.rpMatrixQ || '').toLowerCase();
-  const head = `<tr><th>Permission</th>${roles.map(r => `<th title="${escapeHtml(r.default_access_level)}">${escapeHtml(r.name)}<div style="margin-top:4px;"><button class="btn btn-sm btn-outline" style="background:#fff; padding:2px 8px; font-size:11px;" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; renderApp(); setTimeout(()=>{ const e=document.getElementById('rp-editor'); if(e && e.scrollIntoView) e.scrollIntoView({behavior:'smooth'}); }, 50);">Edit</button></div></th>`).join('')}</tr>`;
-  const body = Object.entries(cats).map(([c, ps]) => { const shown = ps.filter(p => !q || (p.label || p.id).toLowerCase().includes(q) || c.toLowerCase().includes(q)); if(!shown.length) return '';
-    return `<tr class="dt-group"><td colspan="${roles.length + 1}">${escapeHtml(c)}</td></tr>` + shown.map(p => `<tr><td>${escapeHtml(p.label || p.id)}</td>${roles.map(r => `<td>${dtTick(pm.perms[r.id] && pm.perms[r.id].has(p.id))}</td>`).join('')}</tr>`).join(''); }).join('');
-  const totals = `<tr class="dt-group"><td>Granted</td>${roles.map(r => `<td style="text-align:center;">${(pm.perms[r.id] || new Set()).size} / ${perms.length}</td>`).join('')}</tr>`;
-  return `<div class="card">
-      <div class="dt-head"><div><h3>Role Permissions</h3><div class="hint" style="margin-top:4px; max-width:640px;">What every role may do, side by side. Click <b>Edit</b> under a role to change its permissions and module access.</div></div>${rolePermToolbar('Role Permissions')}</div>
-      <div class="adm-tiles">${admTile('Roles', roles.length)}${admTile('Permissions', perms.length)}${admTile('Grants in total', Object.values(pm.perms).reduce((n, x) => n + x.size, 0))}</div>
-      <div class="dt-filters"><input placeholder="🔍 Search permissions" value="${escapeHtml(session.rpMatrixQ || '')}" oninput="session.rpMatrixQ=this.value; renderApp();" style="min-width:240px;">
-        ${generateMenuHtml('Role Permissions', () => ({ headers: ['Category','Permission'].concat(roles.map(r => r.name)), rows: perms.map(p => [PERMISSION_CATEGORIES[p.id] || 'Other', p.label || p.id].concat(roles.map(r => pm.perms[r.id] && pm.perms[r.id].has(p.id) ? 'Yes' : 'No'))) }))}</div>
-      <div class="dt-wrap"><table class="dt matrix">${head}${body}${totals}</table></div>
+  const permRows = (st.section || st.offOnly) ? '' : `<tr class="rp-sec rp-act"><td>⚙ Actions <span class="hint">what the role may do</span></td>${shownRoles.map(() => '<td></td>').join('')}</tr>`
+    + Object.entries(cats).map(([c, ps]) => ps.filter(p => !q || (p.label || p.id).toLowerCase().includes(q) || c.toLowerCase().includes(q)).map(p => `<tr><td class="rp-item">${escapeHtml(p.label || p.id)} <span class="hint">${escapeHtml(c)}</span></td>${shownRoles.map(r => r.id === 'investor' ? '<td class="rp-na">—</td>' : `<td>${dtTick(pm.perms[r.id] && pm.perms[r.id].has(p.id))}</td>`).join('')}</tr>`).join('')).join('');
+  const totals = `<tr class="dt-group"><td>Menus on</td>${shownRoles.map(r => { const all = r.menu.reduce((n, s) => n + s.items.length, 0); const on = r.menu.reduce((n, s) => n + s.items.filter(it => rpRoleOn(r.id, s.section, it)).length, 0); return `<td style="text-align:center;">${on} / ${all}</td>`; }).join('')}</tr>`;
+  const headRow = `<tr><th>Permission</th>${shownRoles.map(r => `<th title="${escapeHtml(r.level)}">${escapeHtml(r.name)}${r.id !== 'investor' && canEdit ? `<div style="margin-top:4px;"><button class="btn btn-sm btn-outline rp-edit" onclick="session.rolePermissionsState={roleId:'${r.id}', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true}; renderApp(); setTimeout(()=>{ const e=document.getElementById('rp-editor'); if(e && e.scrollIntoView) e.scrollIntoView({behavior:'smooth'}); }, 50);">Actions</button></div>` : ''}</th>`).join('')}</tr>`;
+  const exportRows = () => ({ headers: ['Menu', 'Submenu'].concat(roles.map(r => r.name)), rows: catalog.flatMap(s => [['*']].concat(s.items.map(i => [i])).map(([it]) => [s.section, it === '*' ? '(whole menu)' : it].concat(roles.map(r => !inRole(r, s.section, it) ? '—' : (it === '*' ? rpValue('role', r.id, menuKey(s.section, '*')) !== false : rpRoleOn(r.id, s.section, it)) ? 'On' : 'Off')))) });
+  const rst = session.rolePermissionsState || {};
+  return `<div class="card">${head}
+      <div class="dt-filters">${seg}
+        <select onchange="rpState().roleId=this.value; renderApp();"><option value="">All roles</option>${roles.map(r => `<option value="${r.id}" ${st.roleId === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}</select>
+        <select onchange="rpState().section=this.value; renderApp();"><option value="">All menus</option>${catalog.map(s => `<option ${st.section === s.section ? 'selected' : ''}>${escapeHtml(s.section)}</option>`).join('')}</select>
+        <input placeholder="🔍 Search menus and permissions" value="${escapeHtml(st.q || '')}" onchange="rpState().q=this.value; renderApp();" style="min-width:220px;">
+        <label class="rp-chk"><input type="checkbox" ${st.offOnly ? 'checked' : ''} onchange="rpState().offOnly=this.checked; renderApp();"> Switched off only</label>
+        ${generateMenuHtml('Role Permissions', exportRows)}</div>
+      <div class="dt-wrap rp-wrap"><table class="dt matrix rp-table">${headRow}${permRows}${rowsHtml || `<tr><td colspan="${shownRoles.length + 1}" class="empty">Nothing matches these filters.</td></tr>`}${totals}</table></div>
     </div>
-    ${st.editing && st.roleId ? `<div id="rp-editor">${renderRolePermissionEditor()}</div>` : ''}`;
+    ${saveBar}
+    ${rst.editing && rst.roleId ? `<div id="rp-editor">${renderRolePermissionEditor()}</div>` : ''}`;
+}
+function rpUserView(roles, perms, pm, kid, canEdit){
+  const st = rpState();
+  const staff = (DB.staff || []).filter(u => u.status !== 'Terminated').sort((a, b) => a.name.localeCompare(b.name));
+  const uq = String(st.userQ || '').toLowerCase();
+  const opts = staff.filter(u => !uq || [u.name, u.email, u.role, u.username].some(x => String(x || '').toLowerCase().includes(uq)));
+  const pick = `<div class="dt-filters" style="margin-top:-4px;"><input placeholder="🔍 Find a user" value="${escapeHtml(st.userQ || '')}" onchange="rpState().userQ=this.value; renderApp();" style="min-width:200px;">
+    <select onchange="rpSelectUser(this.value)" style="min-width:240px;"><option value="">-- Select user --</option>${opts.map(u => `<option value="${u.id}" ${st.userId === u.id ? 'selected' : ''}>${escapeHtml(u.name)} · ${escapeHtml(u.role)}</option>`).join('')}</select></div>`;
+  const u = staff.find(x => x.id === st.userId);
+  if(!u) return pick + `<div class="pg-empty"><div class="pg-empty-ic">👤</div><div>Choose a user to see and set their own menu and action permissions.</div></div>`;
+  const ua = session.rpUserAccess && session.rpUserAccess.id === u.id ? session.rpUserAccess.fa : null;
+  if(!ua) return pick + `<div class="hint" style="padding:12px;">${loadingDotsHtml()}</div>`;
+  const rsRole = DB.acctPages.roles.roles.find(r => r.name === u.role || r.id === ROLE_DISPLAY_TO_ID[u.role]);
+  const role = roles.find(r => rsRole && r.id === rsRole.id);
+  if(!role) return pick + `<div class="empty">This user's role was not found.</div>`;
+  const uv = key => rpValue('user', u.id, key);
+  const userOn = (s, it) => { const sec = uv(menuKey(s, '*')); const secOn = sec === undefined ? rpRoleOn(role.id, s, '*') : sec; if(!secOn) return false; if(it === '*') return true; const v = uv(menuKey(s, it)); return v === undefined ? rpRoleOn(role.id, s, it) : v; };
+  const sel = (key) => { const v = uv(key); const pk = rpPendKey('user', u.id, key); const cur = v === true ? 'on' : v === false ? 'off' : 'default';
+    return canEdit ? `<select class="rp-sel ${pk in st.pending ? 'pend' : ''}" onchange="rpSetUser('${u.id}',${kid(key)},this.value)"><option value="default" ${cur === 'default' ? 'selected' : ''}>Role default</option><option value="on" ${cur === 'on' ? 'selected' : ''}>On for this user</option><option value="off" ${cur === 'off' ? 'selected' : ''}>Off for this user</option></select>` : escapeHtml(cur); };
+  const tick = on => `<span class="rp-cell ${on ? 'on' : 'off'}">${on ? '✓' : '✕'}</span>`;
+  const q = String(st.q || '').toLowerCase();
+  const menuRows = role.menu.map(s => {
+    const items = s.items.filter(it => !q || it.toLowerCase().includes(q) || s.section.toLowerCase().includes(q)); if(!items.length) return '';
+    return `<tr class="rp-sec"><td>${escapeHtml(s.section)} <span class="hint">menu</span></td><td>${tick(rpRoleOn(role.id, s.section, '*'))}</td><td>${sel(menuKey(s.section, '*'))}</td><td>${tick(userOn(s.section, '*'))}</td></tr>`
+      + items.map(it => `<tr><td class="rp-item">${escapeHtml(it)}</td><td>${tick(rpRoleOn(role.id, s.section, it))}</td><td>${sel(menuKey(s.section, it))}</td><td>${tick(userOn(s.section, it))}</td></tr>`).join('');
+  }).join('');
+  const eff = new Set(ua.permissions || []);
+  const roleHas = pid => !!(pm.perms[role.id] && pm.perms[role.id].has(pid));
+  const permRows = role.id === 'investor' ? '' : perms.map(p => { const pend = st.permPending[p.id]; const cur = pend || (eff.has(p.id) === roleHas(p.id) ? 'default' : eff.has(p.id) ? 'allow' : 'deny');
+    const result = pend ? (pend === 'default' ? roleHas(p.id) : pend === 'allow') : eff.has(p.id);
+    return `<tr><td class="rp-item">${escapeHtml(p.label || p.id)}</td><td>${tick(roleHas(p.id))}</td><td>${canEdit ? `<select class="rp-sel ${pend ? 'pend' : ''}" onchange="rpSetPerm('${p.id}',this.value)"><option value="default" ${cur === 'default' ? 'selected' : ''}>Role default</option><option value="allow" ${cur === 'allow' ? 'selected' : ''}>Allowed for this user</option><option value="deny" ${cur === 'deny' ? 'selected' : ''}>Blocked for this user</option></select>` : cur}</td><td>${tick(result)}</td></tr>`; }).join('');
+  return pick + `<div class="rp-user"><div><strong>${escapeHtml(u.name)}</strong>${u.username ? ` <span class="hint">@${escapeHtml(u.username)}</span>` : ''}<div class="hint">${escapeHtml(u.role)} · ${escapeHtml(branchName(u.branch) || 'Head office')} · ${escapeHtml(u.email || '')}</div></div>
+      <input placeholder="🔍 Search this user's menus" value="${escapeHtml(st.q || '')}" onchange="rpState().q=this.value; renderApp();"></div>
+    <div class="dt-wrap rp-wrap"><table class="dt rp-table rp-utable"><tr><th>Menu / Submenu</th><th>${escapeHtml(role.name)} role</th><th>This user</th><th>Result</th></tr>
+      ${permRows ? `<tr class="rp-sec rp-act"><td colspan="4">⚙ Actions</td></tr>${permRows}` : ''}${menuRows}</table></div>`;
 }
 function renderPermissionMatrixPage(){
   const rs = DB.acctPages.roles; const pm = permMatrixState();
@@ -22852,6 +23117,8 @@ function saveRoleModules(){
 // creating a second, duplicate person. Set by Staff Detail's "Create User
 // Account for this Employee" button; cleared once the account is created
 // or the Admin navigates away.
+// Same rule as the server: "David Simon" → "david.simon" (a number is added if taken).
+const suggestUsername = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 30);
 function goToCreateUserFor(employeeId){
   session.createUserLinkEmployeeId = employeeId;
   session.createUserEmployeeSearch = '';
@@ -22894,6 +23161,7 @@ function renderLinkAccountForm(employee){
           </select></div>
           <div class="field"><label>Access Level</label><input name="accessLevel" value="${escapeHtml(employee.accessLevel||'')}" placeholder="auto-filled from role, editable"></div>
           <div class="field"><label>Login Email</label><input name="loginEmail" type="email" value="${escapeHtml(employee.email||'')}" required></div>
+          <div class="field"><label>Username</label><input name="username" value="${escapeHtml(suggestUsername(employee.name))}" placeholder="from the person's name" maxlength="40"><div class="hint">They can sign in with this username or their email.</div></div>
         </div>
         <div class="hint" style="margin:10px 0;">A secure temporary password is generated automatically — the employee sets their own on first login.</div>
         <div class="pill-row">
@@ -22908,14 +23176,14 @@ function submitLinkUserAccount(ev, employeeId){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   return withRequest('link-user-account', async ()=>{
-    const res = await api.post('/api/users', { employee_id: employeeId, role_id: f.roleId, access_level: f.accessLevel || undefined, login_email: f.loginEmail });
+    const res = await api.post('/api/users', { employee_id: employeeId, role_id: f.roleId, access_level: f.accessLevel || undefined, login_email: f.loginEmail, username: f.username || undefined });
     const s = adaptStaff(res.user);
     const i = DB.staff.findIndex(x=>x.id===s.id); if(i>=0) DB.staff[i] = s; else DB.staff.push(s);
     session.createUserLinkEmployeeId = null;
     session.selectedStaffId = s.id;
     goTo('staff');
     const deliveryNote = (res.notifications && res.notifications.email === 'SENT') ? 'a welcome email has been sent to them' : 'email delivery is not configured — share this password with them securely yourself';
-    alert(`System Account created for ${s.name}.\n\nTemporary password: ${res.tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
+    alert(`System Account created for ${s.name}.\n\nUsername: ${s.username || '—'}\nTemporary password: ${res.tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
   });
 }
 // Create User: every staff member and their login in one table; the two
@@ -22926,13 +23194,13 @@ function renderCreateUserPage(){
   const staff = (DB.staff || []).slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   const f = session.cuFilter || (session.cuFilter = { q:'', role:'', account:'' });
   const q = f.q.toLowerCase();
-  const list = staff.filter(u => (!q || [u.name, u.email, u.staffCode, u.phone].some(x => (x || '').toLowerCase().includes(q))) && (!f.role || u.role === f.role) && (!f.account || (u.systemAccount || 'Not Created') === f.account));
+  const list = staff.filter(u => (!q || [u.name, u.email, u.staffCode, u.phone, u.username].some(x => (x || '').toLowerCase().includes(q))) && (!f.role || u.role === f.role) && (!f.account || (u.systemAccount || 'Not Created') === f.account));
   const roles = [...new Set(staff.map(u => u.role))].sort();
   const accts = ['Active','Suspended','Locked','Disabled','Not Created'];
   const acc = u => u.systemAccount || 'Not Created';
   const isAdmin = session.role === 'Admin';
   const trs = list.map(u => `<tr>
-      <td><a href="#" onclick="admOpenUser('${u.id}'); return false;"><strong style="font-size:14px;">${escapeHtml(u.name)}</strong></a><div class="hint">${escapeHtml(u.email || '—')}${u.staffCode ? ' · ' + escapeHtml(u.staffCode) : ''}</div></td>
+      <td><a href="#" onclick="admOpenUser('${u.id}'); return false;"><strong style="font-size:14px;">${escapeHtml(u.name)}</strong></a><div class="hint">${u.username ? '@' + escapeHtml(u.username) + ' · ' : ''}${escapeHtml(u.email || '—')}${u.staffCode ? ' · ' + escapeHtml(u.staffCode) : ''}</div></td>
       <td><span class="badge blue">${escapeHtml(u.role || '—')}</span></td>
       <td>${escapeHtml(u.accessLevel || '—')}</td>
       <td>${escapeHtml(u.branch ? branchName(u.branch) : 'Head office')}</td>
@@ -22952,7 +23220,7 @@ function renderCreateUserPage(){
           <button class="btn btn-primary btn-sm" onclick="toggleForm('cu-new')">${isFormOpen('cu-new') ? '✕ Close' : '+ New Employee + Login'}</button>
           <button class="btn btn-outline btn-sm" onclick="openInvestorRegistration()">+ Investor (portal login)</button>
           <button class="btn btn-outline btn-sm" onclick="goTo('staff','Roles')">Roles</button>
-          ${generateMenuHtml('Users', () => ({ headers: ['Name','Email','Job No.','Role','Access level','Branch','Login','Last sign-in','Status'], rows: list.map(u => [u.name, u.email || '', u.staffCode || '', u.role, u.accessLevel || '', u.branch ? branchName(u.branch) : 'Head office', acc(u), u.lastLoginAt || 'Never', u.status || '']) }))}
+          ${generateMenuHtml('Users', () => ({ headers: ['Name','Username','Email','Job No.','Role','Access level','Branch','Login','Last sign-in','Status'], rows: list.map(u => [u.name, u.username || '', u.email || '', u.staffCode || '', u.role, u.accessLevel || '', u.branch ? branchName(u.branch) : 'Head office', acc(u), u.lastLoginAt || 'Never', u.status || '']) }))}
         </div>
       </div>
       <div class="adm-tiles">${admTile('Staff', staff.length)}${admTile('Active logins', staff.filter(u => acc(u) === 'Active').length)}${admTile('Without a login', staff.filter(u => !u.hasAccount && u.status !== 'Terminated').length)}${admTile('Suspended / locked', staff.filter(u => ['Suspended','Locked','Disabled'].includes(acc(u))).length)}</div>
@@ -23018,6 +23286,7 @@ function renderNewEmployeeAccountForm(){
           <div class="field"><label>ID Number <span class="hint">(optional)</span></label><input name="nationalId" placeholder="e.g. 12345678" pattern="\\d{6,10}" title="6 to 10 digits"></div>
           <div class="field"><label>Phone Number</label><input name="phone" required placeholder="07XXXXXXXX" pattern="(\\+?254|0)[17]\\d{8}" title="A real Kenyan phone number, e.g. 0712345678"></div>
           <div class="field"><label>Email Address</label><input name="email" type="email" required></div>
+          <div class="field"><label>Username <span class="hint">(for signing in)</span></label><input name="username" maxlength="40" placeholder="made from the name" oninput="this.dataset.edited='1'"></div>
         </div>
 
         <div class="card-title" style="margin-top:20px;">Employment Information</div>
@@ -23196,6 +23465,8 @@ function submitAddEmployeeForm(ev){
 function syncCreateUserFullName(form){
   const parts = [form.firstName.value.trim(), form.middleName.value.trim(), form.lastName.value.trim()].filter(Boolean);
   form.name.value = parts.join(' ');
+  // The username follows the name until it is typed by hand.
+  if(form.username && !(form.username.dataset && form.username.dataset.edited)) form.username.value = suggestUsername([form.firstName.value, form.lastName.value].join(' '));
 }
 // Options are hidden (not removed) so the underlying <select> element and
 // its later FormData read are completely unaffected — same reasoning as
@@ -23256,7 +23527,7 @@ function submitCreateUserForm(ev){
     const deliveryNote = (notifications && notifications.email === 'SENT')
       ? 'a welcome email has been sent to them'
       : 'email delivery is not configured — share this password with them securely yourself';
-    if(tempPassword) alert(`${s.name} created as ${s.role}.\n\nTemporary password: ${tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
+    if(tempPassword) alert(`${s.name} created as ${s.role}.\n\nUsername: ${s.username || '—'}\nTemporary password: ${tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
     else toast(`${s.name} created as ${s.role}`);
   });
 }

@@ -326,6 +326,7 @@ router.delete('/api/users/me/avatar', async (req, res, next) => {
   './src/routes/intelligence',
   './src/routes/receipts',
   './src/routes/loanEsign',
+  './src/routes/menuPermissions',
 ].forEach(mod => require(mod).register(router));
 
 const server = http.createServer((req, res) => {

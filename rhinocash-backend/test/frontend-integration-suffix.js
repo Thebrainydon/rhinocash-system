@@ -8123,10 +8123,15 @@ apiRequest = async function(method, path, body){
     let h = document.getElementById('root').innerHTML;
     __assert(h.includes('class="dt"') && h.includes('+ Create Role') && h.includes(">Role Permissions</button>") && h.includes('>HR<'), "Roles is a designed table with page buttons above it");
     __assert(!/HR[^<]*\(Custom\)/.test(h) && h.includes('HR &amp; People Management Access'), "HR shows as a system role with its own access level, not Custom");
+    __assert(h.includes('Investor Portal Access') && h.includes('>Investor<'), "Roles lists Investor as a role too");
     sidebarNavigate('Role Permissions'); renderApp();
-    await waitFor(() => DB.acctPages.permMatrix);
+    await waitFor(() => DB.acctPages.permMatrix && DB.acctPages.menuPerms);
     h = document.getElementById('root').innerHTML;
-    __assert(h.includes('dt matrix') && h.includes('Approve Loans') && h.includes('Granted'), "Role Permissions shows every role's permissions in one table");
+    __assert(h.includes('dt matrix') && h.includes('Approve Loans') && h.includes('Menus on'), "Role Permissions shows every role's permissions in one table");
+    __assert(['LoanBook', 'Collection MTD', 'Investor', 'Submenus', 'By user'].every(x => h.includes(x)), "Role Permissions lists every role's menus and submenus (Investor included) with a By user view");
+    const rpBefore = Object.keys(rpState().pending).length;
+    const keyIdx = (session.rpKeys || []).findIndex(k => k === 'LoanBook›Collection MTD');
+    if(keyIdx >= 0){ rpToggleRole('loan_officer', keyIdx); __assert(Object.keys(rpState().pending).length === rpBefore + 1 && document.getElementById('root').innerHTML.includes('not saved'), "switching a submenu off queues a change with a Save bar"); rpDiscard(); }
     __assert(!h.includes('id="rp-editor"'), "the permission editor stays closed until a role is chosen");
     session.rolePermissionsState = { roleId:'hr', q:'', selection:null, moduleSelection:null, moduleDirty:false, dirty:false, editing:true };
     renderApp(); await waitFor(() => DB.acctPages.roleDetail && DB.acctPages.roleDetail.roleId === 'hr');
