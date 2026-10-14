@@ -107,7 +107,7 @@ function register(router) {
     let weather = [], weatherError = null;
     try {
       weather = await forecastFor(located.map(p => ({ key: `${p.lat.toFixed(2)},${p.lng.toFixed(2)}`, lat: p.lat.toFixed(3), lng: p.lng.toFixed(3) })));
-    } catch (e) { weatherError = 'Weather is not available right now'; }
+    } catch (e) { weatherError = 'Weather is not available right now'; console.warn(`[geo] weather unavailable: ${e && e.message}`); }
     res.json({
       branches: points.map(p => ({ id: p.id, name: p.name, region: p.region, lat: p.lat, lng: p.lng, approximate: p.approximate,
         weather: p.lat != null ? weather[located.indexOf(p)] || null : null })),
