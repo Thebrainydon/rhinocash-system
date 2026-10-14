@@ -8328,7 +8328,7 @@ apiRequest = async function(method, path, body){
       const sec = (SIDEBAR_MENUS[role] || []).find(x => x.section === 'Performance & Targets');
       __assert(sec && ['Disbursement Report', 'Branch Performance Report', 'MTD Disbursement Performance', 'Officer Targets'].every(i => sec.items.includes(i)), `${role} has the Performance & Targets reports`);
     }
-    __assert((SIDEBAR_MENUS['Loan Officer'].find(x => x.section === 'Performance & Targets') || { items: [] }).items.join() === 'My Targets', "a Loan Officer only has My Targets");
+    __assert((SIDEBAR_MENUS['Loan Officer'].find(x => x.section === 'Performance & Targets') || { items: [] }).items.join() === 'My Targets,Targets Register', "a Loan Officer has My Targets and the Targets Register (no branch reports)");
     __assert(PERF_PAGES.every(p => resolveRoute(p) && resolveRoute(p).section === 'reports'), "every report page opens inside Reports");
     __assert(perfAch(99.7) === '99.7%' && perfAch(100) === '100%' && perfAch(61.2) === '61%', "achievement just under 100% is never shown as 100%");
     for (const fn of [renderPerfDisbursement, renderPerfBranchPerformance, renderPerfMtd, renderPerfBranch, renderPerfOfficers, renderPerfOfficerPlan]) {
@@ -8368,6 +8368,58 @@ apiRequest = async function(method, path, body){
     const mh = geoMessagesHtml();
     __assert(mh.includes('Faith Njeri') && mh.includes('geo-unread') && mh.includes('geo-msg mine') && mh.includes('✓✓') && mh.includes('geo-chat-input'), "the Messages panel lists conversations with unread counts and a WhatsApp-style thread with read ticks");
     DB.geo = savedGeo; session.geo = savedSt;
+  }
+
+  // ---- A refused background load is asked once and announced once ----
+  {
+    const savedToasts = toasts.length; let calls = 0;
+    const refuse = () => withRequest('t-refused-load', async () => { calls++; throw new ApiError(403, "You do not have access to the 'loanbook' module"); });
+    await refuse(); await refuse(); await refuse();
+    __assert(calls === 1, "a load refused with 403 is not re-requested on every repaint");
+    __assert(toasts.filter(t => t.msg === "You do not have access to the 'loanbook' module").length === 1, "…and its message shows once, not as a stack of toasts");
+    toast('same message twice'); toast('same message twice');
+    __assert(toasts.filter(t => t.msg === 'same message twice').length === 1, "an identical toast already on screen is not repeated");
+    let bad = 0; const badInput = () => withRequest('t-400-load', async () => { bad++; throw new ApiError(400, 'Fix the input'); });
+    await badInput(); await badInput();
+    __assert(bad === 2, "a 400 (the caller's own input) can be retried straight away");
+    void savedToasts;
+  }
+
+  // ---- Create User: branch selection ----
+  {
+    const html = cuBranchFieldsHtml(DB.branches[0] && DB.branches[0].id, null);
+    __assert(html.includes('name="branchId"') && DB.branches.every(b => html.includes(b.name)) && html.includes('name="regionId"'), "Create User offers every company branch, and a region");
+    __assert(String(submitLinkUserAccount).includes('branch_id: f.branchId') && String(submitCuBranch).includes("api.patch(`/api/users/${id}`"), "the chosen branch is saved on a new login and Admin can set one on an existing user");
+    __assert(String(renderCreateUserPage).includes('No branch') && String(renderCreateUserPage).includes('cuBranchEditId'), "users who need a branch but have none are flagged, with a Branch action");
+  }
+
+  // ---- Targets Register: hierarchy, + grid, edit/delete, appeals ----
+  {
+    for(const role of ['Loan Officer','Manager','Regional Manager','Operational Manager','CEO','Director','Admin']){
+      const sec = (SIDEBAR_MENUS[role] || []).find(x => x.section === 'Performance & Targets');
+      __assert(sec && sec.items.includes('Targets Register'), `${role} has the Targets Register`);
+    }
+    __assert(LABEL_ROUTES['Targets Register'].subtab === 'Targets Register' && PERF_PAGES.includes('Targets Register'), "the Targets Register opens under Reports");
+    const savedTgr = DB.tgr, savedSt = session.tgr;
+    const tg = (id, extra) => Object.assign({ id, metric: 'new_loans', period: '2026-10', target_value: 10, achieved: 8, achievementPct: 80, remaining: 2, set_by_name: 'Grace', appeals_total: 0, appeals_open: 0, can_manage: false, can_appeal: false }, extra);
+    DB.tgr = { targets: [tg('t1', { level: 'company', metric: 'disbursement', target_value: 5000000, can_manage: true }), tg('t2', { level: 'region', region_name: 'Lower Coast' }), tg('t3', { level: 'branch', branch_name: 'Kisumu', can_appeal: true, appeals_total: 1, appeals_open: 1 }), tg('t4', { level: 'person', recipient_name: 'Peter Otieno', branch_name: 'Kisumu' })],
+      appeals: [{ id: 'a1', target_id: 't3', user_name: 'Mary', kind: 'appeal', message: 'Too high', proposed_value: 8, status: 'Open', metric: 'new_loans', period: '2026-10', target_value: 10, level: 'branch', branch_name: 'Kisumu', can_respond: true, created_at: new Date().toISOString() }],
+      options: { levels: ['company', 'region', 'branch'], regions: [{ id: 'r1', name: 'Lower Coast' }], branches: [{ id: 'b1', name: 'Kisumu' }], people: [] } };
+    session.tgr = { level: '', period: '2026-10', metric: '', viewId: null, editId: null, addLevel: null };
+    let h = renderTargetsRegister();
+    __assert(h.includes('TARGETS REGISTER') && h.includes('Whole company') && h.includes('Lower Coast') && h.includes('Peter Otieno') && h.includes('+ Add Targets'), "the register lists company, region, branch and officer targets, with + Add Targets");
+    __assert(h.includes('Appeal / Comment') && h.indexOf('Appeal / Comment') < h.indexOf('<table'), "an Appeal/Comment button sits above the table for the person a target is for");
+    __assert((h.match(/tgrDelete\('/g) || []).length === 1 && h.includes(`tgrState().editId='t1'`) && h.includes(`tgrState().viewId='t4'`), "View on every row; Edit and Delete only where you may manage the target");
+    __assert(h.includes("tgrRespond('a1','Accepted')") && h.includes("tgrRespond('a1','Rejected')"), "appeals waiting for you can be accepted or rejected");
+    session.tgr.addLevel = 'region'; h = renderTgrAddGrid();
+    __assert(h.includes('name="v|r1|disbursement"') && h.includes('placeholder="+"') && TGR_METRICS.every(m => h.includes(m[1])), "the + grid has a row per region and a column per measure");
+    session.tgr.addLevel = 'company'; h = renderTgrAddGrid();
+    __assert(h.includes('Whole company') && h.includes('name="v||new_loans"'), "a company target is one row for the whole company");
+    __assert(String(tgrSaveGrid).includes("body.level = 'company'") && String(tgrSaveGrid).includes('body.region_id = id') && String(tgrSaveGrid).includes('body.branch_id = id') && String(tgrSaveGrid).includes('body.recipient_user_id = id'), "each grid level saves the right kind of target");
+    __assert(String(tgrDelete).includes('api.del(`/api/targets/${id}`)') && String(tgrSaveEdit).includes('api.patch(`/api/targets/${id}`') && String(tgrSubmitAppeal).includes('/appeals`'), "delete, edit and appeal use the targets API");
+    session.tgr.addLevel = null; session.tgr.viewId = 't3'; h = renderTargetsRegister();
+    __assert(h.includes('NEW LOANS TARGET') && h.includes('Too high') && h.includes('← Back'), "View drills into one target with its appeal thread");
+    DB.tgr = savedTgr; session.tgr = savedSt;
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);

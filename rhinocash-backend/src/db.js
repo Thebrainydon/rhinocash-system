@@ -1763,6 +1763,17 @@ async function initSchema() {
   }
   // One-time data fixes, each applied exactly once per database.
   await rawRun(`CREATE TABLE IF NOT EXISTS app_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT iso_now())`);
+  // CEO and Director see LoanBook and Payments (read-only — no approve,
+  // disburse or record permission comes with it), as seed.js grants them.
+  // Databases seeded before that grant was added left their dashboards
+  // refused with "You do not have access to the 'loanbook' module". Done
+  // once per database, so a later change on Role Permissions is kept.
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'ceo-director-loanbook-payments-v1'`)) && (await rawGet(`SELECT 1 FROM roles WHERE id = 'ceo'`))) {
+    for (const r of ['ceo', 'director']) for (const m of ['loanbook', 'payments']) {
+      await rawRun(`INSERT INTO role_modules (role_id, module_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM roles WHERE id = ?) AND EXISTS (SELECT 1 FROM modules WHERE id = ?) ON CONFLICT DO NOTHING`, [r, m, r, m]);
+    }
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('ceo-director-loanbook-payments-v1') ON CONFLICT DO NOTHING`);
+  }
   // Loan Officers must be able to register clients and create loan
   // applications. Some deployments ended up without these menu grants (the
   // server then answered 403), so grant them to the role and to any officer
@@ -1909,6 +1920,13 @@ async function initSchema() {
     body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT iso_now(), read_at TEXT)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_to ON live_location_messages(to_user, read_at)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_pair ON live_location_messages(from_user, to_user, id)`);
+  // Appeals and comments on a target, raised by the person or team it was
+  // set for and answered by whoever manages that target.
+  await rawRun(`CREATE TABLE IF NOT EXISTS target_appeals (
+    id TEXT PRIMARY KEY, target_id TEXT NOT NULL REFERENCES targets(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'comment', message TEXT NOT NULL, proposed_value NUMERIC(14,2), status TEXT NOT NULL DEFAULT 'Open',
+    response TEXT, responded_by TEXT REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT iso_now(), responded_at TEXT)`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_target_appeals_target ON target_appeals(target_id)`);
   // Usernames for signing in (see usernames.js): every account without one
   // gets one made from the person's name.
   await ensureColumn('user_accounts', 'username TEXT');

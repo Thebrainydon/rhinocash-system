@@ -25,6 +25,63 @@ function canSetTargets(roleId) {
   return Object.prototype.hasOwnProperty.call(ALLOWED_RECIPIENT_ROLES, roleId);
 }
 
+// The target hierarchy: who sets which kind of target.
+//   company — CEO and Director (Admin oversees)
+//   region  — Operational Manager (and anyone above)
+//   branch  — Regional Manager for branches in their region (and above;
+//             a Manager may still set one for their own branch)
+//   person  — Manager for their Loan Officers, and the role chains above
+const LEVEL_SETTERS = {
+  company: ['ceo', 'director', 'admin'],
+  region: ['operational_manager', 'ceo', 'director', 'admin'],
+};
+const RANK = { loan_officer: 1, accountant: 1, manager: 2, regional_manager: 3, operational_manager: 4, director: 5, ceo: 5, admin: 6 };
+
+function levelOf(t) {
+  if (t.recipient_user_id) return 'person';
+  if (t.branch_id) return 'branch';
+  if (t.region_id) return 'region';
+  return 'company';
+}
+
+// Is `actor` within reach of target `t` (by branch/region)? `scope` is the
+// actor's branch list (null = company-wide).
+function targetInScope(actor, t, scope) {
+  if (scope === null) return true;
+  const branch = t.branch_id || t.recipient_branch_id || null;
+  if (branch && scope.includes(branch)) return true;
+  if (actor.role_id === 'regional_manager' && t.region_id && t.region_id === actor.region_id) return true;
+  return false;
+}
+
+// The setter, Admin, or someone senior to the setter within whose reach the
+// target falls may edit or delete it.
+function canManageSync(actor, t, setterRole, scope) {
+  if (t.set_by === actor.id || actor.role_id === 'admin') return true;
+  if (!canSetTargets(actor.role_id)) return false;
+  if ((RANK[actor.role_id] || 0) <= (RANK[setterRole] || 0)) return false;
+  return targetInScope(actor, t, scope);
+}
+async function actorScope(actor) {
+  if (['admin', 'ceo', 'director', 'operational_manager', 'hr'].includes(actor.role_id)) return null;
+  if (actor.role_id === 'manager') return actor.branch_id ? [actor.branch_id] : [];
+  return (await branchIdsInScope(actor)) || [];
+}
+async function canManageTarget(actor, t) {
+  const setter = t.set_by ? await get('SELECT role_id FROM users WHERE id = ?', [t.set_by]) : null;
+  const rb = t.recipient_user_id ? await get('SELECT branch_id FROM users WHERE id = ?', [t.recipient_user_id]) : null;
+  return canManageSync(actor, { ...t, recipient_branch_id: rb ? rb.branch_id : null }, setter ? setter.role_id : null, await actorScope(actor));
+}
+
+// The person (or the head of the team) a target was set for — the one who
+// may appeal it or comment on it.
+function isRecipientSync(user, t) {
+  if (t.recipient_user_id) return t.recipient_user_id === user.id;
+  if (t.branch_id) return user.role_id === 'manager' && user.branch_id === t.branch_id;
+  if (t.region_id) return user.role_id === 'regional_manager' && user.region_id === t.region_id;
+  return user.role_id === 'operational_manager'; // company targets are run by Operations
+}
+
 // The actual scope check — branch/region, not just role. A Manager
 // targeting a Loan Officer outside their own branch, or a Regional
 // Manager targeting a Manager outside their region, is rejected here
@@ -280,8 +337,22 @@ function register(router) {
     if (b.period_type && !VALID_PERIOD_TYPES.includes(b.period_type)) return next({ status: 400, message: `period_type must be one of: ${VALID_PERIOD_TYPES.join(', ')}` });
     if (typeof b.target_value !== 'number' || b.target_value <= 0) return next({ status: 400, message: 'target_value must be a positive number' });
 
+    const level = b.recipient_user_id ? 'person' : b.branch_id ? 'branch' : b.region_id ? 'region' : (b.level === 'company' || b.scope === 'company') ? 'company' : null;
+    if (LEVEL_SETTERS[level] && !LEVEL_SETTERS[level].includes(actor.role_id)) {
+      return next({ status: 403, message: level === 'company' ? 'Only the CEO or a Director sets company targets' : 'Only the Operational Manager (or CEO/Director) sets region targets' });
+    }
+    if (b.region_id && !b.branch_id && !b.recipient_user_id && !(await get('SELECT 1 FROM regions WHERE id = ?', [b.region_id]))) return next({ status: 400, message: 'Unknown region' });
+    if (b.branch_id && !(await get('SELECT 1 FROM branches WHERE id = ?', [b.branch_id]))) return next({ status: 400, message: 'Unknown branch' });
+    if (level === 'company' || level === 'region') {
+      const dup = await get(`SELECT id FROM targets WHERE status = 'Active' AND metric = ? AND period = ? AND recipient_user_id IS NULL AND branch_id IS NULL
+        AND ${level === 'company' ? 'region_id IS NULL' : 'region_id = ?'}`, level === 'company' ? [b.metric, b.period] : [b.metric, b.period, b.region_id]);
+      if (dup) return next({ status: 409, message: 'That target already exists for this period — edit it instead' });
+    }
+
     let recipientUser = null;
-    if (b.recipient_user_id) {
+    if (level === 'company') {
+      // no recipient, branch or region: the whole company
+    } else if (b.recipient_user_id) {
       recipientUser = await get('SELECT * FROM users WHERE id = ?', [b.recipient_user_id]);
       if (!recipientUser) return next({ status: 404, message: 'Recipient user not found' });
       const allowedRoles = ALLOWED_RECIPIENT_ROLES[actor.role_id] || [];
@@ -291,9 +362,11 @@ function register(router) {
     } else if (!b.branch_id && !b.region_id) {
       return next({ status: 400, message: 'Provide recipient_user_id, branch_id, or region_id' });
     }
-    try {
-      await assertTargetScope(actor, recipientUser, b.branch_id || (recipientUser ? recipientUser.branch_id : null));
-    } catch (e) { return next(e); }
+    if (level !== 'company') {
+      try {
+        await assertTargetScope(actor, recipientUser, b.branch_id || (recipientUser ? recipientUser.branch_id : null));
+      } catch (e) { return next(e); }
+    }
 
     const id = 'tgt_' + crypto.randomUUID();
     await run(
@@ -308,6 +381,14 @@ function register(router) {
     });
     if (recipientUser) {
       await notify(recipientUser.id, 'target', 'New target set', `Your ${b.metric.replace('_', ' ')} target for ${b.period} is ${b.target_value}.`);
+    } else {
+      // Let the head of the team know: the branch Manager, the Regional
+      // Manager, or Operations for a company target.
+      const t = { branch_id: b.branch_id || null, region_id: b.region_id || null };
+      const heads = t.branch_id ? await all(`SELECT id FROM users WHERE role_id = 'manager' AND branch_id = ? AND status = 'Active'`, [t.branch_id])
+        : t.region_id ? await all(`SELECT id FROM users WHERE role_id = 'regional_manager' AND region_id = ? AND status = 'Active'`, [t.region_id])
+        : await all(`SELECT id FROM users WHERE role_id = 'operational_manager' AND status = 'Active'`);
+      for (const h of heads) if (h.id !== actor.id) await notify(h.id, 'target', 'New target set', `A ${level} ${b.metric.replace('_', ' ')} target for ${b.period} is ${b.target_value}.`);
     }
     const created = await get('SELECT * FROM targets WHERE id = ?', [id]);
     res.status(201).json({ target: { ...created, ...(await computeAchievement(created)) } });
@@ -339,13 +420,32 @@ function register(router) {
       clauses.push('1=1'); // HR reads every staff target for performance management (it cannot set them)
     } else if (actor.role_id === 'manager') {
       clauses.push('branch_id = ?'); params.push(actor.branch_id);
+      clauses.push('recipient_user_id IN (SELECT id FROM users WHERE branch_id = ?)'); params.push(actor.branch_id);
     } else if (actor.role_id === 'regional_manager') {
       const scope = (await branchIdsInScope(actor)) || [];
-      if (scope.length) { clauses.push(`branch_id IN (${scope.map(() => '?').join(',')})`); params.push(...scope); }
+      if (scope.length) {
+        const qs = scope.map(() => '?').join(',');
+        clauses.push(`branch_id IN (${qs})`); params.push(...scope);
+        clauses.push(`recipient_user_id IN (SELECT id FROM users WHERE branch_id IN (${qs}))`); params.push(...scope);
+      }
+      if (actor.region_id) { clauses.push('(region_id = ? AND branch_id IS NULL AND recipient_user_id IS NULL)'); params.push(actor.region_id); }
     }
     clause = clauses.join(' OR ');
     const statusFilter = req.query.history === '1' ? "status IN ('Active','Cancelled')" : "status = 'Active'";
-    let rows = await all(`SELECT * FROM targets WHERE (${clause}) AND ${statusFilter} ORDER BY created_at DESC`, params);
+    let rows = await all(`SELECT t.*, ru.name AS recipient_name, ru.role_id AS recipient_role, ru.branch_id AS recipient_branch_id,
+        COALESCE(b.name, rb.name) AS branch_name, rg.name AS region_name, su.name AS set_by_name, su.role_id AS set_by_role,
+        (SELECT COUNT(*) FROM target_appeals a WHERE a.target_id = t.id)::int AS appeals_total,
+        (SELECT COUNT(*) FROM target_appeals a WHERE a.target_id = t.id AND a.status = 'Open')::int AS appeals_open
+      FROM (SELECT * FROM targets WHERE (${clause}) AND ${statusFilter}) t
+      LEFT JOIN users ru ON ru.id = t.recipient_user_id
+      LEFT JOIN branches b ON b.id = t.branch_id
+      LEFT JOIN branches rb ON rb.id = ru.branch_id
+      LEFT JOIN regions rg ON rg.id = COALESCE(t.region_id, b.region_id)
+      LEFT JOIN users su ON su.id = t.set_by
+      ORDER BY t.created_at DESC`, params);
+    if (req.query.level) rows = rows.filter(t => levelOf(t) === req.query.level);
+    const scopeForManage = await actorScope(actor);
+    rows = rows.map(t => ({ ...t, level: levelOf(t), can_manage: canManageSync(actor, t, t.set_by_role, scopeForManage), can_appeal: isRecipientSync(actor, t) }));
     if (req.query.period) rows = rows.filter(t => t.period === req.query.period);
     if (req.query.recipient_user_id) rows = rows.filter(t => t.recipient_user_id === req.query.recipient_user_id);
     // Real achievement, computed fresh on every read — never a stored/stale
@@ -418,11 +518,19 @@ function register(router) {
     const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
     const actor = req.user;
-    if (t.set_by !== actor.id && actor.role_id !== 'admin') {
-      return next({ status: 403, message: 'Only the person who set this target (or an Admin) can edit it' });
+    if (!(await canManageTarget(actor, t))) {
+      return next({ status: 403, message: 'Only the person who set this target, someone senior to them, or an Admin can edit it' });
     }
     const b = req.body;
     const sets = []; const params = [];
+    if (b.metric !== undefined) {
+      if (!VALID_METRICS.includes(b.metric)) return next({ status: 400, message: `metric must be one of: ${VALID_METRICS.join(', ')}` });
+      sets.push('metric = ?'); params.push(b.metric);
+    }
+    if (b.period !== undefined) {
+      if (!/^\d{4}(-\d{2})?(-Q[1-4])?$/.test(String(b.period))) return next({ status: 400, message: 'period must look like "2026-09", "2026-Q3" or "2026"' });
+      sets.push('period = ?'); params.push(b.period);
+    }
     if (b.target_value !== undefined) {
       if (typeof b.target_value !== 'number' || b.target_value <= 0) return next({ status: 400, message: 'target_value must be a positive number' });
       sets.push('target_value = ?'); params.push(b.target_value);
@@ -441,12 +549,127 @@ function register(router) {
     const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
     if (!t) return next({ status: 404, message: 'Target not found' });
     const actor = req.user;
-    if (t.set_by !== actor.id && actor.role_id !== 'admin') {
-      return next({ status: 403, message: 'Only the person who set this target (or an Admin) can cancel it' });
+    if (!(await canManageTarget(actor, t))) {
+      return next({ status: 403, message: 'Only the person who set this target, someone senior to them, or an Admin can cancel it' });
     }
     await run("UPDATE targets SET status = 'Cancelled', updated_at = iso_now() WHERE id = ?", [req.params.id]);
     await logAction(req, { action: 'Cancelled target', module: 'targets', recordType: 'Target', recordId: req.params.id, reason: req.body.reason });
     res.json({ ok: true });
+  });
+
+  // Delete a target set by mistake. Kept in the audit trail; its appeals go with it.
+  router.delete('/api/targets/:id', requireAuth, async (req, res, next) => {
+    const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+    if (!t) return next({ status: 404, message: 'Target not found' });
+    if (!(await canManageTarget(req.user, t))) {
+      return next({ status: 403, message: 'Only the person who set this target, someone senior to them, or an Admin can delete it' });
+    }
+    await run('DELETE FROM targets WHERE id = ?', [t.id]);
+    await logAction(req, { action: 'Deleted target', module: 'targets', recordType: 'Target', recordId: t.id,
+      previousValue: { metric: t.metric, value: Number(t.target_value), period: t.period, recipient: t.recipient_user_id, branch: t.branch_id, region: t.region_id }, reason: (req.body || {}).reason });
+    res.json({ ok: true });
+  });
+
+  // ---- Appeals and comments ----
+  // The person (or team head) a target was set for appeals it — optionally
+  // proposing a different figure — or leaves a comment. Whoever can manage
+  // the target answers; accepting an appeal with a proposed figure changes
+  // the target to that figure.
+  router.post('/api/targets/:id/appeals', requireAuth, async (req, res, next) => {
+    const t = await get('SELECT * FROM targets WHERE id = ?', [req.params.id]);
+    if (!t) return next({ status: 404, message: 'Target not found' });
+    const actor = req.user;
+    if (!isRecipientSync(actor, t)) return next({ status: 403, message: 'Only the person this target was set for can appeal or comment on it' });
+    const b = req.body || {};
+    const kind = b.kind === 'appeal' ? 'appeal' : 'comment';
+    const message = String(b.message || '').trim();
+    if (!message) return next({ status: 400, message: 'Write your appeal or comment' });
+    if (message.length > 2000) return next({ status: 400, message: 'Keep it under 2000 characters' });
+    let proposed = null;
+    if (b.proposed_value !== undefined && b.proposed_value !== null && b.proposed_value !== '') {
+      proposed = Number(b.proposed_value);
+      if (!(proposed > 0)) return next({ status: 400, message: 'The proposed figure must be a positive number' });
+    }
+    const id = 'tap_' + crypto.randomUUID();
+    await run(`INSERT INTO target_appeals (id, target_id, user_id, kind, message, proposed_value, status) VALUES (?,?,?,?,?,?,?)`,
+      [id, t.id, actor.id, kind, message, kind === 'appeal' ? proposed : null, kind === 'appeal' ? 'Open' : 'Noted']);
+    await logAction(req, { action: kind === 'appeal' ? 'Appealed target' : 'Commented on target', module: 'targets', recordType: 'Target', recordId: t.id, newValue: { kind, proposed } });
+    if (t.set_by && t.set_by !== actor.id) {
+      await notify(t.set_by, 'target', kind === 'appeal' ? 'Target appeal' : 'Target comment',
+        `${actor.name} ${kind === 'appeal' ? 'appealed' : 'commented on'} the ${t.metric.replace('_', ' ')} target for ${t.period}${proposed ? ` (proposes ${proposed})` : ''}.`);
+    }
+    res.status(201).json({ appeal: await get('SELECT * FROM target_appeals WHERE id = ?', [id]) });
+  });
+
+  // Appeals and comments the caller raised or can answer.
+  router.get('/api/target-appeals', requireAuth, async (req, res) => {
+    const actor = req.user;
+    const rows = await all(`SELECT a.*, u.name AS user_name, rb.name AS responded_by_name, t.metric, t.period, t.target_value, t.recipient_user_id,
+        t.branch_id, t.region_id, t.set_by, su.role_id AS set_by_role, ru.branch_id AS recipient_branch_id, ru.name AS recipient_name,
+        b.name AS branch_name, rg.name AS region_name
+      FROM target_appeals a JOIN targets t ON t.id = a.target_id
+      LEFT JOIN users u ON u.id = a.user_id LEFT JOIN users rb ON rb.id = a.responded_by
+      LEFT JOIN users su ON su.id = t.set_by LEFT JOIN users ru ON ru.id = t.recipient_user_id
+      LEFT JOIN branches b ON b.id = t.branch_id LEFT JOIN regions rg ON rg.id = t.region_id
+      ORDER BY a.created_at DESC LIMIT 500`);
+    const scope = await actorScope(actor);
+    const out = rows.map(r => ({ ...r, level: levelOf(r), can_respond: r.status === 'Open' && canManageSync(actor, r, r.set_by_role, scope) }))
+      .filter(r => r.user_id === actor.id || isRecipientSync(actor, r) || canManageSync(actor, r, r.set_by_role, scope) || ['admin', 'ceo', 'director'].includes(actor.role_id));
+    if (req.query.target_id) return res.json({ appeals: out.filter(r => r.target_id === req.query.target_id) });
+    res.json({ appeals: out });
+  });
+
+  router.post('/api/target-appeals/:id/respond', requireAuth, async (req, res, next) => {
+    const a = await get('SELECT * FROM target_appeals WHERE id = ?', [req.params.id]);
+    if (!a) return next({ status: 404, message: 'Appeal not found' });
+    const t = await get('SELECT * FROM targets WHERE id = ?', [a.target_id]);
+    if (!t || !(await canManageTarget(req.user, t))) return next({ status: 403, message: 'Only the person who set this target, someone senior to them, or an Admin can answer it' });
+    if (a.status !== 'Open') return next({ status: 409, message: 'This appeal has already been answered' });
+    const b = req.body || {};
+    const decision = b.decision === 'Accepted' ? 'Accepted' : b.decision === 'Rejected' ? 'Rejected' : null;
+    if (!decision) return next({ status: 400, message: 'decision must be Accepted or Rejected' });
+    const response = String(b.response || '').trim().slice(0, 2000);
+    let newValue = null;
+    if (decision === 'Accepted') {
+      // new_value given: that figure (null keeps the target as it is);
+      // not given: the figure the appeal proposed, if any.
+      const v = Object.prototype.hasOwnProperty.call(b, 'new_value')
+        ? (b.new_value === null || b.new_value === '' ? null : Number(b.new_value))
+        : (a.proposed_value != null ? Number(a.proposed_value) : null);
+      if (v !== null) {
+        if (!(v > 0)) return next({ status: 400, message: 'The new figure must be a positive number' });
+        newValue = v;
+      }
+    }
+    await run(`UPDATE target_appeals SET status = ?, response = ?, responded_by = ?, responded_at = iso_now() WHERE id = ?`, [decision, response || null, req.user.id, a.id]);
+    if (newValue !== null) await run(`UPDATE targets SET target_value = ?, updated_at = iso_now() WHERE id = ?`, [newValue, t.id]);
+    await logAction(req, { action: `${decision} target appeal`, module: 'targets', recordType: 'Target', recordId: t.id,
+      previousValue: { target_value: Number(t.target_value) }, newValue: { decision, target_value: newValue !== null ? newValue : Number(t.target_value) } });
+    await notify(a.user_id, 'target', `Target appeal ${decision.toLowerCase()}`,
+      `Your appeal on the ${t.metric.replace('_', ' ')} target for ${t.period} was ${decision.toLowerCase()}${newValue !== null ? ` — the target is now ${newValue}` : ''}.${response ? ' ' + response : ''}`);
+    res.json({ appeal: await get('SELECT * FROM target_appeals WHERE id = ?', [a.id]), targetValue: newValue !== null ? newValue : Number(t.target_value) });
+  });
+
+  // What the caller may set: the levels, and the regions/branches/people for each.
+  router.get('/api/target-setter-options', requireAuth, async (req, res) => {
+    const actor = req.user;
+    const levels = [];
+    if (LEVEL_SETTERS.company.includes(actor.role_id)) levels.push('company');
+    if (LEVEL_SETTERS.region.includes(actor.role_id)) levels.push('region');
+    if (['regional_manager', 'operational_manager', 'ceo', 'director', 'admin'].includes(actor.role_id)) levels.push('branch');
+    if (['manager', 'admin'].includes(actor.role_id)) levels.push('person');
+    const scope = await actorScope(actor);
+    const regions = levels.includes('region') ? await all('SELECT id, name FROM regions ORDER BY name') : [];
+    let branches = levels.includes('branch') ? await all(`SELECT id, name, region_id FROM branches WHERE COALESCE(status,'Active') <> 'Closed' ORDER BY name`) : [];
+    if (scope !== null) branches = branches.filter(b => scope.includes(b.id));
+    let people = [];
+    if (levels.includes('person')) {
+      const roles = ALLOWED_RECIPIENT_ROLES[actor.role_id] || [];
+      people = roles.length ? await all(`SELECT u.id, u.name, u.role_id, u.branch_id, b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id = u.branch_id
+        WHERE u.role_id IN (${roles.map(() => '?').join(',')}) AND u.status = 'Active' ORDER BY u.name`, roles) : [];
+      if (scope !== null) people = people.filter(p => scope.includes(p.branch_id));
+    }
+    res.json({ levels, regions, branches, people, metrics: VALID_METRICS });
   });
 
   // ==================== Own monthly performance (My Account -> View Details) ====================

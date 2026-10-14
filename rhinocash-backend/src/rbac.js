@@ -207,7 +207,7 @@ async function assertRecordInScope(user, branchId, entityLabel) {
 async function resolveWriteBranchId(user, requestedBranchId) {
   const scope = await branchIdsInScope(user);
   if (scope === null) return requestedBranchId || user.branch_id || null; // unrestricted role: trust their input (or default to their own branch)
-  if (scope.length === 0) { const err = new Error('You are not assigned to a branch'); err.status = 403; throw err; }
+  if (scope.length === 0) { const err = new Error('You are not assigned to a branch yet — ask Admin to set your branch (Admin › Users › Edit › Branch)'); err.status = 403; throw err; }
   if (requestedBranchId && scope.includes(requestedBranchId)) return requestedBranchId;
   return scope[0]; // silently pin to their own (single-branch roles) or first-in-region branch — never the client's arbitrary value
 }

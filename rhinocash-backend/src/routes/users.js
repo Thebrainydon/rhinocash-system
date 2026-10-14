@@ -422,6 +422,19 @@ function register(router) {
         accessLevel = b.access_level;
       }
 
+      // Branch (and so region) may be set right here too; region follows
+      // the branch, a region alone suits a Regional Manager.
+      let branchId = employee.branch_id, regionId = employee.region_id;
+      if (b.branch_id) {
+        const branch = await get('SELECT id, region_id FROM branches WHERE id = ?', [b.branch_id]);
+        if (!branch) return next({ status: 400, message: 'Unknown branch_id' });
+        branchId = branch.id; regionId = branch.region_id;
+      } else if (b.region_id) {
+        const region = await get('SELECT id FROM regions WHERE id = ?', [b.region_id]);
+        if (!region) return next({ status: 400, message: 'Unknown region_id' });
+        regionId = region.id;
+      }
+
       const loginEmail = String(b.login_email || employee.email || '').toLowerCase();
       if (!loginEmail || !EMAIL_RE.test(loginEmail)) return next({ status: 400, message: 'A valid login email is required' });
       const existingLogin = await get('SELECT employee_id FROM user_accounts WHERE login_email = ?', [loginEmail]);
@@ -431,13 +444,13 @@ function register(router) {
       const tempPassword = generateTempPassword();
       const { hash, salt } = hashPassword(tempPassword);
       await transaction(async () => {
-        await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now(), role_id=?, access_level=? WHERE id=?',
-          [hash, salt, roleId, accessLevel, employee.id]);
+        await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now(), role_id=?, access_level=?, branch_id=?, region_id=? WHERE id=?',
+          [hash, salt, roleId, accessLevel, branchId, regionId, employee.id]);
         await run('INSERT INTO user_accounts (employee_id, login_email, status, username) VALUES (?,?,?,?)', [employee.id, loginEmail, 'Active', username]);
         await notify(employee.id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash System Account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
         await logAction(req, {
           action: 'Created user account', module: 'users', recordType: 'User', recordId: employee.id,
-          newValue: { employeeId: employee.id, loginEmail, role: roleId, accessLevel },
+          newValue: { employeeId: employee.id, loginEmail, role: roleId, accessLevel, branchId, regionId },
         });
       });
       let emailResult = { status: 'FAILED' };
@@ -537,6 +550,14 @@ function register(router) {
     const fields = ['name', 'phone', 'role_id', 'access_level', 'job_title', 'department_id', 'branch_id',
       'region_id', 'reporting_manager_id', 'employment_status', 'monthly_disbursement_target', 'monthly_new_loan_target',
       'basic_salary', 'national_id', 'gender'];
+    // A branch carries its region with it, so the two never disagree.
+    if (b.branch_id) {
+      const branch = await get('SELECT id, region_id FROM branches WHERE id = ?', [b.branch_id]);
+      if (!branch) return next({ status: 400, message: 'Unknown branch_id' });
+      if (b.region_id === undefined) b.region_id = branch.region_id;
+    }
+    if (b.branch_id === '') b.branch_id = null;
+    if (b.region_id === '') b.region_id = null;
     const sets = []; const params = [];
     fields.forEach(f => { if (b[f] !== undefined) { sets.push(`${f} = ?`); params.push(b[f]); } });
     if (sets.length === 0) return next({ status: 400, message: 'No recognized fields to update' });
@@ -651,7 +672,7 @@ function register(router) {
       'user_permission_overrides.user_id', 'user_workspace_preferences.user_id', 'report_filter_presets.user_id', 'ticket_filter_presets.user_id',
       'requisition_otps.user_id', 'salary_advance_otps.user_id', 'salary_advance_requests.user_id', 'leave_requests.user_id', 'daily_workplans.user_id',
       'staff_interactions.user_id', 'hr_attendance.employee_id', 'payroll_lines.employee_id', 'notifications.user_id', 'hr_records.employee_id',
-      'targets.recipient_user_id', 'staff_accounts.user_id']);
+      'targets.recipient_user_id', 'staff_accounts.user_id', 'target_appeals.user_id']);
     const ident = x => /^[a-z_][a-z0-9_]*$/.test(x) ? x : null;
     try {
       await transaction(async () => {

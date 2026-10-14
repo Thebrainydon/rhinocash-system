@@ -492,10 +492,13 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
 .geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
 .geo-pin-wrap{background:transparent; border:none;}
+.tgr-bar{height:8px; background:#E6EBF1; border-radius:6px; overflow:hidden; min-width:90px;} .tgr-bar span{display:block; height:100%; background:#2E7D32;} .tgr-bar span.near{background:#F9A825;} .tgr-bar span.bad{background:#C62828;}
+.tgr-grid-card{border:1px solid #D5DEE8; border-radius:10px; padding:14px; margin:4px 18px 14px; background:#F8FAFD;} .tgr-grid-h{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;} .tgr-grid-h strong{color:var(--navy); font-size:16px;}
+.tgr-grid td{padding:6px 8px;} .tgr-cell{width:100%; min-width:96px; text-align:right; font-weight:600;} .tgr-cell::placeholder{color:#90A4AE; text-align:center; font-weight:800;} .tgr-acts{display:inline-flex; gap:6px; flex-wrap:wrap;}
 .perf-card{padding:0; overflow:hidden;} .perf-card > *:not(.perf-banner){margin-left:18px; margin-right:18px;}
 .perf-banner{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; background:linear-gradient(180deg,#1E4B78,#1B4470); color:#fff; padding:18px 20px 16px; margin-bottom:14px;}
 .perf-title{font-size:22px; font-weight:800; letter-spacing:.3px;} .perf-sub{font-size:13.5px; opacity:.9; margin-top:4px;}
-.perf-tools{display:flex; gap:6px; flex-wrap:wrap; align-items:center;} .perf-tools input{border-radius:6px; border:1px solid #9FB6CF; padding:4px 6px;} .perf-tools .btn{background:#fff;}
+.perf-tools{display:flex; gap:6px; flex-wrap:wrap; align-items:center;} .perf-tools input{border-radius:6px; border:1px solid #9FB6CF; padding:4px 6px;} .perf-tools .btn{background:#fff;} .perf-tools .btn.btn-primary{background:#F9A825; color:#1B2A3A; border-color:#F9A825; font-weight:700;}
 .perf-tiles{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:12px;}
 .perf-tile{border:1px solid #CFDAE6; border-radius:10px; padding:10px 12px; background:#EEF4FA;} .perf-tile.green{background:#E5F1DD;} .perf-tile.red{background:#FBE3DA;} .perf-tile.amber{background:#FFF1D2;}
 .perf-tile-l{font-size:11.5px; font-weight:800; color:#1F4E79; text-transform:uppercase;} .perf-tile-v{font-size:21px; font-weight:800; color:#14243B; margin-top:4px;}
@@ -1467,7 +1470,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Rates","Loan Arrears","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
-    {section:"Performance & Targets", icon:"🎯", items:["My Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["My Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
   ],
@@ -1479,7 +1482,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1493,7 +1496,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","M-Pesa Transactions"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1506,7 +1509,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1533,7 +1536,7 @@ const SIDEBAR_MENUS = {
     {section:"Database & System", icon:"💾", items:["Database Status","Backup Management","Restore Management","System Logs","Error Logs","Storage Management","Cache Management","Queue Management","Scheduled Jobs","System Maintenance","Maintenance Mode"]},
     {section:"API & Developer Management", icon:"👨‍💻", items:["API Keys","API Clients","API Permissions","API Usage","API Logs","Webhook Management","Webhook Logs","API Rate Limits"]},
     {section:"Reports", icon:"📑", items:["System Reports","User Reports","Access Reports","Audit Reports","Security Reports","Configuration Reports","Data Reports"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","System Responsibilities","System Administration","M-Pesa Configuration","Governance Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1570,7 +1573,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","Executive Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1594,7 +1597,7 @@ const SIDEBAR_MENUS = {
     {section:"Client Registry", icon:"👥", items:["Add Client","Create a Lead","Default Groups","Interactions","Client Leads","Client Transfers","Client Data Quality","View Client"]},
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
-    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets"]},
+    {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
     {section:"My Account", icon:"🪪", items:["View Details","Governance Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
@@ -1671,6 +1674,7 @@ const LABEL_ROUTES = {
   "MTD Disbursement Performance": {section:"reports", subtab:"MTD Disbursement Performance"},
   "Officer Targets": {section:"reports", subtab:"Officer Targets"},
   "My Targets": {section:"reports", subtab:"My Targets"},
+  "Targets Register": {section:"reports", subtab:"Targets Register"},
   "Loan Sizes": {section:"business-analytics", subtab:"Loan Sizes"},
   "Portfolio Breakdown": {section:"business-analytics", subtab:"Portfolio Breakdown"},
   "Targets & Accruals": {section:"business-analytics", subtab:"Targets & Accruals"},
@@ -2200,6 +2204,7 @@ function sidebarNavigate(itemLabel){
   });
   const route = resolveRoute(itemLabel);
   if(session.perf && PERF_PAGES.includes(itemLabel)){ session.perf.branchId = null; session.perf.officerId = null; }
+  if(session.tgr && itemLabel === 'Targets Register'){ session.tgr.viewId = null; session.tgr.editId = null; DB.tgr = null; }
   if(session.loggedIn && DB) startNavLoading();
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
@@ -2220,7 +2225,7 @@ let pwResetState = { submitting:false, error:"" };
 let toasts = [];
 let modal = null; // {type, ...}
 
-function toast(msg, type){ toasts.push({id:uid("t"), msg, type}); renderApp(); setTimeout(()=>{ toasts.shift(); renderApp(); }, 3200); }
+function toast(msg, type){ if(toasts.some(t => t.msg === msg)) return; toasts.push({id:uid("t"), msg, type}); renderApp(); setTimeout(()=>{ toasts.shift(); renderApp(); }, 3200); }
 // A separate, real page-centered message pool — distinct from the
 // corner toasts[] above — matching the real reference site's own
 // "Processing... please wait" / "success" bars, which appear centered
@@ -2625,18 +2630,33 @@ async function pctProgressFinish(st, ok, msg){
   await new Promise(r => setTimeout(r, 1600));
   st.el.innerHTML = '';
 }
+// Background loads that failed: not retried on every screen refresh. Access
+// refused (403) is remembered until the next sign-in; other errors retry
+// after 30 seconds. Each refusal is announced once, not once per refresh.
+const failedLoads = new Map(); let failedLoadsToken = null; const announced = new Set();
 async function withRequest(key, fn, opts){
   if(inFlight.has(key)) return; // duplicate-submit guard
+  if(failedLoadsToken !== authToken){ failedLoads.clear(); announced.clear(); failedLoadsToken = authToken; }
+  const prior = !(opts && opts.mutates) && failedLoads.get(key);
+  if(prior && (prior.status === 403 || Date.now() - prior.at < 30000)) return;
   inFlight.add(key);
   setTopProgress(true);
   const mutates = opts && opts.mutates;
   const pct = opts && opts.progress ? pctProgressStart(opts.progress) : null;
   const processingToast = mutates && !pct ? centerToast('Processing... please wait', 'success') : null;
   let succeeded = false;
-  try{ await fn(); succeeded = true; }
+  try{ await fn(); succeeded = true; failedLoads.delete(key); }
   catch(e){
+    // Remember refused (403) and server/network failures so the render loop
+    // doesn't re-request them on every repaint; a 400-type reply is the
+    // caller's own input and may be retried straight away.
+    const st = e && e.status;
+    if(!(opts && opts.mutates) && (st === 403 || !st || st >= 500)) failedLoads.set(key, { at: Date.now(), status: st });
     if(e instanceof ApiError){
-      if(e.status !== 401) toast(e.message); // 401 already handled/toasted by apiRequest
+      // 401 is already handled by apiRequest; a background load refused for
+      // lack of access is announced once per sign-in, not on every refresh.
+      if(e.status === 403 && !(opts && opts.mutates)){ if(!announced.has(e.message)){ announced.add(e.message); toast(e.message); } }
+      else if(e.status !== 401) toast(e.message);
     } else {
       console.error(e);
       toast("Something went wrong. Please try again.");
@@ -12685,9 +12705,17 @@ function loanStatusPie(loansScope){
 // six separate calculations, and not a decorative chart with no real data.
 async function loadDashboardCollectionsSummary(){
   return withRequest('load-dash-coll', async ()=>{
-    const [mtd, rate, arrears] = await Promise.all([
-      api.get('/api/collections/mtd'), api.get('/api/collections/rate?period=monthly'), api.get('/api/loans/arrears?limit=1'),
-    ]);
+    // An account whose Admin-set module access leaves out LoanBook gets a
+    // 403 here; show a one-line note instead of a spinner that never ends.
+    let mtd, rate, arrears;
+    try {
+      [mtd, rate, arrears] = await Promise.all([
+        api.get('/api/collections/mtd'), api.get('/api/collections/rate?period=monthly'), api.get('/api/loans/arrears?limit=1'),
+      ]);
+    } catch(e){
+      if(e && e.status === 403){ DB.acctPages.dashColl = { denied: e.message }; return; }
+      throw e;
+    }
     DB.acctPages.dashColl = { mtd, rate, arrears };
   });
 }
@@ -12777,6 +12805,7 @@ function renderCollectionsSummaryCard(){
   const state = DB.acctPages.dashColl;
   if(!state) loadDashboardCollectionsSummary();
   if(!state) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
+  if(state.denied) return `<div class="card"><div class="card-title">Collections Summary</div><div class="hint">Not available: your account has no LoanBook access. Ask Admin to restore it under Admin › Users › Module Access.</div></div>`;
   return `<div class="card">
     <div class="card-title">Collections Summary <small>within your authorized scope · <a href="#" onclick="goTo('loanbook','Collection Sheet'); return false;">View Collection Sheet →</a></small></div>
     <div class="kpi-grid">
@@ -22781,7 +22810,7 @@ function renderOfficerComparisonChart(oc){
 // Report (each branch vs its own average), MTD Disbursement Performance
 // (ON TRACK / PUSH / CRITICAL), Officer Targets and the Loan Officer control
 // plan, with branch and officer drill-down pages, Print and Generate.
-const PERF_PAGES = ['Disbursement Report', 'Branch Performance Report', 'MTD Disbursement Performance', 'Officer Targets', 'My Targets'];
+const PERF_PAGES = ['Disbursement Report', 'Branch Performance Report', 'MTD Disbursement Performance', 'Officer Targets', 'My Targets', 'Targets Register'];
 function perfState(){ const t = new Date().toISOString(); return session.perf || (session.perf = { month: t.slice(0, 7), from: t.slice(0, 8) + '01', to: t.slice(0, 10), branchId: null, officerId: null, editing: false }); }
 function perfLoad(key, url){
   if(!DB.perf) DB.perf = {};
@@ -22840,10 +22869,214 @@ async function perfSaveSettings(ev){
   await withRequest('perf-settings', async ()=>{ await api.put('/api/perf/settings', body); toast('Report targets saved'); perfState().editing = false; perfReload(); });
   return false;
 }
+// ==================== Targets Register ====================
+// The target hierarchy in one table: the CEO and Directors set company
+// targets, the Operational Manager sets region targets, a Regional Manager
+// sets targets for the branches in their region and a Manager sets their
+// Loan Officers' targets. Everyone sees the targets set for them and their
+// teams, can appeal or comment on their own, and the setter (or someone
+// senior) edits, deletes and answers.
+const TGR_METRICS = [
+  ['disbursement', 'Disbursement', 'money'], ['new_loans', 'New Loans', 'num'], ['repeat_loans', 'Repeat Loans', 'num'],
+  ['collection', 'Collections', 'money'], ['collection_rate', 'Collection Rate', 'pct'], ['new_clients', 'New Clients', 'num'],
+  ['portfolio', 'Portfolio', 'money'], ['performing', 'Performing Loans', 'num'], ['arrears', 'Arrears', 'money'],
+];
+const TGR_LEVELS = { company: 'Company', region: 'Region', branch: 'Branch', person: 'Officer / Staff' };
+const tgrMetric = k => TGR_METRICS.find(m => m[0] === k) || [k, String(k || '').replace(/_/g, ' '), 'num'];
+const tgrVal = (k, v) => { const u = tgrMetric(k)[2]; const n = Number(v) || 0; return u === 'money' ? fmt(n) : u === 'pct' ? `${n.toFixed(1)}%` : fmtNum(Math.round(n * 10) / 10); };
+const tgrFor = t => t.level === 'company' ? 'Whole company' : t.level === 'region' ? (t.region_name || 'Region') : t.level === 'branch' ? (t.branch_name || 'Branch') : (t.recipient_name || 'Staff');
+function tgrState(){ return session.tgr || (session.tgr = { level: '', period: new Date().toISOString().slice(0, 7), metric: '', viewId: null, editId: null, addLevel: null }); }
+function tgrLoad(){
+  if(DB.tgr) return DB.tgr;
+  withRequest('tgr-load', async ()=>{
+    const [t, a, o] = await Promise.all([api.get('/api/targets?history=0'), api.get('/api/target-appeals'), api.get('/api/target-setter-options')]);
+    DB.tgr = { targets: t.targets, appeals: a.appeals, options: o };
+  });
+  return null;
+}
+function tgrReload(){ DB.tgr = null; DB.targets = null; renderApp(); }
+function renderTargetsRegister(){
+  const st = tgrState();
+  const d = tgrLoad();
+  const title = 'TARGETS REGISTER';
+  if(!d) return perfLoading(title);
+  if(st.viewId) return renderTargetView(st.viewId);
+  const opts = d.options;
+  const list = d.targets.filter(t => (!st.level || t.level === st.level) && (!st.period || t.period === st.period || (st.period && t.period === st.period.slice(0, 4))) && (!st.metric || t.metric === st.metric));
+  const mine = d.targets.filter(t => t.can_appeal);
+  const openAppeals = d.appeals.filter(a => a.status === 'Open');
+  const toAnswer = openAppeals.filter(a => a.can_respond);
+  const pctTone = p => p >= 100 ? 'ok' : p >= 75 ? 'near' : 'bad';
+  const rows = list.map(t => {
+    const p = Number(t.achievementPct) || 0;
+    return { tone: pctTone(p),
+      cells: [`<span class="badge blue">${escapeHtml(TGR_LEVELS[t.level] || t.level)}</span>`, `<strong>${escapeHtml(tgrFor(t))}</strong>${t.level === 'person' && t.branch_name ? `<div class="pg-sub">${escapeHtml(t.branch_name)}</div>` : ''}`,
+        escapeHtml(tgrMetric(t.metric)[1]), escapeHtml(t.period), `<strong>${tgrVal(t.metric, t.target_value)}</strong>`, tgrVal(t.metric, t.achieved),
+        `<div class="tgr-bar"><span style="width:${Math.min(100, Math.max(0, p))}%" class="${pctTone(p)}"></span></div><div class="pg-sub">${perfAch(p)}</div>`,
+        escapeHtml(t.set_by_name || '—'), t.appeals_total ? `<span class="badge ${t.appeals_open ? 'amber' : 'gray'}">${t.appeals_open ? t.appeals_open + ' open' : t.appeals_total}</span>` : '—',
+        `<span class="tgr-acts no-print"><button class="btn btn-sm btn-outline" onclick="tgrState().viewId='${t.id}'; renderApp();">View</button>${t.can_manage ? `<button class="btn btn-sm btn-outline" onclick="tgrState().editId='${t.id}'; renderApp(); window.scrollTo(0,0);">Edit</button><button class="btn btn-sm btn-red" onclick="tgrDelete('${t.id}')">Delete</button>` : ''}</span>`],
+      export: [TGR_LEVELS[t.level] || t.level, tgrFor(t), tgrMetric(t.metric)[1], t.period, Number(t.target_value), Number(t.achieved), perfAch(p), t.set_by_name || '', t.appeals_total || 0] };
+  });
+  const periods = [...new Set(d.targets.map(t => t.period))].sort().reverse();
+  const tools = `${opts.levels.length ? `<button class="btn btn-sm btn-primary" onclick="tgrState().addLevel = tgrState().addLevel ? null : '${opts.levels[0]}'; renderApp();">${st.addLevel ? '✕ Close' : '+ Add Targets'}</button>` : ''}
+    ${mine.length ? `<button class="btn btn-sm btn-primary" onclick="toggleForm('tgr-appeal')">${isFormOpen('tgr-appeal') ? '✕ Close' : '✋ Appeal / Comment'}</button>` : ''}${perfPrintBtn()}`;
+  const chartRows = list.slice(0, 15);
+  ixAfter(admChart('tgr-ach', 'Achievement by target', 'bar', chartRows.map(t => `${tgrFor(t)} · ${tgrMetric(t.metric)[1]}`.slice(0, 32)), [{ label: 'Achievement %', data: chartRows.map(t => Math.round(Number(t.achievementPct) || 0)) }], { indexAxis: 'y' }));
+  return `<div class="card perf-card">
+    ${perfHeader(title, `${list.length} target${list.length === 1 ? '' : 's'}${st.period ? ' · ' + st.period : ''}`, tools)}
+    ${perfTiles([['Targets', list.length, 'blue'], ['Met (≥100%)', list.filter(t => t.achievementPct >= 100).length, 'green'], ['Behind (<75%)', list.filter(t => t.achievementPct < 75).length, 'red'], ['Open appeals', openAppeals.length, 'amber']])}
+    ${st.addLevel ? renderTgrAddGrid() : ''}
+    ${st.editId ? renderTgrEdit(st.editId) : ''}
+    ${isFormOpen('tgr-appeal') ? renderTgrAppealForm(mine) : ''}
+    <div class="dt-filters no-print" style="margin:6px 0 10px;">
+      <select onchange="tgrState().level=this.value; renderApp();"><option value="">All levels</option>${Object.entries(TGR_LEVELS).map(([k, l]) => `<option value="${k}" ${st.level === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select onchange="tgrState().period=this.value; renderApp();"><option value="">All periods</option>${[...new Set([st.period, ...periods].filter(Boolean))].map(p => `<option ${st.period === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}</select>
+      <select onchange="tgrState().metric=this.value; renderApp();"><option value="">All measures</option>${TGR_METRICS.map(m => `<option value="${m[0]}" ${st.metric === m[0] ? 'selected' : ''}>${m[1]}</option>`).join('')}</select>
+    </div>
+    ${perfTable('Targets', ['Level', 'Target for', 'Measure', 'Period', 'Target', 'Achieved', 'Achievement', 'Set by', 'Appeals', 'Actions'], rows, { empty: 'No targets for these filters yet.' })}
+    ${renderTgrAppealsTable(d.appeals, toAnswer.length)}
+  </div>${ixFlushAfter()}`;
+}
+// The "+" grid: one row per company / region / branch / person, one column
+// per measure. Every figure typed in becomes a target; blank cells are skipped.
+function renderTgrAddGrid(){
+  const st = tgrState(), o = DB.tgr.options;
+  const lvl = st.addLevel;
+  const rowsFor = lvl === 'company' ? [{ id: '', name: 'Whole company' }] : lvl === 'region' ? o.regions : lvl === 'branch' ? o.branches : o.people.map(p => ({ id: p.id, name: p.name, sub: `${ROLE_ID_TO_DISPLAY[p.role_id] || p.role_id}${p.branch_name ? ' · ' + p.branch_name : ''}` }));
+  const shown = TGR_METRICS;
+  return `<form class="tgr-grid-card no-print" onsubmit="return tgrSaveGrid(event)">
+    <div class="tgr-grid-h">
+      <strong>Add targets</strong>
+      <select name="level" onchange="tgrState().addLevel=this.value; renderApp();">${o.levels.map(l => `<option value="${l}" ${l === lvl ? 'selected' : ''}>${TGR_LEVELS[l]}</option>`).join('')}</select>
+      <label>Period <input type="month" name="period" value="${tgrState().period || new Date().toISOString().slice(0, 7)}" required></label>
+      <span class="hint">Type a figure in any cell; empty cells are skipped.</span>
+    </div>
+    <div class="table-wrap"><table class="perf-tbl tgr-grid"><tr><th>${escapeHtml(TGR_LEVELS[lvl])}</th>${shown.map(m => `<th>${m[1]}${m[2] === 'money' ? ' (KES)' : m[2] === 'pct' ? ' (%)' : ''}</th>`).join('')}</tr>
+      ${rowsFor.length ? rowsFor.map(r => `<tr><td><strong>${escapeHtml(r.name)}</strong>${r.sub ? `<div class="pg-sub">${escapeHtml(r.sub)}</div>` : ''}</td>${shown.map(m => `<td><input class="tgr-cell" type="number" min="0" step="any" name="v|${r.id}|${m[0]}" placeholder="+"></td>`).join('')}</tr>`).join('')
+        : `<tr><td colspan="${shown.length + 1}" class="empty">Nobody in your reach to set ${escapeHtml(TGR_LEVELS[lvl].toLowerCase())} targets for.</td></tr>`}
+    </table></div>
+    <div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-primary" type="submit">Save targets</button><button class="btn btn-sm btn-outline" type="button" onclick="tgrState().addLevel=null; renderApp();">Cancel</button></div>
+  </form>`;
+}
+function tgrSaveGrid(ev){
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const level = fd.get('level'), period = fd.get('period');
+  const items = [];
+  for(const [k, v] of fd.entries()){
+    if(!k.startsWith('v|') || v === '' || !(Number(v) > 0)) continue;
+    const [, id, metric] = k.split('|');
+    const body = { metric, target_value: Number(v), period, period_type: 'monthly' };
+    if(level === 'company') body.level = 'company'; else if(level === 'region') body.region_id = id; else if(level === 'branch') body.branch_id = id; else body.recipient_user_id = id;
+    items.push(body);
+  }
+  if(!items.length){ toast('Type at least one figure.'); return false; }
+  withRequest('tgr-save', async ()=>{
+    let ok = 0; const errs = [];
+    for(const b of items){ try { await api.post('/api/targets', b); ok++; } catch(e){ errs.push(e.message); } }
+    toast(errs.length ? `${ok} saved · ${errs.length} not saved: ${errs[0]}` : `${ok} target${ok === 1 ? '' : 's'} saved`);
+    tgrState().addLevel = null; tgrState().period = period; tgrReload();
+  }, { mutates: true });
+  return false;
+}
+function renderTgrEdit(id){
+  const t = DB.tgr.targets.find(x => x.id === id); if(!t) return '';
+  return `<form class="tgr-grid-card no-print" onsubmit="return tgrSaveEdit(event,'${t.id}')">
+    <div class="tgr-grid-h"><strong>Edit target</strong><span class="hint">${escapeHtml(tgrFor(t))} · ${escapeHtml(tgrMetric(t.metric)[1])}</span></div>
+    <div class="form-grid">
+      <div class="field"><label>Measure</label><select name="metric">${TGR_METRICS.map(m => `<option value="${m[0]}" ${m[0] === t.metric ? 'selected' : ''}>${m[1]}</option>`).join('')}</select></div>
+      <div class="field"><label>Period</label><input name="period" value="${escapeHtml(t.period)}" required pattern="\\d{4}(-\\d{2})?(-Q[1-4])?"></div>
+      <div class="field"><label>Target</label><input name="value" type="number" min="0" step="any" value="${Number(t.target_value)}" required></div>
+      <div class="field"><label>Notes</label><input name="notes" value="${escapeHtml(t.notes || '')}" maxlength="300"></div>
+    </div>
+    <div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-primary" type="submit">Save</button><button class="btn btn-sm btn-outline" type="button" onclick="tgrState().editId=null; renderApp();">Cancel</button></div>
+  </form>`;
+}
+function tgrSaveEdit(ev, id){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  withRequest('tgr-edit-' + id, async ()=>{
+    await api.patch(`/api/targets/${id}`, { metric: f.metric, period: f.period, target_value: Number(f.value), notes: f.notes });
+    toast('Target updated'); tgrState().editId = null; tgrReload();
+  }, { mutates: true });
+  return false;
+}
+function tgrDelete(id){
+  const t = DB.tgr && DB.tgr.targets.find(x => x.id === id); if(!t) return;
+  if(!confirm(`Delete the ${tgrMetric(t.metric)[1]} target for ${tgrFor(t)} (${t.period})? This cannot be undone.`)) return;
+  withRequest('tgr-del-' + id, async ()=>{
+    await api.del(`/api/targets/${id}`);
+    toast('Target deleted'); if(tgrState().viewId === id) tgrState().viewId = null; tgrReload();
+  }, { mutates: true });
+}
+function renderTgrAppealForm(mine){
+  return `<form class="tgr-grid-card no-print" onsubmit="return tgrSubmitAppeal(event)">
+    <div class="tgr-grid-h"><strong>Appeal / Comment</strong><span class="hint">on a target set for you or your team</span></div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:span 2;"><label>Target</label><select name="target" required>${mine.map(t => `<option value="${t.id}" ${tgrState().appealTarget === t.id ? 'selected' : ''}>${escapeHtml(tgrMetric(t.metric)[1])} · ${escapeHtml(tgrFor(t))} · ${escapeHtml(t.period)} · ${tgrVal(t.metric, t.target_value)}</option>`).join('')}</select></div>
+      <div class="field"><label>Type</label><select name="kind" onchange="this.form.proposed.disabled = this.value !== 'appeal';"><option value="appeal">Appeal (ask for a change)</option><option value="comment">Comment</option></select></div>
+      <div class="field"><label>Proposed figure <span class="hint">(optional)</span></label><input name="proposed" type="number" min="0" step="any"></div>
+      <div class="field" style="grid-column:1/-1;"><label>Message</label><textarea name="message" rows="3" maxlength="2000" required placeholder="Why the target should change, or your comment"></textarea></div>
+    </div>
+    <div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-primary" type="submit">Send</button><button class="btn btn-sm btn-outline" type="button" onclick="toggleForm('tgr-appeal', false)">Cancel</button></div>
+  </form>`;
+}
+function tgrSubmitAppeal(ev){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  withRequest('tgr-appeal', async ()=>{
+    await api.post(`/api/targets/${f.target}/appeals`, { kind: f.kind, message: f.message, proposed_value: f.kind === 'appeal' && f.proposed ? Number(f.proposed) : undefined });
+    toast(f.kind === 'appeal' ? 'Appeal sent' : 'Comment sent'); tgrState().appealTarget = null; tgrReload();
+  }, { mutates: true });
+  return false;
+}
+function renderTgrAppealsTable(appeals, toAnswer){
+  const rows = appeals.map(a => ({ tone: a.status === 'Open' ? 'near' : a.status === 'Accepted' ? 'ok' : a.status === 'Rejected' ? 'bad' : '',
+    cells: [escapeHtml(ixDate(a.created_at)), `<strong>${escapeHtml(a.user_name || '—')}</strong>`, a.kind === 'appeal' ? '<span class="badge amber">Appeal</span>' : '<span class="badge blue">Comment</span>',
+      `${escapeHtml(tgrMetric(a.metric)[1])} · ${escapeHtml(tgrFor(a))}<div class="pg-sub">${escapeHtml(a.period)} · ${tgrVal(a.metric, a.target_value)}</div>`,
+      a.proposed_value != null ? tgrVal(a.metric, a.proposed_value) : '—', escapeHtml(a.message), `<span class="badge ${a.status === 'Accepted' ? 'green' : a.status === 'Rejected' ? 'red' : a.status === 'Open' ? 'amber' : 'gray'}">${escapeHtml(a.status)}</span>${a.response ? `<div class="pg-sub">${escapeHtml(a.responded_by_name || '')}: ${escapeHtml(a.response)}</div>` : ''}`,
+      a.can_respond ? `<span class="tgr-acts no-print"><button class="btn btn-sm btn-primary" onclick="tgrRespond('${a.id}','Accepted')">Accept</button><button class="btn btn-sm btn-red" onclick="tgrRespond('${a.id}','Rejected')">Reject</button></span>` : `<button class="btn btn-sm btn-outline no-print" onclick="tgrState().viewId='${a.target_id}'; renderApp();">View</button>`],
+    export: [a.created_at, a.user_name, a.kind, `${tgrMetric(a.metric)[1]} · ${tgrFor(a)} · ${a.period}`, a.proposed_value, a.message, a.status, a.response || ''] }));
+  return `<div style="margin-top:18px;">${perfTable(`Appeals & Comments${toAnswer ? ` · ${toAnswer} waiting for you` : ''}`, ['Date', 'From', 'Type', 'Target', 'Proposed', 'Message', 'Status', 'Actions'], rows, { empty: 'No appeals or comments yet.' })}</div>`;
+}
+function tgrRespond(id, decision){
+  const a = DB.tgr.appeals.find(x => x.id === id); if(!a) return;
+  const body = { decision };
+  if(decision === 'Accepted'){
+    const v = prompt(`New target figure (now ${a.target_value}${a.proposed_value != null ? `, proposed ${a.proposed_value}` : ''}). Leave blank to keep it as it is.`, a.proposed_value != null ? String(Number(a.proposed_value)) : '');
+    if(v === null) return;
+    if(v.trim() !== '' && !(Number(v) > 0)){ toast('Enter a positive figure, or leave it blank.'); return; }
+    body.new_value = v.trim() === '' ? null : Number(v);
+  }
+  const response = prompt(decision === 'Accepted' ? 'Reply (optional)' : 'Reason for rejecting (optional)', '');
+  if(response === null) return;
+  body.response = response;
+  withRequest('tgr-respond-' + id, async ()=>{
+    await api.post(`/api/target-appeals/${id}/respond`, body);
+    toast(`Appeal ${decision.toLowerCase()}`); tgrReload();
+  }, { mutates: true });
+}
+// Drill-down: one target with its achievement and its appeal thread.
+function renderTargetView(id){
+  const t = DB.tgr.targets.find(x => x.id === id);
+  if(!t) return `<div class="card perf-card">${perfHeader('TARGET', '', `<button class="btn btn-sm btn-outline" onclick="tgrState().viewId=null; renderApp();">← Back</button>`)}<div class="empty">This target is no longer in your list.</div></div>`;
+  const thread = DB.tgr.appeals.filter(a => a.target_id === id);
+  const p = Number(t.achievementPct) || 0;
+  return `<div class="card perf-card">
+    ${perfHeader(`${tgrMetric(t.metric)[1].toUpperCase()} TARGET`, `${TGR_LEVELS[t.level]} · ${tgrFor(t)} · ${t.period}`,
+      `<button class="btn btn-sm btn-outline" onclick="tgrState().viewId=null; renderApp();">← Back</button>${t.can_appeal ? `<button class="btn btn-sm btn-primary" onclick="tgrState().viewId=null; tgrState().appealTarget='${t.id}'; toggleForm('tgr-appeal', true);">✋ Appeal / Comment</button>` : ''}${t.can_manage ? `<button class="btn btn-sm btn-outline" onclick="tgrState().viewId=null; tgrState().editId='${t.id}'; renderApp();">Edit</button><button class="btn btn-sm btn-red" onclick="tgrDelete('${t.id}')">Delete</button>` : ''}${perfPrintBtn()}`)}
+    ${perfTiles([['Target', tgrVal(t.metric, t.target_value), 'blue'], ['Achieved', tgrVal(t.metric, t.achieved), p >= 100 ? 'green' : p >= 75 ? 'amber' : 'red'], ['Achievement', perfAch(p), p >= 100 ? 'green' : p >= 75 ? 'amber' : 'red'], ['Remaining', tgrVal(t.metric, t.remaining), 'amber']])}
+    ${perfTable('Details', ['Field', 'Value'], [
+      ['Level', TGR_LEVELS[t.level]], ['Target for', tgrFor(t)], ['Measure', tgrMetric(t.metric)[1]], ['Period', `${t.period} (${t.periodStart} – ${t.periodEnd})`], ['Set by', t.set_by_name || '—'],
+      ['Set on', ixDate(t.created_at)], ['Last changed', t.updated_at ? ixDate(t.updated_at) : '—'], ['Notes', t.notes || '—']].map(r => ({ cells: [escapeHtml(r[0]), `<strong>${escapeHtml(String(r[1]))}</strong>`], export: r })))}
+    ${renderTgrAppealsTable(thread, thread.filter(a => a.can_respond).length)}
+  </div>`;
+}
 function renderPerfReport(page){
   const st = perfState();
   perfLoad('settings', '/api/perf/settings');
   if(page === 'My Targets') return renderPerfOfficerPlan(session.userId, true);
+  if(page === 'Targets Register') return renderTargetsRegister();
   if(st.officerId) return renderPerfOfficerPlan(st.officerId, false);
   if(st.branchId) return renderPerfBranch(st.branchId);
   if(page === 'Disbursement Report') return renderPerfDisbursement();
@@ -24199,6 +24432,7 @@ function renderLinkAccountForm(employee){
           <div class="field"><label>Access Level</label><input name="accessLevel" value="${escapeHtml(employee.accessLevel||'')}" placeholder="auto-filled from role, editable"></div>
           <div class="field"><label>Login Email</label><input name="loginEmail" type="email" value="${escapeHtml(employee.email||'')}" required></div>
           <div class="field"><label>Username</label><input name="username" value="${escapeHtml(suggestUsername(employee.name))}" placeholder="from the person's name" maxlength="40"><div class="hint">They can sign in with this username or their email.</div></div>
+          ${cuBranchFieldsHtml(employee.branch, employee.regionId)}
         </div>
         <div class="hint" style="margin:10px 0;">A secure temporary password is generated automatically — the employee sets their own on first login.</div>
         <div class="pill-row">
@@ -24213,7 +24447,7 @@ function submitLinkUserAccount(ev, employeeId){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   return withRequest('link-user-account', async ()=>{
-    const res = await api.post('/api/users', { employee_id: employeeId, role_id: f.roleId, access_level: f.accessLevel || undefined, login_email: f.loginEmail, username: f.username || undefined });
+    const res = await api.post('/api/users', { employee_id: employeeId, role_id: f.roleId, access_level: f.accessLevel || undefined, login_email: f.loginEmail, username: f.username || undefined, branch_id: f.branchId || undefined, region_id: f.regionId || undefined });
     const s = adaptStaff(res.user);
     const i = DB.staff.findIndex(x=>x.id===s.id); if(i>=0) DB.staff[i] = s; else DB.staff.push(s);
     session.createUserLinkEmployeeId = null;
@@ -24222,6 +24456,43 @@ function submitLinkUserAccount(ev, employeeId){
     const deliveryNote = (res.notifications && res.notifications.email === 'SENT') ? 'a welcome email has been sent to them' : 'email delivery is not configured — share this password with them securely yourself';
     alert(`System Account created for ${s.name}.\n\nUsername: ${s.username || '—'}\nTemporary password: ${res.tempPassword}\n\n(${deliveryNote}.) This is shown once — they'll be required to set their own password on first login.`);
   });
+}
+// Branch and Region pickers for Create User / Set Branch. Choosing a branch
+// fills its region; Loan Officers and Managers need a branch to work.
+function cuBranchFieldsHtml(branchId, regionId){
+  const branches = (DB.branches || []).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  return `<div class="field"><label>Branch</label><select name="branchId" onchange="if(this.value && this.form.regionId) this.form.regionId.value = this.selectedOptions[0].dataset.region||'';">
+      <option value="">— Head office / none —</option>${branches.map(b=>`<option value="${b.id}" data-region="${b.region||''}" ${b.id===branchId?'selected':''}>${escapeHtml(b.name)}</option>`).join("")}</select>
+      <div class="hint">Required for Loan Officers and Managers.</div></div>
+    <div class="field"><label>Region</label><select name="regionId"><option value="">— None —</option>${(DB.regions||[]).map(r=>`<option value="${r.id}" ${r.id===regionId?'selected':''}>${escapeHtml(r.name)}</option>`).join("")}</select></div>`;
+}
+const CU_BRANCH_ROLES = ['Loan Officer','Manager'];
+function renderCuBranchEditor(){
+  const u = (DB.staff || []).find(x => x.id === session.cuBranchEditId);
+  if(!u) return '';
+  return `<div class="card">
+    <div class="card-title">Set Branch <small>${escapeHtml(u.name)} · ${escapeHtml(u.role || '')}</small></div>
+    <form onsubmit="return submitCuBranch(event,'${u.id}')">
+      <div class="form-grid">${cuBranchFieldsHtml(u.branch, u.regionId)}</div>
+      <div class="pill-row" style="margin-top:10px;">
+        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        <button class="btn btn-outline btn-sm" type="button" onclick="session.cuBranchEditId=null; renderApp();">Cancel</button>
+      </div>
+    </form></div>`;
+}
+function submitCuBranch(ev, id){
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target));
+  const u = (DB.staff || []).find(x => x.id === id);
+  if(u && CU_BRANCH_ROLES.includes(u.role) && !f.branchId){ toast(`A ${u.role} needs a branch.`); return false; }
+  withRequest('cu-branch-' + id, async ()=>{
+    const res = await api.patch(`/api/users/${id}`, { branch_id: f.branchId || '', region_id: f.regionId || '' });
+    const s = adaptStaff(res.user);
+    const i = DB.staff.findIndex(x => x.id === id); if(i >= 0) DB.staff[i] = { ...DB.staff[i], ...s };
+    session.cuBranchEditId = null;
+    toast(`Branch saved for ${s.name}`);
+  }, { mutates: true });
+  return false;
 }
 // Create User: every staff member and their login in one table; the two
 // ways of giving someone a login open from the buttons above it.
@@ -24240,12 +24511,13 @@ function renderCreateUserPage(){
       <td><a href="#" onclick="admOpenUser('${u.id}'); return false;"><strong style="font-size:14px;">${escapeHtml(u.name)}</strong></a><div class="hint">${u.username ? '@' + escapeHtml(u.username) + ' · ' : ''}${escapeHtml(u.email || '—')}${u.staffCode ? ' · ' + escapeHtml(u.staffCode) : ''}</div></td>
       <td><span class="badge blue">${escapeHtml(u.role || '—')}</span></td>
       <td>${escapeHtml(u.accessLevel || '—')}</td>
-      <td>${escapeHtml(u.branch ? branchName(u.branch) : 'Head office')}</td>
+      <td>${u.branch ? escapeHtml(branchName(u.branch)) : CU_BRANCH_ROLES.includes(u.role) ? '<span class="badge red">No branch</span>' : 'Head office'}</td>
       <td>${admBadge(acc(u), admAccountTone(acc(u)))}${u.mustChangePassword && acc(u) === 'Active' ? '<div class="hint">must set password</div>' : ''}</td>
       <td class="hint">${u.lastLoginAt ? timeAgo(u.lastLoginAt) : 'Never'}</td>
       <td><span class="badge ${u.status === 'Active' ? 'green' : u.status === 'Suspended' ? 'amber' : 'red'}">${escapeHtml(u.status || '—')}</span></td>
       <td class="dt-act">
         <button class="btn btn-sm btn-outline" onclick="admOpenUser('${u.id}')">View</button>
+        <button class="btn btn-sm btn-outline" onclick="session.cuBranchEditId='${u.id}'; renderApp(); window.scrollTo(0,0);">Branch</button>
         ${!u.hasAccount && u.status !== 'Terminated' ? `<button class="btn btn-sm btn-primary" onclick="session.createUserLinkEmployeeId='${u.id}'; toggleForm('cu-link', true);">Create login</button>` : ''}
         ${isAdmin && u.id !== session.userId ? `<button class="btn btn-sm btn-red" onclick="permanentlyDeleteUser('${u.id}')">Delete</button>` : ''}
       </td></tr>`).join('');
@@ -24262,6 +24534,7 @@ function renderCreateUserPage(){
       </div>
       <div class="adm-tiles">${admTile('Staff', staff.length)}${admTile('Active logins', staff.filter(u => acc(u) === 'Active').length)}${admTile('Without a login', staff.filter(u => !u.hasAccount && u.status !== 'Terminated').length)}${admTile('Suspended / locked', staff.filter(u => ['Suspended','Locked','Disabled'].includes(acc(u))).length)}</div>
     </div>
+    ${session.cuBranchEditId ? renderCuBranchEditor() : ''}
     ${isFormOpen('cu-link') ? renderLinkExistingEmployeeSection() : ''}
     ${isFormOpen('cu-new') ? renderNewEmployeeAccountForm() : ''}
     <div class="card">
