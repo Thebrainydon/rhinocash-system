@@ -18,6 +18,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else
 // once. A login that fails for any OTHER reason (maintenance mode, wrong
 // password, etc.) never touches the existing session.
 const __activeLoginToken = new Map();
+async function otp(token) { const r = await api('POST', '/api/otp/request', { token }); return r.json && r.json.otpForTesting; }
 async function api(method, path, { token, body } = {}) {
   const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
   const doFetch = async () => {
@@ -109,7 +110,12 @@ async function driveLoanToDisbursed(t, principal, term) {
   assert(credit && credit.available > 0, '4: the overpayment shows as a client credit');
   const suspenseBefore = ctl2.json.suspense.overpaymentSuspense;
   assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'refund', ref_type: 'client', ref_id: L1.clientId, amount: credit.available + 1000 } })).status === 400, '4: a refund larger than the credit is rejected');
-  const rf = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'refund', ref_type: 'client', ref_id: L1.clientId, amount: 500, data: { method: 'Cash' } } });
+  const noOtp = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'refund', ref_type: 'client', ref_id: L1.clientId, amount: 500, data: { method: 'Cash' } } });
+  assert(noOtp.status === 400 && noOtp.json.code === 'INVALID_OTP', '4: a refund request needs the OTP sent to the requester');
+  const refundOtp = await otp(t.acct);
+  assert(/^\d{6}$/.test(String(refundOtp)), '4: an OTP is issued for the refund request');
+  const rf = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'refund', ref_type: 'client', ref_id: L1.clientId, amount: 500, data: { method: 'Cash' }, otp_code: refundOtp } });
+  assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'refund', ref_type: 'client', ref_id: L1.clientId, amount: 100, otp_code: refundOtp } })).status === 400, '4: an OTP cannot be used twice');
   assert(rf.status === 201 && rf.json.record.status === 'Pending', '4: the refund waits for approval');
   assert((await api('PATCH', `/api/acct/records/${rf.json.record.id}`, { token: t.acct, body: { status: 'Paid' } })).status === 400, '4: a refund cannot be paid before it is approved');
   assert((await api('PATCH', `/api/acct/records/${rf.json.record.id}`, { token: t.director, body: { status: 'Approved' } })).status === 200, '4: the Director approves the refund');
@@ -123,7 +129,7 @@ async function driveLoanToDisbursed(t, principal, term) {
   // 5. Write-offs: proposed with a reason, approved, then executed
   const L2 = await driveLoanToDisbursed(t, 12000, 2);
   assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'write_off', ref_type: 'loan', ref_id: L2.loanId } })).status === 400, '5: a write-off needs a reason');
-  const wo = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'write_off', ref_type: 'loan', ref_id: L2.loanId, details: 'Client relocated, unreachable' } });
+  const wo = await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'write_off', ref_type: 'loan', ref_id: L2.loanId, details: 'Client relocated, unreachable', otp_code: await otp(t.acct) } });
   assert(wo.status === 201 && wo.json.record.amount === 12000, '5: the write-off amount is the principal still owed');
   assert((await api('POST', '/api/acct/records', { token: t.acct, body: { kind: 'write_off', ref_type: 'loan', ref_id: L2.loanId, details: 'again' } })).status === 409, '5: a loan cannot have two write-offs in progress');
   assert((await api('PATCH', `/api/acct/records/${wo.json.record.id}`, { token: t.ceo, body: { status: 'Approved' } })).status === 200, '5: the CEO approves the write-off');
@@ -145,7 +151,7 @@ async function driveLoanToDisbursed(t, principal, term) {
   // 7. Financial requests: raised by the Accountant, decided by an executive, then paid
   assert((await api('GET', '/api/exec/records', { token: t.acct })).status === 403, '7: the Accountant cannot browse every executive record');
   assert((await api('POST', '/api/exec/records', { token: t.acct, body: { kind: 'risk', title: 'x', data: { likelihood: 1, impact: 1 } } })).status === 403, '7: the Accountant cannot record other executive items');
-  const fr = await api('POST', '/api/exec/records', { token: t.acct, body: { kind: 'financial_request', title: '[TEST] Branch float top-up', amount: 40000 } });
+  const fr = await api('POST', '/api/exec/records', { token: t.acct, body: { kind: 'financial_request', title: '[TEST] Branch float top-up', amount: 40000, otp_code: await otp(t.acct) } });
   assert(fr.status === 201 && fr.json.record.status === 'Pending', '7: the Accountant raises a financial request');
   assert((await api('PATCH', `/api/exec/records/${fr.json.record.id}`, { token: t.acct, body: { status: 'Approved' } })).status === 403, '7: the Accountant cannot approve it');
   assert((await api('PATCH', `/api/exec/records/${fr.json.record.id}`, { token: t.acct, body: { status: 'Paid' } })).status === 400, '7: it cannot be paid before approval');

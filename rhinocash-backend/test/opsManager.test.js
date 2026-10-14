@@ -18,6 +18,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else
 // once. A login that fails for any OTHER reason (maintenance mode, wrong
 // password, etc.) never touches the existing session.
 const __activeLoginToken = new Map();
+async function otp(token) { const r = await api('POST', '/api/otp/request', { token }); return r.json && r.json.otpForTesting; }
 async function api(method, path, { token, body } = {}) {
   const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
   const doFetch = async () => {
@@ -104,7 +105,7 @@ async function driveLoanToDisbursed(t, principal, term) {
   assert((await api('GET', '/api/acct/client-quality', { token: t.ops })).status === 200, '4: the Operational Manager reads client data quality');
   assert((await api('GET', '/api/acct/controls', { token: t.ops })).status === 403, '4: but not the accounting control queues');
   assert((await api('POST', '/api/acct/records', { token: t.ops, body: { kind: 'exception', title: 'x' } })).status === 403, '4: and cannot record accounting items');
-  const fr = await api('POST', '/api/exec/records', { token: t.ops, body: { kind: 'financial_request', title: '[TEST] New branch furniture', amount: 120000 } });
+  const fr = await api('POST', '/api/exec/records', { token: t.ops, body: { kind: 'financial_request', title: '[TEST] New branch furniture', amount: 120000, otp_code: await otp(t.ops) } });
   assert(fr.status === 201 && fr.json.record.status === 'Pending', '4: the Operational Manager raises a financial request');
   assert((await api('GET', '/api/exec/records?kind=financial_request', { token: t.ops })).status === 200, '4: and sees financial requests');
   assert((await api('GET', '/api/exec/records', { token: t.ops })).status === 403, '4: but not other executive records');
@@ -113,6 +114,14 @@ async function driveLoanToDisbursed(t, principal, term) {
   assert((await api('PATCH', `/api/exec/records/${fr.json.record.id}`, { token: t.acct, body: { status: 'Paid' } })).status === 200, '4: the Accountant pays it');
   const fin = await api('GET', '/api/acct/finance', { token: t.ops });
   assert(fin.json.monthly.every(m => typeof m.newClients === 'number') && fin.json.monthly[11].newClients >= 1, '4: the figures include new clients per month');
+
+  // 5. Dashboard extras: disbursement channels, unconfirmed M-Pesa receipts, staff on leave
+  const ex = await api('GET', '/api/dashboard/branch-extras', { token: t.manager });
+  assert(ex.status === 200 && Array.isArray(ex.json.disbursements) && typeof ex.json.unconfirmedPayments.count === 'number' && Array.isArray(ex.json.staffOnLeave), '5: the branch dashboard extras load for a Manager');
+  assert(ex.json.disbursements.every(d => d.day >= 1 && d.day <= 31 && typeof d.digital === 'boolean'), '5: each disbursement carries its day and channel type');
+  const exOps = await api('GET', '/api/dashboard/branch-extras', { token: t.ops });
+  assert(exOps.status === 200 && exOps.json.disbursements.length >= ex.json.disbursements.length, '5: the Operational Manager sees every branch');
+  assert((await api('GET', '/api/dashboard/branch-extras')).status === 401, '5: the extras need a signed-in user');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

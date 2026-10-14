@@ -25,6 +25,7 @@ const { all, get, run, transaction } = require('./../db');
 const { requireAuth } = require('./../middleware');
 const { hasPermission } = require('./../rbac');
 const { logAction } = require('./../audit');
+const { consumeOtp, OTP_ACCT_KINDS, OTP_ERROR } = require('./../otp');
 const { ledgerBalance, assertPeriodOpen } = require('./accounting');
 const { glAccountFor } = require('./payments');
 
@@ -478,6 +479,7 @@ function register(router) {
       finalAmount = round2(amount); period = date.slice(0, 7);
       title = title || `${category === 'mpesa' ? 'M-Pesa' : category === 'bank' ? 'Bank' : 'Cash'} reconciliation — ${date}`;
     }
+    if (OTP_ACCT_KINDS.includes(b.kind) && !(await consumeOtp(req.user.id, b.otp_code))) return next(OTP_ERROR);
     const id = 'acr_' + crypto.randomUUID();
     await run(`INSERT INTO acct_records (id, kind, title, details, category, status, branch_id, period, amount, ref_type, ref_id, data_json, outcome, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,

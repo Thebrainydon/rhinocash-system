@@ -66,6 +66,45 @@ function register(router) {
       activeClients: activeClientCount,
     });
   });
+  // Extra branch-dashboard figures that need server-side data the frontend
+  // does not otherwise load: this month's disbursements split by channel
+  // (the channel only lives in the disbursement audit row), M-Pesa receipts
+  // not yet confirmed into a payment, and staff on approved leave today.
+  router.get('/api/dashboard/branch-extras', requireAuth, async (req, res) => {
+    if (req.user.role_id === 'investor') return res.status(403).json({ error: 'Not available for this role' });
+    const scope = await branchScopeSQL(req.user, 'l.branch_id');
+    const disb = await all(
+      `SELECT l.id, l.principal, l.disbursed_at,
+              (SELECT a.new_value FROM audit_logs a WHERE a.record_type = 'Loan' AND a.record_id = l.id AND a.action = 'Disbursed loan' ORDER BY a.id DESC LIMIT 1) AS audit
+         FROM loans l
+        WHERE ${scope.clause} AND l.disbursed_at IS NOT NULL
+          AND to_char(l.disbursed_at::timestamptz, 'YYYY-MM') = to_char(now(), 'YYYY-MM')`, scope.params);
+    const disbursements = disb.map(r => {
+      let channel = 'manual';
+      try { const v = JSON.parse(r.audit || '{}'); if (v.channel) channel = String(v.channel); } catch (e) { /* manual */ }
+      const c = channel.toLowerCase(); const digital = c.includes('mpesa') || c.includes('m-pesa') || c.includes('b2c');
+      return { loanId: r.id, day: new Date(r.disbursed_at).getDate(), amount: Number(r.principal) || 0, channel, digital };
+    });
+
+    const branchScope = await branchScopeSQL(req.user, 'c.branch_id');
+    const unconfirmed = await all(
+      `SELECT t.id, t.amount, t.msisdn, t.bill_ref_number, t.created_at FROM mpesa_c2b_transactions t
+        WHERE t.payment_id IS NULL
+          AND (${branchScope.clause === '1=1' ? '1=1' : `EXISTS (SELECT 1 FROM clients c WHERE ${branchScope.clause} AND (c.phone = t.msisdn OR c.id = t.bill_ref_number OR c.client_code = t.bill_ref_number OR c.national_id = t.bill_ref_number)) OR EXISTS (SELECT 1 FROM loans l WHERE l.id = t.matched_loan_id AND ${scope.clause})`})`,
+      branchScope.clause === '1=1' ? [] : [...branchScope.params, ...scope.params]);
+
+    const staffScope = await branchScopeSQL(req.user, 'u.branch_id');
+    const onLeave = await all(
+      `SELECT u.id, u.name, lr.leave_type, lr.start_date, lr.end_date FROM leave_requests lr JOIN users u ON u.id = lr.user_id
+        WHERE lr.status = 'Approved' AND lr.start_date <= to_char(now(), 'YYYY-MM-DD') AND lr.end_date >= to_char(now(), 'YYYY-MM-DD')
+          AND ${staffScope.clause}`, staffScope.params);
+
+    res.json({
+      disbursements,
+      unconfirmedPayments: { count: unconfirmed.length, amount: unconfirmed.reduce((s, t) => s + (Number(t.amount) || 0), 0) },
+      staffOnLeave: onLeave.map(r => ({ id: r.id, name: r.name, leaveType: r.leave_type, startDate: r.start_date, endDate: r.end_date })),
+    });
+  });
 }
 
 module.exports = { register };

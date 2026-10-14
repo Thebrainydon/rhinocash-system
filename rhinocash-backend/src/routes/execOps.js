@@ -16,6 +16,7 @@ const crypto = require('node:crypto');
 const { all, get, run } = require('./../db');
 const { requireAuth } = require('./../middleware');
 const { logAction } = require('./../audit');
+const { issueOtp, consumeOtp, OTP_EXEC_KINDS, OTP_ERROR } = require('./../otp');
 
 const KINDS = {
   action_plan:      { statuses: ['Planned', 'In Progress', 'Completed', 'Cancelled'], open: ['Planned', 'In Progress'] },
@@ -76,6 +77,14 @@ const SELECT = `SELECT r.*, o.name AS owner_name, c.name AS created_name, d.name
   LEFT JOIN users o ON o.id = r.owner_id LEFT JOIN users c ON c.id = r.created_by LEFT JOIN users d ON d.id = r.decided_by`;
 
 function register(router) {
+  // A one-time code for confirming a money request (financial requests,
+  // funding, refunds, write-offs, requisitions) from the requester's phone.
+  router.post('/api/otp/request', requireAuth, async (req, res, next) => {
+    if (req.user.role_id === 'investor') return next({ status: 403, message: 'Not available for this role' });
+    if (!req.user.phone) return next({ status: 400, message: 'Your account has no phone number on file to send an OTP to' });
+    res.json(await issueOtp(req.user));
+  });
+
   router.get('/api/exec/records', requireAuth, requireView, async (req, res, next) => {
     const clauses = ['1=1']; const params = [];
     if (isRequester(req) && (!req.query.kind || String(req.query.kind).split(',').some(k => !ACCOUNTANT_KINDS.includes(k)))) return next({ status: 403, message: 'You can see financial requests only' });
@@ -113,6 +122,7 @@ function register(router) {
     const dataJson = JSON.stringify(data);
     if (Buffer.byteLength(dataJson) > MAX_DATA) return next({ status: 400, message: 'Record details are too large' });
     const status = b.status && def.statuses.includes(b.status) && !def.decision ? b.status : def.statuses[0];
+    if (OTP_EXEC_KINDS.includes(b.kind) && !(await consumeOtp(req.user.id, b.otp_code))) return next(OTP_ERROR);
     const id = 'exr_' + crypto.randomUUID();
     await run(`INSERT INTO exec_records (id, kind, title, details, category, priority, status, branch_id, owner_id, due_date, start_date, amount, score, related_id, data_json, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,

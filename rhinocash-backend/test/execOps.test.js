@@ -17,6 +17,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else
 // once. A login that fails for any OTHER reason (maintenance mode, wrong
 // password, etc.) never touches the existing session.
 const __activeLoginToken = new Map();
+async function otp(token) { const r = await api('POST', '/api/otp/request', { token }); return r.json && r.json.otpForTesting; }
 async function api(method, path, { token, body } = {}) {
   const isLogin = method === 'POST' && (path === '/api/auth/login' || path === '/api/investor-auth/login');
   const doFetch = async () => {
@@ -71,7 +72,7 @@ async function login(email, password) { const r = await api('POST', '/api/auth/l
   assert(noAmt.status === 400, '2: a financial request needs an amount');
 
   // 3. Decisions on requests: not by the requester, only Director/CEO
-  const fr = await api('POST', '/api/exec/records', { token: directorToken, body: { kind: 'financial_request', title: 'New branch fit-out', amount: 850000, status: 'Approved' } });
+  const fr = await api('POST', '/api/exec/records', { token: directorToken, body: { kind: 'financial_request', title: 'New branch fit-out', amount: 850000, status: 'Approved', otp_code: await otp(directorToken) } });
   assert(fr.status === 201 && fr.json.record.status === 'Pending', '3: a request always starts Pending, whatever status is sent');
   const id = fr.json.record.id;
   assert((await api('PATCH', '/api/exec/records/' + id, { token: directorToken, body: { status: 'Approved' } })).status === 403, '3: the requester cannot approve their own request');

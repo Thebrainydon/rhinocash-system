@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <title>Rhinocash — Microfinance Management System</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script data-role="viewport">
+// Phones and small tablets show the full desktop layout (scaled to fit),
+// the way the reference system does, instead of a single stacked column.
+(function(){ try{ var w = Math.min(screen.width || 9999, screen.height || 9999); if(w < 900){ var m = document.querySelector('meta[name="viewport"]'); if(m) m.setAttribute('content', 'width=1180'); } }catch(e){} })();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 :root{
@@ -113,6 +118,13 @@ body{
   display:none; align-items:center; justify-content:center; width:36px; height:36px; border-radius:8px;
   border:1px solid var(--line); background:#fff; cursor:pointer; font-size:17px; flex-shrink:0; color:var(--navy);
 }
+/* The sidebar is a slide-in drawer on every screen size: hidden until the
+   ☰ button opens it, so pages always use the full width. */
+.sidebar{ position:fixed; left:0; top:0; z-index:60; height:100vh; transform:translateX(-100%); transition:transform .2s ease; box-shadow:none; visibility:hidden; transition:transform .2s ease, visibility 0s linear .2s; }
+.sidebar.open{ transform:translateX(0); visibility:visible; box-shadow:0 0 40px rgba(0,0,0,0.35); transition:transform .2s ease, visibility 0s; }
+.sidebar-backdrop{ display:block; position:fixed; inset:0; background:rgba(10,14,24,0.5); z-index:55; opacity:0; pointer-events:none; transition:opacity .2s ease; }
+.sidebar-backdrop.open{ opacity:1; pointer-events:auto; }
+.hamburger{ display:inline-flex; }
 
 /* ---- Topbar ---- */
 .main{flex:1; min-width:0; display:flex; flex-direction:column;}
@@ -124,6 +136,17 @@ body{
 .topbar-brand{font-weight:800; font-size:15px; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 /* Admin (System Administrator) pages — bold blue headings throughout */
 .adm-head{padding-bottom:14px;}
+/* One heading per page: section eyebrows and explanatory subtitles are not shown. */
+.adm-head .ac-eyebrow, .adm-head .adm-sub, .card-title small.desc-hidden{display:none !important;}
+.adm-head{padding:14px 18px;}
+.adm-head .adm-title{margin:0;}
+/* "+ New" buttons moved into a table's own toolbar (see tidyPageLayout). */
+.fp-bar.fp-moved-out{display:none;}
+.fp-inline{display:inline-flex; margin-left:auto;}
+.card-title .fp-inline{margin-left:10px;}
+.card-title:has(.fp-inline){display:flex; align-items:center; gap:8px;}
+.card-title:has(.fp-inline) > small:not(.desc-hidden){margin-left:auto;}
+.card-title:has(.fp-inline) > small.desc-hidden + .fp-inline, .card-title:has(.fp-inline) > .fp-inline:only-child{margin-left:auto;}
 .adm-title{font-size:21px; font-weight:800; color:var(--blue); margin:2px 0 4px; line-height:1.25;}
 .adm-sub{font-size:13px; font-weight:700; color:var(--blue); opacity:0.85;}
 .adm-page .card-title{color:var(--blue); font-weight:800; gap:10px; flex-wrap:wrap;}
@@ -321,6 +344,43 @@ body{
 .attention-icon{ width:34px; height:34px; border-radius:9px; background:#F2F0EA; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
 .attention-label{ font-size:13px; font-weight:700; color:var(--ink); }
 .attention-value{ font-size:17px; font-weight:800; color:var(--ink); margin-top:2px; }
+/* OTP confirmation dialog for money requests */
+.otp-overlay{ position:fixed; inset:0; z-index:900; background:rgba(10,14,24,0.55); display:flex; align-items:center; justify-content:center; padding:16px; }
+.otp-modal{ background:#fff; border-radius:18px; width:100%; max-width:380px; padding:26px 24px 20px; text-align:center; box-shadow:0 24px 60px rgba(0,0,0,0.3); }
+.otp-icon{ width:52px; height:52px; margin:0 auto 10px; border-radius:50%; background:var(--blue-bg); display:flex; align-items:center; justify-content:center; font-size:24px; }
+.otp-title{ font-size:17px; font-weight:800; color:var(--navy); }
+.otp-summary{ margin-top:6px; font-size:13px; font-weight:700; color:var(--ink); }
+.otp-status{ margin:12px 0 10px; font-size:12px; color:var(--ink-faint); min-height:16px; }
+.otp-status.err{ color:var(--red); font-weight:700; }
+.otp-input{ width:100%; text-align:center; font-size:26px; font-weight:800; letter-spacing:12px; padding:12px 8px; border:2px solid var(--line); border-radius:12px; outline:none; }
+.otp-input:focus{ border-color:var(--navy); }
+.otp-actions{ display:flex; gap:8px; justify-content:center; margin-top:16px; flex-wrap:wrap; }
+.otp-actions .btn{ min-width:92px; justify-content:center; }
+/* Desktop dashboard layout: welcome buttons inline on the right, the four
+   headline cards on one row, and paired sections side by side. */
+@media (min-width:900px){
+  .dash-hero-profile{ display:flex; align-items:center; gap:18px; }
+  .dash-hero-profile-top{ flex:1; min-width:0; }
+  .dash-hero-actions{ flex-direction:row; margin-top:0; flex-shrink:0; }
+  .dash-hero-actions a{ padding:10px 16px; white-space:nowrap; }
+  .hero-stat-grid{ grid-template-columns:repeat(4,1fr); }
+}
+.dash-two{ display:grid; grid-template-columns:1fr; gap:0 18px; }
+@media (min-width:900px){ .dash-two{ grid-template-columns:1fr 1fr; } }
+.dash-two > div{ min-width:0; }
+.dash-tile-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+@media (min-width:900px){ .dash-tile-row{ grid-template-columns:repeat(4,1fr); } .dash-tile-row.six{ grid-template-columns:repeat(6,1fr); } .dash-tile-row.three{ grid-template-columns:repeat(3,1fr); } }
+.dash-tile{ border:1px solid var(--line); border-radius:14px; padding:14px; background:var(--card,#fff); cursor:pointer; min-width:0; }
+.dash-tile:hover{ border-color:var(--navy-soft); }
+.dash-tile-label{ font-size:11.5px; font-weight:700; color:var(--ink-faint); display:flex; justify-content:space-between; gap:6px; }
+.dash-tile-value{ font-size:19px; font-weight:800; color:var(--ink); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-tile-sub{ font-size:11px; color:var(--ink-faint); margin-top:3px; }
+.aging-card{ border-radius:14px; padding:14px 16px; color:#fff; cursor:pointer; min-width:0; }
+.aging-card .dash-tile-label, .aging-card .dash-tile-sub{ color:rgba(255,255,255,0.88); }
+.aging-card .dash-tile-value{ color:#fff; }
+.aging-card.a1{ background:linear-gradient(135deg,#E9A23B,#B5741A); }
+.aging-card.a2{ background:linear-gradient(135deg,#E07040,#A84418); }
+.aging-card.a3{ background:linear-gradient(135deg,#C94B42,#7A1A15); }
 .section-head{ display:flex; justify-content:space-between; align-items:center; margin:18px 0 10px; }
 .section-head-label{ font-size:11px; color:var(--ink-faint); font-weight:700; text-transform:uppercase; letter-spacing:0.3px; }
 .section-head-title{ font-size:15.5px; font-weight:800; color:var(--ink); margin-top:1px; }
@@ -517,15 +577,21 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 .notif-dot{width:8px; height:8px; border-radius:50%; background:var(--rust); margin-top:5px; flex-shrink:0;}
 .notif-dot.read{background:var(--line);}
 .section-note{background:var(--blue-bg); color:var(--navy); border-radius:9px; padding:11px 14px; font-size:12.5px; margin-bottom:16px;}
-.loading-screen{display:flex; align-items:center; justify-content:center; height:100vh; flex-direction:column; gap:10px; color:var(--blue); font-size:16px; font-weight:700;}
-.loading-screen-spinner{display:inline-block; width:18px; height:18px; vertical-align:-3px; margin-left:5px; animation:loginSpin 0.8s linear infinite;}
-/* ---- Pull-to-refresh indicator (see initPullToRefresh()) ---- */
+.loading-screen{display:flex; align-items:center; justify-content:center; height:100vh;}
+.loading-screen-spinner{width:34px; height:34px; border-radius:50%; border:3px solid rgba(46,92,138,0.18); border-top-color:var(--navy); animation:loginSpin 0.8s linear infinite;}
+/* A thin loading line across the very top of the window, like a browser's
+   own page-load bar — shown while the app is loading or refreshing data. */
+.top-progress{position:fixed; top:0; left:0; right:0; height:3px; z-index:700; overflow:hidden; pointer-events:none; opacity:0; transition:opacity .25s ease;}
+.top-progress.on{opacity:1;}
+.top-progress::before{content:''; position:absolute; top:0; left:-35%; width:35%; height:100%; background:linear-gradient(90deg, #E9A23B, #1A73E8); border-radius:2px; animation:topProgress 1.1s ease-in-out infinite;}
+@keyframes topProgress{ 0%{ left:-35%; } 100%{ left:100%; } }
+/* ---- Pull-to-refresh: just a round spinner that follows the finger (see initPullToRefresh()) ---- */
 .ptr-indicator{
-  position:fixed; top:0; left:0; right:0; z-index:500; display:flex; align-items:center; justify-content:center;
-  height:56px; margin-top:-56px; background:var(--bg); color:var(--navy); font-size:13px; font-weight:700;
-  transition:margin-top 0.15s ease-out; pointer-events:none;
+  position:fixed; top:0; left:50%; z-index:500; width:40px; height:40px; margin-left:-20px; margin-top:-48px;
+  display:flex; align-items:center; justify-content:center; border-radius:50%; background:#fff; color:#1A73E8;
+  box-shadow:0 2px 8px rgba(0,0,0,0.25); transition:margin-top 0.15s ease-out; pointer-events:none;
 }
-.ptr-indicator svg{ transition:transform 0.1s linear; }
+.ptr-indicator svg{ transition:transform 0.05s linear; }
 .ptr-indicator.spinning svg{ animation:loginSpin 0.8s linear infinite; }
 
 /* ---- Login screen — split hero/form card, Rhinocash's own navy/rust
@@ -613,16 +679,6 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 
 /* ---- Responsive / mobile ---- */
 @media (max-width: 880px){
-  .sidebar{
-    position:fixed; left:0; top:0; z-index:60; height:100vh;
-    transform:translateX(-100%); transition:transform .2s ease; box-shadow:0 0 40px rgba(0,0,0,0.35);
-  }
-  .sidebar.open{ transform:translateX(0); }
-  .sidebar-backdrop{
-    display:block; position:fixed; inset:0; background:rgba(10,14,24,0.5); z-index:55;
-    opacity:0; pointer-events:none; transition:opacity .2s ease;
-  }
-  .sidebar-backdrop.open{ opacity:1; pointer-events:auto; }
   .hamburger{ display:inline-flex; }
   .topbar{ padding:12px 14px; }
   .topbar-right .role-select{ display:none; }
@@ -640,7 +696,7 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 </style>
 </head>
 <body>
-<div id="root"><div class="loading-screen">Loading Rhinocash…</div></div>
+<div id="root"><div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div></div>
 
 <script>
 /* =========================================================================
@@ -1909,6 +1965,46 @@ const api = {
 // exactly like the comment on ensureFileFormProgressOverlay() explains —
 // those keep using that same dedicated-overlay technique instead.
 let inFlight = new Set();
+// Every money request is confirmed with a one-time code sent to the
+// requester's phone. The dialog sits outside the page markup so a re-render
+// never clears it; it resolves with the 6-digit code, or null if cancelled.
+function otpConfirm(title, summary){
+  return new Promise(resolve => {
+    if(typeof document === 'undefined' || typeof document.createElement !== 'function' || !document.body || typeof document.body.appendChild !== 'function'){ resolve(null); return; }
+    const wrap = document.createElement('div'); wrap.className = 'otp-overlay';
+    wrap.innerHTML = `<div class="otp-modal" role="dialog" aria-modal="true">
+      <div class="otp-icon">🔐</div>
+      <div class="otp-title">${escapeHtml(title)}</div>
+      ${summary ? `<div class="otp-summary">${escapeHtml(summary)}</div>` : ''}
+      <div class="otp-status" data-otp-status></div>
+      <input class="otp-input" data-otp-input inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+      <div class="otp-actions">
+        <button type="button" class="btn btn-outline btn-sm" data-otp-cancel>Cancel</button>
+        <button type="button" class="btn btn-outline btn-sm" data-otp-resend>↻ Request OTP</button>
+        <button type="button" class="btn btn-primary btn-sm" data-otp-ok>Confirm</button>
+      </div></div>`;
+    document.body.appendChild(wrap);
+    const q = sel => (typeof wrap.querySelector === 'function' ? wrap.querySelector(sel) : null);
+    const status = q('[data-otp-status]'), input = q('[data-otp-input]');
+    if(!status || !input){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); resolve(null); return; }
+    const say = (html, err) => { status.innerHTML = html; status.className = 'otp-status' + (err ? ' err' : ''); };
+    const done = v => { if(wrap.parentNode) wrap.parentNode.removeChild(wrap); resolve(v); };
+    const send = async () => {
+      say('Sending code…'); setTopProgress(true);
+      try{ const r = await api.post('/api/otp/request', {}); say(r.otpForTesting ? `SMS is not set up — test code <strong>${escapeHtml(r.otpForTesting)}</strong>` : 'Code sent to your phone · valid 5 minutes'); }
+      catch(e){ say(escapeHtml((e && e.message) || 'Could not send the code'), true); }
+      finally{ setTopProgress(false); try{ input.focus(); }catch(e){} }
+    };
+    const ok = () => { const v = input.value.trim(); if(!/^\d{6}$/.test(v)){ say('Enter the 6-digit code', true); return; } done(v); };
+    q('[data-otp-resend]').onclick = send;
+    q('[data-otp-cancel]').onclick = () => done(null);
+    q('[data-otp-ok]').onclick = ok;
+    input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 6); });
+    input.addEventListener('keydown', e => { if(e.key === 'Enter') ok(); if(e.key === 'Escape') done(null); });
+    send();
+  });
+}
+const OTP_EXEC_KINDS = ['financial_request', 'funding'];
 // Create forms stay closed behind a "+ New …" button until the user opens
 // them; a successful save closes them again (see withRequest below).
 function isFormOpen(key){ return !!(session.openForms && session.openForms[key]); }
@@ -1920,6 +2016,7 @@ function formToggleBtn(key, label){
 async function withRequest(key, fn, opts){
   if(inFlight.has(key)) return; // duplicate-submit guard
   inFlight.add(key);
+  setTopProgress(true);
   const mutates = opts && opts.mutates;
   const processingToast = mutates ? centerToast('Processing... please wait', 'success') : null;
   let succeeded = false;
@@ -1935,6 +2032,7 @@ async function withRequest(key, fn, opts){
   finally{
     if(processingToast) dismissCenterToast(processingToast);
     inFlight.delete(key);
+    setTopProgress(false);
     renderApp();
     if(mutates && succeeded && session.openForms){ session.openForms = {}; renderApp(); }
     if(mutates && succeeded){
@@ -2807,6 +2905,41 @@ function registerChart(id, config){ window.__pendingCharts.push({ id, config });
 // staying fixed in place while only the table underneath scrolls. Synced
 // proportionally (by scroll fraction, not raw pixels) since the filter
 // row and the table are generally different total widths.
+// After each render: hide descriptive card subtitles (keeping short figures
+// such as "3 at Likoni"), and move every "+ New" form button into the
+// toolbar of the table it adds to, next to that table's filters/Generate.
+function tidyPageLayout(){
+  if(typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+  const content = document.querySelector('.content'); if(!content || typeof content.querySelectorAll !== 'function') return;
+  content.querySelectorAll('.card-title small').forEach(sm => {
+    const t = (sm.textContent || '').trim();
+    if(t.split(/\s+/).length > 3 && !/\d/.test(t)) sm.classList.add('desc-hidden');
+  });
+  // A table whose last column holds row buttons gets an "Action" heading.
+  content.querySelectorAll('table').forEach(t => {
+    const head = t.querySelector('tr'); if(!head) return;
+    const ths = head.querySelectorAll('th'); if(!ths.length) return;
+    const last = ths[ths.length - 1];
+    if((last.textContent || '').trim()) return;
+    const hasBtn = [...t.querySelectorAll('tr')].some(r => { const c = r.lastElementChild; return c && c.tagName === 'TD' && c.querySelector('button, .btn'); });
+    if(hasBtn) last.textContent = 'Action';
+  });
+  content.querySelectorAll('.fp').forEach(fp => {
+    const bar = fp.querySelector(':scope > .fp-bar'); if(!bar) return;
+    const btn = bar.querySelector('button'); if(!btn) return;
+    let card = fp.nextElementSibling;
+    while(card && !(card.classList.contains('card') && card.querySelector('table'))){
+      if(card.classList.contains('fp')) { card = null; break; }
+      card = card.nextElementSibling;
+    }
+    if(!card) return;
+    const host = card.querySelector('.dt-toolbar') || card.querySelector('.adm-filters') || card.querySelector('.card-title');
+    if(!host) return;
+    const slot = document.createElement('span'); slot.className = 'fp-inline'; slot.appendChild(btn);
+    host.insertBefore(slot, host.firstChild && host.classList.contains('dt-toolbar') ? host.firstChild : null);
+    bar.classList.add('fp-moved-out');
+  });
+}
 function wireFilterRowScrollSync(){
   if(typeof document.querySelectorAll !== 'function') return; // the headless frontend test harness's fake DOM has no real element tree to query
   document.querySelectorAll('.table-wrap').forEach(tw=>{
@@ -2913,7 +3046,7 @@ function buildCustomRoleSidebarMenu(){
 function renderApp(){
   const root = document.getElementById('root');
   if(!session.authenticated){ root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return; }
-  if(!DB){ root.innerHTML = `<div class="loading-screen"><span>Loading Dashboard... <svg class="loading-screen-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg></span></div>`; return; }
+  if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div>`; return; }
   // A real, server-computed gate (session.mustChangePassword, set from the
   // real login response) — blocks every normal screen, not just hidden UI,
   // until the user genuinely sets a new password via the same real
@@ -2995,6 +3128,7 @@ function renderApp(){
   `;
   initPendingCharts();
   wireFilterRowScrollSync();
+  try{ tidyPageLayout(); }catch(e){ console.error(e); }
   initSignatureCanvas();
 }
 
@@ -7666,6 +7800,7 @@ async function dirCreate(ev, kind){
   const body = { kind, data: {} };
   Object.entries(vals).forEach(([k, val]) => { if(k.startsWith('data.')){ if(val !== '' && val !== null) body.data[k.slice(5)] = val; } else if(val !== '' && val !== null) body[k] = val; });
   if(kind === 'risk'){ body.data.likelihood = Number(body.data.likelihood || 3); body.data.impact = Number(body.data.impact || 3); }
+  if(OTP_EXEC_KINDS.includes(kind)){ const code = await otpConfirm('Confirm ' + ui.singular, `${vals.title}${body.amount ? ' · ' + fmt(body.amount) : ''}`); if(!code) return false; body.otp_code = code; }
   await withRequest('dir-create-' + kind, async ()=>{ await api.post('/api/exec/records', body); session.dirForms[kind] = {}; dirForget('recs'); }, { mutates: true });
   return false;
 }
@@ -8584,14 +8719,16 @@ async function accSaveRefund(ev, encClient){
   ev.preventDefault();
   const fd = new FormData(ev.target); const amount = Number(fd.get('amount'));
   if(!(amount > 0)){ toast('Enter the refund amount.'); return false; }
-  await accPost('acc-refund', { kind:'refund', ref_type:'client', ref_id: decodeURIComponent(encClient), amount, details: String(fd.get('details') || ''), data: { method: fd.get('method') || 'M-Pesa' } }, 'Refund sent for approval.');
+  const code = await otpConfirm('Confirm refund', fmt(amount)); if(!code) return false;
+  await accPost('acc-refund', { kind:'refund', ref_type:'client', ref_id: decodeURIComponent(encClient), amount, details: String(fd.get('details') || ''), data: { method: fd.get('method') || 'M-Pesa' }, otp_code: code }, 'Refund sent for approval.');
   session.accRefundFor = null;
   return false;
 }
 async function accProposeWriteOff(encLoan){
   const reason = prompt('Why should this loan be written off?'); if(reason === null) return;
   if(!reason.trim()){ toast('Give the reason for the write-off.'); return; }
-  await accPost('acc-wo-' + encLoan, { kind:'write_off', ref_type:'loan', ref_id: decodeURIComponent(encLoan), details: reason }, 'Write-off sent for approval.');
+  const code = await otpConfirm('Confirm write-off', 'Loan ' + decodeURIComponent(encLoan).slice(-8).toUpperCase()); if(!code) return;
+  await accPost('acc-wo-' + encLoan, { kind:'write_off', ref_type:'loan', ref_id: decodeURIComponent(encLoan), details: reason, otp_code: code }, 'Write-off sent for approval.');
 }
 const accExceptionFields = () => [hF('title', 'What is wrong'), hSel('category', 'Area', ['Cash','Bank','M-Pesa','Payments','Loans','Expenses','Ledger','Other']), hF('amount', 'Amount involved (KES)', 'number', { min: 0 }), hSel('branch_id', 'Branch', accBranchOpts('Not branch-specific')), hF('details', 'Details', 'textarea')];
 async function accSaveException(ev){
@@ -8609,6 +8746,7 @@ async function accSaveFinReq(ev){
   if(!v.title){ toast('Say what the money is for.'); return false; }
   if(!(v.amount > 0)){ toast('Enter the amount.'); return false; }
   const body = { kind:'financial_request' }; Object.entries(v).forEach(([k, x]) => { if(x !== '' && x !== null) body[k] = x; });
+  const code = await otpConfirm('Confirm financial request', `${v.title} · ${fmt(v.amount)}`); if(!code) return false; body.otp_code = code;
   await withRequest('acc-freq', async ()=>{ await api.post('/api/exec/records', body); session.accFormVals['acc-freq'] = {}; admForget('acc:freq'); dirForget('recs'); }, { mutates: true });
   return false;
 }
@@ -11054,20 +11192,95 @@ function renderCollectionsSummaryCard(){
   </div>`;
 }
 
+// Server-side extras for the branch dashboard (disbursement channels, M-Pesa
+// receipts awaiting confirmation, staff on leave) — loaded once, quietly.
+function dashBranchExtras(){
+  const st = DB.adm || (DB.adm = {});
+  if(!('branchExtras' in st)){
+    st.branchExtras = undefined;
+    setTopProgress(true);
+    api.get('/api/dashboard/branch-extras')
+      .then(r => { st.branchExtras = r; })
+      .catch(() => { st.branchExtras = { disbursements: [], unconfirmedPayments: { count: 0, amount: 0 }, staffOnLeave: [] }; })
+      .finally(() => { setTopProgress(false); renderApp(); });
+  }
+  return st.branchExtras || { disbursements: [], unconfirmedPayments: { count: 0, amount: 0 }, staffOnLeave: [], pending: true };
+}
+// Arrears split into the three ageing bands the branch watches daily.
+function arrearsAgingBands(loansScope){
+  const bands = [{ label:'Less than 7 days', cls:'a1', amt:0, n:0 }, { label:'8 to 30 days', cls:'a2', amt:0, n:0 }, { label:'Above 30 days', cls:'a3', amt:0, n:0 }];
+  loansScope.filter(l => ['Active','Disbursed'].includes(l.status)).forEach(l => {
+    const d = loanArrearsDays(l); if(d <= 0) return;
+    const b = d <= 7 ? bands[0] : d <= 30 ? bands[1] : bands[2];
+    b.amt += loanArrearsAmount(l); b.n++;
+  });
+  return bands;
+}
+function dashTile(label, value, sub, onclick, icon){
+  return `<div class="dash-tile" ${onclick?`onclick="${onclick}"`:''}><div class="dash-tile-label"><span>${label}</span>${icon?`<span>${icon}</span>`:''}</div><div class="dash-tile-value">${value}</div>${sub?`<div class="dash-tile-sub">${sub}</div>`:''}</div>`;
+}
+// Stacked daily disbursement bars (M-Pesa vs Cash/Bank) with a running total line.
+function disbursementStackedChart(id, extras, loansScope){
+  const days = new Date().getDate();
+  const labels = Array.from({ length: days }, (_, i) => String(i + 1));
+  const digital = Array(days).fill(0), manual = Array(days).fill(0);
+  const known = new Set();
+  (extras.disbursements || []).forEach(d => { known.add(d.loanId); if(d.day >= 1 && d.day <= days) (d.digital ? digital : manual)[d.day - 1] += d.amount; });
+  loansScope.forEach(l => { if(l.disbursedAt && isThisMonth(l.disbursedAt) && !known.has(l.id)){ const d = new Date(l.disbursedAt).getDate(); if(d <= days) manual[d - 1] += l.principal; } });
+  const totals = labels.map((_, i) => digital[i] + manual[i]);
+  return { digitalTotal: digital.reduce((a, b) => a + b, 0), manualTotal: manual.reduce((a, b) => a + b, 0), html: registerChart(id, { type:'bar', data:{ labels, datasets:[
+    { label:'M-Pesa', data: digital, backgroundColor:'#2A9D8F', stack:'d' },
+    { label:'Cash / Bank', data: manual, backgroundColor:'#2E5C8A', stack:'d' },
+    { label:'Total', data: totals, type:'line', borderColor:'#E9A23B', backgroundColor:'#E9A23B', pointRadius:2, tension:0.3 } ] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } } } }) };
+}
+// Payments/branches/staff tiles plus the three arrears-ageing bands, shared by
+// the multi-branch dashboards (branchIds null = every branch).
+function dashOpsSummary(st, branchIds, scopeLabel){
+  const extras = dashBranchExtras();
+  const inScope = id => !branchIds || branchIds.includes(id);
+  const unposted = DB.payments.filter(p => p.status === 'Unposted' && inScope((DB.loans.find(l => l.id === p.loanId) || {}).branchId));
+  const staff = DB.staff.filter(s => s.status === 'Active' && inScope(s.branch));
+  const onLeave = (extras.staffOnLeave || []).filter(x => staff.some(s => s.id === x.id));
+  const branches = DB.branches.filter(b => b.status === 'Active' && inScope(b.id));
+  const bands = arrearsAgingBands(st.loansScope);
+  return `
+    <div class="dash-tile-row">
+      ${dashTile('Unposted Payments', unposted.length, fmt(unposted.reduce((s, p) => s + (+p.amount || 0), 0)), "sidebarNavigate('Unposted Payments')", '💵')}
+      ${dashTile('Unconfirmed Payments', extras.unconfirmedPayments.count, fmt(extras.unconfirmedPayments.amount) + ' M-Pesa', "sidebarNavigate('Validate Payment')", '📲')}
+      ${dashTile('Active Branches', branches.length, escapeHtml(scopeLabel), "sidebarNavigate('View Branches')", '🏢')}
+      ${dashTile('Active Staff', staff.length, `${onLeave.length} on leave today`, "goTo('staff')", '🪪')}
+    </div>
+    <div class="section-head">
+      <div><div class="section-head-label">${escapeHtml(scopeLabel)}</div><div class="section-head-title">Arrears Ageing</div></div>
+      <button class="btn-pill" onclick="sidebarNavigate('Loan Arrears')">Arrears report</button>
+    </div>
+    <div class="dash-tile-row three">
+      ${bands.map(b => `<div class="aging-card ${b.cls}" onclick="sidebarNavigate('Loan Arrears')"><div class="dash-tile-label"><span>${b.label}</span></div><div class="dash-tile-value">${fmt(b.amt)}</div><div class="dash-tile-sub">${b.n} loan${b.n === 1 ? '' : 's'}</div></div>`).join('')}
+    </div>`;
+}
 function renderManagerDashboard(){
   const meRaw = DB.me;
   if(!meRaw) return `<div class="empty">No manager profile found.</div>`;
   const me = { id: meRaw.id, name: meRaw.name, branch: meRaw.branch_id, leaveDays: meRaw.leave_days_balance ?? 0 };
   const myBranchIds = [me.branch];
   const st = computeStats(null, myBranchIds);
+  const extras = dashBranchExtras();
   const waitingQueue = DB.loans.filter(l=>l.status==="Waiting for Manager" && l.branchId===me.branch);
   const bName = branchName(me.branch);
-  const unreadNotifs = (DB.notifications||[]).filter(n=>!n.read);
-  const recentNotifs = (DB.notifications||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
   const inBranchStaff = DB.staff.filter(s=>myBranchIds.includes(s.branch));
-  const activeOfficersCount = inBranchStaff.filter(s=>s.status==='Active' && s.role==='Loan Officer').length;
-  const unpostedBranch = DB.payments.filter(p=>p.status==="Unposted" && (DB.loans.find(l=>l.id===p.loanId)||{}).branchId===me.branch).length;
+  const activeStaff = inBranchStaff.filter(s=>s.status==='Active');
+  const activeOfficersCount = activeStaff.filter(s=>s.role==='Loan Officer').length;
+  const onLeave = (extras.staffOnLeave||[]).filter(x => inBranchStaff.some(s => s.id === x.id));
+  const coverage = activeStaff.length ? (activeStaff.length - onLeave.length) / activeStaff.length * 100 : 0;
+  const unpostedRows = DB.payments.filter(p=>p.status==="Unposted" && (DB.loans.find(l=>l.id===p.loanId)||{}).branchId===me.branch);
+  const activeBranches = DB.branches.filter(b=>myBranchIds.includes(b.id) && b.status==='Active').length;
+  const pipeline = st.loansScope.filter(l => /^Waiting|Pending|Submitted/i.test(l.status||''));
   const topStaff = rankedOfficerScores(myBranchIds).slice().sort((a,b)=>b.stats.disbursedMTD-a.stats.disbursedMTD).slice(0,5);
+  const bands = arrearsAgingBands(st.loansScope);
+  const trend = disbursementStackedChart('mgr-disb-trend', extras, st.loansScope);
+  const digitalShare = (trend.digitalTotal + trend.manualTotal) > 0 ? trend.digitalTotal / (trend.digitalTotal + trend.manualTotal) * 100 : 0;
+  const monthLabel = new Date().toLocaleString('en-KE',{month:'long',year:'numeric'});
 
   return `
     ${dashHeroProfile(me, ['💼 Manager', `🏢 ${bName}`, `🏖️ ${me.leaveDays} Leave Days`, '👁️ Branch Management Access'], [
@@ -11106,106 +11319,109 @@ function renderManagerDashboard(){
       </div>
     </div>
 
-    <div class="section-head">
-      <div><div class="section-head-label">Updates</div><div class="section-head-title">Notifications${unreadNotifs.length?` (${unreadNotifs.length} new)`:''}</div></div>
-      <button class="btn-pill" onclick="openNotificationsPanel()">View all</button>
+    <div class="dash-tile-row">
+      ${dashTile('Unposted Payments', unpostedRows.length, fmt(unpostedRows.reduce((s,p)=>s+(+p.amount||0),0)), "sidebarNavigate('Unposted Payments')", '💵')}
+      ${dashTile('Unconfirmed Payments', extras.unconfirmedPayments.count, fmt(extras.unconfirmedPayments.amount)+' M-Pesa', "sidebarNavigate('Validate Payment')", '📲')}
+      ${dashTile('Active Branches', activeBranches, escapeHtml(bName), "sidebarNavigate('View Branches')", '🏢')}
+      ${dashTile('Active Staff', activeStaff.length, `${onLeave.length} on leave today`, "goTo('staff')", '🪪')}
     </div>
-    ${recentNotifs.length ? recentNotifs.map(n=>`
-      <div class="attention-card" onclick="openNotificationsPanel()">
-        <div class="attention-icon">${n.read?'🔔':'🔴'}</div>
-        <div style="flex:1; min-width:0;">
-          <div class="attention-label">${escapeHtml(n.message||n.title||'')}</div>
+
+    <div class="section-head">
+      <div><div class="section-head-label">${bName}</div><div class="section-head-title">Arrears Ageing</div></div>
+      <button class="btn-pill" onclick="sidebarNavigate('Loan Arrears')">Arrears report</button>
+    </div>
+    <div class="dash-tile-row three">
+      ${bands.map(b=>`<div class="aging-card ${b.cls}" onclick="sidebarNavigate('Loan Arrears')"><div class="dash-tile-label"><span>${b.label}</span></div><div class="dash-tile-value">${fmt(b.amt)}</div><div class="dash-tile-sub">${b.n} loan${b.n===1?'':'s'}</div></div>`).join('')}
+    </div>
+
+    <div class="dash-two">
+      <div>
+        <div class="section-head">
+          <div><div class="section-head-label">${monthLabel}</div><div class="section-head-title">Disbursement Trend</div></div>
+          <button class="btn-pill" onclick="sidebarNavigate('Disbursements')">View report</button>
+        </div>
+        <div class="card">${trend.html}</div>
+      </div>
+      <div>
+        <div class="section-head">
+          <div><div class="section-head-label">${bName}</div><div class="section-head-title">Credit Performance</div></div>
+          <span class="badge-live">LIVE</span>
+        </div>
+        <div class="dash-tile-row" style="grid-template-columns:1fr 1fr;">
+          ${dashTile('Disbursed MTD', fmt(st.disbursedMTD), `${st.loansMTDCount||0} loans`, "sidebarNavigate('Disbursements')", '📤')}
+          ${dashTile('Disbursed YTD', fmt(st.disbursedYTD), '', "goTo('loanbook','View Loans')", '📊')}
+          ${dashTile('Pending Approvals', waitingQueue.length, 'loan'+(waitingQueue.length===1?'':'s'), "goTo('loanbook','Loan Applications')", '🕑')}
+          ${dashTile("Today's Recovery", st.todayPct.toFixed(0)+'%', `${fmt(st.collectedToday)} of ${fmt(st.dueToday)}`, "sidebarNavigate('Collection Sheet')", '📈')}
+        </div>
+        ${arrearsBanner(st)}
+      </div>
+    </div>
+
+    <div class="dash-two">
+      <div>
+        <div class="section-head">
+          <div><div class="section-head-label">${bName}</div><div class="section-head-title">Loan Products</div></div>
+          <button class="btn-pill" onclick="goTo('loanbook','View Loans')">Portfolio report</button>
+        </div>
+        ${pieCard("", "", productPieData(st.loansScope))}
+      </div>
+      <div>
+        <div class="section-head">
+          <div><div class="section-head-label">${bName}</div><div class="section-head-title">OLB Distribution</div></div>
+          <button class="btn-pill" onclick="sidebarNavigate('Loan Summary')">Loan summary</button>
+        </div>
+        ${pieCard("", "", olbByOfficerPieData(myBranchIds).filter(x=>x.value>0))}
+      </div>
+    </div>
+
+    <div class="dash-tile-row six">
+      ${dashTile('Digital Disbursement', digitalShare.toFixed(0)+'%', 'via M-Pesa this month', "sidebarNavigate('Disbursements')", '📲')}
+      ${dashTile('Workforce Coverage', coverage.toFixed(0)+'%', `${activeStaff.length - onLeave.length}/${activeStaff.length} at work`, "goTo('staff-leaves')", '🧭')}
+      ${dashTile('Applications', pipeline.length, 'in the pipeline', "goTo('loanbook','Loan Applications')", '📝')}
+      ${dashTile('Collection Score', st.todayPct.toFixed(0)+'%', 'today', "sidebarNavigate('Collection Rates')", '✅')}
+      ${dashTile('Performing Loans', st.performingLoans, '', "goTo('loanbook','View Loans')", '⚖️')}
+      ${dashTile('Active Officers', activeOfficersCount, '', "goTo('staff')", '🧑‍💼')}
+    </div>
+
+    <div class="dash-two">
+      <div>
+        <div class="section-head">
+          <div><div class="section-head-label">${bName}</div><div class="section-head-title">Top Performing Staff</div></div>
+          <button class="btn-pill" onclick="sidebarNavigate('Disbursements')">Disbursement report</button>
+        </div>
+        ${topStaff.length ? topStaff.map((r,i)=>`
+          <div class="rank-row">
+            <div class="rank-badge">${i+1}</div>
+            <div class="rank-body">
+              <div class="rank-name">${escapeHtml(r.officer.name)}</div>
+              <div class="rank-meta">${r.stats.activeScope.length} active loans</div>
+            </div>
+            <div class="rank-value">${fmt(r.stats.disbursedMTD)}</div>
+          </div>
+        `).join("") : `<div class="hint">No officer activity yet this month.</div>`}
+      </div>
+      <div>
+        <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
+        <div class="attention-card" onclick="sidebarNavigate('Unposted Payments')">
+          <div class="attention-icon">💵</div>
+          <div style="flex:1; min-width:0;"><div class="attention-label">Post Incoming Repayments</div><div class="attention-value">${unpostedRows.length}</div></div>
+        </div>
+        <div class="attention-card" onclick="goToUndisbursedLoans()">
+          <div class="attention-icon">🏦</div>
+          <div style="flex:1; min-width:0;"><div class="attention-label">Release Approved Loans</div><div class="attention-value">${st.undisbursedCount}</div></div>
+        </div>
+        <div class="attention-card" onclick="goTo('loanbook','Loan Applications')">
+          <div class="attention-icon">📝</div>
+          <div style="flex:1; min-width:0;"><div class="attention-label">Review Pending Loan Applications</div><div class="attention-value">${waitingQueue.length}</div></div>
         </div>
       </div>
-    `).join("") : `<div class="hint">No notifications yet.</div>`}
-
-    <div class="section-head">
-      <div><div class="section-head-label">${bName}</div><div class="section-head-title">Credit Performance</div></div>
-      <span class="badge-live">LIVE</span>
-    </div>
-    <div class="stat-row-card" onclick="goToUndisbursedLoans()">
-      <div class="stat-row-icon">📤</div>
-      <div class="stat-row-body"><div class="stat-row-label">Disbursed MTD</div><div class="stat-row-value">${fmt(st.disbursedMTD)}</div></div>
-      <div class="stat-row-arrow">›</div>
-    </div>
-    <div class="stat-row-card" onclick="goTo('loanbook','View Loans')">
-      <div class="stat-row-icon">📊</div>
-      <div class="stat-row-body"><div class="stat-row-label">Disbursed YTD</div><div class="stat-row-value">${fmt(st.disbursedYTD)}</div></div>
-      <div class="stat-row-arrow">›</div>
-    </div>
-    <div class="stat-row-card" onclick="goTo('loanbook','Loan Applications')">
-      <div class="stat-row-icon">🕑</div>
-      <div class="stat-row-body"><div class="stat-row-label">Pending Approvals</div><div class="stat-row-value">${waitingQueue.length} loan${waitingQueue.length===1?'':'s'}</div></div>
-      <div class="stat-row-arrow">›</div>
     </div>
 
-    <div class="recovery-card">
-      <div class="recovery-icon-badge">📈</div>
-      <div class="recovery-pct">${st.todayPct.toFixed(0)}%</div>
-      <div class="recovery-eyebrow">Today's Recovery</div>
-      <div class="recovery-title">${fmt(st.collectedToday)} of ${fmt(st.dueToday)} due</div>
-      <div style="margin-top:10px;">${progressBar(st.todayPct)}</div>
-    </div>
-
-    <div class="section-head"><div><div class="section-head-label">${bName}</div><div class="section-head-title">Portfolio Risk</div></div></div>
-    ${arrearsBanner(st)}
-
-    <div class="section-head"><div><div class="section-head-label">${new Date().toLocaleString('en-KE',{month:'long',year:'numeric'})}</div><div class="section-head-title">Disbursement Trend</div></div></div>
-    <div class="card">${lineChart(disbursementTrendPoints(st.loansScope))}</div>
-
-    <div class="section-head">
-      <div><div class="section-head-label">${bName}</div><div class="section-head-title">Loan Products Distribution</div></div>
-      <button class="btn-pill" onclick="goTo('loanbook','View Loans')">Portfolio report</button>
-    </div>
-    ${pieCard("", "by outstanding balance", productPieData(st.loansScope))}
-
-    <div class="mini-stat-grid">
-      <div class="mini-stat-card">
-        <div class="mini-stat-icon">✅</div>
-        <div class="mini-stat-label">Collection Score</div>
-        <div class="mini-stat-value">${st.todayPct.toFixed(0)}%</div>
-      </div>
-      <div class="mini-stat-card">
-        <div class="mini-stat-icon">⚖️</div>
-        <div class="mini-stat-label">Performing Loans</div>
-        <div class="mini-stat-value">${st.performingLoans}</div>
-      </div>
-      <div class="mini-stat-card">
-        <div class="mini-stat-icon">🧑‍💼</div>
-        <div class="mini-stat-label">Active Officers</div>
-        <div class="mini-stat-value">${activeOfficersCount}</div>
-      </div>
-    </div>
-
-    <div class="section-head"><div><div class="section-head-label">${bName}</div><div class="section-head-title">Top Performing Staff</div></div></div>
-    ${topStaff.length ? topStaff.map((r,i)=>`
-      <div class="rank-row">
-        <div class="rank-badge">${i+1}</div>
-        <div class="rank-body">
-          <div class="rank-name">${escapeHtml(r.officer.name)}</div>
-          <div class="rank-meta">${r.stats.activeScope.length} active loans · ${bName}</div>
-        </div>
-        <div class="rank-value">${fmt(r.stats.disbursedMTD)}</div>
-      </div>
-    `).join("") : `<div class="hint">No officer activity yet this month.</div>`}
-
-    <div class="section-head"><div><div class="section-head-label">Operational Rhythm</div><div class="section-head-title">Quick Attention Areas</div></div></div>
-    <div class="attention-card" onclick="goTo('payments','Unposted Payments')">
-      <div class="attention-icon">💵</div>
-      <div style="flex:1; min-width:0;"><div class="attention-label">Post Incoming Repayments</div><div class="attention-value">${unpostedBranch}</div></div>
-    </div>
-    <div class="attention-card" onclick="goToUndisbursedLoans()">
-      <div class="attention-icon">🏦</div>
-      <div style="flex:1; min-width:0;"><div class="attention-label">Release Approved Loans</div><div class="attention-value">${st.undisbursedCount}</div></div>
-    </div>
-    <div class="attention-card" onclick="goTo('loanbook','Loan Applications')">
-      <div class="attention-icon">📝</div>
-      <div style="flex:1; min-width:0;"><div class="attention-label">Review Pending Loan Applications</div><div class="attention-value">${waitingQueue.length}</div></div>
-    </div>
+    ${dashNotificationsPreview()}
 
     <div class="card">
-      <div class="card-title">Loans Waiting for Your Approval <small>${waitingQueue.length} at ${bName}</small></div>
-      <div class="table-wrap"><table><tr><th>Client</th><th>Product</th><th>Principal</th><th>Submitted By</th><th>Date</th><th></th></tr>
+      <div class="card-title">Loans Waiting for Your Approval</div>
+      <div class="table-wrap"><table><tr><th>Client</th><th>Product</th><th>Principal</th><th>Submitted By</th><th>Date</th><th>Action</th></tr>
       ${waitingQueue.map(l=>`<tr><td>${clientName(l.clientId)}</td><td>${l.productName}</td><td>${fmt(l.principal)}</td><td>${staffName(l.officerId)}</td><td>${new Date(l.createdAt).toLocaleDateString()}</td>
         <td><button class="btn btn-sm btn-outline" onclick="openLoan('${l.id}')">Review</button></td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nothing waiting for your approval right now.</td></tr>`}</table></div>
     </div>
@@ -11262,6 +11478,8 @@ function renderAdvancedDashboard(){
         <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
+
+    ${dashOpsSummary(st, null, 'Org-wide')}
 
     ${dashNotificationsPreview()}
 
@@ -11412,6 +11630,8 @@ function renderRegionalManagerDashboard(){
         <div class="hero-stat-arrow">↗</div>
       </div>
     </div>
+
+    ${dashOpsSummary(st, myBranches.length ? myBranches : [me.branch], me.regionName || 'Your Region')}
 
     ${dashNotificationsPreview()}
 
@@ -24109,11 +24329,12 @@ function submitChangePassword(ev){
     toast("Password changed");
   }, {mutates:true});
 }
-async function refreshMyData(){
-  toast("Refreshing…");
+async function refreshMyData(silent){
+  if(!silent) toast("Refreshing…");
   await loadCoreData();
+  if(DB && DB.adm) DB.adm = {};
   renderApp();
-  toast("Data refreshed");
+  if(!silent) toast("Data refreshed");
 }
 
 // ---- Client photo / ID photo viewer: real zoom (in/out), rotate (90°
@@ -25691,13 +25912,13 @@ function initPullToRefresh(){
   // only gesture quietly does nothing there instead of throwing.
   if(typeof document === 'undefined' || !document.addEventListener) return;
   const THRESHOLD = 70;
-  let startY = null, pulling = false, refreshing = false;
+  const ARROW = deg => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" style="transform:rotate(${deg}deg)"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>`;
+  let startY = null, pulling = false, refreshing = false, pulled = 0;
   let indicator = null;
   function ensureIndicator(){
     if(indicator && document.body.contains(indicator)) return indicator;
     indicator = document.createElement('div');
     indicator.className = 'ptr-indicator';
-    indicator.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>&nbsp;Pull to refresh`;
     document.body.appendChild(indicator);
     return indicator;
   }
@@ -25706,7 +25927,7 @@ function initPullToRefresh(){
     // Only the real top-of-page overscroll counts as a pull — starting a
     // drag anywhere already scrolled down must stay a normal scroll.
     if(window.scrollY > 0){ startY = null; return; }
-    startY = ev.touches[0].clientY;
+    startY = ev.touches[0].clientY; pulled = 0;
     pulling = true;
   }, { passive: true });
   document.addEventListener('touchmove', (ev) => {
@@ -25714,29 +25935,38 @@ function initPullToRefresh(){
     const dy = ev.touches[0].clientY - startY;
     if(dy <= 0){ return; }
     const el = ensureIndicator();
-    const pull = Math.min(dy * 0.5, THRESHOLD + 30);
-    el.style.marginTop = (pull - 56) + 'px';
-    el.textContent = '';
-    el.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="transform:rotate(${Math.min(pull/THRESHOLD,1)*180}deg)"><path d="M12 5v14M5 12l7 7 7-7"/></svg>&nbsp;${pull >= THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}`;
+    pulled = Math.min(dy * 0.5, THRESHOLD + 30);
+    el.style.marginTop = (pulled - 48) + 'px';
+    el.style.opacity = Math.min(1, pulled / THRESHOLD);
+    el.innerHTML = ARROW(pulled / THRESHOLD * 300);
   }, { passive: true });
   document.addEventListener('touchend', async () => {
     if(!pulling) return;
     pulling = false;
     const el = indicator;
     if(!el) return;
-    const curMargin = parseFloat(el.style.marginTop || '-56');
-    const pulledPast = curMargin + 56 >= THRESHOLD;
-    if(!pulledPast){ el.style.marginTop = '-56px'; return; }
+    if(pulled < THRESHOLD){ el.style.marginTop = '-48px'; return; }
     refreshing = true;
     el.classList.add('spinning');
-    el.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.4"/><path d="M20 20v-4.6h-4.6"/></svg>&nbsp;Refreshing…`;
-    el.style.marginTop = '0px';
-    try{ await refreshMyData(); } finally {
+    el.innerHTML = ARROW(0);
+    el.style.marginTop = '16px';
+    setTopProgress(true);
+    try{ await refreshMyData(true); } finally {
       refreshing = false;
+      setTopProgress(false);
       el.classList.remove('spinning');
-      el.style.marginTop = '-56px';
+      el.style.marginTop = '-48px';
     }
   }, { passive: true });
+}
+// The thin loading line across the top of the window (see .top-progress).
+let topProgressHold = 0;
+function setTopProgress(on){
+  if(typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function') return;
+  topProgressHold = Math.max(0, topProgressHold + (on ? 1 : -1));
+  let bar = document.getElementById('app-top-progress');
+  if(!bar){ bar = document.createElement('div'); bar.id = 'app-top-progress'; bar.className = 'top-progress'; if(document.body.appendChild) document.body.appendChild(bar); }
+  if(bar.classList) bar.classList.toggle('on', topProgressHold > 0);
 }
 initPullToRefresh();
 

@@ -5512,8 +5512,9 @@ apiRequest = async function(method, path, body){
     __assert(spinnerHtml.includes('class="dots-spinner"') && (spinnerHtml.match(/<i style="transform:rotate\(/g)||[]).length === 8, "the real loadingDotsHtml() genuinely renders a real 8-dot ring, each with its own real static rotation");
     __assert(__rawIndexHtml.includes('@keyframes dotsSpinnerPulse'), "the real shared dots-spinner CSS pulse animation genuinely exists");
     __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
-    __assert(__srcForBanCheck.includes('<span>Loading Dashboard... <svg class="loading-screen-spinner"') && __srcForBanCheck.includes('class="loading-screen"'), "the real one-time, full-page loading screen shown right after login genuinely reads 'Loading Dashboard...' with a real spinning-arrows icon, not the old generic 'Loading your Rhinocash data…' text");
-    __assert(__rawIndexHtml.includes('.loading-screen-spinner{') && __rawIndexHtml.includes('animation:loginSpin'), "the real Loading Dashboard icon genuinely spins, reusing the exact same real loginSpin animation the login button's own spinner already uses");
+    __assert(__srcForBanCheck.includes('<div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div>') && !__srcForBanCheck.includes('<span>Loading Dashboard...'), "the one-time, full-page loading screen after login is just a centred spinner plus the thin top loading line — no 'Loading Dashboard...' text");
+    __assert(__rawIndexHtml.includes('.loading-screen-spinner{') && __rawIndexHtml.includes('animation:loginSpin') && __rawIndexHtml.includes('@keyframes topProgress'), "the loading spinner genuinely spins and the thin top loading line genuinely animates");
+    __assert(typeof setTopProgress === 'function' && /inFlight\.add\(key\);\s*setTopProgress\(true\)/.test(__srcForBanCheck) && /inFlight\.delete\(key\);\s*setTopProgress\(false\)/.test(__srcForBanCheck), "every in-flight request shows the thin top loading line while it runs");
   }
 
   // ---- 16d-ii. Real two-phase login status banner: a light-green bar
@@ -8089,6 +8090,31 @@ apiRequest = async function(method, path, body){
     global.prompt = realPrompt;
     let gone = false; try { await api.get('/api/users/' + vid); } catch(e){ gone = e.status === 404; }
     __assert(gone && !DB.staff.some(x => x.id === vid), "the Admin permanently deletes a user from the Create User table");
+  }
+
+  // ---- UI batch: Manager dashboard additions, one heading per page,
+  // "+ New" buttons in table toolbars, OTP on every money request ----
+  {
+    const html = renderManagerDashboard();
+    for (const t of ['Unposted Payments', 'Unconfirmed Payments', 'Active Branches', 'Active Staff', 'Arrears Ageing', 'Less than 7 days', '8 to 30 days', 'Above 30 days', 'Arrears report', 'Disbursement Trend', 'View report', 'Credit Performance', 'Loan Products', 'OLB Distribution', 'Loan summary', 'Digital Disbursement', 'Workforce Coverage', 'Top Performing Staff', 'Disbursement report', 'Quick Attention Areas']) {
+      __assert(html.includes(t), `the Manager dashboard shows "${t}"`);
+    }
+    __assert(html.includes('class="dash-two"') && html.includes('mgr-disb-trend'), "the Manager dashboard pairs sections side by side and draws the stacked disbursement chart");
+    for (let i = 0; i < 100 && DB.adm && DB.adm.branchExtras === undefined; i++) await new Promise(r => setTimeout(r, 30));
+    __assert(DB.adm.branchExtras && Array.isArray(DB.adm.branchExtras.disbursements), "the dashboard extras load from the server");
+    const bands = arrearsAgingBands([{ status:'Active', schedule:[{ dueDate: new Date(Date.now() - 3*86400000).toISOString().slice(0,10), totalDue:100, paidAmount:0, status:'Pending' }] }, { status:'Active', schedule:[{ dueDate: new Date(Date.now() - 45*86400000).toISOString().slice(0,10), totalDue:200, paidAmount:0, status:'Pending' }] }]);
+    __assert(bands[0].n === 1 && bands[0].amt === 100 && bands[1].n === 0 && bands[2].n === 1 && bands[2].amt === 200, "arrears fall into the right ageing band");
+    __assert(/function renderAdvancedDashboard[\s\S]*?dashOpsSummary\(st, null/.test(__srcForBanCheck) && /function renderRegionalManagerDashboard[\s\S]*?dashOpsSummary\(/.test(__srcForBanCheck), "the Operational and Regional Manager dashboards show the same payment, staff and ageing tiles");
+    __assert(__rawIndexHtml.includes('.adm-head .ac-eyebrow, .adm-head .adm-sub') && __rawIndexHtml.includes('display:none !important'), "page eyebrows and subtitles are hidden — one heading per page");
+    __assert(typeof tidyPageLayout === 'function' && /tidyPageLayout\(\)/.test(__srcForBanCheck.slice(__srcForBanCheck.indexOf('wireFilterRowScrollSync();'))), "every render moves '+ New' buttons into the table toolbar and labels action columns");
+    __assert(/\.sidebar\{ position:fixed;[^}]*transform:translateX\(-100%\)/.test(__rawIndexHtml) && __rawIndexHtml.includes(".hamburger{ display:inline-flex; }"), "the sidebar is a drawer opened from the menu button on every screen size");
+    __assert(__rawIndexHtml.includes("m.setAttribute('content', 'width=1180')"), "phones show the desktop layout");
+    __assert(typeof otpConfirm === 'function' && (await otpConfirm('x')) === null, "the OTP dialog exists and resolves to nothing without a real page");
+    for (const fn of ['dirCreate', 'accSaveFinReq', 'accSaveRefund', 'accProposeWriteOff']) {
+      __assert(String(eval(fn)).includes('otpConfirm('), `${fn} asks for the OTP before sending the money request`);
+    }
+    const otpRes = await api.post('/api/otp/request', {}).catch(e => e);
+    __assert(otpRes && (otpRes.status || otpRes.otpForTesting !== undefined || otpRes.message), "the OTP request endpoint answers");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);
