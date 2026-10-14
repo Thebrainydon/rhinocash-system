@@ -1901,6 +1901,14 @@ async function initSchema() {
     id BIGSERIAL PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, lat DOUBLE PRECISION NOT NULL, lng DOUBLE PRECISION NOT NULL,
     accuracy DOUBLE PRECISION, at TEXT NOT NULL DEFAULT iso_now())`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_location_pings_user_at ON staff_location_pings(user_id, at)`);
+  // Supervisors tick (check) people sharing their location and message them.
+  await ensureColumn('staff_live_locations', 'checked_by TEXT');
+  await ensureColumn('staff_live_locations', 'checked_at TEXT');
+  await rawRun(`CREATE TABLE IF NOT EXISTS live_location_messages (
+    id BIGSERIAL PRIMARY KEY, from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT iso_now(), read_at TEXT)`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_to ON live_location_messages(to_user, read_at)`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_pair ON live_location_messages(from_user, to_user, id)`);
   // Usernames for signing in (see usernames.js): every account without one
   // gets one made from the person's name.
   await ensureColumn('user_accounts', 'username TEXT');

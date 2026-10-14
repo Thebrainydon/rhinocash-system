@@ -469,12 +469,34 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .geo-wx-d{font-weight:700; color:#33405A;} .geo-wx-r{font-size:11px;} .geo-wx-p{font-size:10.5px; color:#2B6CB0;}
 .geo-wx-adv{margin-top:8px; font-size:11.5px; background:#FFF8EA; border-radius:6px; padding:5px 8px; color:#7A5200;}
 .geo-pin-wrap{background:transparent; border:none;}
+.geo-checked{display:inline-flex; align-items:center; gap:3px; color:#12805C; font-weight:700; font-size:12px; background:#E9F8F1; border-radius:999px; padding:2px 8px;}
+.geo-tickbar{display:flex; align-items:center; gap:6px; flex-wrap:wrap; background:#EEF5FF; border:1px solid #CFE0F5; border-radius:8px; padding:6px 8px; margin-bottom:6px; font-size:12.5px;}
+.geo-only{display:inline-flex; align-items:center; gap:4px; font-size:12px; margin-left:auto;}
+.geo-row-on td{background:#F3F9FF;}
+.geo-acts{display:flex; gap:4px; flex-wrap:wrap;}
+.geo-person.ticked{box-shadow:0 0 0 3px #1D6FD8, 0 2px 6px rgba(0,0,0,.3);}
+.geo-person i{position:absolute; right:-4px; top:-4px; width:15px; height:15px; border-radius:50%; background:#12805C; color:#fff; font-size:10px; font-style:normal; display:flex; align-items:center; justify-content:center; border:1.5px solid #fff;}
+.geo-msgs{margin-top:12px;}
+.geo-msgs-grid{display:grid; grid-template-columns:1fr; gap:10px;} .geo-msgs-grid.two{grid-template-columns:minmax(0, .8fr) minmax(0, 1.2fr);}
+.geo-convs{border:1px solid var(--line); border-radius:10px; overflow:hidden; max-height:320px; overflow-y:auto;}
+.geo-conv{display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid #EEF1F5; cursor:pointer;} .geo-conv:hover, .geo-conv.on{background:#F1F7FE;}
+.geo-conv-av{width:32px; height:32px; border-radius:50%; background:#1F3A5F; color:#fff; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+.geo-conv-b{min-width:0; flex:1;} .geo-conv-n{display:flex; justify-content:space-between; gap:6px; font-weight:700; font-size:13px; color:#1C3557;} .geo-conv-n span{font-weight:500; font-size:11px; color:#7A8699;}
+.geo-conv-l{font-size:12px; color:#5E6B7E; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.geo-unread{display:inline-flex; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#25A55F; color:#fff; font-size:11px; font-weight:800; align-items:center; justify-content:center;}
+.geo-chat{border:1px solid var(--line); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; background:#EFE9E1;}
+.geo-chat-h{display:flex; justify-content:space-between; align-items:center; gap:6px; padding:8px 10px; background:#1F3A5F; color:#fff;} .geo-chat-h span{display:flex; gap:4px;}
+.geo-chat-body{padding:10px; max-height:260px; min-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;}
+.geo-msg{max-width:80%; align-self:flex-start; background:#fff; border-radius:10px 10px 10px 2px; padding:6px 9px; font-size:13px; box-shadow:0 1px 1px rgba(0,0,0,.08); white-space:pre-wrap; word-break:break-word;}
+.geo-msg.mine{align-self:flex-end; background:#DCF8C6; border-radius:10px 10px 2px 10px;}
+.geo-msg span{display:block; text-align:right; font-size:10.5px; color:#7A8699; margin-top:2px;} .geo-msg b{font-weight:700;} .geo-msg b.read{color:#34B7F1;}
+.geo-chat-in{display:flex; gap:6px; padding:8px; background:#F7F7F7; border-top:1px solid #E3E3E3;} .geo-chat-in textarea{flex:1; resize:none; border:1px solid #CBD3DE; border-radius:18px; padding:7px 12px; font:inherit; font-size:13px;}
 .geo-pin{display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #BFD6EE; border-radius:999px; padding:3px 8px 3px 5px; font-size:13px; font-weight:700; color:#1C3557; box-shadow:0 2px 6px rgba(0,0,0,.18); white-space:nowrap; transform:translate(-50%, -100%);}
 .geo-pin span{font-size:11.5px;}
-.geo-person{width:34px; height:34px; border-radius:50%; background:#E0620D; color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; border:3px solid #fff; box-shadow:0 0 0 3px rgba(224,98,13,.35), 0 2px 8px rgba(0,0,0,.3);}
+.geo-person{position:relative; width:34px; height:34px; border-radius:50%; background:#E0620D; color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; border:3px solid #fff; box-shadow:0 0 0 3px rgba(224,98,13,.35), 0 2px 8px rgba(0,0,0,.3);}
 .geo-person.me{background:#2E9D62; box-shadow:0 0 0 3px rgba(46,157,98,.35), 0 2px 8px rgba(0,0,0,.3);}
 .geo-pop-btn{margin-top:6px; border:1px solid #BFE0DA; background:#F2FBF9; color:#11706B; border-radius:6px; padding:4px 8px; font-weight:700; cursor:pointer;}
-@media (max-width:800px){ .geo-grid{grid-template-columns:1fr;} .geo-map{height:280px;} }
+@media (max-width:800px){ .geo-grid{grid-template-columns:1fr;} .geo-map{height:280px;} .geo-msgs-grid.two{grid-template-columns:1fr;} .geo-only{margin-left:0;} }
 /* Undisbursed Loans list */
 .ud-title{display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; color:#1C2D6B; padding-bottom:12px; border-bottom:1px solid #E6EBF2; margin-bottom:12px;}
 .ud-back{cursor:pointer; color:#1C2D6B; display:inline-flex;} .ud-back svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
@@ -967,7 +989,12 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 .notif-dot.read{background:var(--line);}
 .section-note{background:var(--blue-bg); color:var(--navy); border-radius:9px; padding:11px 14px; font-size:12.5px; margin-bottom:16px;}
 .loading-screen{display:flex; align-items:center; justify-content:center; height:100vh;}
-.loading-screen-spinner{width:34px; height:34px; border-radius:50%; border:3px solid rgba(46,92,138,0.18); border-top-color:var(--navy); animation:loginSpin 0.8s linear infinite;}
+.dots-spinner.big{transform:scale(1.35);}
+/* Opening a menu/submenu: the page waits behind spinning dots until its data has loaded. */
+.content.nav-busy{position:relative;}
+.content.nav-busy > *:not(.nav-loading-ov){visibility:hidden;}
+.nav-loading-ov{position:absolute; left:0; right:0; top:0; min-height:60vh; display:flex; align-items:center; justify-content:center; pointer-events:none;}
+.nav-loading-ov .dots-spinner{transform:scale(1.25);}
 /* A thin loading line across the very top of the window, like a browser's
    own page-load bar — shown while the app is loading or refreshing data. */
 .top-progress{position:fixed; top:0; left:0; right:0; height:3px; z-index:700; overflow:hidden; pointer-events:none; opacity:0; transition:opacity .25s ease;}
@@ -1108,7 +1135,7 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 </style>
 </head>
 <body>
-<div id="root"><div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div></div>
+<div id="root"><div class="top-progress on"></div><div class="loading-screen"><div class="dots-spinner big"><i style="transform:rotate(0deg);"><b style="animation-delay:-1.00s;"></b></i><i style="transform:rotate(45deg);"><b style="animation-delay:-0.88s;"></b></i><i style="transform:rotate(90deg);"><b style="animation-delay:-0.75s;"></b></i><i style="transform:rotate(135deg);"><b style="animation-delay:-0.62s;"></b></i><i style="transform:rotate(180deg);"><b style="animation-delay:-0.50s;"></b></i><i style="transform:rotate(225deg);"><b style="animation-delay:-0.38s;"></b></i><i style="transform:rotate(270deg);"><b style="animation-delay:-0.25s;"></b></i><i style="transform:rotate(315deg);"><b style="animation-delay:-0.12s;"></b></i></div></div></div>
 
 <script>
 /* =========================================================================
@@ -2088,6 +2115,7 @@ function sidebarNavigate(itemLabel){
     if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
   });
   const route = resolveRoute(itemLabel);
+  if(session.loggedIn && DB) startNavLoading();
   if(route){ goTo(route.section, route.subtab); }
   else { session.section="placeholder"; session.placeholderLabel=itemLabel; session.sidebarOpen=false; renderApp(); }
 }
@@ -2325,7 +2353,36 @@ let authToken = null;
 class ApiError extends Error {
   constructor(status, message, code){ super(message); this.status = status; this.code = code; }
 }
+// Page loads (GETs) in flight — a page opened from the menu shows spinning
+// dots until they have all come back (see startNavLoading()).
+let netGets = 0;
 async function apiRequest(method, path, body){
+  if(method !== 'GET') return apiRequestRaw(method, path, body);
+  netGets++;
+  try{ return await apiRequestRaw(method, path, body); }
+  finally{ netGets = Math.max(0, netGets - 1); if(navLoad.on) navLoadCheck(); }
+}
+const navLoad = { on: false, since: 0, timer: null };
+function startNavLoading(){
+  navLoad.on = true; navLoad.since = Date.now();
+  if(navLoad.timer) clearTimeout(navLoad.timer);
+  navLoad.timer = setTimeout(navLoadCheck, 350);
+}
+// Done once nothing has been loading for a moment (pages often load in
+// steps), at least 350 ms after opening, and never longer than 10 s.
+function navLoadCheck(){
+  if(!navLoad.on) return;
+  if(navLoad.timer){ clearTimeout(navLoad.timer); navLoad.timer = null; }
+  const age = Date.now() - navLoad.since;
+  if(age < 10000 && (netGets > 0 || age < 350)){ navLoad.timer = setTimeout(navLoadCheck, netGets > 0 ? 150 : 350 - age); return; }
+  navLoad.timer = setTimeout(() => {
+    navLoad.timer = null;
+    if(!navLoad.on) return;
+    if(netGets > 0 && Date.now() - navLoad.since < 10000) return navLoadCheck();
+    navLoad.on = false; renderApp();
+  }, 120);
+}
+async function apiRequestRaw(method, path, body){
   const headers = {'Content-Type':'application/json'};
   // The token this request was sent with. A request that was still in
   // flight when its user signed out (or another user signed in) must not
@@ -3624,7 +3681,7 @@ function renderApp(){
     const esTok = esignTokenFromHash(); if(esTok){ renderPublicEsign(root, esTok); return; }
     root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return;
   }
-  if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div>`; return; }
+  if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen">${loadingDotsHtml().replace('dots-spinner', 'dots-spinner big')}</div>`; return; }
   // A real, server-computed gate (session.mustChangePassword, set from the
   // real login response) — blocks every normal screen, not just hidden UI,
   // until the user genuinely sets a new password via the same real
@@ -3697,7 +3754,7 @@ function renderApp(){
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')" style="${DB.myAvatarDataUri?'padding:0; overflow:hidden;':''}">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`:session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
-        <div class="content sec-${escapeHtml(String(session.section||""))}">${renderSection()}</div>
+        <div class="content sec-${escapeHtml(String(session.section||""))}${navLoad.on ? ' nav-busy' : ''}">${renderSection()}${navLoad.on ? `<div class="nav-loading-ov">${loadingDotsHtml()}</div>` : ''}</div>
       </div>
     </div>
     ${renderEdgeDecor()}
@@ -11640,7 +11697,7 @@ function renderBranchLoanSummaryPage(){
 // their phone keeps sending its position while Rhinocash is open.
 const GEO_SHARE_CHOICES = [[15, '15 minutes'], [60, '1 hour'], [480, '8 hours']];
 let geoMap = null, geoMapNode = null, geoLayer = null, geoDrawnStamp = null, geoWatchId = null, geoLastPing = 0, geoTimer = null;
-function geoState(){ return session.geo || (session.geo = { minutes: 60 }); }
+function geoState(){ return session.geo || (session.geo = { minutes: 60, ticked: [], onlyTicked: false, chat: null, draft: '' }); }
 const geoTime = iso => iso ? new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase() : '—';
 function loadGeo(force){
   if(!DB || session.role === 'Investor') return;
@@ -11650,13 +11707,30 @@ function loadGeo(force){
   Promise.all([
     api.get('/api/geo/overview').catch(e => ({ error: (e && e.message) || 'Map data is not available' })),
     api.get('/api/live-location').catch(() => ({ me: { sharing: false }, people: [] })),
-  ]).then(([overview, live]) => { if(DB){ DB.geo = { at: Date.now(), overview, live }; geoSyncWatch(); renderApp(); } })
+    api.get('/api/live-location/messages').catch(() => ({ conversations: [], unread: 0 })),
+    geoChatOne() ? api.get(`/api/live-location/messages?with=${encodeURIComponent(geoChatOne())}`).catch(() => null) : Promise.resolve(null),
+  ]).then(([overview, live, msgs, thread]) => {
+    if(!DB) return;
+    DB.geo = { at: Date.now(), overview, live, msgs };
+    const st = geoState();
+    if(thread && st.chat && geoChatOne() === thread.with.userId){
+      st.chat.thread = thread;
+      // The open thread was just read, so it no longer counts as unread.
+      const c = ((msgs && msgs.conversations) || []).find(x => x.userId === thread.with.userId);
+      if(c && c.unread){ msgs.unread = Math.max(0, (msgs.unread || 0) - c.unread); c.unread = 0; }
+    }
+    // Ticks only cover people still sharing.
+    const sharing = new Set(((live && live.people) || []).map(p => p.userId));
+    st.ticked = (st.ticked || []).filter(id => sharing.has(id));
+    geoSyncWatch(); renderApp();
+  })
     .finally(() => inFlight.delete('geo-load'));
   if(!geoTimer && typeof setInterval === 'function'){
     // Every 30 s: refresh live positions on the dashboard; stop the phone's tracking after sign-out.
     geoTimer = setInterval(() => {
       if(!session.loggedIn){ geoStopWatch(); return; }
-      if(session.section === 'dashboard') loadGeo(true);
+      const typing = typeof document !== 'undefined' && document.activeElement && document.activeElement.id === 'geo-chat-input';
+      if(session.section === 'dashboard' && !typing) loadGeo(true);
       else geoSyncWatch();
     }, 30000);
   }
@@ -11678,13 +11752,28 @@ function renderGeoWidget(){
   const branches = (g.overview && g.overview.branches) || [];
   const sup = session.role !== 'Loan Officer';
   const share = me.sharing
-    ? `<div class="geo-share on"><span class="geo-live-dot"></span><span>Sharing your live location until <strong>${geoTime(me.until)}</strong></span><button type="button" class="btn btn-sm btn-red" onclick="geoStop()">Stop sharing</button></div>`
+    ? `<div class="geo-share on"><span class="geo-live-dot"></span><span>Sharing your live location until <strong>${geoTime(me.until)}</strong></span>${me.checkedBy ? `<span class="geo-checked">✓ Checked by ${escapeHtml(me.checkedBy)} · ${geoTime(me.checkedAt)}</span>` : ''}<button type="button" class="btn btn-sm btn-red" onclick="geoStop()">Stop sharing</button></div>`
     : `<div class="geo-share"><span>📍 Share my live location for</span><select onchange="geoState().minutes=Number(this.value)">${GEO_SHARE_CHOICES.map(c => `<option value="${c[0]}" ${st.minutes === c[0] ? 'selected' : ''}>${c[1]}</option>`).join('')}</select><button type="button" class="btn btn-sm btn-primary" onclick="geoStart()">Share live location</button></div>`;
   const others = people.filter(p => p.userId !== session.userId);
   const sharingIds = new Set(people.map(p => p.userId));
   const askable = sup ? (DB.staff || []).filter(s => s.status === 'Active' && s.id !== session.userId && s.role === 'Loan Officer' && !sharingIds.has(s.id) && (!officerScopeBranchIds() || officerScopeBranchIds().includes(s.branch))) : [];
+  const ticked = st.ticked || [];
+  const allTicked = others.length > 0 && others.every(p => ticked.includes(p.userId));
+  const tickBar = ticked.length ? `<div class="geo-tickbar"><strong>${ticked.length} ticked</strong>
+      <button type="button" class="btn btn-sm btn-primary" onclick="geoMarkChecked(true)">✓ Mark checked</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="geoOpenChat(geoState().ticked.slice())">💬 Message</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="geoMarkChecked(false)">Clear check</button>
+      <label class="geo-only"><input type="checkbox" ${st.onlyTicked ? 'checked' : ''} onchange="geoState().onlyTicked=this.checked; geoDrawnStamp=null; renderApp()"> Only ticked on map</label></div>` : '';
+  const liveTable = `<div class="table-wrap"><table><tr><th><input type="checkbox" title="Tick everyone" ${allTicked ? 'checked' : ''} onchange="geoTickAll(this.checked)"></th><th>Staff</th><th>Branch</th><th>Last update</th><th>Sharing until</th><th>Checked</th><th>Action</th></tr>
+      ${others.map(p => `<tr class="${ticked.includes(p.userId) ? 'geo-row-on' : ''}"><td><input type="checkbox" ${ticked.includes(p.userId) ? 'checked' : ''} onchange="geoTick('${p.userId}', this.checked)"></td>
+        <td><strong>${escapeHtml(p.name)}</strong><div class="pg-sub">${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || p.roleId)}</div></td>
+        <td>${escapeHtml(branchName(p.branchId))}</td>
+        <td>${escapeHtml(timeAgo(p.updatedAt))}${p.accuracy ? `<div class="pg-sub">±${Math.round(p.accuracy)} m</div>` : ''}</td>
+        <td>${escapeHtml(geoTime(p.until))}</td>
+        <td>${p.checkedBy ? `<span class="geo-checked">✓ ${escapeHtml(p.checkedBy)}</span><div class="pg-sub">${geoTime(p.checkedAt)}</div>` : '—'}</td>
+        <td><div class="geo-acts"><button type="button" class="btn btn-sm btn-outline" onclick="geoFocus('${p.userId}')">Locate</button><button type="button" class="btn btn-sm btn-outline" onclick="geoOpenChat(['${p.userId}'])">💬 Message</button></div></td></tr>`).join('')}</table></div>`;
   const liveList = sup ? `<div class="geo-live"><div class="geo-sub-h">Live staff <small>${others.length} sharing now</small></div>
-      ${others.length ? admTable(['Staff', 'Branch', 'Last update', 'Sharing until', ''], others.map(p => [`<strong>${escapeHtml(p.name)}</strong><div class="pg-sub">${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || p.roleId)}</div>`, escapeHtml(branchName(p.branchId)), escapeHtml(timeAgo(p.updatedAt)) + (p.accuracy ? `<div class="pg-sub">±${Math.round(p.accuracy)} m</div>` : ''), escapeHtml(geoTime(p.until)), `<button type="button" class="btn btn-sm btn-outline" onclick="geoFocus('${p.userId}')">Locate</button>`]), '') : `<div class="hint">Nobody in your ${session.role === 'Manager' ? 'branch' : 'branches'} is sharing their live location right now.</div>`}
+      ${others.length ? tickBar + liveTable : `<div class="hint">Nobody in your ${session.role === 'Manager' ? 'branch' : 'branches'} is sharing their live location right now.</div>`}
       ${askable.length ? `<div class="geo-ask"><select id="geo-ask-sel">${askable.map(s => `<option value="${s.id}">${escapeHtml(s.name)} · ${escapeHtml(branchName(s.branch))}</option>`).join('')}</select><button type="button" class="btn btn-sm btn-outline" onclick="geoAsk()">Ask to share location</button></div>` : ''}</div>` : '';
   const wx = branches.filter(b => b.weather);
   const err = g.overview && (g.overview.error || g.overview.weatherError);
@@ -11692,6 +11781,7 @@ function renderGeoWidget(){
     <div class="card-title"><span>Map &amp; Weather <small>${branches.length} branch${branches.length === 1 ? '' : 'es'}</small></span><button type="button" class="btn btn-sm btn-outline" onclick="loadGeo(true)">↻ Refresh</button></div>
     ${share}
     <div class="geo-grid"><div id="geo-map-slot" class="geo-map"></div>${liveList}</div>
+    ${geoMessagesHtml()}
     <div class="geo-sub-h" style="margin-top:12px;">Weather forecast <small>${escapeHtml((g.overview && g.overview.weatherSource) || '')}</small></div>
     ${!wx.length ? `<div class="hint">${escapeHtml(err || 'No forecast yet.')}</div>` : wx.length <= 4 ? `<div class="geo-wx-row">${wx.map(geoWeatherCard).join('')}</div>` : geoWeatherTable(wx)}
   </div>`;
@@ -11711,6 +11801,74 @@ function geoWeatherTable(wx){
     `<span class="geo-wx-mini">${w.days.slice(1, 4).map(d => `<span title="${escapeHtml(d.text || '')}">${dayLbl(d)} ${d.icon} ${d.tmax}°</span>`).join('')}</span>`,
     w.advice ? `<span class="geo-wx-adv-s">${escapeHtml(w.advice)}</span>` : '—',
   ]; }), '') + (rows.length > 6 ? `<div style="margin-top:8px;"><button type="button" class="btn btn-sm btn-outline" onclick="geoState().allWx=!geoState().allWx;renderApp()">${st.allWx ? 'Show fewer' : `Show all ${rows.length} branches`}</button></div>` : '');
+}
+// ---- Messages on the live map (supervisors <-> staff sharing their location) ----
+function geoChatOne(){ const c = geoState().chat; return c && c.to && c.to.length === 1 ? c.to[0] : null; }
+function geoPersonName(id){
+  const p = ((DB.geo && DB.geo.live && DB.geo.live.people) || []).find(x => x.userId === id);
+  const c = ((DB.geo && DB.geo.msgs && DB.geo.msgs.conversations) || []).find(x => x.userId === id);
+  const s = (DB.staff || []).find(x => x.id === id);
+  return (p && p.name) || (c && c.name) || (s && s.name) || 'Staff';
+}
+function geoMessagesHtml(){
+  const g = DB.geo; const st = geoState();
+  const convs = (g.msgs && g.msgs.conversations) || [];
+  const chat = st.chat;
+  if(!convs.length && !chat) return '';
+  const unread = (g.msgs && g.msgs.unread) || 0;
+  const list = convs.length ? `<div class="geo-convs">${convs.map(c => `<div class="geo-conv ${geoChatOne() === c.userId ? 'on' : ''}" onclick="geoOpenChat(['${c.userId}'])">
+      <div class="geo-conv-av">${escapeHtml(String(c.name || '?').split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase())}</div>
+      <div class="geo-conv-b"><div class="geo-conv-n">${escapeHtml(c.name)}<span>${escapeHtml(timeAgo(c.lastAt))}</span></div><div class="geo-conv-l">${c.lastMine ? 'You: ' : ''}${escapeHtml(c.last)}</div></div>
+      ${c.unread ? `<span class="geo-unread">${c.unread}</span>` : ''}</div>`).join('')}</div>` : '';
+  let panel = '';
+  if(chat){
+    const one = geoChatOne();
+    const title = one ? geoPersonName(one) : `${chat.to.length} people: ${chat.to.slice(0, 3).map(geoPersonName).join(', ')}${chat.to.length > 3 ? '…' : ''}`;
+    const msgs = one && chat.thread ? chat.thread.messages : [];
+    panel = `<div class="geo-chat">
+      <div class="geo-chat-h"><strong>💬 ${escapeHtml(title)}</strong><span>${one ? `<button type="button" class="btn btn-sm btn-outline" onclick="geoFocus('${one}')">Locate</button>` : ''}<button type="button" class="btn btn-sm btn-outline" onclick="geoCloseChat()">Close</button></span></div>
+      <div class="geo-chat-body" id="geo-chat-body">${one ? (chat.thread ? (msgs.length ? msgs.map(m => `<div class="geo-msg ${m.mine ? 'mine' : ''}"><div>${escapeHtml(m.body)}</div><span>${geoTime(m.at)}${m.mine ? ` <b class="${m.read ? 'read' : ''}">${m.read ? '✓✓' : '✓'}</b>` : ''}</span></div>`).join('') : `<div class="hint">No messages yet — say hello.</div>`) : loadingDotsHtml()) : `<div class="hint">One message goes to each ticked person; their replies come back here.</div>`}</div>
+      <div class="geo-chat-in"><textarea id="geo-chat-input" rows="1" maxlength="1000" placeholder="Type a message" oninput="geoState().draft=this.value" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();geoSend();}">${escapeHtml(st.draft || '')}</textarea><button type="button" class="btn btn-sm btn-primary" onclick="geoSend()">Send</button></div>
+    </div>`;
+  }
+  return `<div class="geo-msgs"><div class="geo-sub-h">Messages ${unread ? `<span class="geo-unread">${unread}</span>` : ''}</div><div class="geo-msgs-grid ${panel && list ? 'two' : ''}">${list}${panel}</div></div>`;
+}
+function geoTick(id, on){ const st = geoState(); st.ticked = (st.ticked || []).filter(x => x !== id); if(on) st.ticked.push(id); if(st.onlyTicked) geoDrawnStamp = null; renderApp(); }
+function geoTickAll(on){ const st = geoState(); st.ticked = on ? ((DB.geo.live && DB.geo.live.people) || []).filter(p => p.userId !== session.userId).map(p => p.userId) : []; if(st.onlyTicked) geoDrawnStamp = null; renderApp(); }
+async function geoMarkChecked(checked){
+  const ids = (geoState().ticked || []).slice(); if(!ids.length) return;
+  await withRequest('geo-check', async ()=>{ await api.post('/api/live-location/check', { userIds: ids, checked }); toast(checked ? `✓ ${ids.length} marked as checked` : 'Checks cleared'); loadGeo(true); });
+}
+async function geoOpenChat(ids){
+  const st = geoState(); ids = (ids || []).filter(Boolean); if(!ids.length) return;
+  st.chat = { to: ids, thread: null }; renderApp();
+  setTimeout(() => { const i = typeof document !== 'undefined' && document.getElementById('geo-chat-input'); if(i && i.focus) i.focus(); }, 30);
+  if(ids.length === 1) await geoLoadThread();
+}
+async function geoLoadThread(){
+  const one = geoChatOne(); if(!one) return;
+  try{
+    const t = await api.get(`/api/live-location/messages?with=${encodeURIComponent(one)}`);
+    const st = geoState(); if(st.chat && geoChatOne() === one) st.chat.thread = t;
+    // Opening the thread marks it read.
+    const c = ((DB.geo.msgs && DB.geo.msgs.conversations) || []).find(x => x.userId === one);
+    if(c && c.unread){ DB.geo.msgs.unread = Math.max(0, (DB.geo.msgs.unread || 0) - c.unread); c.unread = 0; }
+    renderApp();
+    const b = typeof document !== 'undefined' && document.getElementById('geo-chat-body'); if(b) b.scrollTop = b.scrollHeight;
+  }catch(e){ toast(e.message || 'Messages could not load'); }
+}
+function geoCloseChat(){ geoState().chat = null; renderApp(); }
+async function geoSend(){
+  const st = geoState(); const chat = st.chat; if(!chat) return;
+  const i = typeof document !== 'undefined' && document.getElementById('geo-chat-input');
+  const body = String((i && i.value) || st.draft || '').trim(); if(!body) return;
+  await withRequest('geo-send', async ()=>{
+    const r = await api.post('/api/live-location/messages', { to: chat.to, body });
+    st.draft = '';
+    if(chat.to.length > 1){ toast(`Message sent to ${r.sent} people`); st.chat = null; }
+    loadGeo(true);
+    if(chat.to.length === 1) await geoLoadThread();
+  });
 }
 // The map lives in one element that is moved into the dashboard each time
 // it is drawn, so it is not rebuilt (and does not flicker) on every update.
@@ -11738,11 +11896,12 @@ function geoDraw(){
     const pop = `<strong>${escapeHtml(b.name)}</strong><br>${escapeHtml(b.region || '')}${w ? `<br>${w.current.icon} ${escapeHtml(w.current.text)}, ${w.current.temp}°C` : ''}${b.approximate ? '<br><small>Position: town centre (approximate)</small>' : ''}${canMove ? `<br><button class="geo-pop-btn" onclick="geoSetBranchHere('${b.id}')">Set to my current location</button>` : ''}`;
     L.marker([b.lat, b.lng], { icon }).bindPopup(pop).addTo(geoLayer); pts.push([b.lat, b.lng]);
   });
-  ((g.live && g.live.people) || []).forEach(p => {
+  const st = geoState(); const sup = session.role !== 'Loan Officer';
+  ((g.live && g.live.people) || []).filter(p => !(st.onlyTicked && (st.ticked || []).length) || p.userId === session.userId || st.ticked.includes(p.userId)).forEach(p => {
     const initials = String(p.name || '?').split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase();
     if(p.trail && p.trail.length > 1) L.polyline(p.trail, { color: '#E0620D', weight: 3, opacity: .7, dashArray: '4 6' }).addTo(geoLayer);
-    const icon = L.divIcon({ className: 'geo-pin-wrap', html: `<div class="geo-person ${p.userId === session.userId ? 'me' : ''}">${escapeHtml(initials)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
-    const m = L.marker([p.lat, p.lng], { icon, zIndexOffset: 1000 }).bindPopup(`<strong>${escapeHtml(p.name)}</strong><br>${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || '')} · ${escapeHtml(branchName(p.branchId))}<br>Updated ${escapeHtml(timeAgo(p.updatedAt))}${p.accuracy ? ` (±${Math.round(p.accuracy)} m)` : ''}<br>Sharing until ${geoTime(p.until)}`).addTo(geoLayer);
+    const icon = L.divIcon({ className: 'geo-pin-wrap', html: `<div class="geo-person ${p.userId === session.userId ? 'me' : ''} ${(st.ticked || []).includes(p.userId) ? 'ticked' : ''}">${escapeHtml(initials)}${p.checkedBy ? '<i>✓</i>' : ''}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    const m = L.marker([p.lat, p.lng], { icon, zIndexOffset: 1000 }).bindPopup(`<strong>${escapeHtml(p.name)}</strong><br>${escapeHtml(ROLE_ID_TO_DISPLAY[p.roleId] || '')} · ${escapeHtml(branchName(p.branchId))}<br>Updated ${escapeHtml(timeAgo(p.updatedAt))}${p.accuracy ? ` (±${Math.round(p.accuracy)} m)` : ''}<br>Sharing until ${geoTime(p.until)}${p.checkedBy ? `<br>✓ Checked by ${escapeHtml(p.checkedBy)} · ${geoTime(p.checkedAt)}` : ''}${sup && p.userId !== session.userId ? `<br><button class="geo-pop-btn" onclick="geoOpenChat(['${p.userId}'])">💬 Message</button>` : ''}`).addTo(geoLayer);
     m.__userId = p.userId; pts.push([p.lat, p.lng]);
   });
   if(pts.length && !geoMap.__fitted){ geoMap.fitBounds(pts, { padding: [30, 30], maxZoom: 12 }); geoMap.__fitted = true; }
@@ -14473,9 +14632,9 @@ function renderAddClientForm(){
             <div class="field"><label>Client Contact</label><input name="phone" placeholder="07XX XXX XXX"></div>
             <div class="field"><label>Name</label><input name="name"></div>
             <div class="field"><label>Idno</label><input name="idNumber"></div>
-            <div class="field"><label>Loan Officer</label><select name="officerId" ${session.role==='Loan Officer'?'disabled':''}>
+            ${session.role==='Loan Officer' ? '' : `<div class="field"><label>Loan Officer</label><select name="officerId">
               ${officers.length ? officers.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join("") : `<option value="">No active loan officers available</option>`}
-            </select></div>
+            </select></div>`}
             <div class="field"><label>Residence</label><input name="address"></div>
             <div class="field"><label>Kin Contact</label><input name="nextOfKinPhone"></div>
             <div class="field"><label>Next Of Kin</label><input name="nextOfKin"></div>

@@ -77,6 +77,41 @@ function assert(cond, msg) { if (cond) { pass++; console.log('OK:', msg); } else
     const notes = (await api('GET', '/api/notifications', { token: t.officer })).json;
     const list = (notes && (notes.notifications || notes)) || [];
     assert(Array.isArray(list) && list.some(n => /live location/i.test(n.title || '')), '2: the officer gets the request as a notification');
+
+    // 3. Supervisors tick people who are sharing
+    assert((await api('POST', '/api/live-location/check', { token: t.officer, body: { userIds: [officerId] } })).status === 403, '3: an officer cannot tick');
+    assert((await api('POST', '/api/live-location/check', { token: t.mgrN, body: { userIds: [officerId] } })).status === 403, '3: a Manager of another branch cannot tick them');
+    const ck = await api('POST', '/api/live-location/check', { token: t.mgrK, body: { userIds: [officerId] } });
+    assert(ck.status === 200 && ck.json.updated === 1, '3: their Manager ticks them as checked');
+    const kp = (await api('GET', '/api/live-location', { token: t.mgrK })).json.people.find(p => p.userId === officerId);
+    assert(kp && kp.checkedBy && kp.checkedAt, '3: the tick shows who checked and when');
+    const om = (await api('GET', '/api/live-location', { token: t.officer })).json.me;
+    assert(om.checkedBy === kp.checkedBy, '3: the officer sees that they were checked');
+    await api('POST', '/api/live-location/check', { token: t.mgrK, body: { userIds: [officerId], checked: false } });
+    assert(!(await api('GET', '/api/live-location', { token: t.mgrK })).json.people.find(p => p.userId === officerId).checkedBy, '3: the tick can be cleared');
+    await api('POST', '/api/live-location/check', { token: t.mgrK, body: { userIds: [officerId] } });
+
+    // 4. Messages on the live map
+    const mgrKId = (await api('GET', '/api/auth/me', { token: t.mgrK })).json.user.id;
+    assert((await api('POST', '/api/live-location/messages', { token: t.officer, body: { to: [mgrKId], body: 'Hi' } })).status === 403, '4: an officer cannot start a conversation');
+    assert((await api('POST', '/api/live-location/messages', { token: t.mgrN, body: { to: [officerId], body: 'Hi' } })).status === 403, '4: a Manager cannot message staff outside their branch');
+    assert((await api('POST', '/api/live-location/messages', { token: t.mgrK, body: { to: [officerId], body: '   ' } })).status === 400, '4: an empty message is refused');
+    const sent = await api('POST', '/api/live-location/messages', { token: t.mgrK, body: { to: [officerId], body: 'Please visit Mama Akinyi on your way back' } });
+    assert(sent.status === 200 && sent.json.sent === 1, '4: their Manager messages them');
+    assert((await api('POST', '/api/live-location/messages', { token: t.ops, body: { to: [officerId], body: 'Weather is turning — take care' } })).json.sent === 1, '4: head office can message them too (one or many ticked at once)');
+    const lo = (await api('GET', '/api/live-location/messages', { token: t.officer })).json;
+    assert(lo.conversations.length >= 2 && lo.unread >= 2, '4: the officer sees both conversations as unread');
+    assert((await api('GET', '/api/live-location', { token: t.officer })).json.me.unread >= 2, '4: the unread count comes with the live map');
+    const th = (await api('GET', `/api/live-location/messages?with=${mgrKId}`, { token: t.officer })).json;
+    assert(th.messages.length === 1 && !th.messages[0].mine && /Mama Akinyi/.test(th.messages[0].body), '4: the officer opens the thread');
+    assert((await api('GET', '/api/live-location/messages', { token: t.officer })).json.conversations.find(c => c.userId === mgrKId).unread === 0, '4: opening it marks it read');
+    assert((await api('POST', '/api/live-location/messages', { token: t.officer, body: { to: [mgrKId], body: 'On my way' } })).status === 200, '4: the officer replies');
+    const mt = (await api('GET', `/api/live-location/messages?with=${officerId}`, { token: t.mgrK })).json.messages;
+    assert(mt.length === 2 && mt[0].mine && mt[0].read && !mt[1].mine && mt[1].body === 'On my way', '4: the Manager sees the reply and that their message was read (✓✓)');
+    assert((await api('GET', `/api/live-location/messages?with=${officerId}`, { token: t.mgrN })).status === 403, '4: others cannot read the thread');
+    const re = await api('POST', '/api/live-location/start', { token: t.officer, body: { minutes: 15, lat: -0.0901, lng: 34.7701 } });
+    assert(re.status === 200 && !(await api('GET', '/api/live-location', { token: t.officer })).json.me.checkedBy, '3: a new share starts unticked');
+
     assert((await api('POST', '/api/live-location/stop', { token: t.officer })).status === 200, '2: the officer stops sharing');
     const after = (await api('GET', '/api/live-location', { token: t.mgrK })).json.people;
     assert(!after.some(p => Math.abs(p.lat + 0.0901) < 1e-6), '2: once stopped, nobody sees their location');

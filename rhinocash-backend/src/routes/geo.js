@@ -135,7 +135,7 @@ function register(router) {
     const until = new Date(Date.now() + minutes * 60000).toISOString();
     const now = new Date().toISOString();
     await run(`INSERT INTO staff_live_locations (user_id, lat, lng, accuracy, share_until, started_at, updated_at) VALUES (?,?,?,?,?,?,?)
-      ON CONFLICT (user_id) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, accuracy = EXCLUDED.accuracy, share_until = EXCLUDED.share_until, started_at = EXCLUDED.started_at, updated_at = EXCLUDED.updated_at`,
+      ON CONFLICT (user_id) DO UPDATE SET lat = EXCLUDED.lat, lng = EXCLUDED.lng, accuracy = EXCLUDED.accuracy, share_until = EXCLUDED.share_until, started_at = EXCLUDED.started_at, updated_at = EXCLUDED.updated_at, checked_by = NULL, checked_at = NULL`,
     [req.user.id, Number(req.body.lat), Number(req.body.lng), Number(req.body.accuracy) || null, until, now, now]);
     await run('INSERT INTO staff_location_pings (user_id, lat, lng, accuracy) VALUES (?,?,?,?)', [req.user.id, Number(req.body.lat), Number(req.body.lng), Number(req.body.accuracy) || null]);
     await logAction(req, { action: 'Started sharing live location', module: 'staff', recordType: 'User', recordId: req.user.id, newValue: { minutes } });
@@ -156,10 +156,18 @@ function register(router) {
     await logAction(req, { action: 'Stopped sharing live location', module: 'staff', recordType: 'User', recordId: req.user.id });
     res.json({ sharing: false });
   });
+  // Can `user` supervise `target` (see their location, tick them, message them first)?
+  async function supervises(user, target) {
+    if (!target || target.id === user.id || user.role_id === 'loan_officer') return false;
+    if (user.role_id === 'manager') return target.branch_id === user.branch_id;
+    const scope = await branchIdsInScope(user);
+    return scope === null || scope.includes(target.branch_id);
+  }
+  const unreadFor = async uid => (await get('SELECT COUNT(*)::int AS n FROM live_location_messages WHERE to_user = ? AND read_at IS NULL', [uid])).n;
   // Who is sharing now, within the caller's scope (a Loan Officer only sees themself).
   router.get('/api/live-location', requireAuth, async (req, res) => {
     const mine = await get('SELECT * FROM staff_live_locations WHERE user_id = ?', [req.user.id]);
-    const rows = await all(`SELECT l.*, u.name, u.role_id, u.branch_id FROM staff_live_locations l JOIN users u ON u.id = l.user_id WHERE l.share_until > ? ORDER BY u.name`, [new Date().toISOString()]);
+    const rows = await all(`SELECT l.*, u.name, u.role_id, u.branch_id, c.name AS checked_by_name FROM staff_live_locations l JOIN users u ON u.id = l.user_id LEFT JOIN users c ON c.id = l.checked_by WHERE l.share_until > ? ORDER BY u.name`, [new Date().toISOString()]);
     let people = [];
     if (req.user.role_id === 'loan_officer') people = rows.filter(r => r.user_id === req.user.id);
     else {
@@ -171,20 +179,88 @@ function register(router) {
     for (const p of people) {
       const trail = await all(`SELECT lat, lng, at FROM staff_location_pings WHERE user_id = ? AND at > ? ORDER BY at DESC LIMIT 40`, [p.user_id, p.started_at]);
       out.push({ userId: p.user_id, name: p.name, roleId: p.role_id, branchId: p.branch_id, lat: Number(p.lat), lng: Number(p.lng), accuracy: p.accuracy != null ? Number(p.accuracy) : null,
-        updatedAt: p.updated_at, until: p.share_until, trail: trail.reverse().map(t => [Number(t.lat), Number(t.lng)]) });
+        updatedAt: p.updated_at, until: p.share_until, checkedBy: p.checked_by_name || null, checkedAt: p.checked_at || null, trail: trail.reverse().map(t => [Number(t.lat), Number(t.lng)]) });
     }
-    res.json({ me: active(mine) ? { sharing: true, until: mine.share_until, updatedAt: mine.updated_at } : { sharing: false }, people: out });
+    const meRow = out.find(p => p.userId === req.user.id);
+    const me = active(mine) ? { sharing: true, until: mine.share_until, updatedAt: mine.updated_at, checkedBy: meRow ? meRow.checkedBy : null, checkedAt: meRow ? meRow.checkedAt : null } : { sharing: false };
+    me.unread = await unreadFor(req.user.id);
+    res.json({ me, people: out });
   });
   // A supervisor asks someone in their scope to share their live location.
   router.post('/api/live-location/request', requireAuth, async (req, res, next) => {
     if (req.user.role_id === 'loan_officer') return next({ status: 403, message: 'Only supervisors can ask for a live location' });
     const target = await get('SELECT id, name, branch_id FROM users WHERE id = ?', [String(req.body.userId || '')]);
     if (!target || target.id === req.user.id) return next({ status: 400, message: 'Choose a staff member' });
-    const scope = await branchIdsInScope(req.user);
-    if (scope !== null && !scope.includes(target.branch_id)) return next({ status: 403, message: 'That staff member is outside your branches' });
+    if (!(await supervises(req.user, target))) return next({ status: 403, message: 'That staff member is outside your branches' });
     await notify(target.id, 'location', 'Please share your live location', `${req.user.name} asked you to share your live location. Open the dashboard and choose Share live location.`);
     await logAction(req, { action: 'Requested live location', module: 'staff', recordType: 'User', recordId: target.id });
     res.json({ ok: true, message: `Request sent to ${target.name}` });
+  });
+  // Tick (or un-tick) people who are sharing — the supervisor has checked
+  // where they are. The tick shows to every supervisor and to the person, and
+  // is cleared when they start a new share.
+  router.post('/api/live-location/check', requireAuth, async (req, res, next) => {
+    if (req.user.role_id === 'loan_officer') return next({ status: 403, message: 'Only supervisors can tick staff locations' });
+    const ids = Array.isArray(req.body.userIds) ? req.body.userIds.map(String).slice(0, 200) : [];
+    if (!ids.length) return next({ status: 400, message: 'Tick at least one person' });
+    const checked = req.body.checked !== false;
+    const now = new Date().toISOString();
+    let done = 0;
+    for (const id of ids) {
+      const t = await get('SELECT u.id, u.name, u.branch_id, l.share_until FROM users u JOIN staff_live_locations l ON l.user_id = u.id WHERE u.id = ?', [id]);
+      if (!t || !(await supervises(req.user, t))) return next({ status: 403, message: 'You can only tick people in your branches' });
+      if (t.share_until <= now) continue; // stopped sharing in the meantime
+      await run('UPDATE staff_live_locations SET checked_by = ?, checked_at = ? WHERE user_id = ?', checked ? [req.user.id, now, id] : [null, null, id]);
+      done++;
+    }
+    await logAction(req, { action: checked ? 'Ticked live locations' : 'Cleared live location ticks', module: 'staff', recordType: 'User', recordId: ids.join(','), newValue: { count: done } });
+    res.json({ ok: true, updated: done });
+  });
+  // Messages on the live map: a supervisor writes to people in their scope
+  // (one or many at once); anyone can reply to someone who wrote to them.
+  router.post('/api/live-location/messages', requireAuth, async (req, res, next) => {
+    const body = String(req.body.body || '').trim();
+    if (!body) return next({ status: 400, message: 'Type a message' });
+    if (body.length > 1000) return next({ status: 400, message: 'Keep the message under 1000 characters' });
+    const ids = [...new Set((Array.isArray(req.body.to) ? req.body.to : [req.body.to]).filter(Boolean).map(String))].slice(0, 200);
+    if (!ids.length) return next({ status: 400, message: 'Choose who to send it to' });
+    const targets = [];
+    for (const id of ids) {
+      const t = await get('SELECT id, name, branch_id FROM users WHERE id = ?', [id]);
+      if (!t || t.id === req.user.id) return next({ status: 400, message: 'Choose a staff member' });
+      const replying = await get('SELECT 1 AS ok FROM live_location_messages WHERE from_user = ? AND to_user = ? LIMIT 1', [t.id, req.user.id]);
+      if (!replying && !(await supervises(req.user, t))) return next({ status: 403, message: `You cannot message ${t.name} here` });
+      targets.push(t);
+    }
+    for (const t of targets) {
+      await run('INSERT INTO live_location_messages (from_user, to_user, body) VALUES (?,?,?)', [req.user.id, t.id, body]);
+      await notify(t.id, 'location', `Message from ${req.user.name}`, body.length > 140 ? body.slice(0, 137) + '…' : body);
+    }
+    res.json({ ok: true, sent: targets.length });
+  });
+  // Without ?with: my conversations (latest message and unread count each).
+  // With ?with=<userId>: the thread with that person; their messages are marked read.
+  router.get('/api/live-location/messages', requireAuth, async (req, res, next) => {
+    const other = req.query.with ? String(req.query.with) : null;
+    if (!other) {
+      const rows = await all(`SELECT m.*, CASE WHEN m.from_user = ? THEN m.to_user ELSE m.from_user END AS other_id
+        FROM live_location_messages m WHERE m.from_user = ? OR m.to_user = ? ORDER BY m.id DESC LIMIT 500`, [req.user.id, req.user.id, req.user.id]);
+      const convs = new Map();
+      for (const r of rows) {
+        if (!convs.has(r.other_id)) convs.set(r.other_id, { userId: r.other_id, last: r.body, lastAt: r.created_at, lastMine: r.from_user === req.user.id, unread: 0 });
+        if (r.to_user === req.user.id && !r.read_at) convs.get(r.other_id).unread++;
+      }
+      const list = [...convs.values()];
+      for (const c of list) { const u = await get('SELECT name FROM users WHERE id = ?', [c.userId]); c.name = u ? u.name : 'Former staff'; }
+      return res.json({ conversations: list, unread: list.reduce((n, c) => n + c.unread, 0) });
+    }
+    const u = await get('SELECT id, name, branch_id FROM users WHERE id = ?', [other]);
+    if (!u) return next({ status: 404, message: 'Staff member not found' });
+    const rows = await all(`SELECT * FROM (SELECT * FROM live_location_messages WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?) ORDER BY id DESC LIMIT 100) x ORDER BY id`,
+      [req.user.id, other, other, req.user.id]);
+    if (!rows.length && !(await supervises(req.user, u))) return next({ status: 403, message: 'You cannot message this person here' });
+    await run('UPDATE live_location_messages SET read_at = ? WHERE from_user = ? AND to_user = ? AND read_at IS NULL', [new Date().toISOString(), other, req.user.id]);
+    res.json({ with: { userId: u.id, name: u.name }, messages: rows.map(r => ({ id: Number(r.id), mine: r.from_user === req.user.id, body: r.body, at: r.created_at, read: !!r.read_at })) });
   });
 }
 

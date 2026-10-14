@@ -5558,8 +5558,13 @@ apiRequest = async function(method, path, body){
     __assert(spinnerHtml.includes('class="dots-spinner"') && (spinnerHtml.match(/<i style="transform:rotate\(/g)||[]).length === 8, "the real loadingDotsHtml() genuinely renders a real 8-dot ring, each with its own real static rotation");
     __assert(__rawIndexHtml.includes('@keyframes dotsSpinnerPulse'), "the real shared dots-spinner CSS pulse animation genuinely exists");
     __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
-    __assert(__srcForBanCheck.includes('<div class="top-progress on"></div><div class="loading-screen"><div class="loading-screen-spinner"></div></div>') && !__srcForBanCheck.includes('<span>Loading Dashboard...'), "the one-time, full-page loading screen after login is just a centred spinner plus the thin top loading line — no 'Loading Dashboard...' text");
-    __assert(__rawIndexHtml.includes('.loading-screen-spinner{') && __rawIndexHtml.includes('animation:loginSpin') && __rawIndexHtml.includes('@keyframes topProgress'), "the loading spinner genuinely spins and the thin top loading line genuinely animates");
+    __assert(__srcForBanCheck.includes('<div class="top-progress on"></div><div class="loading-screen">${loadingDotsHtml().replace(\'dots-spinner\', \'dots-spinner big\')}</div>') && !__srcForBanCheck.includes('loading-screen-spinner') && !__srcForBanCheck.includes('<span>Loading Dashboard...'), "the one-time, full-page loading screen after login is just centred spinning dots plus the thin top loading line — no ring, no 'Loading Dashboard...' text");
+    __assert(__rawIndexHtml.includes('<div class="loading-screen"><div class="dots-spinner big">') && __rawIndexHtml.includes('@keyframes dotsSpinnerPulse') && __rawIndexHtml.includes('@keyframes topProgress'), "the first page load also shows spinning dots, and the thin top loading line genuinely animates");
+    // Opening a submenu: spinning dots until its data has loaded.
+    navLoad.on = false; startNavLoading();
+    __assert(navLoad.on && document.getElementById('root') && (renderApp(), document.getElementById('root').innerHTML.includes('nav-loading-ov')), "opening a submenu shows spinning dots over the page while its data loads");
+    await new Promise(r => setTimeout(r, 900));
+    __assert(!navLoad.on && !document.getElementById('root').innerHTML.includes('nav-loading-ov'), "the dots go away once the page's data has loaded");
     __assert(typeof setTopProgress === 'function' && /inFlight\.add\(key\);\s*setTopProgress\(true\)/.test(__srcForBanCheck) && /inFlight\.delete\(key\);\s*setTopProgress\(false\)/.test(__srcForBanCheck), "every in-flight request shows the thin top loading line while it runs");
   }
 
@@ -7996,7 +8001,7 @@ apiRequest = async function(method, path, body){
     for(const label of Object.keys(INV_PAGES)){
       if(!items.includes(label)) continue;
       sidebarNavigate(label); renderApp();
-      for(let i=0; i<250 && !(DB.adm && DB.adm['inv:report'] !== undefined); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
+      for(let i=0; i<250 && (navLoad.on || !(DB.adm && DB.adm['inv:report'] !== undefined)); i++){ await new Promise(r=>setTimeout(r,20)); renderApp(); }
       renderApp();
       const h = document.getElementById('root').innerHTML;
       if(!h.includes(`class="adm-title">${label.replace(/&/g,'&amp;')}<`) || h.includes('could not be displayed') || h.includes('dots-spinner') || />undefined</.test(h) || /\bNaN\b/.test(h)) broken.push(label);
@@ -8327,6 +8332,13 @@ apiRequest = async function(method, path, body){
     __assert(many.includes('Rain today') && many.includes('Show all 9 branches') && (many.match(/<tr>/g) || []).length === 7, "many branches show as a compact weather table (6 rows, then Show all)");
     __assert(GEO_SHARE_CHOICES.map(c => c[0]).join(',') === '15,60,480', "live location can be shared for 15 minutes, 1 hour or 8 hours");
     __assert(String(geoStart).includes('/api/live-location/start') && String(geoStop).includes('/api/live-location/stop') && String(geoAsk).includes('/api/live-location/request'), "share, stop and ask-to-share use the live location API");
+    __assert(String(geoMarkChecked).includes('/api/live-location/check') && String(geoSend).includes('/api/live-location/messages') && String(geoLoadThread).includes('/api/live-location/messages?with='), "supervisors tick sharers and message them on the live map");
+    const savedGeo = DB.geo, savedSt = session.geo;
+    DB.geo = { at: 1, overview: { branches: [] }, live: { me: { sharing: false }, people: [] }, msgs: { conversations: [{ userId: 'u1', name: 'Faith Njeri', last: 'Please visit Mama Akinyi', lastAt: new Date().toISOString(), lastMine: false, unread: 2 }], unread: 2 } };
+    session.geo = { minutes: 60, ticked: [], chat: { to: ['u1'], thread: { with: { userId: 'u1', name: 'Faith Njeri' }, messages: [{ id: 1, mine: false, body: 'Please visit Mama Akinyi', at: new Date().toISOString() }, { id: 2, mine: true, body: 'On my way', at: new Date().toISOString(), read: true }] } }, draft: '' };
+    const mh = geoMessagesHtml();
+    __assert(mh.includes('Faith Njeri') && mh.includes('geo-unread') && mh.includes('geo-msg mine') && mh.includes('✓✓') && mh.includes('geo-chat-input'), "the Messages panel lists conversations with unread counts and a WhatsApp-style thread with read ticks");
+    DB.geo = savedGeo; session.geo = savedSt;
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);
