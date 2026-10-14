@@ -8173,6 +8173,14 @@ apiRequest = async function(method, path, body){
     const splash = document.getElementById('welcome-splash').innerHTML;
     __assert(splash.includes('Welcome') && splash.includes('David Simon') && splash.includes('ws-avatar'), "after login a full-screen avatar says Welcome with the user's name");
     __assert(/showWelcomeSplash\(\);\s*\}catch\(e\)\{/.test(__srcForBanCheck), "the splash shows right after a successful login");
+    __assert(AVATAR_SVG.male.includes('ws-arm') && AVATAR_SVG.male.includes('ws-mouth-open') && AVATAR_SVG.female.includes('ws-arm') && splash.includes('Hi!'), "the welcome character waves, can move its mouth and says Hi!");
+    { let spoken = null; const realSynth = window.speechSynthesis, realUtt = global.SpeechSynthesisUtterance;
+      window.speechSynthesis = { getVoices: () => [{ name: 'Google UK English Female', lang: 'en-GB' }, { name: 'Google UK English Male', lang: 'en-GB' }], cancel(){}, speak(u){ spoken = u; } };
+      global.SpeechSynthesisUtterance = function(t){ this.text = t; };
+      let closedAfter = null; speakWelcome('Welcome, David Simon', 'male', { querySelector: () => null }, d => { closedAfter = d; });
+      __assert(spoken && spoken.text === 'Welcome, David Simon' && spoken.voice && spoken.voice.name === 'Google UK English Male', "the character says 'Welcome, <name>' out loud in a voice matching the account's gender");
+      spoken.onend(); __assert(closedAfter !== null, "the splash closes once the greeting has been spoken");
+      window.speechSynthesis = realSynth; global.SpeechSynthesisUtterance = realUtt; }
     __assert(/class="login-hero-money" src="\$\{MONEY_IMG_DATA_URI\}"/.test(__rawIndexHtml), "the login page shows the Kenyan money image");
     DB.me = realMe;
     session.role = 'Manager';
