@@ -8181,6 +8181,8 @@ apiRequest = async function(method, path, body){
     __assert(assignableRoles().includes('Admin') && roleBranches().length === (DB.branches || []).length, "the Admin sees every role and branch");
     session.role = 'HR';
     __assert(!assignableRoles().includes('Admin'), "only the Admin can create another Admin");
+    __assert(typeof HR_EMP_FIELDS.gender === 'function' && /hrEmpEditForm\('hr-personal', 'Update personal details', \['gender', 'date_of_birth', 'national_id'\]\)/.test(__srcForBanCheck), "HR can set an employee's gender on Employee Profiles");
+    __assert(/if\(patch\.gender !== undefined\) payload\.gender/.test(__srcForBanCheck) && __rawIndexHtml.includes('Change Role / Access Level / Branch / Region / Gender'), "the Admin can set gender from the employee's detail panel");
     session.role = realRole;
   }
 

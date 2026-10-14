@@ -337,7 +337,9 @@ function register(router) {
 
   // ==================== Employee HR details ====================
   const HR_FIELDS = { job_title: 'text', department_id: 'dept', job_grade: 'text', employment_type: 'text', basic_salary: 'money',
-    contract_start: 'date', contract_end: 'date', probation_end: 'date', kra_pin: 'text', nssf_no: 'text', sha_no: 'text', leave_days_balance: 'int' };
+    contract_start: 'date', contract_end: 'date', probation_end: 'date', kra_pin: 'text', nssf_no: 'text', sha_no: 'text', leave_days_balance: 'int',
+    gender: 'gender', date_of_birth: 'date', national_id: 'text' };
+  const HR_GENDERS = ['Male', 'Female', 'Other', 'Prefer not to say'];
   router.patch('/api/hr/employees/:id', requireAuth, requireHrWrite, async (req, res, next) => {
     const before = await get('SELECT * FROM users WHERE id = ?', [req.params.id]);
     if (!before) return next({ status: 404, message: 'Employee not found' });
@@ -351,6 +353,7 @@ function register(router) {
       if (type === 'date' && v !== null && !isDate(v)) return next({ status: 400, message: `${f.replace(/_/g, ' ')} must be YYYY-MM-DD` });
       if (type === 'dept' && v !== null && !(await get('SELECT id FROM departments WHERE id = ?', [v]))) return next({ status: 400, message: 'Unknown department' });
       if (type === 'text' && v !== null) v = clean(v, 80);
+      if (type === 'gender' && v !== null && !HR_GENDERS.includes(v)) return next({ status: 400, message: `Gender must be one of: ${HR_GENDERS.join(', ')}` });
       sets.push(`${f} = ?`); params.push(v); changed[f] = v;
     }
     const cs = b.contract_start !== undefined ? changed.contract_start : before.contract_start;
