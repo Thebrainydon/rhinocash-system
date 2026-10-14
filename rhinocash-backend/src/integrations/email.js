@@ -2,26 +2,38 @@
 // nothing is ever claimed to be delivered unless a real provider is wired up.
 //
 // Where real credentials go:
-//   EMAIL_PROVIDER           — e.g. 'sendgrid' | 'ses' | 'smtp'
-//   EMAIL_API_KEY             — provider API key (or SMTP_* vars for a raw SMTP adapter)
+//   EMAIL_PROVIDER           — 'sendgrid' | 'mailgun' | 'smtp' (e.g. Zoho Mail)
+//   EMAIL_API_KEY             — provider API key (SendGrid / Mailgun)
+//   SMTP_HOST, SMTP_PORT, SMTP_SECURITY, SMTP_USERNAME, SMTP_PASSWORD — SMTP mailbox
 //   EMAIL_FROM_ADDRESS        — the verified sending address
 'use strict';
 const store = require('./store');
+const smtp = require('./smtp');
 
 // Configured by the System Administrator (Admin > Integrations > Email,
 // stored encrypted) or, as a fallback, by EMAIL_PROVIDER / EMAIL_API_KEY /
 // EMAIL_FROM_ADDRESS (+ EMAIL_DOMAIN for Mailgun) env variables.
+const smtpEnv = () => ({ smtpHost: process.env.SMTP_HOST || '', smtpPort: process.env.SMTP_PORT || '', smtpSecurity: process.env.SMTP_SECURITY || '', smtpUsername: process.env.SMTP_USERNAME || '' });
 function envConfig() {
-  if (!(process.env.EMAIL_PROVIDER && process.env.EMAIL_API_KEY && process.env.EMAIL_FROM_ADDRESS)) return null;
+  const e = process.env;
+  if (e.EMAIL_PROVIDER === 'smtp') {
+    if (!(e.SMTP_HOST && e.SMTP_PASSWORD && e.EMAIL_FROM_ADDRESS)) return null;
+    return { provider: 'smtp', apiKey: e.SMTP_PASSWORD, fromAddress: e.EMAIL_FROM_ADDRESS, fromName: e.EMAIL_FROM_NAME || 'Rhinocash', ...smtpEnv() };
+  }
+  if (!(e.EMAIL_PROVIDER && e.EMAIL_API_KEY && e.EMAIL_FROM_ADDRESS)) return null;
   return { provider: process.env.EMAIL_PROVIDER, apiKey: process.env.EMAIL_API_KEY, fromAddress: process.env.EMAIL_FROM_ADDRESS, fromName: process.env.EMAIL_FROM_NAME || 'Rhinocash', domain: process.env.EMAIL_DOMAIN || '', region: process.env.EMAIL_REGION || '' };
 }
 function isConfigured() {
   const c = store.cached('email');
-  return !!envConfig() || !!(c && c.enabled && c.secret);
+  return !!envConfig() || !!(c && c.enabled && (c.secret || store.envSecret('email', c.provider)));
 }
 async function resolveConfig() {
   const db = await store.active('email').catch(() => null);
-  if (db) return { provider: db.provider, apiKey: db.secret, fromAddress: db.settings.fromAddress, fromName: db.settings.fromName || 'Rhinocash', domain: db.settings.domain || '', region: db.settings.region || '' };
+  if (db) {
+    const env = smtpEnv(), st = db.settings;
+    return { provider: db.provider, apiKey: db.secret, fromAddress: st.fromAddress, fromName: st.fromName || 'Rhinocash', domain: st.domain || '', region: st.region || '',
+      smtpHost: st.smtpHost || env.smtpHost, smtpPort: st.smtpPort || env.smtpPort, smtpSecurity: st.smtpSecurity || env.smtpSecurity, smtpUsername: st.smtpUsername || env.smtpUsername };
+  }
   return envConfig();
 }
 async function deliver(cfg, to, subject, body) {
@@ -42,6 +54,10 @@ async function deliver(cfg, to, subject, body) {
     const t = await res.text(); let json = null; try { json = JSON.parse(t); } catch { /* not JSON */ }
     if (res.ok) return { ok: true, providerRef: json && json.id };
     return { ok: false, detail: (json && json.message) || t.slice(0, 160) || `HTTP ${res.status}` };
+  }
+  if (cfg.provider === 'smtp') {
+    return smtp.sendMail({ host: cfg.smtpHost, port: Number(cfg.smtpPort) || 587, security: cfg.smtpSecurity, username: cfg.smtpUsername || cfg.fromAddress,
+      password: cfg.apiKey, from: cfg.fromAddress, fromName: cfg.fromName }, { to, subject, text: body });
   }
   return { ok: false, detail: `Email provider "${cfg.provider}" is not supported` };
 }

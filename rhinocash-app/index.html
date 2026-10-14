@@ -5425,7 +5425,7 @@ Object.assign(ADMIN_PAGES, {
 
   /* ---------- Integrations ---------- */
   "eSMS": { type:"view", render:"integrationSms", sub:"Send real SMS through Africa's Talking. Enter the account details, switch it on, and send a test message.", related:["SMS Templates","Integration Logs"] },
-  "Email": { type:"view", render:"integrationEmail", sub:"Send real email through SendGrid or Mailgun. Enter the account details, switch it on, and send a test email.", related:["Email Templates","Integration Logs"] },
+  "Email": { type:"view", render:"integrationEmail", sub:"Send real email through SendGrid, Mailgun or an SMTP mailbox such as Zoho Mail. Enter the account details, switch it on, and send a test email.", related:["Email Templates","Integration Logs"] },
   "Payment Gateways": { type:"list", key:"payment-gateways", singular:"gateway", sub:"Payment providers connected or planned.", related:["M-Pesa / Daraja","Payment Channels"], cols:[aF("provider","Provider"),aSel("state","State",["Live","Sandbox","Planned"],"Planned")] },
   "API Configuration": { type:"view", render:"apiConfig", sub:"How this system's API is reached and protected.", related:["API & Developer Management"] },
   "Webhooks": { type:"list", key:"webhooks", singular:"webhook", sub:"Outbound notification endpoints registered for system events.", related:["Webhook Logs"],
@@ -5762,8 +5762,25 @@ const admCanEditList = spec => admIsAdmin() || (HR_LIST_KEYS.includes(spec.key) 
 /* ---- outbound integrations (SMS / email) ---- */
 const ADM_INTEG = {
   sms: { title: 'SMS', providers: [['africastalking', "Africa's Talking"]], fields: [['username', "Africa's Talking username", 'text', "Use 'sandbox' while testing"], ['senderId', 'Sender ID (optional)', 'text', 'Approved alphanumeric sender, e.g. RHINOCASH']], testLabel: 'Phone number', testPh: '07XXXXXXXX' },
-  email: { title: 'Email', providers: [['sendgrid', 'SendGrid'], ['mailgun', 'Mailgun']], fields: [['fromAddress', 'From address', 'email', 'A verified sender address'], ['fromName', 'From name', 'text', 'Rhinocash'], ['domain', 'Mailgun domain (Mailgun only)', 'text', 'mg.yourdomain.com'], ['region', 'Mailgun region (Mailgun only)', 'text', 'US or EU']], testLabel: 'Email address', testPh: 'you@example.com' },
+  email: { title: 'Email', providers: [['sendgrid', 'SendGrid'], ['mailgun', 'Mailgun'], ['smtp', 'SMTP mailbox (e.g. Zoho Mail)']],
+    fields: [['smtpHost', 'SMTP host', 'text', 'smtppro.zoho.com', ['smtp']], ['smtpPort', 'SMTP port', 'number', '587', ['smtp']],
+      ['smtpSecurity', 'Security', 'select', [['starttls', 'STARTTLS (port 587)'], ['ssl', 'SSL/TLS (port 465)']], ['smtp']], ['smtpUsername', 'SMTP username', 'email', 'hr@rhinocash.co.ke', ['smtp']],
+      ['fromAddress', 'From address', 'email', 'A verified sender address'], ['fromName', 'From name', 'text', 'Rhinocash'],
+      ['domain', 'Mailgun domain', 'text', 'mg.yourdomain.com', ['mailgun']], ['region', 'Mailgun region', 'text', 'US or EU', ['mailgun']]],
+    testLabel: 'Email address', testPh: 'you@example.com' },
 };
+// Shows only the fields that belong to the chosen provider.
+function admIntegProvider(sel){
+  const form = sel && sel.form; if(!form || !form.querySelectorAll) return;
+  form.querySelectorAll('[data-prov]').forEach(el => { el.style.display = el.getAttribute('data-prov').split(' ').includes(sel.value) ? '' : 'none'; });
+}
+function admIntegFieldHtml(f, value, provider){
+  const prov = f[4] ? ` data-prov="${f[4].join(' ')}"${f[4].includes(provider) ? '' : ' style="display:none"'}` : '';
+  const input = f[2] === 'select'
+    ? `<select name="${f[0]}">${f[3].map(o => `<option value="${o[0]}" ${String(value || f[3][0][0]) === o[0] ? 'selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}</select>`
+    : `<input name="${f[0]}" type="${f[2]}" value="${escapeHtml(value || '')}" placeholder="${escapeHtml(f[3])}">`;
+  return `<div class="field"${prov}><label>${escapeHtml(f[1])}</label>${input}</div>`;
+}
 function admIntegrationPage(kind){
   const all = admData('integrations', '/api/admin/integrations');
   if(all === undefined) return admLoading(); if(all.__error) return admError(all.__error);
@@ -5779,9 +5796,14 @@ function admIntegrationPage(kind){
     ${c.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red);"><strong>Re-enter the API key.</strong> The saved key can no longer be read because the server's encryption key changed.</div>` : ''}
     ${can ? `<div class="card"><div class="card-title">${escapeHtml(def.title)} settings</div>
       <form onsubmit="return admSaveIntegration(event,'${kind}')"><div class="form-grid">
-        <div class="field"><label>Provider</label><select name="provider">${def.providers.map(p => `<option value="${p[0]}" ${c.provider === p[0] ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select></div>
-        <div class="field"><label>API key ${c.apiKey ? `(${escapeHtml(c.apiKey)})` : ''}</label><input name="apiKey" type="password" autocomplete="new-password" placeholder="${c.apiKey ? 'Leave blank to keep the current key' : 'Paste the API key'}"></div>
-        ${def.fields.map(f => `<div class="field"><label>${escapeHtml(f[1])}</label><input name="${f[0]}" type="${f[2]}" value="${escapeHtml((c.settings || {})[f[0]] || '')}" placeholder="${escapeHtml(f[3])}"></div>`).join('')}
+        <div class="field"><label>Provider</label><select name="provider" onchange="admIntegProvider(this)">${def.providers.map(p => `<option value="${p[0]}" ${c.provider === p[0] ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select></div>
+        ${(() => { const prov = c.provider || def.providers[0][0]; const keyed = def.providers.filter(p => p[0] !== 'smtp').map(p => p[0]).join(' ');
+          const keyField = `<div class="field"${kind === 'email' ? ` data-prov="${keyed}"${prov === 'smtp' ? ' style="display:none"' : ''}` : ''}><label>API key ${c.apiKey && c.provider !== 'smtp' ? `(${escapeHtml(c.apiKey)})` : ''}</label><input name="apiKey" type="password" autocomplete="new-password" placeholder="${c.apiKey && c.provider !== 'smtp' ? 'Leave blank to keep the current key' : 'Paste the API key'}"></div>`;
+          if(kind !== 'email') return keyField;
+          // The mailbox password: typed here it is stored encrypted and never shown again; left blank, the server's SMTP_PASSWORD is used.
+          const pwState = c.provider === 'smtp' && c.secretSource === 'saved' ? 'saved' : all.email.smtpPasswordOnServer ? 'set on server' : '';
+          return keyField + `<div class="field" data-prov="smtp"${prov === 'smtp' ? '' : ' style="display:none"'}><label>Password ${pwState ? `(${escapeHtml(pwState)})` : ''}</label><input name="password" type="password" autocomplete="new-password" placeholder="${pwState ? 'Leave blank to keep it' : 'Leave blank to use SMTP_PASSWORD on the server'}"></div>`; })()}
+        ${def.fields.map(f => admIntegFieldHtml(f, (c.settings || {})[f[0]], c.provider || def.providers[0][0])).join('')}
         <div class="field"><label class="adm-toggle"><input type="checkbox" name="enabled" ${c.enabled ? 'checked' : ''}><span>Send real ${kind === 'sms' ? 'SMS' : 'email'}</span></label></div>
       </div><div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">Save</button>
       ${c.configured ? `<button type="button" class="btn btn-sm btn-red" onclick="admClearIntegration('${kind}')">Remove settings</button>` : ''}</div></form></div>
@@ -5797,6 +5819,7 @@ async function admSaveIntegration(ev, kind){
   const fd = new FormData(ev.target);
   const body = { provider: fd.get('provider'), enabled: fd.has('enabled') };
   if(String(fd.get('apiKey') || '').trim()) body.apiKey = String(fd.get('apiKey')).trim();
+  if(body.provider === 'smtp'){ delete body.apiKey; if(String(fd.get('password') || '')) body.password = String(fd.get('password')); }
   ADM_INTEG[kind].fields.forEach(f => { body[f[0]] = String(fd.get(f[0]) || '').trim(); });
   await withRequest('integ-save-' + kind, async ()=>{ await api.put('/api/admin/integrations/' + kind, body); admForget('integrations'); }, { mutates: true });
   return false;

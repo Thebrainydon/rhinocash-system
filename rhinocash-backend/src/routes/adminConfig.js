@@ -67,14 +67,18 @@ function register(router) {
     const out = {};
     for (const k of Object.keys(integ.KINDS)) out[k] = integ.masked(await integ.load(k), k);
     out.sms.envFallback = !!(process.env.SMS_PROVIDER && process.env.SMS_API_KEY);
-    out.email.envFallback = !!(process.env.EMAIL_PROVIDER && process.env.EMAIL_API_KEY && process.env.EMAIL_FROM_ADDRESS);
+    out.email.envFallback = process.env.EMAIL_PROVIDER === 'smtp'
+      ? !!(process.env.SMTP_HOST && process.env.SMTP_PASSWORD && process.env.EMAIL_FROM_ADDRESS)
+      : !!(process.env.EMAIL_PROVIDER && process.env.EMAIL_API_KEY && process.env.EMAIL_FROM_ADDRESS);
+    // Only whether it is set — the SMTP password itself never leaves the server.
+    out.email.smtpPasswordOnServer = !!process.env.SMTP_PASSWORD;
     res.json(out);
   });
   router.put('/api/admin/integrations/:kind', ...canWrite, validKind, async (req, res, next) => {
     let cfg;
     try { cfg = await integ.save(req.params.kind, req.body || {}, req.user.id); } catch (e) { if (e.status) return next(e); throw e; }
     await logAction(req, { action: `Updated ${req.params.kind.toUpperCase()} integration`, module: 'admin', recordType: 'Integration', recordId: req.params.kind,
-      newValue: { provider: cfg.provider, enabled: cfg.enabled, settings: cfg.settings, apiKeyChanged: !!(req.body && req.body.apiKey) } });
+      newValue: { provider: cfg.provider, enabled: cfg.enabled, settings: cfg.settings, apiKeyChanged: !!(req.body && (req.body.apiKey || req.body.password)) } });
     res.json({ integration: integ.masked(cfg, req.params.kind) });
   });
   router.delete('/api/admin/integrations/:kind', ...canWrite, validKind, async (req, res) => {

@@ -138,6 +138,8 @@ Only `DATABASE_URL` is required. Everything else has a sane default:
 | `INITIAL_ADMIN_PASSWORD` | randomly generated | seed-time only; set this if you want a known password instead of a generated one (still forced to change on first login) |
 | `CORS_ORIGIN` | `*` | the web app's origin(s), comma-separated — production: `https://cbs.rhinocash.co.ke,https://rhinocash-app.onrender.com` |
 | `APP_BASE_URL` | _(unset)_ | public address of the web app, used in emails ("Sign in at …") — production: `https://cbs.rhinocash.co.ke` |
+| `SMTP_PASSWORD` | _(unset)_ | mailbox password for Email › SMTP (e.g. Zoho Mail app-specific password); backend only, never returned or logged |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURITY` / `SMTP_USERNAME` | _(unset)_ / `587` / `starttls` / From address | SMTP fallbacks when not set on Admin › Integrations › Email (`EMAIL_PROVIDER=smtp`) |
 | `RATE_LIMIT_PER_MINUTE` | `180` | general per-IP rate limit across the whole API |
 
 See `.env.example` for the full list, including M-Pesa/SMS/Email
