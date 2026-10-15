@@ -8494,6 +8494,21 @@ apiRequest = async function(method, path, body){
     DB.tgr = savedTgr; session.tgr = savedSt;
   }
 
+  // ---- M-Pesa addresses use rhinocash.co.ke, not the Render host ----
+  {
+    const saved = DB.mpesaAdminConfig;
+    DB.mpesaAdminConfig = { sandbox: {}, production: {} };
+    __assert(mpesaAddresses('sandbox').stkCallback === 'https://api.rhinocash.co.ke/api/mpesa/callback/sandbox' && mpesaAddresses('production').b2cTimeout === 'https://api.rhinocash.co.ke/api/mpesa/b2c/timeout/production', "M-Pesa addresses default to api.rhinocash.co.ke");
+    DB.mpesaAdminConfig = { publicApiBase: 'https://pay.rhinocash.co.ke', sandbox: {}, production: {} };
+    __assert(mpesaAddresses('sandbox').c2bValidation === 'https://pay.rhinocash.co.ke/api/mpesa/c2b/validation/sandbox', "M-Pesa addresses follow the server's public address");
+    let h = renderMpesaConfigForm('sandbox', { callbackUrl: 'https://rhinocash-backend.onrender.com/api/mpesa/callback/sandbox' });
+    __assert(h.includes('still uses the Render address') && h.includes("mpesaUseDomainUrl('sandbox')") && h.includes('placeholder="https://pay.rhinocash.co.ke/api/mpesa/callback/sandbox"'), "a saved Render callback is flagged and the rhinocash.co.ke address offered");
+    __assert(h.includes('Addresses for Safaricom') && h.includes('C2B Confirmation URL') && h.includes('B2C Queue Timeout URL') && h.includes("mpesaCheckDomain('sandbox')") && !/placeholder="[^"]*onrender/.test(h), "the page lists every Safaricom address on rhinocash.co.ke with a check button");
+    h = renderMpesaConfigForm('production', { callbackUrl: 'https://pay.rhinocash.co.ke/api/mpesa/callback/production' });
+    __assert(!h.includes('still uses the Render address'), "a rhinocash.co.ke callback is not flagged");
+    DB.mpesaAdminConfig = saved;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

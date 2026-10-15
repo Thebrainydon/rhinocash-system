@@ -39,6 +39,35 @@ async function getActiveEnvironment() {
   return row ? row.active_environment : null;
 }
 
+// The public address Safaricom calls back on. It is the company domain
+// (rhinocash.co.ke), not the hosting provider's address; PUBLIC_API_URL
+// overrides it when the backend is served from another subdomain.
+const DEFAULT_PUBLIC_API_URL = 'https://api.rhinocash.co.ke';
+function publicApiBase() {
+  const v = String(process.env.PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+  return /^https:\/\/[^\s/]+/i.test(v) ? v : DEFAULT_PUBLIC_API_URL;
+}
+// Every address an Admin registers with Safaricom (Daraja) for one environment.
+function mpesaUrls(environment, base = publicApiBase()) {
+  const b = String(base).replace(/\/+$/, '') + '/api/mpesa';
+  return {
+    stkCallback: `${b}/callback/${environment}`,
+    c2bValidation: `${b}/c2b/validation/${environment}`,
+    c2bConfirmation: `${b}/c2b/confirmation/${environment}`,
+    b2cResult: `${b}/b2c/result/${environment}`,
+    b2cTimeout: `${b}/b2c/timeout/${environment}`,
+  };
+}
+// B2C result/timeout addresses live on the same host as the saved STK
+// callback URL (…/api/mpesa/callback/<env>).
+function b2cUrls(config) {
+  const cb = String(config.callbackUrl || '');
+  const m = cb.match(/^(.*?)\/api\/mpesa\/callback\/[a-z]+\/?$/i);
+  const base = m ? m[1] : (cb ? cb.replace(/\/callback\/[a-z]+\/?$/i, '').replace(/\/api\/mpesa\/?$/i, '') : publicApiBase());
+  const urls = mpesaUrls(config.environment, base);
+  return { result: urls.b2cResult, timeout: urls.b2cTimeout };
+}
+
 // Decrypted, in-memory only, server-side only — never returned by any route.
 async function getDecryptedConfig(environment) {
   const row = await get('SELECT * FROM mpesa_environment_configs WHERE environment = ?', [environment]);
@@ -453,8 +482,8 @@ async function initiateB2C({ loanId, phone, amount, initiatedBy, remarks }) {
     PartyA: config.b2cShortcode,
     PartyB: phone,
     Remarks: remarks || `Loan disbursement — ${loanId}`,
-    QueueTimeOutURL: (config.callbackUrl || '').replace(/\/callback\/[a-z]+$/, '') + `/mpesa/b2c/timeout/${config.environment}`,
-    ResultURL: (config.callbackUrl || '').replace(/\/callback\/[a-z]+$/, '') + `/mpesa/b2c/result/${config.environment}`,
+    QueueTimeOutURL: b2cUrls(config).timeout,
+    ResultURL: b2cUrls(config).result,
     Occasion: 'LoanDisbursement',
   };
   try {
@@ -705,4 +734,5 @@ module.exports = {
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,
   statusFor, testConnection, effectiveConfig,
+  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL,
 };

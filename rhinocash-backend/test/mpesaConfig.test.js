@@ -157,6 +157,30 @@ async function login(email, password) {
     assert(guide.status === 200 && Array.isArray(guide.json.steps) && guide.json.steps.length >= 5, 'setup guide returns real step-by-step instructions');
   }
 
+  // ---- M-Pesa addresses use the company domain (rhinocash.co.ke), not the host's ----
+  {
+    const cfg = await api('GET', '/api/admin/mpesa/config', { token: adminToken });
+    const a = cfg.json.addresses || {};
+    assert(/^https:\/\/[^/]*rhinocash\.co\.ke$/.test(cfg.json.publicApiBase || ''), 'config reports a rhinocash.co.ke public address');
+    assert(a.sandbox && a.sandbox.stkCallback === `${cfg.json.publicApiBase}/api/mpesa/callback/sandbox`, 'sandbox STK callback uses the rhinocash.co.ke address');
+    assert(a.production && a.production.c2bConfirmation === `${cfg.json.publicApiBase}/api/mpesa/c2b/confirmation/production`, 'production C2B confirmation uses the rhinocash.co.ke address');
+    const all = [...Object.values(a.sandbox || {}), ...Object.values(a.production || {})];
+    assert(all.length === 10 && all.every(u => !/onrender\.com/i.test(u)), 'no M-Pesa address points at the Render host');
+    const guide = await api('GET', '/api/admin/mpesa/setup-guide', { token: adminToken });
+    assert(guide.json.steps.some(t => t.includes('rhinocash.co.ke/api/mpesa/callback')) && !guide.json.steps.some(t => /example\.com/.test(t)), 'setup guide names the rhinocash.co.ke callback address');
+    const mpesa = require('../src/integrations/mpesa');
+    const b2c = mpesa.b2cUrls({ environment: 'sandbox', callbackUrl: 'https://api.rhinocash.co.ke/api/mpesa/callback/sandbox' });
+    assert(b2c.result === 'https://api.rhinocash.co.ke/api/mpesa/b2c/result/sandbox' && b2c.timeout === 'https://api.rhinocash.co.ke/api/mpesa/b2c/timeout/sandbox', 'B2C result/timeout addresses match the real routes (no doubled /mpesa/)');
+    const b2cProd = mpesa.b2cUrls({ environment: 'production', callbackUrl: '' });
+    assert(b2cProd.result === `${mpesa.publicApiBase()}/api/mpesa/b2c/result/production`, 'B2C addresses fall back to the rhinocash.co.ke address');
+    const prev = process.env.PUBLIC_API_URL;
+    process.env.PUBLIC_API_URL = 'https://pay.rhinocash.co.ke/';
+    assert(mpesa.publicApiBase() === 'https://pay.rhinocash.co.ke', 'PUBLIC_API_URL picks another rhinocash.co.ke subdomain');
+    process.env.PUBLIC_API_URL = 'not a url';
+    assert(mpesa.publicApiBase() === mpesa.DEFAULT_PUBLIC_API_URL, 'an invalid PUBLIC_API_URL falls back to the default');
+    if (prev === undefined) delete process.env.PUBLIC_API_URL; else process.env.PUBLIC_API_URL = prev;
+  }
+
   // ---- Credentials saved under a different encryption key (e.g. before a redeploy) ----
   {
     const { get, run } = require('../src/db');

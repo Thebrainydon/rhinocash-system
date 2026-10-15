@@ -298,6 +298,9 @@ function register(router) {
       activeEnvironment: await mpesa.getActiveEnvironment(),
       sandboxStatus: await mpesa.statusFor('sandbox'),
       productionStatus: await mpesa.statusFor('production'),
+      // Not secret: the public rhinocash.co.ke addresses to register with Safaricom.
+      publicApiBase: mpesa.publicApiBase(),
+      addresses: { sandbox: mpesa.mpesaUrls('sandbox'), production: mpesa.mpesaUrls('production') },
     });
   });
 
@@ -308,7 +311,7 @@ function register(router) {
         'Go to https://developer.safaricom.co.ke and create a free account (or log in if you already have one).',
         'Click "Create App" — this gives you a Sandbox app automatically, with a Consumer Key and Consumer Secret. Use these for the Sandbox fields below to test safely with fake money first.',
         'In the same app, note your test Shortcode (usually 174379 for Sandbox) and Passkey — Safaricom publishes the Sandbox passkey on the Daraja documentation page for the "Lipa na M-Pesa Online" (STK Push) product.',
-        'For the Callback URL: this system will show you the exact URL to paste into Safaricom\'s portal once you save a Shortcode below — it will look like https://your-domain.example.com/api/mpesa/callback/sandbox (or /production).',
+        `For the Callback URL: use the company domain, ${mpesa.publicApiBase()}/api/mpesa/callback/sandbox (or /production), not the hosting provider's address. The page below lists every address to register with Safaricom.`,
         'Test the Sandbox configuration using the "Test Connection" button below before touching Production — this makes a real request to Safaricom and tells you plainly whether the credentials work.',
         'When you are ready to go live: apply for Production (Go-Live) access for your app on the Daraja portal — Safaricom will review your app and issue Production credentials and your real Paybill/Till Shortcode.',
         'Enter the Production credentials in the Production section below, Test Connection, then use "Set Active Environment" to switch from Sandbox to Production — your Sandbox configuration stays saved and can be switched back to at any time.',

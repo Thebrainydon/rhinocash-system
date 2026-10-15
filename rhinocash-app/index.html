@@ -27829,7 +27829,71 @@ async function loadGovernanceData(){
 async function loadMpesaAdminConfig(){
   return withRequest('load-mpesa-config', async ()=>{ try{ DB.mpesaAdminConfig = await api.get('/api/admin/mpesa/config'); } catch(e){ DB.mpesaAdminConfig = { __error: (e && e.message) || 'Could not load the M-Pesa configuration' }; throw e; } });
 }
+// M-Pesa addresses use the company domain (rhinocash.co.ke), not the
+// hosting provider's (onrender.com). The backend sends the list; this is
+// the fallback until it does.
+const MPESA_PUBLIC_API_DEFAULT = 'https://api.rhinocash.co.ke';
+function mpesaAddresses(env){
+  const cfg = DB.mpesaAdminConfig || {};
+  if(cfg.addresses && cfg.addresses[env]) return cfg.addresses[env];
+  const b = (cfg.publicApiBase || MPESA_PUBLIC_API_DEFAULT).replace(/\/+$/,'') + '/api/mpesa';
+  return { stkCallback:`${b}/callback/${env}`, c2bValidation:`${b}/c2b/validation/${env}`, c2bConfirmation:`${b}/c2b/confirmation/${env}`, b2cResult:`${b}/b2c/result/${env}`, b2cTimeout:`${b}/b2c/timeout/${env}` };
+}
+// Survives re-renders (toast() redraws the page): the filled-in callback
+// URL and the last address check, per environment.
+const mpesaUi = { cb:{}, check:{} };
+function mpesaUsesHostAddress(url){ return /\.onrender\.com/i.test(String(url||'')); }
+function mpesaUseDomainUrl(env){
+  mpesaUi.cb[env] = mpesaAddresses(env).stkCallback;
+  const input = document.getElementById(`mpesa-cb-${env}`);
+  if(input) input.value = mpesaUi.cb[env];
+  toast('Callback URL set to the rhinocash.co.ke address — press Save to keep it');
+}
+function mpesaCopy(text){
+  const done = ()=>toast('Copied');
+  try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, ()=>prompt('Copy this address', text)); return; } }catch(e){}
+  prompt('Copy this address', text);
+}
+async function mpesaCheckDomain(env){
+  const url = mpesaAddresses(env).stkCallback;
+  const base = url.replace(/\/api\/mpesa\/.*$/,'');
+  const show = html => { mpesaUi.check[env] = html; const out = document.getElementById(`mpesa-check-${env}`); if(out) out.innerHTML = html; };
+  show(loadingDotsHtml());
+  let ok = false;
+  try{
+    const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), 10000);
+    const r = await fetch(`${base}/api/health`, { signal: ctl.signal, cache:'no-store' });
+    clearTimeout(t);
+    const body = await r.json().catch(()=>null);
+    ok = r.ok && body && body.ok === true;
+  }catch(e){ ok = false; }
+  show(ok
+    ? `<span style="color:var(--green); font-weight:700;">✓ ${escapeHtml(base)} reaches this system's server.</span>`
+    : `<span style="color:var(--red); font-weight:700;">✗ ${escapeHtml(base)} does not reach this system's server yet.</span> Point the domain at the backend (DNS CNAME to rhinocash-backend.onrender.com and add it under the backend's Custom Domains on Render), then check again. Safaricom callbacks will fail until this passes.`);
+}
+function renderMpesaAddressTable(env){
+  const a = mpesaAddresses(env);
+  const rows = [
+    ['STK Push callback (Lipa na M-Pesa Online)', a.stkCallback],
+    ['C2B Validation URL', a.c2bValidation],
+    ['C2B Confirmation URL', a.c2bConfirmation],
+    ['B2C Result URL', a.b2cResult],
+    ['B2C Queue Timeout URL', a.b2cTimeout],
+  ];
+  return `<div style="margin-top:14px;">
+    <div style="font-weight:800; color:var(--blue, #1d4ed8); margin-bottom:6px;">Addresses for Safaricom (${env==='production'?'Production':'Sandbox'})</div>
+    <div class="table-wrap"><table class="mpesa-addr-table">
+      <thead><tr><th>Purpose</th><th>Address</th><th>Actions</th></tr></thead>
+      <tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td style="word-break:break-all;"><code>${escapeHtml(v)}</code></td><td><button type="button" class="btn btn-sm btn-outline" onclick="mpesaCopy(${escapeHtml(JSON.stringify(v))})">Copy</button></td></tr>`).join('')}</tbody>
+    </table></div>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <button type="button" class="btn btn-sm btn-outline" onclick="mpesaCheckDomain('${env}')">Check address</button>
+      <span id="mpesa-check-${env}" class="hint">${mpesaUi.check[env]||''}</span>
+    </div>
+  </div>`;
+}
 function renderMpesaConfigForm(env, config){
+  const addr = mpesaAddresses(env);
   return `<div class="card">
     <div class="card-title">${env==='production'?'Production':'Sandbox'} Configuration <small>${config.configured?'Configured ✓':'Not configured'}</small></div>
     ${config.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red); margin-bottom:10px;"><strong>Re-enter these credentials.</strong> The saved ${env} keys can no longer be read because the server's encryption key changed (this happens on a redeploy when no fixed MPESA_ENCRYPTION_KEY is set). Type the Consumer Key, Consumer Secret and Passkey again and save.</div>` : ''}
@@ -27839,13 +27903,16 @@ function renderMpesaConfigForm(env, config){
         <div class="field"><label>Consumer Secret ${config.consumerSecret?`(${escapeHtml(config.consumerSecret)})`:''}</label><input name="consumerSecret" type="password" placeholder="${config.consumerSecret?'Leave blank to keep current':'Enter Consumer Secret'}"></div>
         <div class="field"><label>Shortcode / Paybill</label><input name="shortcode" value="${escapeHtml(config.shortcode||'')}" placeholder="e.g. 174379"></div>
         <div class="field"><label>Passkey ${config.passkey?`(${escapeHtml(config.passkey)})`:''}</label><input name="passkey" type="password" placeholder="${config.passkey?'Leave blank to keep current':'Enter Passkey'}"></div>
-        <div class="field full"><label>Callback URL</label><input name="callbackUrl" value="${escapeHtml(config.callbackUrl||'')}" placeholder="${escapeHtml(API_BASE)}/api/mpesa/callback/${env}"></div>
+        <div class="field full"><label>Callback URL</label><input id="mpesa-cb-${env}" name="callbackUrl" value="${escapeHtml(mpesaUi.cb[env] ?? config.callbackUrl ?? '')}" oninput="mpesaUi.cb['${env}']=this.value" placeholder="${escapeHtml(addr.stkCallback)}"></div>
       </div>
+      ${mpesaUsesHostAddress(config.callbackUrl) ? `<div class="section-note" style="border-left:4px solid var(--amber, #d97706); margin:0 0 10px;"><strong>This callback URL still uses the Render address.</strong> Use the rhinocash.co.ke address instead: press “Use rhinocash.co.ke address”, then Save.</div>` : ''}
+      <button type="button" class="btn btn-sm btn-outline" style="margin-right:8px;" onclick="mpesaUseDomainUrl('${env}')">Use rhinocash.co.ke address</button>
       <button class="btn btn-primary btn-sm" type="submit">Save ${env==='production'?'Production':'Sandbox'} Configuration</button>
       ${config.configured ? `<button type="button" class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="withRequest('mpesa-test-${env}', ()=>testMpesaConnection('${env}'))">Test Connection</button>
       <button type="button" class="btn btn-sm btn-red" style="margin-left:8px;" onclick="if(confirm('Clear ${env} configuration? This cannot be undone.')) withRequest('mpesa-clear-${env}', ()=>clearMpesaConfig('${env}'))">Clear</button>` : ""}
     </form>
     ${config.lastTestStatus && config.lastTestStatus!=='Never Tested' ? `<div class="hint" style="margin-top:8px;">Last test: <strong>${escapeHtml(config.lastTestStatus)}</strong> ${config.lastTestAt?'— '+new Date(config.lastTestAt).toLocaleString():''} ${config.lastTestMessage?'— '+escapeHtml(config.lastTestMessage):''}</div>` : ""}
+    ${renderMpesaAddressTable(env)}
   </div>
   <div class="card">
     <div class="card-title">${env==='production'?'Production':'Sandbox'} B2C (Disbursement) Configuration <small>${config.b2cConfigured?'Configured ✓':'Not configured — B2C disbursement to customers is disabled until this is set'}</small></div>
@@ -28041,6 +28108,7 @@ function submitMpesaConfig(ev, env){
   Object.keys(f).forEach(k=>{ if(!f[k]) delete f[k]; });
   return withRequest('save-mpesa-config', async ()=>{
     await api.put(`/api/admin/mpesa/config/${env}`, f);
+    delete mpesaUi.cb[env];
     toast(`${env} configuration saved`);
     await loadMpesaAdminConfig();
   }, {mutates:true});
