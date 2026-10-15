@@ -1715,6 +1715,51 @@ function register(router) {
     res.status(201).json({ product: await get('SELECT * FROM loan_products WHERE id = ?', [id]) });
   });
 
+  // Edit a product. Loans already issued keep the terms they were issued on
+  // (their schedule is stored); new applications use the new values.
+  router.patch('/api/loan-products/:id', requireAuth, requirePermission('manage_system_settings'), async (req, res, next) => {
+    const before = await get('SELECT * FROM loan_products WHERE id = ? AND active = 1', [req.params.id]);
+    if (!before) return next({ status: 404, message: 'Loan product not found' });
+    const b = req.body || {};
+    const num = (v, label, { allowZero = true } = {}) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || (!allowZero && n === 0)) throw { status: 400, message: `${label} must be a ${allowZero ? 'non-negative' : 'positive'} number` };
+      return n;
+    };
+    const sets = []; const params = [];
+    try {
+      if (b.name !== undefined) { const n = String(b.name || '').trim(); if (!n) return next({ status: 400, message: 'The product needs a name' }); sets.push('name = ?'); params.push(n.slice(0, 80)); }
+      if (b.rate_pct !== undefined) { sets.push('rate_pct = ?'); params.push(num(b.rate_pct, 'Interest rate', { allowZero: false })); }
+      if (b.min_amount !== undefined) { sets.push('min_amount = ?'); params.push(num(b.min_amount, 'Minimum amount')); }
+      if (b.max_amount !== undefined) { sets.push('max_amount = ?'); params.push(num(b.max_amount, 'Maximum amount')); }
+      if (b.penalty_pct !== undefined) { sets.push('penalty_pct = ?'); params.push(num(b.penalty_pct, 'Penalty')); }
+      if (b.processing_fee_amount !== undefined) { sets.push('processing_fee_amount = ?'); params.push(b.processing_fee_amount === '' || b.processing_fee_amount === null ? null : num(b.processing_fee_amount, 'Processing fee')); }
+      if (b.term_weeks !== undefined) { sets.push('term_weeks = ?'); params.push(b.term_weeks === '' || b.term_weeks === null ? null : num(b.term_weeks, 'Term', { allowZero: false })); }
+    } catch (e) { return next(e); }
+    const min = b.min_amount !== undefined ? Number(b.min_amount) : Number(before.min_amount);
+    const max = b.max_amount !== undefined ? Number(b.max_amount) : Number(before.max_amount);
+    if (max && min > max) return next({ status: 400, message: 'The minimum amount is above the maximum' });
+    if (!sets.length) return next({ status: 400, message: 'Nothing to change' });
+    params.push(before.id);
+    await run(`UPDATE loan_products SET ${sets.join(', ')} WHERE id = ?`, params);
+    const after = await get('SELECT * FROM loan_products WHERE id = ?', [before.id]);
+    await logAction(req, { action: 'Edited loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: before.id, previousValue: before, newValue: after });
+    res.json({ product: after });
+  });
+
+  // Remove a product from the catalogue. It is retired, not erased: loans
+  // issued on it keep pointing at it, and it can no longer be chosen for a
+  // new application. Refused while applications on it are still in progress.
+  router.delete('/api/loan-products/:id', requireAuth, requirePermission('manage_system_settings'), async (req, res, next) => {
+    const p = await get('SELECT * FROM loan_products WHERE id = ? AND active = 1', [req.params.id]);
+    if (!p) return next({ status: 404, message: 'Loan product not found' });
+    const open = await get(`SELECT COUNT(*)::int AS n FROM loans WHERE product_id = ? AND disbursed_at IS NULL AND status NOT IN ('Rejected','Cancelled','Completed','Closed','Written Off')`, [p.id]);
+    if (open && open.n) return next({ status: 409, message: `${open.n} application(s) on ${p.name} are still in progress — finish or cancel them first` });
+    await run('UPDATE loan_products SET active = 0 WHERE id = ?', [p.id]);
+    await logAction(req, { action: 'Removed loan product', module: 'loanbook', recordType: 'LoanProduct', recordId: p.id, previousValue: p.name, reason: (req.body || {}).reason });
+    res.json({ ok: true });
+  });
+
   // ---- Applications ----
   router.get('/api/loans', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-loan-application'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);

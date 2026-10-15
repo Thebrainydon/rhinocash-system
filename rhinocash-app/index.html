@@ -112,7 +112,21 @@ body{
   display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:700; flex-shrink:0;
 }
 .nav-item.active .nav-num{background:rgba(255,255,255,0.25);}
-.side-section{ margin-bottom:2px; }
+.side-section{ margin-bottom:3px; }
+/* Modern sidebar: the open menu is a tinted pill with an accent edge; its
+   submenus hang off a thin guide line, each with its own icon, and the
+   current page is a soft highlighted pill. */
+.side-section.open > .side-section-head{ background:rgba(255,255,255,0.09); box-shadow:inset 3px 0 0 #5FD3B5; }
+.side-chevron{ width:14px; height:14px; fill:none; stroke:#9FB3C8; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transition:transform .18s; }
+.side-section.open .side-chevron{ transform:rotate(180deg); stroke:#E6F4EF; }
+.side-section.open .side-subitems{ border-left:1.5px solid rgba(255,255,255,0.16); margin:4px 0 6px 21px; padding-left:8px; }
+.side-subitem{ display:flex !important; align-items:center; gap:10px; padding:8px 10px !important; margin:2px 0; border-radius:9px; font-size:13px !important; transition:background .12s, color .12s; }
+.side-ico{ width:17px; height:17px; flex-shrink:0; fill:none; stroke:#7FD9C0; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; opacity:.9; }
+.side-sub-label{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.side-subitem.active{ background:rgba(255,255,255,0.14) !important; color:#fff !important; font-weight:700; }
+.side-subitem.active .side-ico{ stroke:#fff; opacity:1; }
+.side-badge{ flex-shrink:0; background:rgba(127,217,192,0.18); color:#BFF1E2; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; }
+.sidebar{ scroll-behavior:auto; overscroll-behavior:contain; }
 .side-section-head{
   display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px;
   color:#DCE2F0; font-size:13.5px; font-weight:600; cursor:pointer; user-select:none; transition:background .12s;
@@ -123,7 +137,7 @@ body{
 .side-chevron{ font-size:10px; color:#8C97B8; transition:transform .15s; }
 .side-section.open .side-chevron{ transform:rotate(180deg); }
 .side-subitems{ max-height:0; overflow:hidden; transition:max-height .18s ease; padding-left:8px; }
-.side-section.open .side-subitems{ max-height:900px; }
+.side-section.open .side-subitems{ max-height:2400px; }
 .side-subitem{
   display:block; padding:7px 12px 7px 34px; font-size:12.5px; color:#AEB8D4; cursor:pointer; border-radius:6px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -1070,6 +1084,11 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
 .content.nav-busy > *:not(.nav-loading-ov){visibility:hidden;}
 .nav-loading-ov{position:absolute; left:0; right:0; top:0; min-height:60vh; display:flex; align-items:center; justify-content:center; pointer-events:none;}
 .nav-loading-ov .dots-spinner{transform:scale(1.25);}
+/* Dashboard: "Loading Dashboard..." near the top, as the page fills in. */
+.nav-loading-ov.dash-load, .loading-screen.dash-load{align-items:flex-start; justify-content:center; padding-top:110px;}
+.dash-loading-line{display:inline-flex; align-items:center; gap:10px; color:#3E7CB1; font-weight:800; font-size:20px; letter-spacing:.2px;}
+.dash-spin{width:22px; height:22px; fill:none; stroke:#3E7CB1; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; animation:dashSpin 1s linear infinite;}
+@keyframes dashSpin{to{transform:rotate(360deg);}}
 /* A thin loading line across the very top of the window, like a browser's
    own page-load bar — shown while the app is loading or refreshing data. */
 .top-progress{position:fixed; top:0; left:0; right:0; height:3px; z-index:700; overflow:hidden; pointer-events:none; opacity:0; transition:opacity .25s ease;}
@@ -2216,7 +2235,10 @@ function sidebarNavigate(itemLabel){
   // requested behavior exactly. The section this exact item itself
   // belongs to (if any) is left alone — it's already open, since that's
   // how the user reached this item in the first place.
-  const ownSection = (SIDEBAR_MENUS[session.role]||[]).find(sec=>sec.items.includes(itemLabel));
+  const ownSection = currentSidebarMenu().find(sec=>sec.items.includes(itemLabel));
+  // Each page opens with its forms closed (a "+" button opens one).
+  session.openForms = {};
+  rememberSidebarScroll();
   Object.keys(session.sidebarExpanded).forEach(label=>{
     if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
   });
@@ -2484,6 +2506,8 @@ async function apiRequest(method, path, body){
   finally{ netGets = Math.max(0, netGets - 1); if(navLoad.on) navLoadCheck(); }
 }
 const navLoad = { on: false, since: 0, timer: null };
+// The two-arrow refresh icon beside "Loading Dashboard..." (turns while loading).
+const DASH_SPIN_SVG = '<svg class="dash-spin" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.7M4 12a8 8 0 0 1 13.7-5.7"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>';
 function startNavLoading(){
   navLoad.on = true; navLoad.since = Date.now();
   if(navLoad.timer) clearTimeout(navLoad.timer);
@@ -2626,6 +2650,10 @@ const OTP_EXEC_KINDS = ['financial_request', 'funding'];
 // them; a successful save closes them again (see withRequest below).
 function isFormOpen(key){ return !!(session.openForms && session.openForms[key]); }
 function toggleForm(key, open){ session.openForms = session.openForms || {}; session.openForms[key] = open === undefined ? !session.openForms[key] : !!open; renderApp(); }
+// A form kept behind its "+" button; opened, it shows above the page's table.
+function fpWrap(key, label, inner){
+  return `<div class="fp ${isFormOpen(key) ? 'fp-open' : ''}">${formToggleBtn(key, label)}<div class="fp-body">${inner}</div></div>`;
+}
 function formToggleBtn(key, label){
   const open = isFormOpen(key);
   return `<div class="fp-bar"><button type="button" class="btn btn-sm ${open ? 'btn-outline' : 'btn-primary'}" onclick="toggleForm('${key}')">${open ? '✕ Close' : '+ ' + escapeHtml(label)}</button></div>`;
@@ -3825,6 +3853,72 @@ function buildCustomRoleSidebarMenu(){
     });
 }
 
+// The sidebar exactly as this user sees it: their role's menus, with
+// Intelligence spliced in right before My Account, after Admin's switches.
+function currentSidebarMenu(){
+  const baseMenu = SIDEBAR_MENUS[session.role] || buildCustomRoleSidebarMenu();
+  const intelSections = buildIntelligenceSections();
+  const myAccountIdx = baseMenu.findIndex(s=>s.section==="My Account");
+  return applyMenuPermissions(!intelSections.length ? baseMenu
+    : myAccountIdx===-1 ? [...baseMenu, ...intelSections]
+    : [...baseMenu.slice(0,myAccountIdx), ...intelSections, ...baseMenu.slice(myAccountIdx)]);
+}
+// Small line icons for submenus, picked by what the item is about.
+const SIDE_ICONS = {
+  add: '<path d="M12 5v14M5 12h14"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  money: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/>',
+  users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 5.5a3 3 0 0 1 0 5.6M18 13.8c1.9.6 3 2.2 3 4.7"/>',
+  doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/>',
+  cal: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  pin: '<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+  dot: '<circle cx="12" cy="12" r="3"/>',
+};
+function sideIconFor(label){
+  const l = String(label).toLowerCase();
+  const k = /^(add|create|new|register|record|apply|request|propose|set )|^\+/.test(l) ? 'add'
+    : /target/.test(l) ? 'target'
+    : /payment|collection|disburse|fee|expense|salary|cash|wallet|mpesa|m-pesa|receipt|revenue|budget|payroll|petty|investment|funding|bank/.test(l) ? 'money'
+    : /report|analytic|performance|trend|chart|kpi|summary|statement|overview|mtd|forecast|predict|what-if|monitor/.test(l) ? 'chart'
+    : /client|staff|user|team|group|officer|employee|investor|lead|manager|borrower|people|guarantor/.test(l) ? 'users'
+    : /branch|region|location|map|territor/.test(l) ? 'pin'
+    : /leave|attendance|calendar|schedule|workplan|plan|holiday|day/.test(l) ? 'cal'
+    : /setting|config|setup|rule|product|template|integration|limit|rate|period|type/.test(l) ? 'gear'
+    : /security|access|permission|audit|role|fraud|risk|compliance|password|login|session/.test(l) ? 'shield'
+    : /ticket|support|interaction|message|announcement|notification|comment|help/.test(l) ? 'chat'
+    : /intelligen|insight|explain|decision|recommend/.test(l) ? 'bulb'
+    : /application|form|ledger|document|loan|journal|account|record|history|log|register/.test(l) ? 'doc'
+    : /view|all |list|directory|browse/.test(l) ? 'list' : 'dot';
+  return `<svg class="side-ico" viewBox="0 0 24 24">${SIDE_ICONS[k]}</svg>`;
+}
+// Counts shown beside a few submenus, from data already loaded.
+function sideBadgeFor(label){
+  if(!DB) return '';
+  let n = null;
+  if(label === 'View Clients' || label === 'All Clients') n = (DB.clients || []).length;
+  else if(label === 'Unposted Payments') n = (DB.payments || []).filter(p => p.status === 'Unposted').length;
+  else if(label === 'Undisbursed Loans' || label === 'Loan Applications') n = (DB.loans || []).filter(l => typeof undisbMyStep === 'function' && undisbMyStep(l) && l.officerId !== session.userId).length || null;
+  return n ? `<span class="side-badge">${n > 99999 ? '99999+' : n}</span>` : '';
+}
+// The sidebar keeps its scroll position across pages (unless left alone
+// for a long while), so coming back finds it where it was.
+const SIDEBAR_SCROLL_KEEP_MS = 20 * 60 * 1000;
+function rememberSidebarScroll(){
+  const sb = typeof document !== 'undefined' && typeof document.querySelector === 'function' && document.querySelector('.sidebar');
+  if(sb && typeof sb.scrollTop === 'number'){ session.sidebarScroll = sb.scrollTop; session.sidebarScrollAt = Date.now(); }
+}
+function restoreSidebarScroll(){
+  const sb = typeof document !== 'undefined' && typeof document.querySelector === 'function' && document.querySelector('.sidebar');
+  if(!sb || typeof sb.scrollTop !== 'number') return;
+  if(session.sidebarScroll && Date.now() - (session.sidebarScrollAt || 0) < SIDEBAR_SCROLL_KEEP_MS) sb.scrollTop = session.sidebarScroll;
+  if(typeof sb.addEventListener === 'function') sb.addEventListener('scroll', () => { session.sidebarScroll = sb.scrollTop; session.sidebarScrollAt = Date.now(); }, { passive: true });
+}
 function renderApp(){
   const root = document.getElementById('root');
   if(!session.authenticated){
@@ -3832,22 +3926,14 @@ function renderApp(){
     const esTok = esignTokenFromHash(); if(esTok){ renderPublicEsign(root, esTok); return; }
     root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return;
   }
-  if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen">${loadingDotsHtml().replace('dots-spinner', 'dots-spinner big')}</div>`; return; }
+  if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen dash-load"><div class="dash-loading-line">Loading Dashboard... ${DASH_SPIN_SVG}</div></div>`; return; }
   // A real, server-computed gate (session.mustChangePassword, set from the
   // real login response) — blocks every normal screen, not just hidden UI,
   // until the user genuinely sets a new password via the same real
   // POST /api/auth/change-password every other "change my password" form
   // in this app already uses.
   if(session.mustChangePassword){ root.innerHTML = renderForcedPasswordReset() + (modal ? renderModal() : ""); return; }
-  const baseMenu = SIDEBAR_MENUS[session.role] || buildCustomRoleSidebarMenu();
-  // Intelligence sits immediately before My Account for every role, per
-  // spec — spliced in dynamically (never a static per-role array) right
-  // before whichever entry is this role's own "My Account" section.
-  const intelSections = buildIntelligenceSections();
-  const myAccountIdx = baseMenu.findIndex(s=>s.section==="My Account");
-  const menu = applyMenuPermissions(!intelSections.length ? baseMenu
-    : myAccountIdx===-1 ? [...baseMenu, ...intelSections]
-    : [...baseMenu.slice(0,myAccountIdx), ...intelSections, ...baseMenu.slice(myAccountIdx)]);
+  const menu = currentSidebarMenu();
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
   // rendered for every role (Investor included) below.
@@ -3858,16 +3944,17 @@ function renderApp(){
     const itemsHtml = sec.items.map(item=>{
       const route = resolveRoute(item);
       const isActive = route && route.section===session.section && (!route.subtab || route.subtab===session.subtab);
-      return `<div class="side-subitem ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')">${escapeHtml(item)}</div>`;
+      return `<div class="side-subitem ${isActive?'active':''}" onclick="sidebarNavigate('${item.replace(/'/g,"\\'")}')">${sideIconFor(item)}<span class="side-sub-label">${escapeHtml(item)}</span>${sideBadgeFor(item)}</div>`;
     }).join("");
     return `<div class="side-section ${isOpen?'open':''}">
       <div class="side-section-head" onclick="toggleSideSection('${sec.section.replace(/'/g,"\\'")}')">
-        <span class="side-section-icon">${sec.icon}</span><span class="side-section-label">${sec.section}</span><span class="side-chevron">▾</span>
+        <span class="side-section-icon">${sec.icon}</span><span class="side-section-label">${sec.section}</span><svg class="side-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </div>
       <div class="side-subitems">${itemsHtml}</div>
     </div>`;
   }).join("");
 
+  rememberSidebarScroll();
   root.innerHTML = `
     <div class="app">
       <div class="sidebar-backdrop ${session.sidebarOpen?'open':''}" onclick="closeSidebar()"></div>
@@ -3905,7 +3992,7 @@ function renderApp(){
             <div class="avatar" title="${session.userName}" onclick="sidebarNavigate('View Details')" style="${DB.myAvatarDataUri?'padding:0; overflow:hidden;':''}">${DB.myAvatarDataUri?`<img src="${DB.myAvatarDataUri}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`:session.userName.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
           </div>
         </div>
-        <div class="content sec-${escapeHtml(String(session.section||""))}${navLoad.on ? ' nav-busy' : ''}">${renderSection()}${navLoad.on ? `<div class="nav-loading-ov">${loadingDotsHtml()}</div>` : ''}</div>
+        <div class="content sec-${escapeHtml(String(session.section||""))}${navLoad.on ? ' nav-busy' : ''}">${renderSection()}${navLoad.on ? (session.section === 'dashboard' ? `<div class="nav-loading-ov dash-load"><div class="dash-loading-line">Loading Dashboard... ${DASH_SPIN_SVG}</div></div>` : `<div class="nav-loading-ov">${loadingDotsHtml()}</div>`) : ''}</div>
       </div>
     </div>
     ${renderEdgeDecor()}
@@ -3913,6 +4000,7 @@ function renderApp(){
     <div class="toast-wrap-center">${centerToasts.map(t=>`<div class="toast-center${t.type==='success'?' toast-center-success':' toast-center-done'}">${escapeHtml(t.msg)}</div>`).join("")}</div>
     ${modal ? renderModal() : ""}
   `;
+  try{ restoreSidebarScroll(); }catch(e){ console.error(e); }
   try{ tidyPageLayout(); }catch(e){ console.error(e); }
   initPendingCharts();
   wireFilterRowScrollSync();
@@ -4430,6 +4518,7 @@ async function doLogin(ev){
     // landing page, not a step away from one.
     if(typeof history !== 'undefined' && history.replaceState) history.replaceState({ section: session.section, subtab: session.subtab }, '');
     resetIdleLogoutTimer();
+    startNavLoading();
     renderApp();
     showWelcomeSplash();
   }catch(e){
@@ -6268,7 +6357,7 @@ function admDeriveCols(headers, rows){
   if(money >= 0 && cnt >= 0 && !/average|avg/.test(heads) && /kes/i.test(dirPlain(rows[0][money]))) extra.push(['Average', r => { const n = num(r, cnt); return n ? fmt(num(r, money) / n) : '—'; }]);
   if(money >= 0 && !/share|%|rate|ratio|achievement|par|position/.test(heads)){ const total = rows.reduce((t, r) => t + Math.max(0, num(r, money)), 0); if(total > 0) extra.push(['Share', r => (Math.max(0, num(r, money)) / total * 100).toFixed(1) + '%']); }
   if(!extra.length) return [headers, rows];
-  const actAt = H.length && !H[H.length - 1].trim() ? H.length - 1 : H.length;
+  const actAt = H.length && /^(actions?)?$/i.test(H[H.length - 1].trim()) ? H.length - 1 : H.length;
   return [H.slice(0, actAt).concat(extra.map(e => e[0]), H.slice(actAt)), rows.map(r => r.slice(0, actAt).concat(extra.map(e => e[1](r)), r.slice(actAt)))];
 }
 function admTable(headers, rows, emptyText){
@@ -6374,7 +6463,24 @@ function admSettingsBody(spec){
   const doc = settings[spec.key];
   const v = Object.assign(admDefaults(fields), doc ? doc.value : {});
   const ro = !admIsAdmin();
-  return `<form onsubmit="return admSaveSettings(event)">
+  // Closed (and for anyone but the Administrator): the current values as a
+  // table, with "Edit" opening the form above it.
+  const valueText = (f, val) => {
+    if(f.type === 'toggle') return val ? 'Yes' : 'No';
+    if(Array.isArray(val)) return val.length ? val.map(x => { const o = (f.type === 'checks' ? admOptList(f) : []).find(o => String(o.v) === String(x)); return o ? o.l : x; }).join(', ') : '—';
+    if(f.type === 'select'){ const o = admOptList(f).find(o => String(o.v) === String(val)); return o ? o.l : (val == null || val === '' ? '—' : String(val)); }
+    return val == null || val === '' ? '—' : String(val);
+  };
+  if(ro || !isFormOpen('adm-settings')){
+    const rows = [].concat(spec.org ? spec.org.map(f => [escapeHtml(f.label), escapeHtml(valueText(f, org[f.k]))]) : [],
+      spec.groups.flatMap(g => g.fields.map(f => [escapeHtml(f.label) + `<div class="hint">${escapeHtml(g.title)}</div>`, `<strong>${escapeHtml(valueText(f, v[f.k]))}</strong>`])));
+    return `${ro ? '' : `<div class="fp">${formToggleBtn('adm-settings', 'Edit ' + session.subtab)}</div>`}
+    <div class="card"><div class="card-title">${escapeHtml(session.subtab)} <small>${doc ? `saved by ${escapeHtml(doc.updatedBy || 'System')} · ${admWhen(doc.updatedAt)}` : 'recommended defaults'}</small></div>
+      ${admTable(['Setting', 'Value'], rows, 'No settings on this page.')}</div>
+    ${spec.preview ? `<div class="card"><div class="card-title">Preview</div><div class="adm-preview">${escapeHtml(spec.preview(v))}</div></div>` : ''}
+    ${spec.extra && ADMIN_EXTRAS[spec.extra] ? ADMIN_EXTRAS[spec.extra](spec) : ''}`;
+  }
+  return `<div class="fp fp-open">${formToggleBtn('adm-settings', 'Edit ' + session.subtab)}</div><form onsubmit="return admSaveSettings(event)">
     ${spec.org ? `<div class="card"><div class="card-title">Company Record <small>shared with System Administration › Organization Settings</small></div>
       <div class="form-grid">${spec.org.map(f => admFieldHtml(f, org[f.k] != null ? String(org[f.k]) : (f.def || ''), ro)).join('')}</div></div>` : ''}
     ${spec.groups.map(g => `<div class="card"><div class="card-title">${escapeHtml(g.title)}</div>${g.hint ? `<div class="hint" style="margin:-6px 0 10px;">${escapeHtml(g.hint)}</div>` : ''}
@@ -6483,13 +6589,13 @@ function admIntegrationPage(kind){
   const logs = (DB.communicationLog || []).filter(l => l.channel === kind);
   if(!DB.communicationLog) loadCommunicationLog();
   const days = admLastDays(14);
-  return `<div class="card"><div class="card-title">Status</div><div class="adm-tiles">
+  return `<div class="card"><div class="card-title"><span>Status</span>${can ? `<button class="btn btn-sm ${isFormOpen('integ-' + kind) ? 'btn-outline' : 'btn-primary'}" onclick="toggleForm('integ-${kind}')">${isFormOpen('integ-' + kind) ? '✕ Close' : '✎ Settings &amp; test'}</button>` : ''}</div><div class="adm-tiles">
       ${admTile('Delivery', admBadge(state[0], state[1]))}${admTile('Provider', escapeHtml((def.providers.find(p => p[0] === c.provider) || [, '—'])[1]))}${admTile('Last test', escapeHtml(c.lastTestStatus), c.lastTestAt ? timeAgo(c.lastTestAt) : '')}${admTile('Sent (logged)', logs.filter(l => l.status === 'Sent').length)}</div>
       ${c.lastTestMessage ? `<div class="hint" style="margin-top:8px;">${escapeHtml(c.lastTestMessage)}</div>` : ''}
       ${c.envFallback && !c.configured ? `<div class="hint" style="margin-top:8px;">Currently using settings from the server's environment variables. Saving here takes over from them.</div>` : ''}
       ${kind === 'sms' && !(c.enabled && c.configured) && !c.envFallback ? `<div class="section-note" style="margin-top:10px; border-left:4px solid #F9A825;"><strong>OTP codes are shown on screen.</strong> Until SMS is switched on, one-time codes for money requests and loan e-signing are shown to the person and filled in for them. Once SMS is on, codes go only to their phone.</div>` : ''}</div>
     ${c.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red);"><strong>Re-enter the API key.</strong> The saved key can no longer be read because the server's encryption key changed.</div>` : ''}
-    ${can ? `<div class="card"><div class="card-title">${escapeHtml(def.title)} settings</div>
+    ${can && isFormOpen('integ-' + kind) ? `<div class="card"><div class="card-title">${escapeHtml(def.title)} settings</div>
       <form onsubmit="return admSaveIntegration(event,'${kind}')"><div class="form-grid">
         <div class="field"><label>Provider</label><select name="provider" onchange="admIntegProvider(this)">${def.providers.map(p => `<option value="${p[0]}" ${c.provider === p[0] ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select></div>
         ${(() => { const prov = c.provider || def.providers[0][0]; const keyed = def.providers.filter(p => p[0] !== 'smtp').map(p => p[0]).join(' ');
@@ -6696,18 +6802,30 @@ const ADMIN_VIEWS = {
   },
   loanProducts: () => {
     const products = DB.products || [];
-    return `${admIsAdmin() ? `<div class="fp ${isFormOpen('adm-loan-product')?'fp-open':''}">${formToggleBtn('adm-loan-product', 'Add Loan Product')}<div class="fp-body"><div class="card"><div class="card-title">Add Loan Product</div>
-      <form onsubmit="return admAddProduct(event)"><div class="form-grid">
-        <div class="field"><label>Product name</label><input name="name" maxlength="80"></div>
-        <div class="field"><label>Interest rate (%)</label><input name="rate_pct" type="number" step="any" min="0"></div>
-        <div class="field"><label>Minimum amount (KES)</label><input name="min_amount" type="number" min="0"></div>
-        <div class="field"><label>Maximum amount (KES)</label><input name="max_amount" type="number" min="0"></div>
-        <div class="field"><label>Fixed term (weeks)</label><input name="term_weeks" type="number" min="1" placeholder="Leave blank for monthly terms"></div>
-        <div class="field"><label>Processing fee (KES)</label><input name="processing_fee_amount" type="number" min="0"></div>
-        <div class="field"><label>Penalty (%)</label><input name="penalty_pct" type="number" step="any" min="0"></div>
-      </div><button class="btn btn-primary btn-sm" type="submit">Add product</button></form></div></div></div>` : ''}
+    const editing = session.admProdEdit ? products.find(p => p.id === session.admProdEdit) : null;
+    const viewing = session.admProdView ? products.find(p => p.id === session.admProdView) : null;
+    const v = (k, d) => editing ? (editing[k] == null ? '' : editing[k]) : (d || '');
+    const loansOf = p => (DB.loans || []).filter(l => l.productId === p.id);
+    const form = admIsAdmin() ? `<div class="fp ${isFormOpen('adm-loan-product') || editing ? 'fp-open' : ''}">${editing ? '' : formToggleBtn('adm-loan-product', 'Add Loan Product')}<div class="fp-body"><div class="card"><div class="card-title">${editing ? `Edit Loan Product <small>${escapeHtml(editing.name)}</small>` : 'Add Loan Product'}</div>
+      <form onsubmit="return admSaveProduct(event)"><div class="form-grid">
+        <div class="field"><label>Product name</label><input name="name" maxlength="80" value="${escapeHtml(String(v('name')))}"></div>
+        <div class="field"><label>Interest rate (%)</label><input name="rate_pct" type="number" step="any" min="0" value="${v('rate')}"></div>
+        <div class="field"><label>Minimum amount (KES)</label><input name="min_amount" type="number" min="0" value="${v('minAmt')}"></div>
+        <div class="field"><label>Maximum amount (KES)</label><input name="max_amount" type="number" min="0" value="${v('maxAmt')}"></div>
+        <div class="field"><label>Fixed term (weeks)</label><input name="term_weeks" type="number" min="1" placeholder="Leave blank for monthly terms" value="${v('termWeeks')}"></div>
+        <div class="field"><label>Processing fee (KES)</label><input name="processing_fee_amount" type="number" min="0" value="${v('processingFeeAmount')}"></div>
+        <div class="field"><label>Penalty (%)</label><input name="penalty_pct" type="number" step="any" min="0" value="${v('penalty')}"></div>
+      </div><div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">${editing ? 'Save changes' : 'Add product'}</button>
+      ${editing ? `<button class="btn btn-outline btn-sm" type="button" onclick="session.admProdEdit=null; renderApp();">Cancel</button>` : ''}</div></form></div></div></div>` : '';
+    const view = viewing ? (() => { const ls = loansOf(viewing); const byStatus = {}; ls.forEach(l => { byStatus[l.status] = (byStatus[l.status] || 0) + 1; });
+      return `<div class="card"><div class="card-title"><span>${escapeHtml(viewing.name)} <small>loan product</small></span><button class="btn btn-sm btn-outline" onclick="session.admProdView=null; renderApp();">✕ Close</button></div>
+        <div class="adm-tiles">${admTile('Interest rate', viewing.rate + '%')}${admTile('Amount (KES)', fmtNum(viewing.minAmt) + ' – ' + fmtNum(viewing.maxAmt))}${admTile('Term', admTerm(viewing))}${admTile('Processing fee', viewing.processingFeeAmount != null ? 'KES ' + fmtNum(viewing.processingFeeAmount) : (viewing.fee ? viewing.fee + '%' : '—'))}${admTile('Penalty', (viewing.penalty || 0) + '%')}
+          ${admTile('Loans issued', ls.filter(l => l.disbursedAt).length)}${admTile('Amount disbursed', fmt(ls.filter(l => l.disbursedAt).reduce((t, l) => t + Number(l.principal || 0), 0)))}${admTile('In progress', ls.filter(l => !l.disbursedAt && !['Rejected','Cancelled'].includes(l.status)).length)}</div>
+        ${admTable(['Status','Loans'], Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([st, n]) => [escapeHtml(st), n]), 'No loans on this product yet.')}</div>`; })() : '';
+    const actions = p => `<span class="dt-act">${`<button class="btn btn-sm btn-outline" onclick="session.admProdView='${p.id}'; session.admProdEdit=null; renderApp(); window.scrollTo(0,0);">View</button>`}${admIsAdmin() ? `<button class="btn btn-sm btn-outline" onclick="session.admProdEdit='${p.id}'; session.admProdView=null; renderApp(); window.scrollTo(0,0);">Edit</button><button class="btn btn-sm btn-red" onclick="admDeleteProduct('${p.id}')">Delete</button>` : ''}</span>`;
+    return `${form}${view}
       <div class="card"><div class="card-title">Product Catalogue <small>${products.length} active product(s)</small></div>
-      ${admProductsTable([['Rate', p => `${p.rate}%`], ['Amount (KES)', p => `${fmtNum(p.minAmt)} – ${fmtNum(p.maxAmt)}`], ['Term', admTerm], ['Processing fee', p => p.processingFeeAmount != null ? 'KES ' + fmtNum(p.processingFeeAmount) : (p.fee ? p.fee + '%' : '—')], ['Penalty', p => (p.penalty || 0) + '%'], ['Loans', p => (DB.loans || []).filter(l => l.productId === p.id).length]])}</div>`;
+      ${admProductsTable([['Rate', p => `${p.rate}%`], ['Amount (KES)', p => `${fmtNum(p.minAmt)} – ${fmtNum(p.maxAmt)}`], ['Term', admTerm], ['Processing fee', p => p.processingFeeAmount != null ? 'KES ' + fmtNum(p.processingFeeAmount) : (p.fee ? p.fee + '%' : '—')], ['Penalty', p => (p.penalty || 0) + '%'], ['Loans', p => loansOf(p).length], ['Actions', actions]])}</div>`;
   },
   customerGroups: () => { const groups = DB.groups || [];
     return `<div class="card"><div class="card-title">Client Groups <small>${groups.length}</small></div>
@@ -6993,18 +7111,36 @@ async function admSaveBranchHours(ev){
   await withRequest('adm-branch-hours', async ()=>{ await api.put('/api/admin/settings/org.branch-hours', { value }); admForget('settings'); admForget('history:'); }, { mutates: true });
   return false;
 }
-async function admAddProduct(ev){
+async function admSaveProduct(ev){
   ev.preventDefault(); if(!admIsAdmin()) return false;
   const f = Object.fromEntries(new FormData(ev.target));
   if(!String(f.name || '').trim() || !(Number(f.rate_pct) > 0)){ toast('Enter a product name and an interest rate above zero.'); return false; }
   if(f.min_amount && f.max_amount && Number(f.min_amount) > Number(f.max_amount)){ toast('Minimum amount cannot be more than the maximum.'); return false; }
   const num = x => x === undefined || x === '' ? undefined : Number(x);
-  await withRequest('adm-add-product', async ()=>{
-    await api.post('/api/loan-products', { name: String(f.name).trim(), rate_type: 'Flat', rate_pct: Number(f.rate_pct), min_amount: num(f.min_amount), max_amount: num(f.max_amount),
-      term_weeks: num(f.term_weeks), processing_fee_amount: num(f.processing_fee_amount), penalty_pct: num(f.penalty_pct) });
+  const editId = session.admProdEdit;
+  await withRequest('adm-save-product', async ()=>{
+    if(editId){
+      const blank = x => x === undefined || x === '' ? null : Number(x);
+      await api.patch(`/api/loan-products/${editId}`, { name: String(f.name).trim(), rate_pct: Number(f.rate_pct), min_amount: Number(f.min_amount || 0), max_amount: Number(f.max_amount || 0),
+        term_weeks: blank(f.term_weeks), processing_fee_amount: blank(f.processing_fee_amount), penalty_pct: Number(f.penalty_pct || 0) });
+      session.admProdEdit = null; toast('Product updated');
+    } else {
+      await api.post('/api/loan-products', { name: String(f.name).trim(), rate_type: 'Flat', rate_pct: Number(f.rate_pct), min_amount: num(f.min_amount), max_amount: num(f.max_amount),
+        term_weeks: num(f.term_weeks), processing_fee_amount: num(f.processing_fee_amount), penalty_pct: num(f.penalty_pct) });
+    }
     const r = await api.get('/api/loan-products'); DB.products = r.products.map(adaptProduct);
   }, { mutates: true });
   return false;
+}
+async function admDeleteProduct(id){
+  const p = (DB.products || []).find(x => x.id === id); if(!p || !admIsAdmin()) return;
+  if(typeof confirm === 'function' && !confirm(`Remove ${p.name} from the catalogue? Loans already issued on it are kept; it can no longer be chosen for new applications.`)) return;
+  await withRequest('adm-del-product-' + id, async ()=>{
+    await api.del(`/api/loan-products/${id}`);
+    const r = await api.get('/api/loan-products'); DB.products = r.products.map(adaptProduct);
+    if(session.admProdView === id) session.admProdView = null; if(session.admProdEdit === id) session.admProdEdit = null;
+    toast(`${p.name} removed`);
+  }, { mutates: true });
 }
 async function admRefreshStaff(){ const r = await api.get('/api/users?limit=200'); DB.staff = r.users.map(adaptStaff); }
 async function admSetAccountStatus(id, status){
@@ -20613,7 +20749,7 @@ function prefillPayment(loanId){ prefillLoanId = loanId; renderApp(); }
 function renderRecordPayment(){
   const loanOptions = activeLoans().map(l=>`<option value="${l.id}" ${prefillLoanId===l.id?'selected':''}>${l.id} — ${clientName(l.clientId)} (Bal ${fmt(loanBalance(l))})</option>`).join("");
   return `
-    <div class="card" style="max-width:640px;">
+    ${fpWrap('record-payment', 'Record Payment', `<div class="card" style="max-width:640px;">
       <div class="card-title">Record / Proceed Payment</div>
       <form onsubmit="return submitPayment(event)">
         <div class="field"><label>Loan</label><select name="loanId" required>${loanOptions}</select></div>
@@ -20624,7 +20760,7 @@ function renderRecordPayment(){
         <div class="field"><label><input type="checkbox" name="posted" checked style="width:auto; display:inline; margin-right:6px;">Post immediately (uncheck to leave as Unposted for review)</label></div>
         <button class="btn btn-primary" type="submit">Record Payment</button>
       </form>
-    </div>
+    </div>`)}
     <div class="card">
       <div class="card-title">Recent Payments</div>
       ${paymentsTable(DB.payments.slice(0,10), { empty:'No payments recorded yet.' })}
@@ -26416,7 +26552,7 @@ function renderLeaveAttendance(){
   if(!DB.myLeaveRequests) loadMyLeaveRequests();
   const me = DB.me || {};
   return `
-    <div class="card" style="max-width:520px;">
+    ${fpWrap('leave-request', 'Apply for Leave', `<div class="card" style="max-width:520px;">
       <div class="card-title">Apply for Leave <small>${me.leave_days_balance ?? '—'} day(s) remaining</small></div>
       <form onsubmit="return submitLeaveRequest(event)">
         <div class="form-grid">
@@ -26427,9 +26563,9 @@ function renderLeaveAttendance(){
         <div class="field"><label>Reason</label><input name="reason"></div>
         <button class="btn btn-primary btn-sm" type="submit">Submit Request</button>
       </form>
-    </div>
+    </div>`)}
     <div class="card">
-      <div class="card-title">My Leave History</div>
+      <div class="card-title">My Leave History <small>${me.leave_days_balance ?? '—'} day(s) left</small></div>
       <div class="table-wrap"><table><tr><th>Type</th><th>From</th><th>To</th><th>Reason</th><th>Status</th></tr>
       ${(DB.myLeaveRequests||[]).map(l=>`<tr><td>${l.leave_type}</td><td>${l.start_date}</td><td>${l.end_date}</td><td class="hint">${escapeHtml(l.reason||'—')}</td><td>${statusBadge(l.status)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No leave requests yet.</td></tr>`}</table></div>
     </div>
@@ -26457,18 +26593,20 @@ async function loadMySalaryAdvances(){
 function renderSalaryAdvanceTab(){
   if(!DB.mySalaryAdvances) loadMySalaryAdvances();
   return `
-    <div class="card" style="max-width:520px;">
+    <div class="card" style="max-width:520px; padding-bottom:4px;">
       <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
         <span class="btn btn-outline btn-sm" onclick="goTo('dashboard')" style="border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; padding:0; font-size:16px; flex-shrink:0;">←</span>
         <h3 style="color:var(--navy); margin:0;">${new Date().getFullYear()} Salary Advances</h3>
       </div>
+    </div>
+    ${fpWrap('salary-advance', 'Request Salary Advance', `<div class="card" style="max-width:520px;">
       <div class="card-title">Request Salary Advance</div>
       <form onsubmit="return submitSalaryAdvanceRequest(event)">
         <div class="field"><label>Amount (KES)</label><input name="amount" type="number" required min="1"></div>
         <div class="field"><label>Reason</label><input name="reason"></div>
         <button class="btn btn-primary btn-sm" type="submit">Submit Request</button>
       </form>
-    </div>
+    </div>`)}
     <div class="card">
       <div class="card-title">My Salary Advance History</div>
       <div class="table-wrap"><table>
@@ -26941,7 +27079,8 @@ function renderSecuritySettingsCard(securityRes, isAdmin){
     <div class="card-title">Security Settings</div>
     <div class="detail-label">Session Expiry Warning</div>
     <div class="detail-value">${securityRes.sessionWarningMinutes} minute(s) before expiry</div>
-    ${isAdmin ? `<form onsubmit="return submitSecuritySettings(event)" style="margin-top:8px;">
+    ${isAdmin && !isFormOpen('security-settings') ? `<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="toggleForm('security-settings', true)">✎ Edit</button>` : ''}
+    ${isAdmin && isFormOpen('security-settings') ? `<form onsubmit="return submitSecuritySettings(event)" style="margin-top:8px;">
       <div class="field"><label>Warn users this many minutes before their session expires (1–60)</label><input name="sessionWarningMinutes" type="number" min="1" max="60" value="${securityRes.sessionWarningMinutes}" required></div>
       <button class="btn btn-sm btn-primary" type="submit">Save</button>
     </form>` : ""}
@@ -26976,8 +27115,8 @@ function renderOrgSettingsCard(orgRes, isAdmin){
   if(!orgRes) return `<div class="card"><div class="empty">${loadingDotsHtml()}</div></div>`;
   const o = orgRes.organization;
   return `<div class="card">
-    <div class="card-title">Organization Settings</div>
-    ${isAdmin ? `<form onsubmit="return submitOrgSettings(event)">
+    <div class="card-title"><span>Organization Settings</span>${isAdmin ? `<button class="btn btn-sm ${isFormOpen('org-settings') ? 'btn-outline' : 'btn-primary'}" onclick="toggleForm('org-settings')">${isFormOpen('org-settings') ? '✕ Close' : '✎ Edit'}</button>` : ''}</div>
+    ${isAdmin && isFormOpen('org-settings') ? `<form onsubmit="return submitOrgSettings(event)">
       <div class="form-grid">
         <div class="field"><label>Company Name</label><input name="company_name" value="${escapeHtml(o.company_name||'')}"></div>
         <div class="field"><label>Trading Name</label><input name="trading_name" value="${escapeHtml(o.trading_name||'')}"></div>
@@ -26990,11 +27129,8 @@ function renderOrgSettingsCard(orgRes, isAdmin){
         <div class="field full"><label>Address</label><input name="address" value="${escapeHtml(o.address||'')}"></div>
       </div>
       <button class="btn btn-primary btn-sm" type="submit">Save Organization Settings</button>
-    </form>` : `
-      <div class="detail-label">Company Name</div><div class="detail-value">${escapeHtml(o.company_name||'Not set')}</div>
-      <div class="detail-label">Currency</div><div class="detail-value">${escapeHtml(o.currency||'—')}</div>
-      <div class="detail-label">Timezone</div><div class="detail-value">${escapeHtml(o.timezone||'—')}</div>
-    `}
+    </form>` : admTable(['Setting', 'Value'], [['Company Name', o.company_name], ['Trading Name', o.trading_name], ['Registration Number', o.registration_number], ['Phone', o.phone], ['Email', o.email],
+      ['Website', o.website], ['Currency', o.currency], ['Timezone', o.timezone], ['Address', o.address]].map(r => [escapeHtml(r[0]), `<strong>${escapeHtml(r[1] || '—')}</strong>`]))}
   </div>`;
 }
 function submitOrgSettings(ev){
@@ -27014,7 +27150,7 @@ function renderMaintenanceModeCard(maintRes, isAdmin){
     <div class="hint">${on ? escapeHtml(maintRes.message||'No message set') : 'System is operating normally. When enabled, only Admin can log in.'}</div>
     ${isAdmin ? (on
       ? `<button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="withRequest('maint-off', ()=>toggleMaintenanceMode(false))">Disable Maintenance Mode</button>`
-      : `<form onsubmit="return submitEnableMaintenance(event)" style="margin-top:8px;">
+      : !isFormOpen('maintenance') ? `<button class="btn btn-sm btn-primary" style="margin-top:8px;" onclick="toggleForm('maintenance', true)">Enable Maintenance Mode…</button>` : `<form onsubmit="return submitEnableMaintenance(event)" style="margin-top:8px;">
           <div class="field"><label>Message shown to blocked users</label><input name="message" placeholder="e.g. Scheduled upgrade in progress."></div>
           <button class="btn btn-sm btn-red" type="submit" onclick="return confirm('Enable maintenance mode? Every non-Admin user will be unable to log in until you disable it.')">Enable Maintenance Mode</button>
         </form>`) : ""}
@@ -27142,21 +27278,21 @@ function renderGovernanceResponsibilities(){
       <div class="detail-label">Active Staff</div><div class="detail-value">${DB.staff.filter(s=>s.status==='Active').length}</div>
       <a href="#" onclick="goTo('dashboard'); return false;" class="btn btn-sm btn-outline" style="margin-top:8px;">Go to Director Dashboard →</a>
     </div>
-    ${canPropose ? `<div class="card" style="max-width:560px;">
+    ${canPropose ? fpWrap('board-resolution', 'Propose Board Resolution', `<div class="card" style="max-width:560px;">
       <div class="card-title">Propose Board Resolution</div>
       <form onsubmit="return submitBoardResolution(event)">
         <div class="field"><label>Title</label><input name="title" required></div>
         <div class="field"><label>Description</label><textarea name="description" rows="2"></textarea></div>
         <button class="btn btn-primary btn-sm" type="submit">Propose</button>
       </form>
-    </div>` : ""}
+    </div>`) : ""}
     <div class="card">
       <div class="card-title">Board Matters <small>real resolutions — proposed by CEO/Director, decided by a different Director/Admin</small></div>
       ${state ? `<div class="table-wrap"><table><tr><th>Title</th><th>Proposed By</th><th>Status</th><th></th></tr>
       ${state.resolutions.map(r=>`<tr><td>${escapeHtml(r.title)}</td><td>${staffName(r.proposed_by)}</td><td>${statusBadge(r.status)}</td>
         <td>${canDecide && r.status==='Proposed' ? `<button class="btn btn-sm btn-green" onclick="withRequest('res-approve-${r.id}', ()=>decideBoardResolution('${r.id}','Approved'))">Approve</button> <button class="btn btn-sm btn-red" onclick="withRequest('res-reject-${r.id}', ()=>decideBoardResolution('${r.id}','Rejected'))">Reject</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No board resolutions yet.</td></tr>`}</table></div>` : `<div class="empty">${loadingDotsHtml()}</div>`}
     </div>
-    ${canRecordEquity ? `<div class="card" style="max-width:560px;">
+    ${canRecordEquity ? fpWrap('equity-holding', 'Record Equity Holding', `<div class="card" style="max-width:560px;">
       <div class="card-title">Record Equity Holding</div>
       <form onsubmit="return submitEquityHolding(event)">
         <div class="form-grid">
@@ -27167,7 +27303,7 @@ function renderGovernanceResponsibilities(){
         </div>
         <button class="btn btn-primary btn-sm" type="submit">Record</button>
       </form>
-    </div>` : ""}
+    </div>`) : ""}
     <div class="card">
       <div class="card-title">Ownership &amp; Equity <small>${state?state.totalPercentage.toFixed(1):'—'}% of equity recorded</small></div>
       ${state ? `<div class="table-wrap"><table><tr><th>Holder</th><th>Type</th><th>%</th><th>Capital</th></tr>

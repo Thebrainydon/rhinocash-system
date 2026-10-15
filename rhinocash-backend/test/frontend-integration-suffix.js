@@ -7669,6 +7669,8 @@ apiRequest = async function(method, path, body){
     await waitAdm('settings');
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('class="adm-title">Tax Settings<') && html.includes('Accounting Setup'), "the Tax Settings page renders with its section eyebrow and bold blue title");
+    __assert(!html.includes('name="vatPct"') && html.includes('+ Edit Tax Settings') && html.includes('VAT'), "settings open as a table of current values, the form kept behind its Edit button");
+    toggleForm('adm-settings', true); html = document.getElementById('root').innerHTML;
     __assert(html.includes('name="vatPct"') && html.includes('value="16"'), "the Tax Settings page shows the Kenyan VAT default of 16%");
     const taxForm = new Map([['vatRegistered','on'],['vatPct','16'],['excisePct','20'],['whtInterestPct','15'],['corporatePct','30']]);
     global.FormData = class { constructor(){ return taxForm; } };
@@ -7930,8 +7932,10 @@ apiRequest = async function(method, path, body){
     sidebarNavigate('eSMS');
     for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
     renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(!html.includes('name="apiKey"') && html.includes('Settings &amp; test'), "the SMS settings form stays closed until Admin opens it");
+    toggleForm('integ-sms', true); html = document.getElementById('root').innerHTML;
     __assert(html.includes('name="apiKey"') && html.includes('Send test SMS') && html.includes('Talking'), "Admin can enter SMS credentials, switch SMS on and send a test");
-    sidebarNavigate('Email'); renderApp(); html = document.getElementById('root').innerHTML;
+    sidebarNavigate('Email'); toggleForm('integ-email', true); renderApp(); html = document.getElementById('root').innerHTML;
     __assert(html.includes('SendGrid') && html.includes('Mailgun') && html.includes('Send test email'), "Admin can configure email through SendGrid or Mailgun");
   }
 
