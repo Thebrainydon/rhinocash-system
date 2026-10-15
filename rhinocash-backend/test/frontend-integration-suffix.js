@@ -8527,6 +8527,17 @@ apiRequest = async function(method, path, body){
     session.c2bPaymentsState = savedSt; DB.c2bPaymentsBrowser = savedB;
   }
 
+  // ---- Client names on the payments pages open the client ----
+  {
+    __assert(clientLink('cl1', 'Jane <Doe>').includes("clientLinkOpen('cl1')") && clientLink('cl1', 'Jane <Doe>').includes('Jane &lt;Doe&gt;') && clientLink(null, 'Walk-in') === 'Walk-in' && clientLink('cl1', '') === '—', "clientLink links a known client and escapes the name");
+    __assert([renderC2bPaymentsModal, renderLoanOfficerUnpostedPayments, renderLoanOfficerProcessedPayments].every(f => String(f).includes('clientLink(')), "the payments pages show client names as links");
+    const savedSt = session.c2bPaymentsState, savedB = DB.c2bPaymentsBrowser;
+    session.c2bPaymentsState = { period:'today', q:'', page:1 };
+    DB.c2bPaymentsBrowser = { stateKey: JSON.stringify(session.c2bPaymentsState), transactions:[{ id:'x', transId:'RX', amount:5, phone:'254758414779', accountRef:'42413801', matched:true, processed:true, matchedLoanId:'ln1', clientId:'cl9', clientName:'Linked Client', postedBy:'System', createdAt:'2026-10-15T12:24:41Z' }], shortcode:'174379', pagination:{ page:1, limit:20, total:1, totalPages:1 }, totals:{ amount:5, count:1, unmatchedCount:0 } };
+    __assert(renderC2bPaymentsModal().includes("clientLinkOpen('cl9')"), "the Payments list links the client name to the client's page");
+    session.c2bPaymentsState = savedSt; DB.c2bPaymentsBrowser = savedB;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

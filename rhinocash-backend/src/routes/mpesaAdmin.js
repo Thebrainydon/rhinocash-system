@@ -188,7 +188,7 @@ function register(router) {
 
     // Real client name, only for rows that are actually matched to a real loan.
     const loanIds = [...new Set(rows.filter(r => r.matched_loan_id).map(r => r.matched_loan_id))];
-    const clientNameByLoanId = {};
+    const clientNameByLoanId = {}; const clientIdByLoanId = {};
     if (loanIds.length) {
       const lPh = loanIds.map(() => '?').join(',');
       const loans = await all(`SELECT id, client_id FROM loans WHERE id IN (${lPh})`, loanIds);
@@ -198,7 +198,7 @@ function register(router) {
         const cPh = clientIds.map(() => '?').join(',');
         (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientNameById[c.id] = c.name; });
       }
-      loans.forEach(l => { clientNameByLoanId[l.id] = clientNameById[l.client_id]; });
+      loans.forEach(l => { clientNameByLoanId[l.id] = clientNameById[l.client_id]; clientIdByLoanId[l.id] = l.client_id; });
     }
 
     const activeEnv = await mpesa.getActiveEnvironment();
@@ -213,13 +213,13 @@ function register(router) {
 
     // Payments made toward a loan application's processing fee, and the
     // likely client of an unassigned payment (by phone / ID / client code).
-    const linked = {}; const guess = {};
+    const linked = {}; const linkedId = {}; const guess = {}; const guessId = {};
     const tIds = rows.map(r => r.trans_id).filter(Boolean);
-    if (tIds.length) (await all(`SELECT f.mpesa_receipt_number, c.name FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id WHERE f.mpesa_receipt_number IN (${tIds.map(() => '?').join(',')})`, tIds)).forEach(f => { linked[f.mpesa_receipt_number] = f.name; });
+    if (tIds.length) (await all(`SELECT f.mpesa_receipt_number, c.id, c.name FROM loan_fee_payments f JOIN clients c ON c.id = f.client_id WHERE f.mpesa_receipt_number IN (${tIds.map(() => '?').join(',')})`, tIds)).forEach(f => { linked[f.mpesa_receipt_number] = f.name; linkedId[f.mpesa_receipt_number] = f.id; });
     for (const r of rows.filter(x => !x.matched_loan_id && !linked[x.trans_id])) {
-      const c = await get(`SELECT name FROM clients WHERE (length(?) >= 9 AND RIGHT(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 9) = RIGHT(?, 9)) OR national_id = ? OR client_code = ? LIMIT 1`,
+      const c = await get(`SELECT id, name FROM clients WHERE (length(?) >= 9 AND RIGHT(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 9) = RIGHT(?, 9)) OR national_id = ? OR client_code = ? LIMIT 1`,
         [String(r.msisdn || ''), String(r.msisdn || ''), r.bill_ref_number, r.bill_ref_number]);
-      if (c) guess[r.id] = c.name;
+      if (c) { guess[r.id] = c.name; guessId[r.id] = c.id; }
     }
     // Who posted each processed payment: the staff member who assigned it,
     // or the system when it was matched and posted automatically.
@@ -232,6 +232,7 @@ function register(router) {
         matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id, processed: !!r.processed, matchMethod: r.match_method,
         linkedApplication: !!linked[r.trans_id], paybill: (activeConfig && activeConfig.shortcode) || orgPaybill,
         clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : (linked[r.trans_id] || guess[r.id] || null),
+        clientId: r.matched_loan_id ? (clientIdByLoanId[r.matched_loan_id] || null) : (linkedId[r.trans_id] || guessId[r.id] || null),
         postedBy: r.payment_id ? (postedBy[r.payment_id] || 'System') : null,
         createdAt: r.created_at,
       })),

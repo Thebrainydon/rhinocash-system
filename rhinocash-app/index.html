@@ -633,11 +633,12 @@ table.ud-table tr:nth-child(odd) td{background:#F7FAFE;}
 .pay-filters{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0 10px;}
 .pay-search{border:1px solid var(--line); border-radius:4px; padding:6px 10px; font-size:12.5px; min-width:180px;}
 .pay-print{color:var(--blue);}
-table.pay-table th{background:#E8EEF8; color:var(--navy); font-size:12px; text-transform:none; letter-spacing:0;}
+table.pay-table th{background:#E8EEF8; color:var(--navy); font-size:13px; text-transform:none; letter-spacing:0;}
 table.pay-table tr:nth-child(even) td{background:#F5F8FD;}
-table.pay-table td{font-size:12.5px; vertical-align:top;}
+table.pay-table td{font-size:14px; vertical-align:top;}
 .pay-bullets{margin:0; padding-left:16px;} .pay-bullets li{margin:0;}
 .pay-sub{font-size:11.5px; color:var(--ink-soft);}
+.client-link{color:var(--blue); font-weight:600; text-decoration:none;} .client-link:hover{text-decoration:underline;}
 .pay-link{color:#5B4FC4; font-weight:600; text-decoration:none; white-space:nowrap;}
 .pay-link-note{color:#5B4FC4; font-size:12px;}
 .mrg-panel{border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px; background:#FAFBFE;}
@@ -1203,7 +1204,7 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
   .topbar{ padding:12px 14px; }
   .topbar-right .role-select{ display:none; }
   .topbar-brand{ display:none; }
-  .content{ padding:16px 14px 50px; }
+  .content{ padding:10px 8px 50px; }
   .kpi-grid{ grid-template-columns:repeat(2,1fr); gap:10px; }
   .grid2, .grid3{ grid-template-columns:1fr; }
   .form-grid{ grid-template-columns:1fr; }
@@ -1234,6 +1235,15 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
   .ed-money{width:30px;} .ed-flower{font-size:16px;}
   .edge-decor .ed{opacity:.7;}
   table td, table th{padding:8px 8px;}
+  /* Pages use the whole screen width: thin outer gutters, so cards and
+     tables aren't squeezed into a narrow column. */
+  .content{padding:6px 4px 40px;}
+  .card, .pay-card{padding:12px 10px; border-radius:10px; margin-bottom:10px;}
+  .modal-overlay{padding:6px 4px;} .modal{padding:14px 12px;}
+  table td, table th{padding:8px 7px;}
+  /* Wide tables keep readable columns and scroll sideways instead of
+     wrapping every cell into a thin strip. */
+  table.pay-table, .table-wrap > table.dt{min-width:620px;}
 }
 @media (max-width:420px){ .topbar-brand{display:none;} }
 </style>
@@ -29020,7 +29030,7 @@ function renderC2bPaymentsModal(){
     <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
       <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Account</th><th>Transaction</th><th>Amount</th><th>Date</th><th>Approval</th>${canAssign?'<th></th>':''}</tr>
       ${d.transactions.map(t=>`<tr>
-        <td>${t.matched ? escapeHtml(t.clientName||'—') : `<span class="badge red">Unassigned</span>`}</td>
+        <td>${t.matched ? clientLink(t.clientId, t.clientName) : `<span class="badge red">Unassigned</span>`}</td>
         <td>${escapeHtml(t.phone||'—')}</td>
         <td>${escapeHtml(d.shortcode||'—')}</td>
         <td class="hint">${escapeHtml(t.accountRef||'—')}</td>
@@ -29044,6 +29054,14 @@ function renderC2bPaymentsModal(){
 // reusing the identical state keeps the two views always in sync rather
 // than risking two copies drifting apart.
 // Shared by every payments page below.
+// A client's name that opens their client page (also from inside a pop-up
+// or a clickable row).
+function clientLink(id, name, fallback){
+  if(!name) return fallback === undefined ? '—' : fallback;
+  if(!id) return escapeHtml(name);
+  return `<a href="#" class="client-link" onclick="event.stopPropagation(); clientLinkOpen('${escapeHtml(id)}'); return false;">${escapeHtml(name)}</a>`;
+}
+function clientLinkOpen(id){ if(modal) modal = null; openClient(id); }
 // Manager and every role above can assign payments to loans.
 function payCanAssign(){ return ['Manager','Regional Manager','Operational Manager','CEO','Director','Admin'].includes(session.role) || hasPermission(session.role,"Post Accounting Entries"); }
 function payTime(iso, withDate){
@@ -29104,7 +29122,7 @@ function renderLoanOfficerUnpostedPayments(){
         <tr><th>Transaction</th><th>Client</th><th>Phone</th><th>Account</th><th>Amount</th><th>Paybill</th><th>Date</th><th>Action</th></tr>
         ${d.transactions.map(t=>`<tr>
           <td>${escapeHtml(t.transId)}</td>
-          <td>${t.clientName ? escapeHtml(t.clientName) : `<span class="hint">Unknown payer</span>`}</td>
+          <td>${clientLink(t.clientId, t.clientName, `<span class="hint">Unknown payer</span>`)}</td>
           <td>${escapeHtml(payPhone(t.phone) || '—')}</td>
           <td>${escapeHtml(t.accountRef || '—')}</td>
           <td>${fmtNum(t.amount)}</td>
@@ -29149,7 +29167,7 @@ async function loadLoanOfficerProcessedPayments(){
     ]);
     const paymentRows = paymentsRes.payments.map(p=>({
       kind:'payment', id:p.id, reference:p.reference, amount:Number(p.amount),
-      clientName:p.client_name, clientPhone:p.client_phone, clientIdNo:p.client_national_id,
+      clientId:p.client_id, clientName:p.client_name, clientPhone:p.client_phone, clientIdNo:p.client_national_id,
       principal:Number(p.allocated_principal||0), interest:Number(p.allocated_interest||0), penalty:Number(p.allocated_penalty||0), fee:0,
       approvedBy:p.recorded_by, time:p.created_at,
     }));
@@ -29159,7 +29177,7 @@ async function loadLoanOfficerProcessedPayments(){
     // genuinely don't qualify when a different specific mode is selected.
     const feeRows = (st.payMode && st.payMode!=='M-Pesa') ? [] : feeRes.feePayments.filter(f => !st.officer || ((DB.clients||[]).find(c => c.id === f.client_id) || {}).officerId === st.officer).map(f=>({
       kind:'fee', id:f.id, reference:f.mpesa_receipt_number||f.id, amount:Number(f.amount),
-      clientName:f.client_name, clientPhone:f.client_phone, clientIdNo:f.client_national_id,
+      clientId:f.client_id, clientName:f.client_name, clientPhone:f.client_phone, clientIdNo:f.client_national_id,
       principal:0, interest:0, penalty:0, fee:Number(f.amount),
       approvedBy:f.confirmed_by, time:f.confirmed_at,
     }));
@@ -29208,7 +29226,7 @@ function renderLoanOfficerProcessedPayments(){
             <td>${escapeHtml(r.reference||'—')}</td>
             <td>${fmtNum(r.amount)}</td>
             <td><ul class="pay-bullets">${bullets.map(b=>`<li>${escapeHtml(b)}</li>`).join("") || '<li class="hint">—</li>'}</ul></td>
-            <td>${escapeHtml(r.clientName||'—')}<br><span class="pay-sub">${escapeHtml(r.clientIdNo||r.clientPhone||'')}</span></td>
+            <td>${clientLink(r.clientId, r.clientName)}<br><span class="pay-sub">${escapeHtml(r.clientIdNo||r.clientPhone||'')}</span></td>
             <td>${r.approvedBy ? escapeHtml(staffName(r.approvedBy)) : 'System'}</td>
             <td>${payTime(r.time, !oneDay)}</td>
           </tr>`;
@@ -29263,7 +29281,7 @@ function renderLoanOfficerPrepayments(){
       <div class="table-wrap"><table class="pay-table">
         <tr><th>Client</th><th>Branch</th><th>Loan</th><th>Product</th><th>Officer</th><th>Disbursement</th><th>Prepayment</th></tr>
         ${rows.map(r=>`<tr class="clickable" onclick="openLoan('${r.loan.id}')">
-          <td>${escapeHtml(clientName(r.loan.clientId))}</td>
+          <td>${clientLink(r.loan.clientId, clientName(r.loan.clientId))}</td>
           <td>${escapeHtml(branchName(r.loan.branchId))}</td>
           <td>${fmtNum(r.loan.principal)}</td>
           <td>${escapeHtml(r.loan.productName||'—')}</td>
@@ -29336,7 +29354,7 @@ function renderLoanOfficerOverpayments(){
             : `<a href="#" class="pay-link" onclick="event.stopPropagation(); session.ovpAssignOpen='${p.id}'; renderApp(); return false;">Assign</a>`;
           return `<tr class="clickable" onclick="goTo('payments','Receipts'); openReceipt('${p.id}')">
             <td>${(page-1)*limit+i+1}</td>
-            <td>${escapeHtml(p.client_name||'—')}${p.client_national_id?`<br><span class="hint">Idno: ${escapeHtml(p.client_national_id)}</span>`:''}</td>
+            <td>${clientLink(p.client_id, p.client_name)}${p.client_national_id?`<br><span class="hint">Idno: ${escapeHtml(p.client_national_id)}</span>`:''}</td>
             <td>${fmtNum(overpay)}</td>
             <td>${escapeHtml(p.reference||'—')}</td>
             <td>${fmtNum(p.amount)}</td>
@@ -29558,7 +29576,7 @@ function renderMergedPayments(){
     <div class="table-wrap"><table class="pay-table">
       <tr><th>Client</th><th>Transactions</th><th>Total Merged</th><th>Reference</th><th>Merged by</th><th>Date</th><th>Action</th></tr>
       ${list.map(m => `<tr>
-        <td>${escapeHtml(m.clientName || '—')}<br><span class="pay-sub">Idno: ${escapeHtml(m.clientIdNo || '—')}</span></td>
+        <td>${clientLink(m.clientId, m.clientName)}<br><span class="pay-sub">Idno: ${escapeHtml(m.clientIdNo || '—')}</span></td>
         <td><ul class="pay-bullets">${m.transactions.map(t => `<li>${escapeHtml(t.transId)} - ${fmtNum(t.amount)}</li>`).join('')}</ul></td>
         <td><strong>${fmtNum(m.total)}</strong></td>
         <td>${escapeHtml(m.reference || '—')}</td>
@@ -29768,7 +29786,7 @@ function renderLoanOfficerPayinSummaryDayPrint(day){
         <div class="st-title">${label}</div><div class="st-title">Ksh ${fmtNum(total)}</div></div>
         <div class="st-printed">Printed on ${printedAt} by ${escapeHtml(session.userName)}</div>` : ''}
       <table class="st-table">${head}
-        ${pg.map((t, i) => `<tr><td>${pi * per + i + 1}</td><td>${escapeHtml(t.paybill || dd.shortcode || '—')}</td><td>${escapeHtml(t.transId)}</td><td>${escapeHtml(t.clientName || '—')}</td><td>${escapeHtml(payPhone(t.phone) || '—')}</td><td>${escapeHtml(t.accountRef || '—')}</td><td>${fmtNum(t.amount)}</td><td>${t.matched || t.processed || t.linkedApplication ? 'Approved' : 'Pending'}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">No M-Pesa payments on this day.</td></tr>`}
+        ${pg.map((t, i) => `<tr><td>${pi * per + i + 1}</td><td>${escapeHtml(t.paybill || dd.shortcode || '—')}</td><td>${escapeHtml(t.transId)}</td><td>${escapeHtml(t.clientName || '—')}</td><td>${escapeHtml(payPhone(t.phone) || '—')}</td><td>${escapeHtml(t.accountRef || '—')}</td><td>${fmtNum(t.amount)}</td><td>${t.postedBy ? escapeHtml(t.postedBy) : (t.matched || t.processed || t.linkedApplication ? 'Approved' : 'Pending')}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">No M-Pesa payments on this day.</td></tr>`}
       </table>
       <div class="rc-foot">${label}: Page ${pi + 1}</div>
     </div>`).join('')}
