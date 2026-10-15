@@ -639,6 +639,16 @@ table.pay-table td{font-size:14px; vertical-align:top;}
 .pay-bullets{margin:0; padding-left:16px;} .pay-bullets li{margin:0;}
 .pay-sub{font-size:11.5px; color:var(--ink-soft);}
 .client-link{color:var(--blue); font-weight:600; text-decoration:none;} .client-link:hover{text-decoration:underline;}
+/* Client page: details list and Loan History (reference layout) */
+table.cd-table{width:100%;} table.cd-table td{border-bottom:none; padding:8px 6px; font-size:15.5px; vertical-align:top;}
+table.cd-table td.cd-k{width:38%; font-weight:800; color:var(--hs-ink, #1F2A6E);}
+.card-title.lh-bar{background:#EEF0F4; color:var(--hs-ink, #1F2A6E); margin:0; padding:10px 14px; border-radius:6px 6px 0 0; border-bottom:2px solid #DCDFE6; font-size:20px; gap:12px;}
+.card-title.lh-bar select{font-size:15px; padding:7px 10px; min-width:150px; border:1px solid #B9BFCC; border-radius:3px; background:#fff;}
+table.lh-table{border:1px solid #DCDFE6;} table.lh-table th, table.lh-table td{border:1px solid #DCDFE6; vertical-align:top;}
+table.lh-table td{font-size:15px;}
+.lh-link{color:#1C7ED6; text-decoration:none; font-weight:600;} .lh-repay .lh-link{margin-left:2px;} .lh-repay .lh-link:not(:first-child){font-size:18px;}
+.ld-list{margin:0; padding-left:18px;} .ld-list li{margin:0 0 4px;}
+.lh-run{color:#1E8E3E; font-weight:600;} .lh-done{color:#1E8E3E; font-weight:600;}
 .pay-link{color:#5B4FC4; font-weight:600; text-decoration:none; white-space:nowrap;}
 .pay-link-note{color:#5B4FC4; font-size:12px;}
 .mrg-panel{border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px; background:#FAFBFE;}
@@ -1246,6 +1256,50 @@ table.dt tr.dt-group td{background:#E3EAF4 !important; color:var(--navy); font-w
   table.pay-table, .table-wrap > table.dt{min-width:620px;}
 }
 @media (max-width:420px){ .topbar-brand{display:none;} }
+/* ==== House style for every page: bold navy text and roomy spacing ====
+   Large bold page titles over a divider, bold header rows on a light
+   lavender band, and on phones a 10px frame around each card. Printed
+   sheets (receipts, statements, loan forms) and calendars keep their own
+   look. Kept last so it applies over the older per-page rules. */
+:root{ --hs-ink:#1F2A6E; --hs-band:#E6E8F7; }
+.pay-title, .pg-title, .adm-title, .adm-head .adm-title,
+.card-title.pg-auto-title > span:first-of-type, .card-title.pg-auto-title > .card-title-text,
+.pg-auto .pg-titles > :not(.pg-eyebrow){
+  font-size:23px; font-weight:800; color:var(--hs-ink); line-height:1.25; letter-spacing:-0.2px;
+}
+.pg-titles small, .card-title.pg-auto-title small{font-size:14px; font-weight:700;}
+.card-title{font-size:16px; font-weight:800; color:var(--hs-ink);}
+.pay-right{font-size:18px; font-weight:800; color:var(--hs-ink);}
+.pay-head, .card-title.pg-auto-title{padding-bottom:12px; margin-bottom:14px; border-bottom:1px solid #DCDDE6;}
+.pay-back, .card-title.pg-auto-title > .pg-back, .adm-head.pg-auto > .pg-back{
+  width:34px !important; height:34px !important; border:2px solid var(--hs-ink) !important; color:var(--hs-ink) !important; font-size:17px; font-weight:800;
+}
+table:not(.st-table):not(.rc-t):not(.lf-t):not(.lf-kv):not(.stmt):not(.perf-tbl):not(.pay-cal):not(.weekday-bar) th{
+  background:var(--hs-band) !important; color:var(--hs-ink) !important; font-weight:800 !important;
+  font-size:14.5px !important; text-transform:none !important; letter-spacing:0 !important; padding:12px 10px;
+}
+table.pg-mini th{font-size:13px !important;}
+table.dt tr:nth-child(even) td{background:#F8F8FC;}
+td{color:#1E2433;}
+.pay-filters select, .pg-filters select, .adm-filters select, .gen-auto select{font-weight:600;}
+@media (max-width:700px){
+  .content{padding:10px 10px 40px;}
+  .card, .pay-card{padding:16px 14px; border-radius:6px; margin-bottom:12px;}
+  .modal-overlay{padding:10px 8px;} .modal{padding:16px 14px;}
+  .pay-title, .pg-title, .adm-title, .adm-head .adm-title,
+  .card-title.pg-auto-title > span:first-of-type, .card-title.pg-auto-title > .card-title-text,
+  .pg-auto .pg-titles > :not(.pg-eyebrow){font-size:22px;}
+  /* Tables with many columns keep readable cells and scroll sideways. */
+  .table-wrap > table:has(tr > :nth-child(5)){min-width:680px;}
+  .table-wrap > table:has(tr > :nth-child(8)){min-width:900px;}
+  .table-wrap > table:has(tr > :nth-child(10)){min-width:1150px;}
+  .table-wrap > table:has(tr > :nth-child(12)){min-width:1400px;}
+  .pay-filters input[type=date], .pg-filters input[type=date]{flex:1 1 130px; min-width:0;}
+  table{font-size:15px;}
+  table.pay-table td{font-size:15px;}
+  table:not(.st-table):not(.rc-t):not(.lf-t):not(.lf-kv):not(.stmt):not(.perf-tbl):not(.pay-cal):not(.weekday-bar) th{font-size:15px !important;}
+  .content select, .content input:not([type=checkbox]):not([type=radio]):not([type=range]), .modal select, .modal input:not([type=checkbox]):not([type=radio]):not([type=range]){font-size:15px;}
+}
 </style>
 </head>
 <body>
@@ -16467,14 +16521,17 @@ function renderLoanDetailsModal(){
   const loan = DB.loans.find(l=>l.id===modal.loanId);
   if(!loan) return `<div class="empty">Loan not found.</div>`;
   const maturity = loan.schedule && loan.schedule.length ? loan.schedule[loan.schedule.length-1].dueDate : null;
-  const approvalNames = (loan.approvals||[]).map(a=>staffName(a.approver_id));
+  // Each approver by name (stored with the approval), in the order they
+  // acted; a return or rejection is labelled.
+  const approvalNames = (loan.approvals||[]).filter(a => a && (a.name || a.approver_id))
+    .map(a => (a.name || staffName(a.approver_id)) + (a.decision && !/^(Approved|Ok)$/i.test(a.decision) ? ` (${a.decision})` : ''));
   const rows = [
     ['Loan Amount', fmtNum(loan.principal)],
     ['Processing Fee', fmtNum(loan.processingFee||0)],
-    ['Disbursement', loan.disbursedAt ? `• ${fmtDisbursementLine(loan.postedBy?loan.postedBy.at:loan.disbursedAt, loan.principal)}` : 'Not yet disbursed'],
+    ['Disbursement', loan.disbursedAt ? `<ul class="ld-list"><li>${fmtDisbursementLine(loan.postedBy?loan.postedBy.at:loan.disbursedAt, loan.principal)}</li></ul>` : 'Not yet disbursed'],
     ['Posted By', loan.postedBy ? `${escapeHtml(loan.postedBy.name)}<br>${fmtLoanDetailDateTime(loan.postedBy.at)}` : '—'],
     ['Template Creation', loan.templateCreation ? `${escapeHtml(loan.templateCreation.name)}<br>${fmtLoanDetailDateTime(loan.templateCreation.at)}` : '—'],
-    ['Approvals', approvalNames.length ? approvalNames.map(n=>`• ${escapeHtml(n)}`).join('<br>') : '—'],
+    ['Approvals', approvalNames.length ? `<ul class="ld-list">${approvalNames.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>` : '—'],
     ['Loan Maturity', maturity ? `${fmtLoanDetailDate(maturity)}, 12:00 am` : '—'],
     ['Clearance', '----'],
     ['Loan Officer', loan.officerId ? escapeHtml(staffName(loan.officerId)) : '—'],
@@ -17014,28 +17071,38 @@ function renderTagLoanModal(){
   `;
 }
 function renderClientLoanHistoryTable(loans){
+  const num = v => fmt(v).replace('KES ','');
+  const link = (label, fn, title) => `<a href="#" class="lh-link" title="${title||label}" onclick="${fn}; return false;">${label}</a>`;
   const rows = loans.map(l=>{
     const bal = loanBalance(l);
     const principal = loanOutstandingPrincipal(l);
     const arrears = loanArrearsAmount(l);
-    const dotColor = LOAN_STATUS_DOT[l.status] || '#B4791F';
+    // Repayment = the whole amount the client repays on this loan
+    // (installments plus any penalty charged).
+    const sched = l.schedule || [];
+    const repayable = sched.length ? sched.reduce((t,r)=> t + (Number(r.totalDue)||0) + (Number(r.penaltyDue)||0), 0) : (Number(l.principal)||0);
+    const running = ['Active','Disbursed'].includes(l.status);
+    const done = l.status === 'Completed' || l.status === 'Closed';
+    const doneOn = done ? sched.map(r => r.lastPaymentDate).filter(Boolean).sort().pop() : null;
+    const status = running
+      ? `<span class="lh-run">● Running</span>`
+      : done ? `<span class="lh-done">✓ Completed${doneOn ? `<br>${fmtDDMMYYYY(String(doneOn).slice(0,10))}` : ''}</span>`
+      : `<span style="color:${LOAN_STATUS_DOT[l.status] || '#B4791F'};">●</span> ${escapeHtml(l.status)}`;
     return `<tr>
       <td>${l.disbursedAt ? new Date(l.disbursedAt).toLocaleDateString('en-KE',{month:'2-digit',year:'numeric'}) : '—'}<br><span class="badge grey" style="margin-top:4px;">${escapeHtml(l.rating||'Unrated')}</span></td>
-      <td>${fmt(l.principal).replace('KES ','')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanDetailsModal('${l.id}')">Details</span></td>
+      <td>${num(l.principal)}<br>${link('Details', `openLoanDetailsModal('${l.id}')`)}</td>
       <td>${escapeHtml(l.productName||'')}</td>
       <td>None</td>
-      <td>0</td>
-      <td>${fmt(arrears).replace('KES ','')}</td>
-      <td>${fmt(principal).replace('KES ','')}</td>
-      <td>${fmt(bal).replace('KES ','')}<br>
-        <span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">View</span>
-        <span style="cursor:pointer; margin-left:4px;" onclick="openLoanAccountStatementModal('${l.id}')" title="Print">🖨</span>
-        <span style="cursor:pointer; margin-left:4px;" onclick="openLoanLedgerStatementModal('${l.id}')" title="Statement">📄</span>
-      </td>
-      <td><span style="color:${dotColor};">●</span> ${escapeHtml(l.status)}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanActionOptionsModal('${l.id}')">☰ Action</span></td>
+      <td>${num(loanUnpaidPenalty(l))}</td>
+      <td>${num(arrears)}</td>
+      <td>${num(principal)}</td>
+      <td>${num(bal)}</td>
+      <td class="lh-repay">${num(repayable)} ${link('View', `openInstallmentsModal('${l.id}')`, 'Installments')}<br>
+        ${link('🖨', `openLoanAccountStatementModal('${l.id}')`, 'Print')} ${link('📄', `openLoanLedgerStatementModal('${l.id}')`, 'Statement')}</td>
+      <td>${status}<br>${link('☰ Action', `openLoanActionOptionsModal('${l.id}')`)}</td>
     </tr>`;
   }).join("");
-  return `<div class="table-wrap"><table>
+  return `<div class="table-wrap"><table class="lh-table">
     <tr><th>Date</th><th>Loan</th><th>Product</th><th>Coll. Agent</th><th>Penalty</th><th>Arrears</th><th>Principal</th><th>Total Bal</th><th>Repayment</th><th>Status</th></tr>
     ${rows || `<tr><td colspan="10" class="empty">No loans yet.</td></tr>`}
   </table></div>`;
@@ -17101,17 +17168,17 @@ function renderClientDetail(id){
         Client Details
         <span onclick="openClient('${id}')" style="position:absolute; right:16px; cursor:pointer;" title="Refresh">🔄</span>
       </div>
-      <table style="width:100%;">
-        <tr><td class="hint" style="width:35%; font-weight:700;">Contact</td><td>${escapeHtml(c.phone||'—')}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Idno</td><td>${escapeHtml(c.idNumber||'—')}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Branch</td><td>${branchName(c.branch)}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Loan officer</td><td>${c.officerId?staffName(c.officerId):'—'}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Cycles</td><td>${loans.length}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Creator</td><td>${c.createdBy?staffName(c.createdBy):'—'}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Location</td><td>${escapeHtml(truncatedLocation)}${location.length>40?` <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="toast('${escapeHtml(location).replace(/'/g,"&#39;")}')">View</span>`:''}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Kin contact</td><td>${escapeHtml(c.nextOfKinPhone||'—')}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Next of kin</td><td>${escapeHtml(c.nextOfKin||'—')}</td></tr>
-        <tr><td class="hint" style="font-weight:700;">Business type</td><td>${escapeHtml(c.businessType||'—')}</td></tr>
+      <table class="cd-table">
+        <tr><td class="cd-k">Contact</td><td>${escapeHtml(c.phone||'—')}</td></tr>
+        <tr><td class="cd-k">Idno</td><td>${escapeHtml(c.idNumber||'—')}</td></tr>
+        <tr><td class="cd-k">Branch</td><td>${branchName(c.branch)}</td></tr>
+        <tr><td class="cd-k">Loan officer</td><td>${c.officerId?staffName(c.officerId):'—'}</td></tr>
+        <tr><td class="cd-k">Cycles</td><td>${loans.length}</td></tr>
+        <tr><td class="cd-k">Creator</td><td>${c.createdBy?staffName(c.createdBy):'—'}</td></tr>
+        <tr><td class="cd-k">Location</td><td>${escapeHtml(truncatedLocation)}${location.length>40?` <span class="hint" style="cursor:pointer; text-decoration:underline;" onclick="toast('${escapeHtml(location).replace(/'/g,"&#39;")}')">View</span>`:''}</td></tr>
+        <tr><td class="cd-k">Kin contact</td><td>${escapeHtml(c.nextOfKinPhone||'—')}</td></tr>
+        <tr><td class="cd-k">Next of kin</td><td>${escapeHtml(c.nextOfKin||'—')}</td></tr>
+        <tr><td class="cd-k">Business type</td><td>${escapeHtml(c.businessType||'—')}</td></tr>
       </table>
       ${canDecideKyc ? `
       <div class="pill-row" style="margin-top:12px;">
@@ -17122,8 +17189,8 @@ function renderClientDetail(id){
     </div>
 
     <div class="card">
-      <div class="card-title" style="background:var(--navy); color:#fff; margin:-16px -16px 12px; padding:12px 16px; border-radius:10px 10px 0 0;">
-        <select onchange="session.clientHistoryTab=this.value; renderApp();" style="font-size:12px; padding:4px 8px;">
+      <div class="card-title lh-bar">
+        <select onchange="session.clientHistoryTab=this.value; renderApp();">
           ${['Loan History','Client Documents','Repossessed items'].map(t=>`<option ${historyTab===t?'selected':''}>${t}</option>`).join("")}
         </select>
         <span>${historyTab}</span>

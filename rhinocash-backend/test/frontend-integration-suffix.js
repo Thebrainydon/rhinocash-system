@@ -8538,6 +8538,30 @@ apiRequest = async function(method, path, body){
     session.c2bPaymentsState = savedSt; DB.c2bPaymentsBrowser = savedB;
   }
 
+  // ---- Client Loan History: every value sits under its own header ----
+  {
+    const loan = { id:'lnx', clientId:'clx', principal:5000, productName:'Starter', status:'Active', disbursedAt:'2026-10-01T09:00:00Z', rating:'Unrated',
+      schedule:[{ totalDue:3000, paidAmount:1000, principalDue:2500, interestDue:500, dueDate:'2099-01-01', status:'Pending' }, { totalDue:3100, paidAmount:0, principalDue:2500, interestDue:600, dueDate:'2099-02-01', status:'Pending' }] };
+    const h = renderClientLoanHistoryTable([loan]);
+    const rows = h.split('<tr>').slice(1);
+    const headers = (rows[0].match(/<th>/g) || []).length, cells = (rows[1].match(/<td[ >]/g) || []).length;
+    __assert(headers === 10 && cells === 10, "Loan History has one cell per header (10 and 10)");
+    const tds = rows[1].split(/<td[ >]/).slice(1);
+    __assert(tds[7].startsWith('5,100') && /^[^<]*6,100/.test(tds[8].replace(/^class="lh-repay">/, '')) && tds[8].includes("openInstallmentsModal('lnx')") && tds[8].includes('Statement') && tds[9].includes('Running') && tds[9].includes('Action'),
+      "Total Bal shows the balance, Repayment the total repayable with View/print/statement, Status shows Running + Action");
+    const done = renderClientLoanHistoryTable([Object.assign({}, loan, { status:'Completed', schedule:[{ totalDue:3000, paidAmount:3000, principalDue:2500, interestDue:500, dueDate:'2026-09-01', status:'Paid', lastPaymentDate:'2026-09-25T10:00:00Z' }] })]);
+    __assert(done.includes('Completed') && done.includes('25-09-2026'), "a completed loan shows Completed with its clearance date");
+  }
+  // ---- Loan Details: Approvals lists the approvers by name ----
+  {
+    const savedLoans = DB.loans, savedModal = modal;
+    DB.loans = [{ id:'lnd', principal:9000, status:'Active', approvals:[{ name:'Mathiahan Pepela', decision:'Approved' }, { approver_id:'nobody', name:'Daniel Munyoki', decision:'Approved' }, { name:'Kelvin Muturi', decision:'Returned' }], schedule:[] }];
+    modal = { type:'loan-details', loanId:'lnd' };
+    const h = renderLoanDetailsModal();
+    __assert(h.includes('<li>Mathiahan Pepela</li>') && h.includes('<li>Daniel Munyoki</li>') && h.includes('Kelvin Muturi (Returned)') && !/<li>—<\/li>/.test(h), "Loan Details lists each approver's name, not dashes");
+    DB.loans = savedLoans; modal = savedModal;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

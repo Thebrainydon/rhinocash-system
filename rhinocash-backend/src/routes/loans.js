@@ -2025,7 +2025,7 @@ function register(router) {
        FROM loan_schedule s WHERE s.loan_id = ? ORDER BY s.period`,
       [loan.id]
     );
-    const approvals = await all('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY created_at', [loan.id]);
+    const approvals = await all('SELECT la.*, u.name FROM loan_approvals la LEFT JOIN users u ON u.id = la.approver_id WHERE la.loan_id = ? ORDER BY la.created_at', [loan.id]);
     // Real, derived from records that already exist as a side effect of
     // the real actions that created/disbursed this loan — no new columns,
     // no fabricated data. "Posted By" is whoever posted the real
