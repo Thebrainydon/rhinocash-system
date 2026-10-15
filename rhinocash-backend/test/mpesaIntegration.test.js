@@ -92,6 +92,23 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(attempt.status === 200 && ['NOT_CONFIGURED', 'FAILED', 'INITIATED'].includes(attempt.json.status), 'the real STK initiation route is reachable end-to-end (auth -> scope -> validation -> real integration function), returning a real status');
   }
 
+  // ---- Phone numbers are sent to Safaricom as 2547XXXXXXXX ----
+  {
+    const mpesa = require('../src/integrations/mpesa');
+    const t = mpesa.toMsisdn;
+    assert(t('0758414779') === '254758414779' && t('+254 758 414 779') === '254758414779' && t('758414779') === '254758414779' && t('254758414779') === '254758414779', 'local, +254 and bare numbers all become 2547XXXXXXXX');
+    assert(t('0110123456') === '254110123456', '01XX numbers are converted too');
+    assert(t('12345') === null && t('') === null && t('0858414779') === null && t('25475841477') === null, 'numbers Safaricom would refuse are caught before sending');
+    const keys = ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_SHORTCODE', 'MPESA_PASSKEY', 'MPESA_ENV'];
+    const prev = keys.map(k => process.env[k]);
+    Object.assign(process.env, { MPESA_CONSUMER_KEY: 'k', MPESA_CONSUMER_SECRET: 's', MPESA_SHORTCODE: '174379', MPESA_PASSKEY: 'p', MPESA_ENV: 'sandbox' });
+    const bad = await mpesa.initiateStkPush({ phone: '12345', amount: 10, loanId, initiatedBy: null });
+    assert(bad.status === 'FAILED' && /Invalid phone number/.test(bad.message), 'an invalid number gets a clear message without calling Safaricom');
+    const walletBad = await mpesa.initiateWalletStkPush({ accountId: 'x', accountNumber: 'x', phone: 'abc', amount: 10 });
+    assert(walletBad.status === 'FAILED' && /Invalid phone number/.test(walletBad.message), 'wallet deposits check the number the same way');
+    keys.forEach((k, i) => { if (prev[i] === undefined) delete process.env[k]; else process.env[k] = prev[i]; });
+  }
+
   // =========================================================
   // 3. CALLBACK -> REAL PAYMENT BRIDGE — the other critical gap
   // =========================================================

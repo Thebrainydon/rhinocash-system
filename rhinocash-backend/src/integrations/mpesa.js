@@ -39,6 +39,16 @@ async function getActiveEnvironment() {
   return row ? row.active_environment : null;
 }
 
+// Safaricom only accepts 2547XXXXXXXX / 2541XXXXXXXX. Staff type numbers
+// the local way (0758…, +254 758…, 758…), so convert before sending.
+const INVALID_PHONE = 'Invalid phone number. Enter a Safaricom number like 0712345678 or 254712345678.';
+function toMsisdn(phone) {
+  let d = String(phone || '').replace(/\D/g, '');
+  if (d.length === 10 && d.startsWith('0')) d = '254' + d.slice(1);
+  else if (d.length === 9 && /^[17]/.test(d)) d = '254' + d;
+  return /^254[17]\d{8}$/.test(d) ? d : null;
+}
+
 // The public address Safaricom calls back on. It is the company domain
 // (rhinocash.co.ke), not the hosting provider's address; PUBLIC_API_URL
 // overrides it when the backend is served from another subdomain.
@@ -251,6 +261,8 @@ async function testConnection(environment, actorUserId) {
 async function initiateStkPush({ phone, amount, loanId, accountRef, initiatedBy }) {
   const config = await effectiveConfig();
   if (!config) return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration.' };
+  phone = toMsisdn(phone);
+  if (!phone) return { status: 'FAILED', message: INVALID_PHONE };
   const tokenResult = await requestOAuthToken(config);
   if (!tokenResult.ok) return { status: 'FAILED', message: tokenResult.message };
 
@@ -301,6 +313,8 @@ async function initiateStkPush({ phone, amount, loanId, accountRef, initiatedBy 
 async function initiateWalletStkPush({ accountId, accountNumber, phone, amount, initiatedBy }) {
   const config = await effectiveConfig();
   if (!config) return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration.' };
+  phone = toMsisdn(phone);
+  if (!phone) return { status: 'FAILED', message: INVALID_PHONE };
   const tokenResult = await requestOAuthToken(config);
   if (!tokenResult.ok) return { status: 'FAILED', message: tokenResult.message };
 
@@ -347,6 +361,8 @@ async function initiateWalletStkPush({ accountId, accountNumber, phone, amount, 
 async function initiateStaffWalletStkPush({ accountId, accountNumber, phone, amount, initiatedBy }) {
   const config = await effectiveConfig();
   if (!config) return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration.' };
+  phone = toMsisdn(phone);
+  if (!phone) return { status: 'FAILED', message: INVALID_PHONE };
   const tokenResult = await requestOAuthToken(config);
   if (!tokenResult.ok) return { status: 'FAILED', message: tokenResult.message };
 
@@ -405,6 +421,11 @@ async function initiateLoanFeeStkPush({ feeId, phone, amount, accountRef, initia
     await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, ['No M-Pesa environment is active — configure and activate one in Admin -> System Administration -> Integrations -> M-Pesa Integration. Enter the M-Pesa receipt code manually once the client has paid.', feeId]);
     return { status: 'NOT_CONFIGURED', message: 'No M-Pesa environment is active. Enter the M-Pesa receipt code manually once the client has paid.' };
   }
+  phone = toMsisdn(phone);
+  if (!phone) {
+    await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, [INVALID_PHONE, feeId]);
+    return { status: 'FAILED', message: INVALID_PHONE };
+  }
   const tokenResult = await requestOAuthToken(config);
   if (!tokenResult.ok) {
     await run(`UPDATE loan_fee_payments SET status = 'STK Not Sent', stk_message = ? WHERE id = ?`, [tokenResult.message, feeId]);
@@ -458,6 +479,8 @@ async function initiateB2C({ loanId, phone, amount, initiatedBy, remarks }) {
   if (!config || !config.b2cConfigured) {
     return { status: 'NOT_CONFIGURED', message: 'B2C is not configured. An Admin must set Initiator Name, Security Credential and B2C Shortcode under M-Pesa Configuration.' };
   }
+  phone = toMsisdn(phone);
+  if (!phone) return { status: 'FAILED', message: INVALID_PHONE };
   // Real duplicate-initiation protection: a loan with an unresolved
   // (Requested/Pending) B2C request cannot be sent a second one.
   const pending = await get(`SELECT id FROM mpesa_b2c_requests WHERE loan_id = ? AND status IN ('Requested','Pending')`, [loanId]);
@@ -734,5 +757,5 @@ module.exports = {
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,
   statusFor, testConnection, effectiveConfig,
-  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL,
+  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL, toMsisdn,
 };

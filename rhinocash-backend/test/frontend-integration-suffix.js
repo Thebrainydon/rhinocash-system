@@ -8509,6 +8509,13 @@ apiRequest = async function(method, path, body){
     DB.mpesaAdminConfig = saved;
   }
 
+  // ---- A refused M-Pesa request does not end with the grey "success" bar ----
+  {
+    for (const fn of [submitLoanPaymentRequest, submitStkPush, submitDeposit, submitStaffDeposit]) {
+      __assert(String(fn).includes('throw new ApiError(400'), `${fn.name}: a refused M-Pesa request is reported as a failure`);
+    }
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

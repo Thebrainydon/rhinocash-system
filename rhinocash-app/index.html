@@ -16944,8 +16944,9 @@ function submitLoanPaymentRequest(ev){
   return withRequest('loan-payment-request:'+loanId, async ()=>{
     const res = await api.post('/api/payments/mpesa/initiate', { loan_id: loanId, phone: f.phone, amount: Number(f.amount) });
     if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
-    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
-    else { toast(res.message || "Could not initiate the payment request"); }
+    // A refused request must not end with the grey "success" bar.
+    else if(res.status === 'NOT_CONFIGURED') throw new ApiError(400, "M-Pesa isn't configured here — no real STK push was sent");
+    else throw new ApiError(400, res.message || "Could not initiate the payment request");
   }, {mutates:true});
 }
 function renderLoanPaymentRequestModal(){
@@ -21765,7 +21766,7 @@ function submitStkPush(ev){
     const result = await api.post('/api/payments/mpesa/initiate', { loan_id: f.loan_id, phone: f.phone, amount: Number(f.amount) });
     session.lastStkResult = result;
     if(result.status === 'INITIATED') toast("STK push sent — waiting for the customer to complete it on their phone");
-    else toast(`Request status: ${result.status}`);
+    else throw new ApiError(400, result.message || `Request status: ${result.status}`);
   }, {mutates:true});
 }
 
@@ -27122,8 +27123,8 @@ function submitStaffDeposit(ev){
   return withRequest('staff-deposit-wallet', async ()=>{
     const res = await api.post(`/api/users/me/accounts/${st.type}/deposit`, { phone: f.phone, amount: Number(f.amount) });
     if(res.status === 'INITIATED'){ toast("STK push sent — check your phone"); closeModal(); }
-    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
-    else { toast(res.message || "Could not initiate the deposit"); }
+    else if(res.status === 'NOT_CONFIGURED') throw new ApiError(400, "M-Pesa isn't configured here — no real STK push was sent");
+    else throw new ApiError(400, res.message || "Could not initiate the deposit");
   }, {mutates:true});
 }
 function renderStaffDepositModal(){
@@ -28500,8 +28501,8 @@ function submitDeposit(ev){
   return withRequest('deposit-wallet', async ()=>{
     const res = await api.post(`/api/clients/${clientId}/accounts/${st.type}/deposit`, { phone: f.phone, amount: Number(f.amount) });
     if(res.status === 'INITIATED'){ toast("STK push sent — ask the client to check their phone"); closeModal(); }
-    else if(res.status === 'NOT_CONFIGURED'){ toast("M-Pesa isn't configured here — no real STK push was sent"); }
-    else { toast(res.message || "Could not initiate the deposit"); }
+    else if(res.status === 'NOT_CONFIGURED') throw new ApiError(400, "M-Pesa isn't configured here — no real STK push was sent");
+    else throw new ApiError(400, res.message || "Could not initiate the deposit");
   }, {mutates:true});
 }
 function renderDepositModal(){
