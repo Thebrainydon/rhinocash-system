@@ -45,6 +45,22 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   const dm = await api('PATCH', `/api/users/${mgr0.id}`, { token: admin, body: { role_id: 'manager' } });
   assert(dm.status === 200 && (await user('manager.kisumu@rhinocash.co.ke')).region_id === mgr0.region_id, "3: back as a branch Manager, their region follows the branch again");
 
+  // 4. Assigning a branch's Manager: they move there, and the two records agree.
+  const br = id => get('SELECT id, manager_id, region_id FROM branches WHERE id = ?', [id]);
+  const target = (await get(`SELECT id FROM branches WHERE id <> ? AND manager_id IS NULL AND status = 'Active' LIMIT 1`, [mgr0.branch_id])).id;
+  const as = await api('PATCH', `/api/branches/${target}`, { token: admin, body: { manager_id: mgr0.id } });
+  const mgrNow = await user('manager.kisumu@rhinocash.co.ke');
+  assert(as.status === 200 && (await br(target)).manager_id === mgr0.id && mgrNow.branch_id === target && mgrNow.region_id === (await br(target)).region_id, '4: assigning a branch Manager moves them to that branch (and its region)');
+  assert((await br(mgr0.branch_id)).manager_id !== mgr0.id, '4: …and they stop managing the branch they left');
+  const backHome = await api('PATCH', `/api/users/${mgr0.id}`, { token: admin, body: { branch_id: mgr0.branch_id } });
+  const homeBr = await br(mgr0.branch_id);
+  assert(backHome.status === 200 && (await br(target)).manager_id !== mgr0.id && (homeBr.manager_id === mgr0.id || homeBr.manager_id), "4: moving a Manager on their profile releases the old branch and heads the new one if it has no manager");
+  const promo = await api('PATCH', `/api/users/${mgr0.id}`, { token: admin, body: { role_id: 'regional_manager', region_id: mgr0.region_id } });
+  assert(promo.status === 200 && !(await get('SELECT 1 AS x FROM branches WHERE manager_id = ?', [mgr0.id])), '4: promoted out of Manager, they no longer head a branch');
+  await api('PATCH', `/api/users/${mgr0.id}`, { token: admin, body: { role_id: 'manager', branch_id: mgr0.branch_id } });
+  const fresh = await api('POST', '/api/users', { token: admin, body: { name: 'New Branch Head', email: `newhead.${Date.now()}@rhinocash.co.ke`, role_id: 'manager', branch_id: target } });
+  assert(fresh.status === 201 && (await br(target)).manager_id === fresh.json.user.id, '4: a new Manager added to a branch without one becomes its manager');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

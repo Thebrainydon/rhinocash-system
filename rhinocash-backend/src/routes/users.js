@@ -305,6 +305,7 @@ function register(router) {
         ]
       );
       await run('UPDATE users SET created_by_role = ? WHERE id = ?', [req.user.role_id, id]);
+      await require('./../staffRegion').syncBranchManager(id); // a new Manager heads their branch if it has none
       created = await get('SELECT * FROM users WHERE id = ?', [id]);
       await logAction(req, {
         action: 'Created employee', module: 'users', recordType: 'Employee', recordId: id,
@@ -344,6 +345,7 @@ function register(router) {
     await run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
     // Transfers and promotions: anyone but a Regional Manager works in their branch's region.
     await require('./../staffRegion').syncStaffRegions({ userId: req.params.id });
+    await require('./../staffRegion').syncBranchManager(req.params.id);
     const after = await get('SELECT * FROM users WHERE id = ?', [req.params.id]);
     await logAction(req, {
       action: 'Updated employee', module: 'users', recordType: 'Employee', recordId: req.params.id,
@@ -509,6 +511,7 @@ function register(router) {
       );
       await run('INSERT INTO user_accounts (employee_id, login_email, status, username, created_by_role, screen_protect) VALUES (?,?,?,?,?,?)', [id, normalizedEmail, 'Active', username, req.user.role_id, req.user.role_id === 'hr' ? 1 : 0]);
       await run('UPDATE users SET created_by_role = ? WHERE id = ?', [req.user.role_id, id]);
+      await require('./../staffRegion').syncBranchManager(id); // a new Manager heads their branch if it has none
       created = await get('SELECT * FROM users WHERE id = ?', [id]);
       await notify(id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
       await logAction(req, {
@@ -578,6 +581,7 @@ function register(router) {
     await run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
     // Transfers and promotions: anyone but a Regional Manager works in their branch's region.
     await require('./../staffRegion').syncStaffRegions({ userId: req.params.id });
+    await require('./../staffRegion').syncBranchManager(req.params.id);
     const after = await get('SELECT * FROM users WHERE id = ?', [req.params.id]);
     await logAction(req, {
       action: 'Updated user access', module: 'users', recordType: 'User', recordId: req.params.id,

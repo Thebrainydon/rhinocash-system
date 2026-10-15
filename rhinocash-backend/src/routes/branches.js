@@ -135,13 +135,20 @@ function register(router) {
       const candidate = await get('SELECT * FROM users WHERE id = ?', [manager_id]);
       if (!candidate) return next({ status: 400, message: 'manager_id does not refer to a real user' });
       if (candidate.role_id !== 'manager') return next({ status: 400, message: 'Only a user with the Manager role can be assigned as branch manager' });
-      if (candidate.status !== 'Active') return next({ status: 409, message: 'Cannot assign an inactive staff member as branch manager' });
-      if (candidate.branch_id && candidate.branch_id !== before.id) return next({ status: 409, message: 'This manager is assigned to a different branch — reassign their own branch first' });
+      const acct = await get('SELECT status FROM user_accounts WHERE employee_id = ?', [candidate.id]);
+      if (candidate.status !== 'Active' || (acct && acct.status !== 'Active')) return next({ status: 409, message: 'Cannot assign an inactive or suspended staff member as branch manager' });
     }
     await run(
       'UPDATE branches SET name = COALESCE(?,name), location = COALESCE(?,location), phone = COALESCE(?,phone), region_id = COALESCE(?,region_id), status = COALESCE(?,status), manager_id = COALESCE(?,manager_id) WHERE id = ?',
       [name, location, phone, region_id, status, manager_id, req.params.id]
     );
+    // The Manager assigned here works at this branch from now on (moved from
+    // any other branch they managed, which is then left without a manager).
+    if (manager_id && manager_id !== before.manager_id) {
+      await run('UPDATE branches SET manager_id = NULL WHERE manager_id = ? AND id <> ?', [manager_id, req.params.id]);
+      await run('UPDATE users SET branch_id = ? WHERE id = ?', [req.params.id, manager_id]);
+      await require('./../staffRegion').syncStaffRegions({ userId: manager_id });
+    }
     // Moving a branch to another region moves its staff with it (a Regional
     // Manager keeps their own region); its loans then reach that region's
     // Regional Manager, since their scope is read from the branch.

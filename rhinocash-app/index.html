@@ -23369,6 +23369,8 @@ function renderBranchDirectoryPage(){
               <div class="hint">Changing the region moves the branch's staff and loans to that region and its Regional Manager.</div></div>
             <div class="field"><label>Location</label><input name="location" value="${escapeHtml(ed.location || '')}"></div>
             <div class="field"><label>Phone</label><input name="phone" value="${escapeHtml(ed.phone || '')}"></div>
+            <div class="field"><label>Branch Manager</label><select name="manager_id">${brManagerOptions(ed.manager_id)}</select>
+              <div class="hint">The manager chosen moves to this branch.</div></div>
           </div>
           <div class="pill-row"><button class="btn btn-primary btn-sm" type="submit">Save</button><button class="btn btn-outline btn-sm" type="button" onclick="session.brEdit=null; renderApp();">Cancel</button></div>
         </form></div>` : ''}
@@ -23414,7 +23416,9 @@ function submitBranchEdit(ev, id){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   return withRequest('edit-branch-' + id, async ()=>{
-    const r = await api.patch(`/api/branches/${id}`, { name: f.name, region_id: f.region_id, location: f.location || null, phone: f.phone || null });
+    const before = (DB.acctPages.branchdir && DB.acctPages.branchdir.branches || []).find(b => b.id === id) || {};
+    const r = await api.patch(`/api/branches/${id}`, Object.assign({ name: f.name, region_id: f.region_id, location: f.location || null, phone: f.phone || null }, f.manager_id && f.manager_id !== before.manager_id ? { manager_id: f.manager_id } : {}));
+    if(f.manager_id && f.manager_id !== before.manager_id){ try{ await refreshStaffMember(f.manager_id); }catch(e){} toast(`${staffName(f.manager_id)} now manages this branch`); }
     session.brEdit = null;
     if(r.staffMoved){ const rg = (DB.regions || []).find(x => x.id === f.region_id); toast(`${r.staffMoved} staff moved to ${rg ? rg.name : 'the new region'} with the branch`); try{ await admRefreshStaff(); }catch(e){} }
     const br = await api.get('/api/branches'); DB.branches = (br.branches || []).map(adaptBranch);
@@ -23476,7 +23480,8 @@ function renderBranchDetailsPage(id){
         </div>
       </div>
       ${hasPermission(session.role,"Manage Branches") ? `<div class="pill-row" style="margin-top:12px;">
-        <button class="btn btn-sm btn-outline" onclick="const n=prompt('Assign manager — enter staff id:'); if(n) withRequest('br-mgr-${branch.id}', ()=>assignBranchManager('${branch.id}',n))">Assign Manager</button>
+        <select id="br-mgr-sel" class="btn btn-sm btn-outline" style="max-width:260px;">${brManagerOptions(branch.manager_id)}</select>
+        <button class="btn btn-sm btn-primary" onclick="const v=document.getElementById('br-mgr-sel').value; if(v) withRequest('br-mgr-${branch.id}', ()=>assignBranchManager('${branch.id}',v)); else toast('Choose a manager first');">Assign Manager</button>
         ${branch.status==='Active' ? `<button class="btn btn-sm btn-red" onclick="const r=prompt('Reason for closing:'); if(r!==null) withRequest('br-close-${branch.id}', ()=>closeBranch('${branch.id}',r))">Close Branch</button>` : ""}
       </div>` : ""}
     </div>
@@ -23510,10 +23515,16 @@ function renderBranchDetailsPage(id){
     </div>
   `;
 }
+// Active staff with the Manager role, each with the branch they work at now.
+function brManagerOptions(currentId){
+  const mgrs = (DB.staff || []).filter(s => s.role === 'Manager' && s.status !== 'Terminated').sort((a, b) => a.name.localeCompare(b.name));
+  return `<option value="">— Choose manager —</option>` + mgrs.map(m => `<option value="${m.id}" ${m.id === currentId ? 'selected' : ''}>${escapeHtml(m.name)} — ${m.branch ? escapeHtml(branchName(m.branch)) : 'no branch'}</option>`).join('');
+}
 async function assignBranchManager(branchId, managerId){
   await api.patch(`/api/branches/${branchId}`, { manager_id: managerId });
-  toast("Branch manager assigned");
-  await loadBranchDetails(branchId);
+  try{ await refreshStaffMember(managerId); const br = await api.get('/api/branches'); DB.branches = (br.branches || []).map(adaptBranch); }catch(e){}
+  toast(`${staffName(managerId)} now manages ${branchName(branchId)}`);
+  if(session.selectedBranchId === branchId) await loadBranchDetails(branchId);
 }
 async function closeBranch(branchId, reason){
   await api.post(`/api/branches/${branchId}/close`, { reason });

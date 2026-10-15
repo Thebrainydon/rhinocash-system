@@ -1794,6 +1794,14 @@ async function initSchema() {
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('hr-company-details-mombasa-v1') ON CONFLICT DO NOTHING`);
   }
+  // A branch with no manager on record takes the Manager who works there
+  // (see staffRegion.js syncBranchManager); applied once to existing data.
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'branch-manager-sync-v1'`))) {
+    await rawRun(`UPDATE branches b SET manager_id = m.id FROM (SELECT DISTINCT ON (branch_id) id, branch_id FROM users
+      WHERE role_id = 'manager' AND status <> 'Terminated' AND branch_id IS NOT NULL ORDER BY branch_id, created_at) m
+      WHERE b.id = m.branch_id AND b.manager_id IS NULL`);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('branch-manager-sync-v1') ON CONFLICT DO NOTHING`);
+  }
   // Loan Officers must be able to register clients and create loan
   // applications. Some deployments ended up without these menu grants (the
   // server then answered 403), so grant them to the role and to any officer

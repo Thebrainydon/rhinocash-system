@@ -18,4 +18,16 @@ async function syncStaffRegions({ userId, branchId } = {}) {
   return (r && (r.changes ?? r.rowCount)) || 0;
 }
 
-module.exports = { syncStaffRegions };
+// A branch's Manager and that Manager's own branch stay in step: a Manager
+// placed in a branch with no manager becomes its manager, and anyone who
+// leaves a branch (moved, or no longer a Manager) stops being its manager.
+async function syncBranchManager(userId) {
+  const { get } = require('./db');
+  const u = await get('SELECT id, role_id, branch_id, status FROM users WHERE id = ?', [userId]);
+  if (!u) return;
+  const keep = u.role_id === 'manager' && u.status !== 'Terminated' ? u.branch_id : null;
+  await run('UPDATE branches SET manager_id = NULL WHERE manager_id = ? AND id IS DISTINCT FROM ?', [u.id, keep]);
+  if (keep) await run('UPDATE branches SET manager_id = ? WHERE id = ? AND manager_id IS NULL', [u.id, keep]);
+}
+
+module.exports = { syncStaffRegions, syncBranchManager };
