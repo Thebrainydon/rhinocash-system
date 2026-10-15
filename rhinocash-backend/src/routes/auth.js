@@ -35,6 +35,8 @@ async function accountInfoFor(employeeId) {
     accountCreatedAt: acct ? acct.created_at : null,
     accountLastLoginAt: acct ? acct.last_login_at : null,
     username: acct ? acct.username : null,
+    screenProtect: !!(acct && acct.screen_protect),
+    accountCreatedByRole: acct ? acct.created_by_role || null : null,
   };
 }
 
@@ -51,6 +53,15 @@ function register(router) {
   router.post('/api/auth/device-check', async (req, res) => {
     const uid = String((req.body || {}).uid || '').slice(0, 100);
     res.json({ removed: await require('./../removedAccounts').isRemovedUser(uid) });
+  });
+
+  // A protected user's attempt to capture the screen (PrintScreen, printing,
+  // a capture shortcut) is recorded for Admin; one entry a minute at most.
+  router.post('/api/auth/screen-capture-attempt', requireAuth, async (req, res) => {
+    const kind = String((req.body || {}).kind || 'screenshot').replace(/[^a-z -]/gi, '').slice(0, 40);
+    const recent = await get(`SELECT 1 AS x FROM audit_logs WHERE user_id = ? AND action = 'Screen capture attempt' AND created_at > iso_offset(interval '-1 minute') LIMIT 1`, [req.user.id]).catch(() => null);
+    if (!recent) await logAction(req, { action: 'Screen capture attempt', module: 'security', recordType: 'User', recordId: req.user.id, newValue: { kind, page: String((req.body || {}).page || '').slice(0, 80) } });
+    res.json({ ok: true });
   });
 
   router.post('/api/auth/login', async (req, res, next) => {

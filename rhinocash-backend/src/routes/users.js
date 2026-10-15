@@ -304,6 +304,7 @@ function register(router) {
           entryDate,
         ]
       );
+      await run('UPDATE users SET created_by_role = ? WHERE id = ?', [req.user.role_id, id]);
       created = await get('SELECT * FROM users WHERE id = ?', [id]);
       await logAction(req, {
         action: 'Created employee', module: 'users', recordType: 'Employee', recordId: id,
@@ -453,7 +454,10 @@ function register(router) {
       await transaction(async () => {
         await run('UPDATE users SET password_hash=?, password_salt=?, must_change_password=1, password_changed_at=iso_now(), role_id=?, access_level=?, branch_id=?, region_id=? WHERE id=?',
           [hash, salt, roleId, accessLevel, branchId, regionId, employee.id]);
-        await run('INSERT INTO user_accounts (employee_id, login_email, status, username) VALUES (?,?,?,?)', [employee.id, loginEmail, 'Active', username]);
+        // Someone HR registered (this login, or the employee HR added) cannot
+        // take screenshots; someone Admin registered can.
+        await run('INSERT INTO user_accounts (employee_id, login_email, status, username, created_by_role, screen_protect) VALUES (?,?,?,?,?,?)',
+          [employee.id, loginEmail, 'Active', username, req.user.role_id, req.user.role_id === 'hr' || employee.created_by_role === 'hr' ? 1 : 0]);
         await notify(employee.id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash System Account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
         await logAction(req, {
           action: 'Created user account', module: 'users', recordType: 'User', recordId: employee.id,
@@ -503,7 +507,8 @@ function register(router) {
           entryDate,
         ]
       );
-      await run('INSERT INTO user_accounts (employee_id, login_email, status, username) VALUES (?,?,?,?)', [id, normalizedEmail, 'Active', username]);
+      await run('INSERT INTO user_accounts (employee_id, login_email, status, username, created_by_role, screen_protect) VALUES (?,?,?,?,?,?)', [id, normalizedEmail, 'Active', username, req.user.role_id, req.user.role_id === 'hr' ? 1 : 0]);
+      await run('UPDATE users SET created_by_role = ? WHERE id = ?', [req.user.role_id, id]);
       created = await get('SELECT * FROM users WHERE id = ?', [id]);
       await notify(id, 'account_created', 'Welcome to Rhinocash', 'Your Rhinocash account has been created. Sign in with the temporary password you were given — you will be asked to set a new one immediately.');
       await logAction(req, {
@@ -645,6 +650,18 @@ function register(router) {
     );
     await logAction(req, { action: 'Set permission override', module: 'users', recordType: 'User', recordId: user.id, newValue: { [req.params.permissionId]: !!allowed }, reason });
     res.json({ ok: true });
+  });
+
+  // ---- Screenshot protection (System Administrator only) ----
+  // Accounts created by HR start protected; Admin turns it on or off per user.
+  router.post('/api/users/:id/screen-protection', requireAuth, requirePermission('manage_users'), requireAdminOnly('change screenshot protection'), async (req, res, next) => {
+    const acct = await get('SELECT employee_id, screen_protect FROM user_accounts WHERE employee_id = ?', [req.params.id]);
+    if (!acct) return next({ status: 404, message: 'This employee has no System Account' });
+    const on = !!(req.body && req.body.enabled);
+    await run('UPDATE user_accounts SET screen_protect = ? WHERE employee_id = ?', [on ? 1 : 0, req.params.id]);
+    await logAction(req, { action: on ? 'Blocked screenshots for user' : 'Allowed screenshots for user', module: 'users', recordType: 'User', recordId: req.params.id,
+      previousValue: { screenProtect: !!acct.screen_protect }, newValue: { screenProtect: on } });
+    res.json({ ok: true, screenProtect: on });
   });
 
   // ---- Permanently delete a user (System Administrator only) ----

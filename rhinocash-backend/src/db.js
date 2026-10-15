@@ -1961,6 +1961,25 @@ async function initSchema() {
   await rawRun(`CREATE TABLE IF NOT EXISTS staff_detail_forms (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL DEFAULT '{}',
     updated_by TEXT REFERENCES users(id) ON DELETE SET NULL, updated_at TEXT NOT NULL DEFAULT iso_now())`);
+  // Screenshot protection (see routes/users.js): a person HR registered —
+  // the employee record or their login made by HR — works on a protected
+  // screen; Admin may switch it per user. created_by_role records who made
+  // the employee and the account. Existing people are set once from the
+  // audit trail.
+  await ensureColumn('users', 'created_by_role TEXT');
+  await ensureColumn('user_accounts', 'created_by_role TEXT');
+  await ensureColumn('user_accounts', 'screen_protect INTEGER NOT NULL DEFAULT 0');
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'screen-protect-hr-created-v1'`))) {
+    await rawRun(`UPDATE users u SET created_by_role = a.role_id
+      FROM (SELECT DISTINCT ON (record_id) record_id, role_id FROM audit_logs WHERE action IN ('Created employee', 'Created user') ORDER BY record_id, id) a
+      WHERE a.record_id = u.id AND u.created_by_role IS NULL`);
+    await rawRun(`UPDATE user_accounts ua SET created_by_role = a.role_id
+      FROM (SELECT DISTINCT ON (record_id) record_id, role_id FROM audit_logs WHERE action IN ('Created user account', 'Created user') ORDER BY record_id, id) a
+      WHERE a.record_id = ua.employee_id AND ua.created_by_role IS NULL`);
+    await rawRun(`UPDATE user_accounts ua SET screen_protect = 1 FROM users u
+      WHERE u.id = ua.employee_id AND (ua.created_by_role = 'hr' OR u.created_by_role = 'hr') AND u.role_id <> 'admin'`);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('screen-protect-hr-created-v1') ON CONFLICT DO NOTHING`);
+  }
   // HR › Employment Contract, one per employee (see routes/staffForms.js).
   await rawRun(`CREATE TABLE IF NOT EXISTS staff_contracts (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL DEFAULT '{}',

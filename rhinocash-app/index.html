@@ -2822,6 +2822,7 @@ function adaptStaff(u){
     // state (see auth.js's accountInfoFor()/publicUser()), not re-derived
     // from `status` above (which stays the Employee's own employment status).
     systemAccount:u.systemAccount, hasAccount:u.hasAccount, username:u.username || '',
+    screenProtect: !!u.screenProtect, accountCreatedByRole: u.accountCreatedByRole || null, createdByRole: u.created_by_role || null,
     moduleAccess: (u.finalAccess && u.finalAccess.modules) || null };
 }
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
@@ -4065,6 +4066,95 @@ function renderSiteUnreachable(){
     </div>
   </div>`;
 }
+// ---- Screenshot protection ----
+// Accounts created by HR (Admin can change it per user) work under a
+// protected screen. A web page cannot stop the phone's or computer's own
+// screenshot buttons, so protection makes captures useless and traceable:
+// the user's name, staff ID and the time are watermarked over every page;
+// the page goes blank on PrintScreen / capture shortcuts and whenever the
+// window loses focus (snipping tools, app switcher); printing the page,
+// copying and right-click are switched off; each attempt is recorded.
+const SP = { on: false, timer: null, bound: false, lastLog: 0, hideTimer: null };
+const SP_CSS = `
+body.sp-on{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+body.sp-on input, body.sp-on textarea, body.sp-on select, body.sp-on [contenteditable="true"]{-webkit-user-select:text;user-select:text;}
+body.sp-on img{-webkit-user-drag:none;}
+#sp-wm{position:fixed;inset:0;pointer-events:none;z-index:2147482000;background-repeat:repeat;}
+#sp-shield{position:fixed;inset:0;z-index:2147483600;background:#0f1b2d;color:#fff;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;text-align:center;padding:24px;font-family:Inter,Arial,sans-serif;}
+body.sp-hidden #sp-shield{display:flex;}
+#sp-shield b{font-size:18px;} #sp-shield span{font-size:13px;opacity:.8;}
+@media print{ body.sp-on > *{display:none !important;} body.sp-on::before{content:"Printing this page is disabled for your account.";display:block;padding:40px;font:16px Arial,sans-serif;} }`;
+if(typeof document !== 'undefined' && document.head && typeof document.createElement === 'function'){ const s = document.createElement('style'); s.textContent = SP_CSS; document.head.appendChild(s); }
+function screenProtectWanted(){ return !!(session.loggedIn && DB && DB.me && DB.me.screenProtect && session.role !== 'Admin'); }
+function spWatermark(){
+  const me = DB && DB.me || {};
+  const when = new Date().toLocaleString('en-KE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const text = [me.name || session.userName || '', me.staff_code || '', when].filter(Boolean).join(' · ');
+  const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><text x="20" y="120" transform="rotate(-24 180 100)" font-family="Arial" font-size="15" font-weight="700" fill="rgba(25,35,60,0.11)">${esc(text)}</text></svg>`;
+  let el = document.getElementById('sp-wm');
+  if(!el){ el = document.createElement('div'); el.id = 'sp-wm'; el.setAttribute('aria-hidden', 'true'); document.body.appendChild(el); }
+  el.style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+}
+function spShield(on, ms){
+  if(!SP.on) return;
+  let el = document.getElementById('sp-shield');
+  if(!el){ el = document.createElement('div'); el.id = 'sp-shield'; el.innerHTML = '<b>Screen capture is not allowed</b><span>This account is protected. Return to the page to continue.</span>'; document.body.appendChild(el); }
+  document.body.classList.toggle('sp-hidden', !!on);
+  if(SP.hideTimer){ clearTimeout(SP.hideTimer); SP.hideTimer = null; }
+  if(on && ms) SP.hideTimer = setTimeout(() => { if(typeof document.hasFocus !== 'function' || document.hasFocus()) document.body.classList.remove('sp-hidden'); }, ms);
+}
+function spLog(kind){
+  if(!SP.on || Date.now() - SP.lastLog < 60000) return;
+  SP.lastLog = Date.now();
+  api.post('/api/auth/screen-capture-attempt', { kind, page: session.subtab || session.section || '' }).catch(() => {});
+}
+function spEditable(t){ return !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')); }
+function spBind(){
+  if(SP.bound || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  SP.bound = true;
+  const capture = (e, kind) => { e.preventDefault(); spShield(true, 1500); spLog(kind); };
+  document.addEventListener('keydown', e => {
+    if(!SP.on) return;
+    const k = String(e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+    if(k === 'printscreen') return capture(e, 'PrintScreen');
+    if(mod && (k === 'p' || k === 's')) return capture(e, k === 'p' ? 'print' : 'save page');
+    if(e.metaKey && e.shiftKey && ['3', '4', '5', 's'].includes(k)) return capture(e, 'capture shortcut');
+  }, true);
+  document.addEventListener('keyup', e => {
+    if(!SP.on || String(e.key || '').toLowerCase() !== 'printscreen') return;
+    spShield(true, 1500); spLog('PrintScreen');
+    try{ navigator.clipboard && navigator.clipboard.writeText && navigator.clipboard.writeText('Screen capture is not allowed').catch(() => {}); }catch(err){}
+  }, true);
+  document.addEventListener('contextmenu', e => { if(SP.on && !spEditable(e.target)) e.preventDefault(); }, true);
+  ['copy', 'cut'].forEach(t => document.addEventListener(t, e => { if(SP.on && !spEditable(e.target)) { e.preventDefault(); spLog('copy'); } }, true));
+  document.addEventListener('dragstart', e => { if(SP.on && !spEditable(e.target)) e.preventDefault(); }, true);
+  document.addEventListener('visibilitychange', () => { if(SP.on) spShield(document.visibilityState === 'hidden'); });
+  window.addEventListener('blur', () => { if(SP.on) spShield(true); });
+  window.addEventListener('focus', () => { if(SP.on) spShield(false); });
+  window.addEventListener('beforeprint', () => { if(SP.on){ spShield(true); spLog('print'); } });
+  window.addEventListener('afterprint', () => { if(SP.on) spShield(false); });
+}
+function applyScreenProtection(){
+  if(typeof document === 'undefined' || !document.body || !document.body.classList) return;
+  const want = screenProtectWanted();
+  if(want === SP.on) return;
+  SP.on = want;
+  document.body.classList.toggle('sp-on', want);
+  if(want){
+    spBind(); spWatermark();
+    SP.timer = setInterval(spWatermark, 60000);
+  } else {
+    if(SP.timer){ clearInterval(SP.timer); SP.timer = null; }
+    document.body.classList.remove('sp-hidden');
+    const wm = document.getElementById('sp-wm'); if(wm) wm.remove();
+  }
+}
+async function setScreenProtect(id, on){
+  await api.post(`/api/users/${id}/screen-protection`, { enabled: on });
+  const s = await refreshStaffMember(id);
+  toast(`${s ? s.name : 'User'}: screenshots ${on ? 'blocked' : 'allowed'}`);
+}
 function setTabTitle(){
   if(typeof document === 'undefined') return;
   if(session.accountRemoved){ document.title = location.hostname || 'This site can\u2019t be reached'; return; }
@@ -4073,6 +4163,7 @@ function setTabTitle(){
 }
 function renderApp(){
   try{ setTabTitle(); }catch(e){}
+  try{ applyScreenProtection(); }catch(e){}
   const root = document.getElementById('root');
   if(!session.authenticated){
     // A borrower or guarantor opening their signing link signs without logging in.
@@ -14361,6 +14452,7 @@ function renderStaffDetailPanel(id){
                shown above, which can now genuinely differ from it. -->
           <div class="detail-label">System Account</div><div class="detail-value">${s.hasAccount ? statusBadge(s.systemAccount) : '<span class="badge grey">Not Created</span>'}</div>
           <div class="detail-label">Last Login</div><div class="detail-value">${s.lastLoginAt? new Date(s.lastLoginAt).toLocaleString() : "Never"}</div>
+          ${s.hasAccount ? `<div class="detail-label">Screenshots</div><div class="detail-value">${s.screenProtect ? '<span class="badge red">Blocked</span>' : '<span class="badge green">Allowed</span>'}${(s.createdByRole || s.accountCreatedByRole) ? ` <span class="hint">registered by ${escapeHtml(ROLE_ID_TO_DISPLAY[s.createdByRole || s.accountCreatedByRole] || s.createdByRole || s.accountCreatedByRole)}</span>` : ''}</div>` : ''}
           <div class="detail-label">Final Access</div><div class="detail-value" style="color:var(--rust);">${fa.finalLine}</div>
         </div>
       </div>
@@ -14370,6 +14462,7 @@ function renderStaffDetailPanel(id){
         <button class="btn btn-sm ${s.systemAccount==='Active'?'btn-outline':'btn-green'}" onclick="withRequest('staff-status-active', ()=>setStaffStatus('${s.id}','Active'))">Activate</button>
         <button class="btn btn-sm ${s.systemAccount==='Suspended'?'btn-outline':'btn-red'}" onclick="const r=prompt('Reason for suspending:'); if(r!==null) withRequest('staff-status-suspend', ()=>setStaffStatus('${s.id}','Suspended', r))">Suspend</button>
         <button class="btn btn-sm ${s.systemAccount==='Deactivated'?'btn-outline':'btn-red'}" onclick="const r=prompt('Reason for deactivating:'); if(r!==null) withRequest('staff-status-deactivate', ()=>setStaffStatus('${s.id}','Deactivated', r))">Deactivate</button>
+        ${session.role === 'Admin' && s.id !== session.userId ? `<button class="btn btn-sm btn-outline" onclick="withRequest('staff-sp', ()=>setScreenProtect('${s.id}', ${!s.screenProtect}))">${s.screenProtect ? 'Allow screenshots' : 'Block screenshots'}</button>` : ''}
         ${session.role === 'Admin' && s.id !== session.userId ? `<button class="btn btn-sm btn-red" onclick="permanentlyDeleteUser('${s.id}')" title="Remove this user for good">Delete permanently</button>` : ''}
         <button class="btn btn-sm btn-outline" onclick="withRequest('staff-reset-pwd', ()=>resetStaffPassword('${s.id}'))">Reset Password</button>
         <button class="btn btn-sm btn-outline" onclick="if(confirm('Reset this user access to role defaults?')) withRequest('staff-reset-access', ()=>resetStaffAccess('${s.id}'))">Reset Access</button>
