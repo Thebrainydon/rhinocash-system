@@ -4072,18 +4072,16 @@ function renderSiteUnreachable(){
 // screenshot buttons, so protection makes captures useless and traceable:
 // the user's name, staff ID and the time are watermarked over every page;
 // the page goes blank on PrintScreen / capture shortcuts and whenever the
-// window loses focus (snipping tools, app switcher); printing the page,
-// copying and right-click are switched off; each attempt is recorded.
-const SP = { on: false, timer: null, bound: false, lastLog: 0, hideTimer: null };
+// window loses focus (snipping tools, app switcher); each attempt is
+// recorded. Only screenshots are covered: printing, Generate and exports
+// work as for everyone else, and printouts carry no watermark.
+const SP = { on: false, timer: null, bound: false, lastLog: 0, hideTimer: null, printing: false };
 const SP_CSS = `
-body.sp-on{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
-body.sp-on input, body.sp-on textarea, body.sp-on select, body.sp-on [contenteditable="true"]{-webkit-user-select:text;user-select:text;}
-body.sp-on img{-webkit-user-drag:none;}
 #sp-wm{position:fixed;inset:0;pointer-events:none;z-index:2147482000;background-repeat:repeat;}
 #sp-shield{position:fixed;inset:0;z-index:2147483600;background:#0f1b2d;color:#fff;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;text-align:center;padding:24px;font-family:Inter,Arial,sans-serif;}
 body.sp-hidden #sp-shield{display:flex;}
 #sp-shield b{font-size:18px;} #sp-shield span{font-size:13px;opacity:.8;}
-@media print{ body.sp-on > *{display:none !important;} body.sp-on::before{content:"Printing this page is disabled for your account.";display:block;padding:40px;font:16px Arial,sans-serif;} }`;
+@media print{ #sp-wm, #sp-shield{display:none !important;} }`;
 if(typeof document !== 'undefined' && document.head && typeof document.createElement === 'function'){ const s = document.createElement('style'); s.textContent = SP_CSS; document.head.appendChild(s); }
 function screenProtectWanted(){ return !!(session.loggedIn && DB && DB.me && DB.me.screenProtect && session.role !== 'Admin'); }
 function spWatermark(){
@@ -4109,16 +4107,14 @@ function spLog(kind){
   SP.lastLog = Date.now();
   api.post('/api/auth/screen-capture-attempt', { kind, page: session.subtab || session.section || '' }).catch(() => {});
 }
-function spEditable(t){ return !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')); }
 function spBind(){
   if(SP.bound || typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
   SP.bound = true;
   const capture = (e, kind) => { e.preventDefault(); spShield(true, 1500); spLog(kind); };
   document.addEventListener('keydown', e => {
     if(!SP.on) return;
-    const k = String(e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+    const k = String(e.key || '').toLowerCase();
     if(k === 'printscreen') return capture(e, 'PrintScreen');
-    if(mod && (k === 'p' || k === 's')) return capture(e, k === 'p' ? 'print' : 'save page');
     if(e.metaKey && e.shiftKey && ['3', '4', '5', 's'].includes(k)) return capture(e, 'capture shortcut');
   }, true);
   document.addEventListener('keyup', e => {
@@ -4126,14 +4122,12 @@ function spBind(){
     spShield(true, 1500); spLog('PrintScreen');
     try{ navigator.clipboard && navigator.clipboard.writeText && navigator.clipboard.writeText('Screen capture is not allowed').catch(() => {}); }catch(err){}
   }, true);
-  document.addEventListener('contextmenu', e => { if(SP.on && !spEditable(e.target)) e.preventDefault(); }, true);
-  ['copy', 'cut'].forEach(t => document.addEventListener(t, e => { if(SP.on && !spEditable(e.target)) { e.preventDefault(); spLog('copy'); } }, true));
-  document.addEventListener('dragstart', e => { if(SP.on && !spEditable(e.target)) e.preventDefault(); }, true);
-  document.addEventListener('visibilitychange', () => { if(SP.on) spShield(document.visibilityState === 'hidden'); });
-  window.addEventListener('blur', () => { if(SP.on) spShield(true); });
+  document.addEventListener('visibilitychange', () => { if(SP.on && !SP.printing) spShield(document.visibilityState === 'hidden'); });
+  window.addEventListener('blur', () => { if(SP.on && !SP.printing) spShield(true); });
   window.addEventListener('focus', () => { if(SP.on) spShield(false); });
-  window.addEventListener('beforeprint', () => { if(SP.on){ spShield(true); spLog('print'); } });
-  window.addEventListener('afterprint', () => { if(SP.on) spShield(false); });
+  // Printing is allowed: the print dialog must never show (or print) the cover.
+  window.addEventListener('beforeprint', () => { SP.printing = true; if(SP.on) spShield(false); });
+  window.addEventListener('afterprint', () => { setTimeout(() => { SP.printing = false; }, 800); });
 }
 function applyScreenProtection(){
   if(typeof document === 'undefined' || !document.body || !document.body.classList) return;
