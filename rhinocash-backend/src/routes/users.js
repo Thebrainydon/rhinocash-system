@@ -203,13 +203,16 @@ function register(router) {
     // than trusted as an independently-submitted value that could
     // disagree with it; a region-only assignment (e.g. a Regional
     // Manager with no single branch) is still honored on its own.
+    // A Regional Manager is tied to a region: a branch on their record is
+    // optional and never changes the region they were given.
     let branchId = null, regionId = null;
     if (b.branch_id) {
       const branch = await get('SELECT * FROM branches WHERE id = ?', [b.branch_id]);
       if (!branch) { next({ status: 400, message: 'Unknown branch_id' }); return null; }
       branchId = branch.id;
       regionId = branch.region_id;
-    } else if (b.region_id) {
+    }
+    if (b.region_id && (!b.branch_id || b.role_id === 'regional_manager')) {
       const region = await get('SELECT id FROM regions WHERE id = ?', [b.region_id]);
       if (!region) { next({ status: 400, message: 'Unknown region_id' }); return null; }
       regionId = region.id;
@@ -429,7 +432,9 @@ function register(router) {
         const branch = await get('SELECT id, region_id FROM branches WHERE id = ?', [b.branch_id]);
         if (!branch) return next({ status: 400, message: 'Unknown branch_id' });
         branchId = branch.id; regionId = branch.region_id;
-      } else if (b.region_id) {
+      }
+      // A Regional Manager keeps the region chosen for them, whatever the branch.
+      if (b.region_id && (!b.branch_id || (b.role_id || employee.role_id) === 'regional_manager')) {
         const region = await get('SELECT id FROM regions WHERE id = ?', [b.region_id]);
         if (!region) return next({ status: 400, message: 'Unknown region_id' });
         regionId = region.id;
@@ -551,10 +556,11 @@ function register(router) {
       'region_id', 'reporting_manager_id', 'employment_status', 'monthly_disbursement_target', 'monthly_new_loan_target',
       'basic_salary', 'national_id', 'gender'];
     // A branch carries its region with it, so the two never disagree.
+    // (A Regional Manager's region is their own: a branch never changes it.)
     if (b.branch_id) {
       const branch = await get('SELECT id, region_id FROM branches WHERE id = ?', [b.branch_id]);
       if (!branch) return next({ status: 400, message: 'Unknown branch_id' });
-      if (b.region_id === undefined) b.region_id = branch.region_id;
+      if (b.region_id === undefined && (b.role_id || before.role_id) !== 'regional_manager') b.region_id = branch.region_id;
     }
     if (b.branch_id === '') b.branch_id = null;
     if (b.region_id === '') b.region_id = null;

@@ -155,15 +155,14 @@ async function regionOfUser(user) {
   const b = await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]);
   return b ? b.region_id : null;
 }
-// The branches a Regional Manager oversees: every branch in their region,
-// in the region of their own branch (should the two differ), their own
-// branch, and any branch Admin has not put in a region yet — so a loan from
-// such a branch still reaches a Regional Manager instead of waiting forever.
+// The branches a Regional Manager oversees: every branch in their region
+// (a branch on their record never narrows or changes this — it only stands
+// in for the region when none is set), plus any branch Admin has not put in
+// a region yet, so a loan from such a branch still reaches a Regional Manager.
 async function rmBranchRows(user) {
-  const own = user.branch_id ? await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]) : null;
-  const regions = [...new Set([user.region_id, own && own.region_id].filter(Boolean))];
-  return all(`SELECT id FROM branches WHERE region_id IS NULL OR id = ?${regions.length ? ` OR region_id IN (${regions.map(() => '?').join(',')})` : ''}`,
-    [user.branch_id || '', ...regions]);
+  const region = await regionOfUser(user);
+  return region ? all('SELECT id FROM branches WHERE region_id = ? OR region_id IS NULL', [region])
+    : all('SELECT id FROM branches WHERE region_id IS NULL');
 }
 // Branches no active Regional Manager oversees. A loan from one of these
 // that reaches the Regional Manager step would otherwise wait forever, so

@@ -4097,10 +4097,10 @@ apiRequest = async function(method, path, body){
     let wkFrontendLoan = DB.loans[0];
     __assert(wkFrontendLoan.processingFeeReceipt === 'QGX9TT61SV' && Number(wkFrontendLoan.processingFee) === 600, "the real confirmed processing fee amount and real M-Pesa receipt code genuinely land on the new loan itself");
     __assert(wkFrontendLoan.term === 1, "the real created loan's term is genuinely forced to 1 real period for a term_weeks product");
-    __assert(session.section === 'loanbook' && session.subtab === 'Undisbursed Loans', "saving redirects the Loan Officer to the Undisbursed Loans page, like every other role");
+    __assert(session.section === 'loanbook' && session.subtab === 'Loan Applications' && session.loanAppFilterState.category === 'Undisbursed loans', "saving redirects the Loan Officer to Loan Applications filtered to Undisbursed loans, like every other role");
     const udHtml = document.getElementById('root').innerHTML;
     __assert(wkFrontendLoan.status === 'Pending signatures' && udHtml.includes('ud-sigtag') && udHtml.includes('Pending signatures') && udHtml.includes(escapeHtml(wkFrontendClient.name)), "the new application is listed as Pending signatures with the Signatures tag");
-    __assert(/Undisbursed Loans \([\d,]+\)/.test(udHtml) && udHtml.includes('-- Day --') && udHtml.includes('-- Filter Approval --') && udHtml.includes('>Actions<'), "the Undisbursed Loans page has the total in its title, the date/approval filters and an Actions column");
+    __assert(udHtml.includes('Undisbursed loans') && udHtml.includes('-- Day --') && udHtml.includes('>Actions<'), "Undisbursed loans is a filter of Loan Applications, with the date filters and an Actions column last");
     await __signLatestLoanForm();
     wkFrontendLoan = DB.loans.find(l => l.id === wkFrontendLoan.id);
     // The Loan Application list (the Loan Officer's own menu item) keeps its
@@ -7921,11 +7921,11 @@ apiRequest = async function(method, path, body){
     const mForm = new Map([['username','manager.kisumu@rhinocash.co.ke'],['password', process.env.SEEDED_MANAGER_KISUMU_PASSWORD]]);
     global.FormData = class { constructor(){ return mForm; } };
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
-    __assert(SIDEBAR_MENUS.Manager.some(sec => sec.items.includes('Undisbursed Loans')), "approvers have an Undisbursed Loans page in LoanBook");
+    __assert(!['Manager','Regional Manager','Operational Manager','Accountant','Admin'].some(r => (SIDEBAR_MENUS[r] || []).some(sec => sec.items.includes('Undisbursed Loans'))), "Undisbursed Loans is not a menu item — it is a filter of Loan Applications");
     sidebarNavigate('Undisbursed Loans');
     let html = document.getElementById('root').innerHTML;
-    __assert(/Undisbursed Loans \([\d,]+\)/.test(html) && html.includes('Approve Loans') && html.includes('-- Filter Approval --') && html.includes('>Loan Officer<') && html.includes('>Actions<'), "Undisbursed Loans shows the list with its filters, the Approve Loans button and an Actions column");
-    session.undisbFilter.month = ''; renderApp(); html = document.getElementById('root').innerHTML;
+    __assert(session.subtab === 'Loan Applications' && session.loanAppFilterState.category === 'Undisbursed loans' && html.includes('-- Approvals --') && html.includes('>Branch<') && html.includes('>Loan officer<') && html.includes('>Actions<'), "an Undisbursed Loans link opens Loan Applications filtered to Undisbursed loans, with Branch and Actions columns");
+    renderApp(); html = document.getElementById('root').innerHTML;
     const waiting = (DB.loans || []).find(l => l.status === 'Waiting for Manager');
     if(waiting) __assert(undisbMyStep(waiting) && html.includes(`undisbDecide('${waiting.id}','approve')`), "a loan waiting for the Manager offers Approve on the Manager's desk");
     if(waiting){
@@ -7941,6 +7941,15 @@ apiRequest = async function(method, path, body){
     const aForm = new Map([['username','admin@rhinocash.co.ke'],['password', process.env.SEEDED_ADMIN_PASSWORD]]);
     global.FormData = class { constructor(){ return aForm; } };
     await confirmLogout(); await doLogin({ preventDefault(){}, target:{} });
+    // Admin › Branches shows which Regional Manager each branch's loans reach, and edits a branch's region.
+    DB.acctPages.branchdir = null; sidebarNavigate('Branches'); renderApp();
+    for(let i=0; i<200 && !DB.acctPages.branchdir; i++){ await new Promise(r=>setTimeout(r,20)); } renderApp();
+    html = document.getElementById('root').innerHTML;
+    const kisumuRm = brdRegionalManagers().find(r => r.region === (DB.branches.find(b => b.id === 'br_kisumu') || {}).region);
+    __assert(html.includes('>Regional Manager<') && html.includes('All Regional Managers') && html.includes('>Actions<') && html.includes("session.brEdit='br_kisumu'") && !!kisumuRm && html.includes(escapeHtml(kisumuRm.name)), "Admin › Branches lists each branch's Regional Manager, filters by Regional Manager and offers Edit in the last column");
+    session.brEdit = 'br_kisumu'; renderApp();
+    __assert(document.getElementById('root').innerHTML.includes("submitBranchEdit(event, 'br_kisumu')"), "Edit opens the branch form (with its region) above the table");
+    session.brEdit = null;
     sidebarNavigate('eSMS');
     for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
     renderApp(); html = document.getElementById('root').innerHTML;

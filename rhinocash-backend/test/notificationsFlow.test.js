@@ -140,6 +140,21 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
     await run(`UPDATE branches SET region_id = ? WHERE id = 'br_kisumu'`, [br0.region_id]);
     await run(`UPDATE users SET branch_id = ?, region_id = ? WHERE email = 'regional@rhinocash.co.ke'`, [rm0.branch_id, rm0.region_id]);
   }
+
+  // 7. A Regional Manager's branch is optional and never changes their region.
+  const rmId = (await api('GET', '/api/auth/me', { token: t.regional })).json.user.id;
+  const farBranch = await get(`SELECT id FROM branches WHERE region_id IS NOT NULL AND region_id <> ? LIMIT 1`, [rm0.region_id]);
+  try {
+    const pb = await api('PATCH', `/api/users/${rmId}`, { token: t.admin, body: { branch_id: farBranch.id } });
+    const after = await get('SELECT branch_id, region_id FROM users WHERE id = ?', [rmId]);
+    assert(pb.status === 200 && after.branch_id === farBranch.id && after.region_id === rm0.region_id, '7: giving a Regional Manager a branch in another region keeps their own region');
+    assert(((await api('GET', '/api/loans', { token: t.regional })).json.loans || []).some(l => l.id === loan.id), '7: …and they still see their region\'s loans');
+    const cleared = await api('PATCH', `/api/users/${rmId}`, { token: t.admin, body: { branch_id: '' } });
+    assert(cleared.status === 200 && !(await get('SELECT branch_id FROM users WHERE id = ?', [rmId])).branch_id, '7: the branch can be left empty for a Regional Manager');
+    assert(((await api('GET', '/api/loans', { token: t.regional })).json.loans || []).some(l => l.id === loan.id), '7: with no branch, the region alone decides what they see');
+  } finally {
+    await run(`UPDATE users SET branch_id = ?, region_id = ? WHERE id = ?`, [rm0.branch_id, rm0.region_id, rmId]);
+  }
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
