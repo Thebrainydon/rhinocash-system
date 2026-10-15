@@ -2253,6 +2253,11 @@ function sidebarNavigate(itemLabel){
     if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
   });
   const route = resolveRoute(itemLabel);
+  // Approval menu items open Loan Applications already filtered to what they name.
+  if(route && route.subtab === 'Loan Applications' && LA_LABEL_PRESETS[itemLabel] !== undefined){
+    const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
+    st.approval = LA_LABEL_PRESETS[itemLabel]; st.category = 'All templates';
+  }
   if(session.perf && PERF_PAGES.includes(itemLabel)){ session.perf.branchId = null; session.perf.officerId = null; }
   if(session.tgr && itemLabel === 'Targets Register'){ session.tgr.viewId = null; session.tgr.editId = null; DB.tgr = null; }
   if(session.loggedIn && DB) startNavLoading();
@@ -17247,12 +17252,16 @@ function approvalCellHtml(l, showActions){
   }
   return (history + buttons) || '—';
 }
+const LA_LABEL_PRESETS = { 'Loan Applications': '', 'Pending Approvals': 'mine', 'Loan Approvals': 'mine', 'Financial Approval': 'mine', 'Loan Financial Verification': 'mine',
+  'Waiting for Manager': 'pending', 'Waiting for Regional Manager': 'pending', 'Waiting for Operational Manager': 'pending', 'Waiting for Accountant': 'pending',
+  'Rejected Loans': 'rejected', 'Returned Applications': 'returned', 'Pending Disbursements': 'ready', 'Approved Disbursements': 'ready', 'Disbursement Approval': 'ready' };
 const LA_APPROVAL_FILTERS = [['', '-- Approvals --'], ['mine', 'Waiting for me'], ['pending', 'Pending approval'], ['ready', 'Ready to disburse'], ['disbursed', 'Disbursed'], ['rejected', 'Rejected'], ['returned', 'Returned for correction']];
 function renderLoanApplications(){
   const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
-  const rows = loanApplicationsFiltered(st);
-  const monthOptions = loanStatusMonthOptions();
   const isLO = session.role === 'Loan Officer';
+  // Loans waiting for this viewer's decision come first.
+  const rows = isLO ? loanApplicationsFiltered(st) : loanApplicationsFiltered(st).map((l, i) => [l, i]).sort((a, b) => ((laApprovalState(b[0]) === 'mine') - (laApprovalState(a[0]) === 'mine')) || a[1] - b[1]).map(x => x[0]);
+  const monthOptions = loanStatusMonthOptions();
   const showActions = st.category === 'Undisbursed loans' && !isLO;
   const canDisburse = !isLO && undisbCanDisburse();
   // Everything in the user's scope (before the category/approval filters), for the tiles.
@@ -17278,16 +17287,14 @@ function renderLoanApplications(){
       <td>${approvalCellHtml(l, showActions)}</td>
       <td>${disbCell(l)}</td>
     </tr>`).join("");
-  const tiles = isLO ? '' : `<div class="adm-tiles" style="margin:10px 0 12px;">
+  const tiles = isLO ? '' : `<div class="adm-tiles" style="margin:4px 0 0;">
       ${[['mine', 'Waiting for me', cnt('mine')], ['others', 'Pending with others', cnt('pending')], ['ready', 'Ready to disburse', cnt('ready')], ['rejected', 'Rejected', cnt('rejected')], ['returned', 'Returned', cnt('returned')]]
-        .map(([k, label, n]) => `<div class="adm-tile clickable ${st.approval === k ? 'la-tile-on' : ''}" onclick="session.loanAppFilterState.approval = session.loanAppFilterState.approval === '${k}' ? '' : '${k}'; session.loanAppFilterState.category='All templates'; renderApp();"><div class="adm-tile-label">${label}</div><div class="adm-tile-value">${n}</div></div>`).join('')}
+        .map(([k, label, n]) => `<div class="adm-tile clickable ${st.approval === k ? 'la-tile-on' : ''}" onclick="session.loanAppFilterState.approval = session.loanAppFilterState.approval === '${k}' ? '' : '${k}'; session.loanAppFilterState.category='All templates'; renderApp(); window.scrollTo({top:0, behavior:'smooth'});"><div class="adm-tile-label">${label}</div><div class="adm-tile-value">${n}</div></div>`).join('')}
       <div class="adm-tile"><div class="adm-tile-label">Applied this month</div><div class="adm-tile-value">${scoped.filter(l => String(l.createdAt || '').slice(0, 7) === thisMonth).length}</div></div>
     </div>`;
   return `
     <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></span>
-        ${['Regional Manager','Operational Manager'].includes(session.role) ? `<span style="margin-left:auto;" class="hint"><a href="#" onclick="goTo('loanbook','Applications Overview'); return false;">Overview by branch →</a></span>` : ''}</div>
-      ${tiles}
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></span></div>
       <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
         <select onchange="session.loanAppFilterState.category=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${LOAN_APP_CATEGORIES.map(c=>`<option ${st.category===c?'selected':''}>${c}</option>`).join("")}
@@ -17308,10 +17315,14 @@ function renderLoanApplications(){
       </div>
       <div class="table-wrap"><table>
         <tr><th>#</th><th>Application</th><th>Client</th><th>Loan product</th><th>Loan officer</th><th>Amount</th><th>Guarantor name</th><th>Guarantor contact</th><th>Loan securities</th><th>Charges</th><th>${showActions?'Approval':'Approvals'}</th><th>Disbursement</th></tr>
-        ${rowsHtml || `<tr><td colspan="12" class="empty">No loans in this category.</td></tr>`}
+        ${rowsHtml || `<tr><td colspan="12" class="empty">${laEmptyMessage(scoped)}</td></tr>`}
       </table></div>
     </div>
+    ${isLO ? '' : `<div class="card"><div class="card-title">Approval summary <small>tap a box to filter the table</small></div>${tiles}</div>`}
+    ${isLO ? '' : laAgeingHtml(scoped)}
     ${isLO ? '' : laTrendChartHtml(scoped)}
+    ${session.role === 'Regional Manager' ? laBreakdownHtml(scoped, 'branch') : ''}
+    ${session.role === 'Operational Manager' || session.role === 'CEO' || session.role === 'Director' ? laBreakdownHtml(scoped, 'region') : ''}
     ${session.role === 'Accountant' || session.role === 'Admin' ? laReadyByBranchHtml(scoped) : ''}
     ${session.selectedLoanId ? renderLoanDetail(session.selectedLoanId) : ""}
   `;
@@ -17330,6 +17341,39 @@ function laTrendChartHtml(list){
     { label: 'Approved', data: by(lastApproval), tension: 0.3 },
     { label: 'Disbursed', data: by(l => l.disbursedAt), tension: 0.3 },
     { label: 'Rejected', data: by(rejectedAt), tension: 0.3 }]);
+}
+// Why the table is empty — an approver with no branch or region set sees
+// nothing at all, and should know to ask Admin rather than wait.
+function laEmptyMessage(scoped){
+  const me = DB.me || {};
+  if(!scoped.length && session.role === 'Regional Manager' && !me.regionId && !me.region_id && !me.branchId && !me.branch_id) return 'No loans — your account has no region set. Ask Admin to set your region (Admin › Users › Edit).';
+  if(!scoped.length && ['Manager','Loan Officer'].includes(session.role) && !me.branchId && !me.branch_id) return 'No loans — your account has no branch set. Ask Admin to set your branch (Admin › Users › Edit).';
+  return 'No loans in this category.';
+}
+// How long applications have been waiting for a decision, and for whom.
+function laAgeingHtml(list){
+  const pending = list.filter(l => STATUS_TO_REQUIRED_ROLE_ID[l.status]);
+  if(!pending.length) return '';
+  const since = l => { const a = (l.approvals || []).filter(x => x.createdAt || x.created_at); const t = a.length ? (a[a.length - 1].createdAt || a[a.length - 1].created_at) : l.createdAt; return (Date.now() - new Date(t).getTime()) / 86400000; };
+  const stages = ['Waiting for Manager','Waiting for Regional Manager','Waiting for Operational Manager','Waiting for Accountant'];
+  const rows = stages.map(stage => {
+    const at = pending.filter(l => l.status === stage);
+    const d = at.map(since);
+    const mine = at.filter(l => laApprovalState(l) === 'mine').length;
+    return [escapeHtml(stage.replace('Waiting for ', '')), at.length, mine || '—', d.filter(x => x < 1).length, d.filter(x => x >= 1 && x < 3).length, d.filter(x => x >= 3).length ? `<span class="badge red">${d.filter(x => x >= 3).length}</span>` : 0, fmt(at.reduce((a, l) => a + Number(l.principal || 0), 0))];
+  }).filter(r => r[1]);
+  return `<div class="card"><div class="card-title">Waiting for a decision <small>by approval step and days waiting</small></div>${admTable(['Step', 'Loans', 'With me', 'Under 1 day', '1–3 days', 'Over 3 days', 'Amount'], rows, 'Nothing is waiting.')}</div>`;
+}
+// Regional Manager: per branch in the region. Operational Manager and above: per region.
+function laBreakdownHtml(list, by){
+  const brOf = id => (DB.branches || []).find(b => b.id === id) || {};
+  const keyOf = l => by === 'region' ? (brOf(l.branchId).region || '—') : (l.branchId || '—');
+  const nameOf = k => by === 'region' ? ((DB.regions || []).find(r => r.id === k) || {}).name || k : branchName(k);
+  const g = {};
+  list.forEach(l => { const e = g[keyOf(l)] || (g[keyOf(l)] = { applied: 0, pending: 0, mine: 0, ready: 0, disbursed: 0, rejected: 0, amt: 0 }); const s = laApprovalState(l); e.applied++; e.amt += Number(l.principal || 0); if(s === 'mine') { e.mine++; e.pending++; } else if(s === 'pending') e.pending++; else if(s in e) e[s]++; });
+  const rows = Object.entries(g).sort((a, b) => b[1].mine - a[1].mine || b[1].pending - a[1].pending).map(([k, e]) => [escapeHtml(nameOf(k)), e.applied, e.pending, e.mine ? `<span class="badge amber">${e.mine}</span>` : 0, e.ready, e.disbursed, e.rejected, fmt(e.amt)]);
+  const more = ['Regional Manager','Operational Manager'].includes(session.role) ? `<span style="margin-left:auto;" class="hint"><a href="#" onclick="goTo('loanbook','Applications Overview'); return false;">Overview by branch →</a></span>` : '';
+  return `<div class="card"><div class="card-title">Applications by ${by} <small>${rows.length} ${by}${rows.length === 1 ? '' : 's'}</small>${more}</div>${admTable([by === 'region' ? 'Region' : 'Branch', 'Applications', 'Pending', 'Waiting for me', 'Ready to disburse', 'Disbursed', 'Rejected', 'Amount'], rows, 'No applications.')}</div>`;
 }
 // For the Accountant: what is approved and waiting to be paid out, per branch.
 function laReadyByBranchHtml(list){
@@ -23840,7 +23884,7 @@ async function loadRolesPage(){
       api.get('/api/roles?with_counts=1'),
       api.get('/api/permissions'),
       api.get('/api/modules'),
-      api.get('/api/investors').catch(() => null),
+      session.role === 'HR' ? Promise.resolve(null) : api.get('/api/investors').catch(() => null), // HR may not read investors
     ]);
     const invs = invRes ? (invRes.investors || []) : null;
     DB.acctPages.roles = { roles: rolesRes.roles, permissionsTotal: rolesRes.permissionsTotal, modulesTotal: modsRes.modules.length, allPermissions: permsRes.permissions, allModules: modsRes.modules,

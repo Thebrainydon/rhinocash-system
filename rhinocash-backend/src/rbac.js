@@ -146,6 +146,15 @@ async function branchScopeSQL(user, branchColumn = 'branch_id') {
   if (!wanted || !wanted.length) return wanted ? { clause: '1=0', params: [] } : base;
   return { clause: `(${base.clause}) AND ${branchColumn} IN (${wanted.map(() => '?').join(',')})`, params: [...base.params, ...wanted] };
 }
+// A Regional Manager's region is their own region_id, or — when Admin set
+// only their branch — the region that branch belongs to. Without this
+// fallback an RM with no region_id saw no loans and nothing to approve.
+async function regionOfUser(user) {
+  if (user.region_id) return user.region_id;
+  if (!user.branch_id) return null;
+  const b = await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]);
+  return b ? b.region_id : null;
+}
 async function baseBranchScopeSQL(user, branchColumn = 'branch_id') {
   const roleId = user.role_id;
   // HR is a head-office role with no single-branch assignment of its own —
@@ -155,7 +164,7 @@ async function baseBranchScopeSQL(user, branchColumn = 'branch_id') {
     return { clause: '1=1', params: [] };
   }
   if (roleId === 'regional_manager') {
-    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [user.region_id]);
+    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [await regionOfUser(user)]);
     const branchIds = rows.map(b => b.id);
     if (branchIds.length === 0) return { clause: '1=0', params: [] };
     return { clause: `${branchColumn} IN (${branchIds.map(() => '?').join(',')})`, params: branchIds };
@@ -174,7 +183,7 @@ async function branchIdsInScope(user) {
   const roleId = user.role_id;
   if (['admin', 'ceo', 'director', 'accountant', 'operational_manager', 'hr'].includes(roleId)) return null;
   if (roleId === 'regional_manager') {
-    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [user.region_id]);
+    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [await regionOfUser(user)]);
     return rows.map(b => b.id);
   }
   return user.branch_id ? [user.branch_id] : [];
@@ -272,5 +281,5 @@ module.exports = {
   INVESTOR_INTELLIGENCE_FEATURES, hasInvestorIntelligenceAccess,
   roleMenuFeatures, effectiveMenuFeatures, hasMenuAccess,
   branchScopeSQL, branchIdsInScope, isBranchAllowed, assertRecordInScope, resolveWriteBranchId,
-  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES, effectivePermissions,
+  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES, effectivePermissions, regionOfUser,
 };

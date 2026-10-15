@@ -4348,6 +4348,7 @@ apiRequest = async function(method, path, body){
       const laHtml = document.getElementById('root').innerHTML;
       __assert(laHtml.includes('Waiting for me') && laHtml.includes('-- Approvals --') && laHtml.includes('-- Branch --') && laHtml.includes('Overview by branch'), "the Regional Manager's Loan Applications is the Manager-style list with approval tiles, approval and branch filters, and a link to the branch overview");
       __assert(laHtml.includes('Applications — last 6 months'), "a line graph of applications sits below the Regional Manager's table");
+      __assert(laHtml.indexOf('<table') < laHtml.indexOf('Approval summary') && laHtml.indexOf('<table') < laHtml.indexOf('Applications by branch'), "the Regional Manager sees the table first; the approval summary and branch breakdown sit below it");
     }
     goTo('loanbook','Applications Overview');
     for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }

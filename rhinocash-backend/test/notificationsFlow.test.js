@@ -28,6 +28,11 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   const notes = async tok => (await api('GET', '/api/notifications', { token: tok })).json.notifications;
   const about = (list, id) => list.filter(n => n.related_id === id);
 
+  // A Regional Manager whose account has only a branch (no region) still
+  // works in that branch's region — the whole flow below runs that way.
+  const { run } = require('../src/db');
+  await run(`UPDATE users SET region_id = NULL WHERE email = 'regional@rhinocash.co.ke'`);
+
   // 1. A new application
   const phone = '07' + String(Date.now()).slice(-8);
   const c = await api('POST', '/api/clients', { token: t.officer, body: { name: 'Notify Flow Client', phone } });
@@ -49,7 +54,10 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   assert(r2.some(n => n.title === 'Loan awaiting your approval' && n.action === 'approve' && !n.acted_at), '2: the Regional Manager is now asked to approve');
   const o = about(await notes(t.officer), loan.id);
   assert(o.some(n => n.title === 'Loan approval progressed' && /approved by/.test(n.message)), '2: the loan officer is told who approved it');
-  await api('POST', `/api/loans/${loan.id}/approve`, { token: t.regional, body: {} });
+  const rmList = (await api('GET', '/api/loans?limit=500', { token: t.regional })).json;
+  assert(((rmList && rmList.loans) || []).some(l => l.id === loan.id), "2: the Regional Manager (branch set, no region) sees the loan in their list");
+  const rmApprove = await api('POST', `/api/loans/${loan.id}/approve`, { token: t.regional, body: {} });
+  assert(rmApprove.status === 200 && rmApprove.json.loan.status === 'Waiting for Operational Manager', '2: …and approves it (' + rmApprove.status + ')');
   await api('POST', `/api/loans/${loan.id}/approve`, { token: t.ops, body: {} });
   await api('POST', `/api/loans/${loan.id}/approve`, { token: t.acct, body: {} });
   const a = about(await notes(t.mgrK), loan.id);
@@ -101,6 +109,7 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   const run2 = await api('POST', '/api/payments/auto-assign/run', { token: t.acct, body: { now: true } });
   assert(run2.status === 200 && run2.json.leftForPeople >= 1 && !run2.json.assigned.some(x => x.transaction === unknown), '5: a payment no loan fits is left for a person, never guessed');
 
+  await run(`UPDATE users u SET region_id = b.region_id FROM branches b WHERE b.id = u.branch_id AND u.email = 'regional@rhinocash.co.ke'`);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

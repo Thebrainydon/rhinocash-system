@@ -41,6 +41,12 @@ async function requireAuth(req, res, next) {
   if (req.method === 'GET' && req.query && (req.query.branch_id || req.query.region_id)) {
     user.scopeNarrow = { branch_id: req.query.branch_id || null, region_id: req.query.region_id || null };
   }
+  // A Regional Manager whose Admin set only a branch works in that
+  // branch's region — otherwise every region-scoped list came back empty.
+  if (user.role_id === 'regional_manager' && !user.region_id && user.branch_id) {
+    const b = await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]);
+    if (b && b.region_id) user.region_id = b.region_id;
+  }
   req.user = user;
   req.sessionTokenHash = session.token_hash;
   // Backs the single-active-session login block (routes/auth.js) — a
