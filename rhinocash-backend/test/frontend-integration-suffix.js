@@ -8580,6 +8580,26 @@ apiRequest = async function(method, path, body){
     __assert(renderC2bPaymentsModal.toString().includes('<th>Action</th>'), "the 💵 Payments list has an Action column");
   }
 
+  // ---- Disburse by Co-op Bank transfer ----
+  {
+    const savedLoans = DB.loans, savedStatus = DB.bankStatus, savedModal = modal, savedBd = session.bankDisb;
+    DB.loans = (savedLoans || []).concat([{ id:'lnbank', clientId:'clbank', principal:15000, status:'Approved for Disbursement', schedule:[] }]);
+    DB.bankStatus = { active:false };
+    __assert(String(undisbDisburse).includes('openBankDisburse(loanId)') && String(undisbDisburse).includes('nothing will be sent'), "with bank transfers off, Bank only records a payment made outside (and says nothing is sent)");
+    DB.bankStatus = { active:true, environment:'sandbox' };
+    await undisbDisburse('lnbank');
+    __assert(modal && modal.type === 'bank-disburse' && session.bankDisb && session.bankDisb.loanId === 'lnbank', "with bank transfers on, Bank opens the bank-transfer form");
+    let h = renderBankDisburseModal();
+    __assert(h.includes('Sandbox') && h.includes('Co-op Bank account') && h.includes('Another bank (PesaLink)') && h.includes('Get code') && h.includes('Record it instead'), "the form offers Co-op or another bank, a one-time code, and recording a payment made outside");
+    session.bankDisb.rail = 'pesalink'; h = renderBankDisburseModal();
+    __assert(h.includes('Equity Bank (68)') && h.includes('KCB Bank (01)') && h.includes('Other bank — enter code'), "PesaLink asks for the client's bank");
+    DB.bankStatus = { active:true, environment:'production' }; session.bankDisb.codeSent = true;
+    h = renderBankDisburseModal();
+    __assert(h.includes('Real money') && h.includes('Send money') && h.includes('One-time code'), "production warns that real money moves; Send money appears after the code");
+    __assert(String(bankCheckLoan).includes('/check') && String(renderLoanApplications).includes("bankCheckLoan('"), "a pending bank transfer has Check with bank");
+    DB.loans = savedLoans; DB.bankStatus = savedStatus; modal = savedModal; session.bankDisb = savedBd;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

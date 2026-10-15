@@ -921,6 +921,49 @@ CREATE TABLE IF NOT EXISTS mpesa_active_config (
   active_environment TEXT
 );
 
+-- ===================== Bank transfers (Co-operative Bank "Co-op Connect") =====================
+-- Loan disbursements sent from Rhinocash's own Co-op account straight to
+-- the client's bank account. Credentials are encrypted at rest, like M-Pesa.
+CREATE TABLE IF NOT EXISTS bank_environment_configs (
+  environment TEXT PRIMARY KEY,
+  provider TEXT NOT NULL DEFAULT 'coopbank',
+  base_url TEXT,
+  consumer_key_enc TEXT,
+  consumer_secret_enc TEXT,
+  source_account TEXT,
+  callback_url TEXT,
+  configured INTEGER NOT NULL DEFAULT 0,
+  last_test_status TEXT NOT NULL DEFAULT 'Never Tested',
+  last_test_at TEXT,
+  last_test_message TEXT,
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bank_active_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  active_environment TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bank_disbursements (
+  id TEXT PRIMARY KEY,
+  message_reference TEXT NOT NULL UNIQUE,
+  loan_id TEXT NOT NULL REFERENCES loans(id),
+  environment TEXT,
+  rail TEXT NOT NULL,
+  bank_code TEXT,
+  account_number TEXT NOT NULL,
+  account_name TEXT,
+  amount NUMERIC(14,2) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Requested',
+  result_code TEXT,
+  result_desc TEXT,
+  bank_reference TEXT,
+  initiated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT iso_now(),
+  completed_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS mpesa_b2c_requests (
   id TEXT PRIMARY KEY,
   conversation_id TEXT UNIQUE,

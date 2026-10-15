@@ -1623,7 +1623,7 @@ const SIDEBAR_MENUS = {
     {section:"System Configuration", icon:"🖥️", items:["General Settings","System Preferences","Notification Settings","Security Settings","Approval Settings","System Parameters","Date & Time Settings","Currency Settings","Localization Settings"]},
     {section:"Document Management", icon:"📁", items:["Document Categories","Document Types","Document Templates","Document Storage","Document Verification","Document Expiry Tracking","Document Access","Document Audit"]},
     {section:"Templates & Numbering", icon:"🔢", items:["Client Numbering","Loan Numbering","Receipt Numbering","Payment Numbering","Employee Numbering","Document Numbering","SMS Templates","Email Templates","Document Templates"]},
-    {section:"Integrations", icon:"🔌", items:["M-Pesa / Daraja","eSMS","Email","Payment Gateways","API Configuration","Webhooks","Integration Logs"]},
+    {section:"Integrations", icon:"🔌", items:["M-Pesa / Daraja","Co-op Bank","eSMS","Email","Payment Gateways","API Configuration","Webhooks","Integration Logs"]},
     {section:"Notifications", icon:"🔔", items:["System Notifications","Notification Rules","Notification Logs"]},
     {section:"Data Management", icon:"🗄️", items:["Data Import","Data Export","Client Data","Employee Data","Loan Data","Payment Data","Data Validation","Duplicate Detection","Data Corrections","Data Archive","Data Management Logs"]},
     {section:"Security", icon:"🛡️", items:["Security Overview","Login Monitoring","Failed Login Attempts","Active Sessions","Security Events","Two-Factor Authentication","Password Policies","Security Audit Log"]},
@@ -3050,6 +3050,7 @@ async function loadCoreData(){
       // status endpoint already existed for the M-Pesa Admin Config work.
       calls.push(api.get('/api/integrations/status').then(r=>{ DB.integrationsStatus = r; }).catch(()=>{}));
     }
+    if(session.role !== 'Loan Officer' && session.role !== 'Investor') calls.push(loadBankStatus());
     if(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')){
       // Loaded up front purely so the topbar's unmatched-payment badge is
       // accurate the moment the app loads, same reason DB.notifications is.
@@ -6516,6 +6517,7 @@ Object.assign(ADMIN_PAGES, {
     cols:[aSel("event","Sent on",["Welcome","Password reset","Statement","Loan approved","Payslip"],"Welcome"),aF("subject","Subject"),aF("body","Body","textarea")] },
 
   /* ---------- Integrations ---------- */
+  "Co-op Bank": { type:"view", render:"integrationBank", sub:"Send loan disbursements from Rhinocash's Co-operative Bank account straight to a client's bank account (Co-op Connect API).", related:["M-Pesa / Daraja","Integration Logs"] },
   "eSMS": { type:"view", render:"integrationSms", sub:"Send real SMS through Africa's Talking. Enter the account details, switch it on, and send a test message.", related:["SMS Templates","Integration Logs"] },
   "Email": { type:"view", render:"integrationEmail", sub:"Send real email through SendGrid, Mailgun or an SMTP mailbox such as Zoho Mail. Enter the account details, switch it on, and send a test email.", related:["Email Templates","Integration Logs"] },
   "Payment Gateways": { type:"list", key:"payment-gateways", singular:"gateway", sub:"Payment providers connected or planned.", related:["M-Pesa / Daraja","Payment Channels"], cols:[aF("provider","Provider"),aSel("state","State",["Live","Sandbox","Planned"],"Planned")] },
@@ -6924,6 +6926,59 @@ function admIntegrationPage(kind){
     <div class="card"><div class="card-title"><span>Recent ${kind === 'sms' ? 'SMS' : 'emails'} <small>${logs.length}</small></span>${generateMenuHtml(def.title + ' log', () => ({ headers: ['When','Recipient','Message','Status'], rows: logs.map(l => [String(l.created_at).replace('T', ' ').slice(0, 16), l.recipient || '', l.subject || l.template, l.status]) }))}</div>
       ${admTable(['When','Recipient','Message','Status'], logs.slice(0, 50).map(l => [admWhen(l.created_at), escapeHtml(l.recipient || '—'), escapeHtml(l.subject || l.template), admBadge(l.status, l.status === 'Sent' ? 'green' : l.status === 'NOT_CONFIGURED' ? 'grey' : 'red')]), 'Nothing sent yet.')}</div>`;
 }
+/* ---- Co-op Bank transfers (Co-op Connect) ---- */
+function admBankPage(){
+  if(!admIsAdmin()) return `<div class="card"><div class="empty">Only the Master System Administrator can set up bank transfers.</div></div>`;
+  const d = admData('bank', '/api/admin/bank/config');
+  if(d === undefined) return admLoading(); if(d.__error) return admError(d.__error);
+  const active = d.activeEnvironment;
+  const envCard = env => {
+    const c = d[env]; const title = env === 'production' ? 'Production (real money)' : 'Sandbox (test)';
+    return `<div class="card"><div class="card-title"><span>${title}</span><small>${c.configured ? 'Configured ✓' : 'Not configured'}${active === env ? ' · ON' : ''}</small></div>
+      ${c.credentialsUnreadable ? `<div class="section-note" style="border-left:4px solid var(--red); margin-bottom:10px;"><strong>Re-enter the keys.</strong> The saved ${env} keys can no longer be read because the server's encryption key changed.</div>` : ''}
+      <form onsubmit="return admBankSave(event,'${env}')"><div class="form-grid">
+        <div class="field"><label>Consumer Key ${c.consumerKey ? `(${escapeHtml(c.consumerKey)})` : ''}</label><input name="consumerKey" type="password" autocomplete="off" placeholder="${c.consumerKey ? 'Leave blank to keep current' : 'From the Co-op developer portal'}"></div>
+        <div class="field"><label>Consumer Secret ${c.consumerSecret ? `(${escapeHtml(c.consumerSecret)})` : ''}</label><input name="consumerSecret" type="password" autocomplete="off" placeholder="${c.consumerSecret ? 'Leave blank to keep current' : 'From the Co-op developer portal'}"></div>
+        <div class="field"><label>Rhinocash Co-op account number (money is sent from)</label><input name="sourceAccount" inputmode="numeric" value="${escapeHtml(c.sourceAccount || '')}" placeholder="e.g. 0119…"></div>
+        <div class="field"><label>Co-op API address</label><input name="baseUrl" value="${escapeHtml(c.baseUrl || '')}" placeholder="${escapeHtml(c.defaultBaseUrl || 'Given by Co-op at go-live')}"></div>
+        <div class="field full"><label>Callback URL (Co-op calls this when a transfer finishes)</label><input name="callbackUrl" value="${escapeHtml(c.callbackUrl || '')}" placeholder="${escapeHtml(c.defaultCallbackUrl)}"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" type="submit">Save ${env === 'production' ? 'Production' : 'Sandbox'}</button>
+      ${c.configured ? `<button type="button" class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="admBankTest('${env}')">Test Connection</button>` : ''}
+      ${c.configured || c.consumerKey ? `<button type="button" class="btn btn-sm btn-red" style="margin-left:8px;" onclick="admBankClear('${env}')">Clear</button>` : ''}
+      </form>
+      ${c.lastTestStatus && c.lastTestStatus !== 'Never Tested' ? `<div class="hint" style="margin-top:8px;">Last test: <strong>${escapeHtml(c.lastTestStatus)}</strong>${c.lastTestAt ? ' — ' + new Date(c.lastTestAt).toLocaleString() : ''}${c.lastTestMessage ? ' — ' + escapeHtml(c.lastTestMessage) : ''}</div>` : ''}
+    </div>`;
+  };
+  return `<div class="card"><div class="card-title"><span>Bank transfers</span><small>${active ? `ON — ${active === 'production' ? 'Production (real money)' : 'Sandbox'}` : 'OFF'}</small></div>
+      <div class="pill-row">
+        <button class="btn btn-sm ${active === 'sandbox' ? 'btn-primary' : 'btn-outline'}" onclick="admBankActivate('sandbox')">Switch on Sandbox</button>
+        <button class="btn btn-sm ${active === 'production' ? 'btn-primary' : 'btn-outline'}" onclick="admBankActivate('production')">Switch on Production</button>
+        ${active ? `<button class="btn btn-sm btn-outline" onclick="admBankActivate(null)">Switch off</button>` : ''}
+      </div>
+      <div class="hint" style="margin-top:8px;">While switched on, choosing <strong>Bank</strong> at Disburse sends the money from the Rhinocash Co-op account to the client's account (Co-op to Co-op, or PesaLink to another bank). The loan becomes Active only after Co-op confirms the transfer.</div>
+    </div>
+    ${envCard('sandbox')}${envCard('production')}`;
+}
+async function admBankSave(ev, env){
+  ev.preventDefault();
+  const fd = new FormData(ev.target); const body = {};
+  ['consumerKey', 'consumerSecret'].forEach(k => { const v = String(fd.get(k) || '').trim(); if(v) body[k] = v; });
+  ['sourceAccount', 'baseUrl', 'callbackUrl'].forEach(k => { body[k] = String(fd.get(k) || '').trim(); });
+  await withRequest('bank-save-' + env, async ()=>{ await api.put('/api/admin/bank/config/' + env, body); toast('Saved'); admForget('bank'); }, { mutates: true });
+  return false;
+}
+async function admBankTest(env){
+  await withRequest('bank-test-' + env, async ()=>{ const r = await api.post('/api/admin/bank/test-connection/' + env, {}); toast(r.message || r.status); admForget('bank'); });
+}
+async function admBankClear(env){
+  if(typeof confirm === 'function' && !confirm(`Clear the ${env} Co-op Bank settings?`)) return;
+  await withRequest('bank-clear-' + env, async ()=>{ await api.del('/api/admin/bank/config/' + env); toast('Cleared'); admForget('bank'); }, { mutates: true });
+}
+async function admBankActivate(env){
+  if(env === 'production' && typeof confirm === 'function' && !confirm('Switching on Production sends REAL money from the Rhinocash Co-op account. Continue?')) return;
+  await withRequest('bank-active', async ()=>{ await api.post('/api/admin/bank/set-active', { environment: env, confirmProduction: env === 'production' }); toast(env ? 'Bank transfers switched on (' + env + ')' : 'Bank transfers switched off'); admForget('bank'); DB.bankStatus = null; }, { mutates: true });
+}
 async function admSaveIntegration(ev, kind){
   ev.preventDefault();
   const fd = new FormData(ev.target);
@@ -7074,6 +7129,7 @@ const ADMIN_EXTRAS = {
 
 /* ---- view pages ---- */
 const ADMIN_VIEWS = {
+  integrationBank: () => admBankPage(),
   integrationSms: () => admIntegrationPage('sms'),
   integrationEmail: () => admIntegrationPage('email'),
   departments: () => {
@@ -17681,6 +17737,7 @@ function renderUndisbursedApprovalsPage(){
     if(udCanEdit(l)) a.push(`<span class="ud-a" onclick="openLoanEditModal('${l.id}')">Edit</span>`);
     if(udCanDelete(l)) a.push(`<span class="ud-a ud-del" onclick="udDelete('${l.id}')">Delete</span>`);
     if(undisbMyStep(l) && l.officerId !== session.userId) a.push(`<span class="ud-a ud-ok" onclick="undisbDecide('${l.id}','approve')">Approve</span>`, `<span class="ud-a" onclick="undisbDecide('${l.id}','return')">Return</span>`, `<span class="ud-a ud-del" onclick="undisbDecide('${l.id}','reject')">Reject</span>`);
+    if(l.status === 'Disbursement Pending' && undisbCanDisburse()) a.push(`<span class="ud-a ud-ok" onclick="bankCheckLoan('${l.id}')">Check with bank</span>`);
     if(l.status === 'Approved for Disbursement' && undisbCanDisburse()) a.push(`<span class="ud-disb"><select id="undisb-ch-${l.id}"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa</option></select><span class="ud-a ud-ok" onclick="undisbDisburse('${l.id}')">Disburse</span></span>`);
     return a.length ? a.join(' <span class="ud-dot">·</span> ') : `<span class="ud-a" onclick="openLoan('${l.id}')">View</span>`;
   };
@@ -17740,10 +17797,97 @@ async function undisbDecide(loanId, action){
 async function undisbDisburse(loanId){
   const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
   const sel = typeof document !== 'undefined' && document.getElementById ? document.getElementById('undisb-ch-' + loanId) : null;
-  const channel = sel ? sel.value : 'Bank';
+  const channel = (sel && sel.value) || 'Bank';
   if(channel === 'mpesa') return promptB2cDisbursement(loanId);
-  if(typeof confirm === 'function' && !confirm(`Disburse ${fmt(loan.principal)} to ${clientName(loan.clientId)} by ${channel}?`)) return;
+  // Bank: send it through Co-op when bank transfers are switched on.
+  if(channel === 'Bank' && DB.bankStatus && DB.bankStatus.active) return openBankDisburse(loanId);
+  const how = channel === 'Bank' ? 'Bank transfers are not switched on, so nothing will be sent. Record a bank payment you have already made yourself:\n\n' : '';
+  if(typeof confirm === 'function' && !confirm(`${how}Disburse ${fmt(loan.principal)} to ${clientName(loan.clientId)} by ${channel}?`)) return;
   await withRequest('undisb-disburse-' + loanId, ()=>disburseLoan(loanId, channel), { mutates: true });
+}
+// ---- Disburse by Co-op Bank transfer ----
+// Central Bank of Kenya bank codes used by PesaLink (confirm the list with Co-op at onboarding).
+const KE_BANKS = [['01','KCB Bank'],['02','Standard Chartered'],['03','Absa Bank'],['07','NCBA Bank'],['31','Stanbic Bank'],['57','I&M Bank'],['63','Diamond Trust Bank'],['68','Equity Bank'],['70','Family Bank']];
+async function loadBankStatus(){
+  try { DB.bankStatus = await api.get('/api/bank/status'); } catch(e){ DB.bankStatus = { active: false }; }
+}
+function openBankDisburse(loanId){
+  const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
+  session.bankDisb = { loanId, rail: 'internal', bankCode: '', otherCode: '', account: '', name: clientName(loan.clientId) === '—' ? '' : clientName(loan.clientId), codeSent: false, testCode: null, code: '' };
+  openModal('bank-disburse', { loanId });
+  // Prefill the account this client was last paid to.
+  withRequest('bank-last-' + loanId, async ()=>{
+    const r = await api.get('/api/bank/disbursements?client_id=' + encodeURIComponent(loan.clientId));
+    const last = (r.disbursements || []).find(x => x.status === 'Completed') || (r.disbursements || [])[0];
+    if(last && session.bankDisb && session.bankDisb.loanId === loanId && !session.bankDisb.account){
+      Object.assign(session.bankDisb, { rail: last.rail, account: last.accountNumber, name: last.accountName || session.bankDisb.name });
+      if(last.rail === 'pesalink'){ if(KE_BANKS.some(b => b[0] === last.bankCode)) session.bankDisb.bankCode = last.bankCode; else { session.bankDisb.bankCode = 'other'; session.bankDisb.otherCode = last.bankCode; } }
+    }
+  });
+}
+function bankDisbField(k, v){ if(session.bankDisb) session.bankDisb[k] = v; }
+function renderBankDisburseModal(){
+  const st = session.bankDisb; const loan = modal && (DB.loans || []).find(l => l.id === modal.loanId);
+  if(!st || !loan) return `<div class="empty">Loan not found.</div>`;
+  const env = DB.bankStatus && DB.bankStatus.environment;
+  return `<div class="modal-head"><h3>Disburse by bank transfer</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    ${env === 'sandbox' ? `<div class="section-note" style="margin-bottom:10px;">Sandbox — a test transfer, no real money moves.</div>` : `<div class="section-note" style="border-left:4px solid var(--red); margin-bottom:10px;"><strong>Real money</strong> will be sent from the Rhinocash Co-op account.</div>`}
+    <table class="cd-table"><tr><td class="cd-k">Client</td><td>${escapeHtml(clientName(loan.clientId))}</td></tr><tr><td class="cd-k">Loan</td><td>${fmt(loan.principal)} <span class="hint">(less any processing fee taken at disbursement)</span></td></tr></table>
+    <div class="form-grid" style="margin-top:10px;">
+      <div class="field"><label>Send to</label><select onchange="bankDisbField('rail', this.value); renderApp();">
+        <option value="internal" ${st.rail === 'internal' ? 'selected' : ''}>Co-op Bank account</option>
+        <option value="pesalink" ${st.rail === 'pesalink' ? 'selected' : ''}>Another bank (PesaLink)</option></select></div>
+      ${st.rail === 'pesalink' ? `<div class="field"><label>Client's bank</label><select onchange="bankDisbField('bankCode', this.value); renderApp();">
+          <option value="">Choose bank…</option>${KE_BANKS.map(b => `<option value="${b[0]}" ${st.bankCode === b[0] ? 'selected' : ''}>${escapeHtml(b[1])} (${b[0]})</option>`).join('')}<option value="other" ${st.bankCode === 'other' ? 'selected' : ''}>Other bank — enter code</option></select></div>
+        ${st.bankCode === 'other' ? `<div class="field"><label>Bank code</label><input inputmode="numeric" value="${escapeHtml(st.otherCode)}" oninput="bankDisbField('otherCode', this.value)" placeholder="e.g. 66"></div>` : ''}` : ''}
+      <div class="field"><label>Account number</label><input inputmode="numeric" value="${escapeHtml(st.account)}" oninput="bankDisbField('account', this.value)" placeholder="Client's account number"></div>
+      <div class="field"><label>Account name</label><input value="${escapeHtml(st.name)}" oninput="bankDisbField('name', this.value)" placeholder="As the bank holds it"></div>
+    </div>
+    <div class="pill-row" style="margin-top:10px; align-items:center;">
+      ${st.codeSent ? `<input style="max-width:150px;" inputmode="numeric" placeholder="One-time code" value="${escapeHtml(st.code)}" oninput="bankDisbField('code', this.value)">${st.testCode ? `<span class="hint">Code: <strong>${escapeHtml(st.testCode)}</strong> (SMS is off)</span>` : '<span class="hint">Code sent to your phone</span>'}` : ''}
+      <button class="btn btn-sm ${st.codeSent ? 'btn-outline' : 'btn-primary'}" onclick="bankDisbSendCode()">${st.codeSent ? 'Resend code' : 'Get code'}</button>
+      ${st.codeSent ? `<button class="btn btn-sm btn-green" onclick="bankDisbSend()">Send money</button>` : ''}
+    </div>
+    <div class="hint" style="margin-top:10px;">Paid outside the system? <a href="#" onclick="closeModal(); bankRecordOutside('${loan.id}'); return false;">Record it instead</a></div>`;
+}
+async function bankDisbSendCode(){
+  await withRequest('bank-otp', async ()=>{
+    const r = await api.post('/api/bank/disburse/request-otp', {});
+    if(r.status === 'FAILED') throw new ApiError(400, 'The code could not be sent by SMS. Check your phone number on your profile and the SMS setup, then try again.');
+    Object.assign(session.bankDisb, { codeSent: true, testCode: r.otpForTesting || null });
+  });
+}
+async function bankDisbSend(){
+  const st = session.bankDisb; if(!st) return;
+  const bankCode = st.rail === 'pesalink' ? (st.bankCode === 'other' ? st.otherCode : st.bankCode) : '';
+  if(st.rail === 'pesalink' && !bankCode){ toast("Choose the client's bank"); return; }
+  if(!String(st.account).trim() || !String(st.name).trim()){ toast('Enter the account number and account name'); return; }
+  if(!String(st.code).trim()){ toast('Enter the one-time code'); return; }
+  const loan = (DB.loans || []).find(l => l.id === st.loanId);
+  if(typeof confirm === 'function' && !confirm(`Send ${fmt(loan ? loan.principal : 0)} (less any processing fee) to account ${st.account} — ${st.name}?`)) return;
+  await withRequest('bank-send-' + st.loanId, async ()=>{
+    const r = await api.post(`/api/loans/${st.loanId}/disburse/bank`, { rail: st.rail, bank_code: bankCode, account_number: st.account, account_name: st.name, otp_code: st.code });
+    if(r.status === 'PENDING'){ toast(r.message || 'Sent to Co-op Bank — waiting for confirmation'); closeModal(); }
+    else if(r.status === 'NOT_CONFIGURED'){ throw new ApiError(400, r.message); }
+    else throw new ApiError(400, r.message || ('Bank transfer ' + r.status));
+    await refreshLoan(st.loanId);
+  }, { mutates: true });
+}
+async function bankRecordOutside(loanId){
+  const loan = (DB.loans || []).find(l => l.id === loanId); if(!loan) return;
+  if(typeof confirm === 'function' && !confirm(`Record that ${fmt(loan.principal)} was paid to ${clientName(loan.clientId)} by bank outside the system? Nothing will be sent.`)) return;
+  await withRequest('undisb-disburse-' + loanId, ()=>disburseLoan(loanId, 'Bank'), { mutates: true });
+}
+// A transfer waiting on the bank: ask Co-op now.
+async function bankCheckLoan(loanId){
+  await withRequest('bank-check-' + loanId, async ()=>{
+    const r = await api.get('/api/bank/disbursements?loan_id=' + encodeURIComponent(loanId));
+    const row = (r.disbursements || []).find(x => x.status === 'Pending' || x.status === 'Requested');
+    if(!row){ toast('No bank transfer is waiting for this loan'); return; }
+    const res = await api.post(`/api/bank/disbursements/${row.id}/check`, {});
+    toast(res.status === 'Completed' ? 'The bank confirmed it — loan disbursed' : res.status === 'Failed' ? 'The bank reports it failed: ' + (res.message || '') + ' — the loan is ready to disburse again' : 'Still waiting for the bank' + (res.message ? ': ' + res.message : ''));
+    await refreshLoan(loanId);
+  });
 }
 function loanTermDaysLabel(loan){
   const prod = DB.products.find(p=>p.id===loan.productId);
@@ -17922,6 +18066,7 @@ function renderLoanApplications(){
   const cnt = k => scoped.filter(l => laApprovalState(l) === k).length;
   const thisMonth = new Date().toISOString().slice(0, 7);
   const disbCell = l => {
+    if(canDisburse && l.status === 'Disbursement Pending') return `${loanDisbursementCellLabel(l)} <button class="btn btn-outline btn-sm" onclick="bankCheckLoan('${l.id}')">Check with bank</button>`;
     if(canDisburse && l.status === 'Approved for Disbursement') return `<div class="ud-disb"><select id="undisb-ch-${l.id}"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa</option></select><button class="btn btn-green btn-sm" onclick="undisbDisburse('${l.id}')">Disburse</button></div>`;
     return loanDisbursementCellLabel(l);
   };
@@ -28634,6 +28779,7 @@ function renderModal(){
   else if(modal.type === "loan-ledger-statement") body = renderLoanLedgerStatementModal();
   else if(modal.type === "loan-action-options") body = renderLoanActionOptionsModal();
   else if(modal.type === "loan-payment-request") body = renderLoanPaymentRequestModal();
+  else if(modal.type === "bank-disburse") body = renderBankDisburseModal();
   else if(modal.type === "tag-loan") body = renderTagLoanModal();
   else if(modal.type === "update-login") body = renderUpdateLoginModal();
   else if(modal.type === "draw-signature") body = renderDrawSignatureModal();

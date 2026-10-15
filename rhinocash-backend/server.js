@@ -176,6 +176,24 @@ router.post('/api/mpesa/c2b/confirmation/:environment', async (req, res) => {
   res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
 });
 
+// Co-op Bank calls this when a transfer finishes. Public (the bank's
+// server, no session), and never trusted: it only prompts us to ask
+// Co-op's Transaction Status API, and only that answer settles a loan.
+router.post('/api/bank/coop/callback/:environment', async (req, res) => {
+  const env = req.params.environment;
+  if (!['sandbox', 'production'].includes(env)) { res.status(400).json({ MessageCode: '-1', MessageDescription: 'Unknown environment' }); return; }
+  const ref = req.body && (req.body.MessageReference || req.body.messageReference);
+  try {
+    const { get } = require('./src/db');
+    const row = ref ? await get('SELECT id FROM bank_disbursements WHERE message_reference = ? AND environment = ?', [String(ref), env]) : null;
+    if (row) {
+      const result = await require('./src/integrations/coopbank').settle(row.id, null);
+      await require('./src/audit').logAction(req, { action: 'Co-op Bank transfer callback checked with the bank', module: 'loanbook', recordType: 'BankDisbursement', recordId: row.id, newValue: { status: result.status } });
+    }
+  } catch (e) { console.warn('[coop callback]', e.message); }
+  res.json({ MessageCode: '0', MessageDescription: 'Received' });
+});
+
 // Real B2C Result (ResultURL) — the actual, mandatory confirmation of a
 // disbursement outcome. Only a real ResultCode "0" here ever completes a
 // loan disbursement — see mpesa.processB2cResult().
@@ -342,6 +360,7 @@ router.delete('/api/users/me/avatar', async (req, res, next) => {
   './src/routes/kpi',
   './src/routes/perfReports',
   './src/routes/staffForms',
+  './src/routes/bankAdmin',
 ].forEach(mod => require(mod).register(router));
 
 const server = http.createServer((req, res) => {
