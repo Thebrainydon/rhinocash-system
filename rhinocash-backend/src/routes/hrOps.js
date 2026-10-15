@@ -172,7 +172,8 @@ function register(router) {
           const held = await get('SELECT COUNT(*) AS n FROM clients WHERE officer_id = ?', [row.employee_id]);
           if (Number(held.n) > 0) throw { status: 400, message: `Reassign or transfer this officer's ${held.n} client(s) first` };
           const toBranch = await get('SELECT id, region_id FROM branches WHERE id = ?', [data.toBranchId]);
-          await run('UPDATE users SET branch_id = ?, region_id = COALESCE(?, region_id) WHERE id = ?', [toBranch.id, toBranch.region_id, row.employee_id]);
+          await run('UPDATE users SET branch_id = ? WHERE id = ?', [toBranch.id, row.employee_id]);
+          await require('./../staffRegion').syncStaffRegions({ userId: row.employee_id }); // region follows the branch (not for a Regional Manager)
           effect = { movedTo: toBranch.id };
         }
         if (row.kind === 'access_request' && b.status === 'Approved') {

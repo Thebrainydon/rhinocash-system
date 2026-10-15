@@ -200,6 +200,7 @@ function register(router) {
             const held = await get(`SELECT COUNT(*) AS n FROM clients WHERE officer_id = ?`, [row.subject_id]);
             if (Number(held.n) > 0) throw { status: 400, message: `Reassign or transfer this officer's ${held.n} client(s) first` };
             await run('UPDATE users SET branch_id = ? WHERE id = ?', [row.to_branch_id, row.subject_id]);
+            await require('./../staffRegion').syncStaffRegions({ userId: row.subject_id });
           } else if (row.subject_type === 'loan') {
             await run('UPDATE loans SET branch_id = ?, officer_id = ? WHERE id = ?', [row.to_branch_id, row.to_officer_id, row.subject_id]);
           } else {

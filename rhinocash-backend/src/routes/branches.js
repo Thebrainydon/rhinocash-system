@@ -142,8 +142,13 @@ function register(router) {
       'UPDATE branches SET name = COALESCE(?,name), location = COALESCE(?,location), phone = COALESCE(?,phone), region_id = COALESCE(?,region_id), status = COALESCE(?,status), manager_id = COALESCE(?,manager_id) WHERE id = ?',
       [name, location, phone, region_id, status, manager_id, req.params.id]
     );
-    await logAction(req, { action: 'Updated branch', module: 'branches', recordType: 'Branch', recordId: req.params.id, previousValue: before, newValue: req.body });
-    res.json({ branch: await get('SELECT * FROM branches WHERE id = ?', [req.params.id]) });
+    // Moving a branch to another region moves its staff with it (a Regional
+    // Manager keeps their own region); its loans then reach that region's
+    // Regional Manager, since their scope is read from the branch.
+    const staffMoved = region_id && region_id !== before.region_id ? await require('./../staffRegion').syncStaffRegions({ branchId: req.params.id }) : 0;
+    await logAction(req, { action: region_id && region_id !== before.region_id ? 'Moved branch to another region' : 'Updated branch', module: 'branches', recordType: 'Branch', recordId: req.params.id,
+      previousValue: before, newValue: Object.assign({}, req.body, staffMoved ? { staffMoved } : {}) });
+    res.json({ branch: await get('SELECT * FROM branches WHERE id = ?', [req.params.id]), staffMoved });
   });
 
   // ==================== Branch Expansion (real workflow) ====================
@@ -204,6 +209,7 @@ function register(router) {
       [branchId, code, proposal.name, proposal.location, proposal.region_id, proposal.proposed_assigned_manager_id || null, 'Active']);
     if (proposal.proposed_assigned_manager_id) {
       await run('UPDATE users SET branch_id = ? WHERE id = ?', [branchId, proposal.proposed_assigned_manager_id]);
+      await require('./../staffRegion').syncStaffRegions({ userId: proposal.proposed_assigned_manager_id });
     }
     await run("UPDATE branch_proposals SET status = ?, decided_by = ?, decided_at = iso_now(), decision_reason = ?, branch_id = ? WHERE id = ?",
       ['Activated', req.user.id, req.body.reason || null, branchId, proposal.id]);

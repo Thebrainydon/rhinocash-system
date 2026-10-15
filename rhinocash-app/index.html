@@ -14215,9 +14215,9 @@ function renderStaffDetailPanel(id){
         <div class="form-grid">
           <div class="field"><label>System Role</label><select name="role">${[...new Set([s.role, ...assignableRoles()])].map(r=>`<option ${s.role===r?'selected':''}>${r}</option>`).join("")}</select></div>
           <div class="field"><label>Access Level</label><input name="accessLevel" value="${escapeHtml(s.accessLevel)}"></div>
-          <div class="field"><label>Branch <small>(optional for a Regional Manager — their region decides what they see)</small></label><select name="branch"><option value="">— None —</option>${roleBranches().map(b=>`<option value="${b.id}" ${s.branch===b.id?'selected':''}>${b.name}</option>`).join("")}</select></div>
+          <div class="field"><label>Branch <small>(optional for a Regional Manager — their region decides what they see)</small></label><select name="branch" onchange="if(this.value && this.form.role.value !== 'Regional Manager' && this.selectedOptions[0].dataset.region) this.form.regionId.value = this.selectedOptions[0].dataset.region;"><option value="">— None —</option>${roleBranches().map(b=>`<option value="${b.id}" data-region="${b.region||''}" ${s.branch===b.id?'selected':''}>${b.name}</option>`).join("")}</select></div>
           <div class="field"><label>Gender</label><select name="gender"><option value="">— Not specified —</option>${['Male','Female','Other','Prefer not to say'].map(g=>`<option ${s.gender===g?'selected':''}>${g}</option>`).join("")}</select></div>
-          <div class="field"><label>Region</label><select name="regionId">${DB.regions.map(r=>`<option value="${r.id}" ${s.regionId===r.id?'selected':''}>${r.name}</option>`).join("")}</select></div>
+          <div class="field"><label>Region <small>(follows the branch, except for a Regional Manager)</small></label><select name="regionId">${DB.regions.map(r=>`<option value="${r.id}" ${s.regionId===r.id?'selected':''}>${r.name}</option>`).join("")}</select></div>
           <div class="field"><label>Reporting Manager</label><select name="reportingManagerId"><option value="">— None —</option>${DB.staff.filter(x=>x.id!==s.id).map(x=>`<option value="${x.id}" ${s.reportingManagerId===x.id?'selected':''}>${escapeHtml(x.name)} (${x.role})</option>`).join("")}</select></div>
           <div class="field"><label>Employment Status</label><select name="employmentStatus">${["Full-time","Part-time","Contract","Probation"].map(o=>`<option ${s.employmentStatus===o?'selected':''}>${o}</option>`).join("")}</select></div>
           <div class="field full"><label>Reason for change (recorded in Access Change Audit)</label><input name="reason" placeholder="e.g. Promoted to Branch Manager"></div>
@@ -23102,7 +23102,8 @@ function renderBranchDirectoryPage(){
         <form onsubmit="return submitBranchEdit(event, '${ed.id}')">
           <div class="form-grid">
             <div class="field"><label>Name</label><input name="name" value="${escapeHtml(ed.name || '')}" required></div>
-            <div class="field"><label>Region</label><select name="region_id" required><option value="">— Choose region —</option>${(DB.regions||[]).map(r=>`<option value="${r.id}" ${ed.region_id===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join("")}</select></div>
+            <div class="field"><label>Region</label><select name="region_id" required><option value="">— Choose region —</option>${(DB.regions||[]).map(r=>`<option value="${r.id}" ${ed.region_id===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join("")}</select>
+              <div class="hint">Changing the region moves the branch's staff and loans to that region and its Regional Manager.</div></div>
             <div class="field"><label>Location</label><input name="location" value="${escapeHtml(ed.location || '')}"></div>
             <div class="field"><label>Phone</label><input name="phone" value="${escapeHtml(ed.phone || '')}"></div>
           </div>
@@ -23150,8 +23151,9 @@ function submitBranchEdit(ev, id){
   ev.preventDefault();
   const f = Object.fromEntries(new FormData(ev.target));
   return withRequest('edit-branch-' + id, async ()=>{
-    await api.patch(`/api/branches/${id}`, { name: f.name, region_id: f.region_id, location: f.location || null, phone: f.phone || null });
+    const r = await api.patch(`/api/branches/${id}`, { name: f.name, region_id: f.region_id, location: f.location || null, phone: f.phone || null });
     session.brEdit = null;
+    if(r.staffMoved){ const rg = (DB.regions || []).find(x => x.id === f.region_id); toast(`${r.staffMoved} staff moved to ${rg ? rg.name : 'the new region'} with the branch`); try{ await admRefreshStaff(); }catch(e){} }
     const br = await api.get('/api/branches'); DB.branches = (br.branches || []).map(adaptBranch);
     await loadBranchDirectory(DB.acctPages.branchdir ? DB.acctPages.branchdir.filters : {});
     toast('Branch saved');

@@ -1774,6 +1774,14 @@ async function initSchema() {
     }
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('ceo-director-loanbook-payments-v1') ON CONFLICT DO NOTHING`);
   }
+  // Staff work in their branch's region (see staffRegion.js). Records saved
+  // before that rule — e.g. a branch moved to another region, or a transfer
+  // that did not carry the region — are brought in line once.
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'staff-region-follows-branch-v1'`))) {
+    await rawRun(`UPDATE users u SET region_id = b.region_id FROM branches b
+      WHERE u.branch_id = b.id AND u.role_id <> 'regional_manager' AND b.region_id IS NOT NULL AND u.region_id IS DISTINCT FROM b.region_id`);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('staff-region-follows-branch-v1') ON CONFLICT DO NOTHING`);
+  }
   // Loan Officers must be able to register clients and create loan
   // applications. Some deployments ended up without these menu grants (the
   // server then answered 403), so grant them to the role and to any officer
