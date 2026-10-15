@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Rhinocash — Microfinance Management System</title>
+<title>Rhinocash Ltd | Login Account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script data-role="viewport">
 // Plain responsive viewport: phones get the mobile layout, computers the
@@ -37,10 +39,17 @@ html, body{
      that keeps the session intact. */
   overscroll-behavior-y: contain;
 }
+/* Text across the system: Inter at a medium weight, so words and figures
+   read solid and clear (like the Claude app); figures line up in tables. */
 body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-weight:500; letter-spacing:-0.005em; text-rendering:optimizeLegibility;
+  background:var(--bg); color:var(--ink); -webkit-font-smoothing:auto; -moz-osx-font-smoothing:auto;
 }
+button, input, select, textarea{font-family:inherit;}
+input, select, textarea{font-weight:500;}
+table, .kpi-value, .adm-tile-value, .perf-tile-v{font-variant-numeric:tabular-nums;}
+.hint, small{font-weight:500;}
 .app{display:flex; min-height:100vh;}
 
 /* ---- Sidebar ---- */
@@ -3941,7 +3950,14 @@ function restoreSidebarScroll(){
   if(session.sidebarScroll && Date.now() - (session.sidebarScrollAt || 0) < SIDEBAR_SCROLL_KEEP_MS) sb.scrollTop = session.sidebarScroll;
   if(typeof sb.addEventListener === 'function') sb.addEventListener('scroll', () => { session.sidebarScroll = sb.scrollTop; session.sidebarScrollAt = Date.now(); }, { passive: true });
 }
+// The browser tab: "Rhinocash Ltd | Login Account" until signed in, then the page.
+function setTabTitle(){
+  if(typeof document === 'undefined') return;
+  const page = !session.authenticated ? 'Login Account' : session.subtab || ({ dashboard: 'Dashboard' })[session.section] || String(session.section || 'Dashboard').replace(/(^|-)(\w)/g, (m, d, c) => (d ? ' ' : '') + c.toUpperCase());
+  document.title = 'Rhinocash Ltd | ' + page;
+}
 function renderApp(){
+  try{ setTabTitle(); }catch(e){}
   const root = document.getElementById('root');
   if(!session.authenticated){
     // A borrower or guarantor opening their signing link signs without logging in.
@@ -3995,7 +4011,7 @@ function renderApp(){
           ${sectionsHtml}
           <div class="side-logout-action" onclick="doLogout()"><span class="side-section-icon">⏻</span><div>Logout</div></div>
         </div>
-        <div class="sidebar-foot">Connected to ${API_BASE}<br>Signed in as ${session.role}</div>
+        <div class="sidebar-foot">Signed in as ${escapeHtml(session.role)}</div>
       </div>
       <div class="main">
         <div class="topbar">
@@ -4056,7 +4072,7 @@ function renderAuthHero(){
       <div class="login-hero-top">
         <div class="login-hero-logo"><img src="${LOGO_DATA_URI}" alt="Rhinocash"></div>
         <div>
-          <div class="login-hero-name">Rhinocash Limited</div>
+          <div class="login-hero-name">RHINOCASH LTD</div>
           <div class="login-hero-tagline">Core microfinance workspace</div>
         </div>
       </div>
@@ -4106,7 +4122,6 @@ function renderLogin(){
     </form>
     <div class="login-forgot"><a onclick="openForgotPassword()">Forgot Password?</a></div>
     <div class="login-security-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_SHIELD}</svg> Your sign-in is protected with session security and one-time verification where required.</div>
-    <div class="hint" style="margin-top:14px; text-align:center;">Connecting to ${escapeHtml(API_BASE)}</div>
   `);
 }
 // The real login status banner — a light-green bar (same visual language
