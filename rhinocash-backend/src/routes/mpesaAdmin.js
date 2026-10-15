@@ -188,17 +188,17 @@ function register(router) {
 
     // Real client name, only for rows that are actually matched to a real loan.
     const loanIds = [...new Set(rows.filter(r => r.matched_loan_id).map(r => r.matched_loan_id))];
-    const clientNameByLoanId = {}; const clientIdByLoanId = {};
+    const clientNameByLoanId = {}; const clientIdByLoanId = {}; const clientIdNoByLoanId = {};
     if (loanIds.length) {
       const lPh = loanIds.map(() => '?').join(',');
       const loans = await all(`SELECT id, client_id FROM loans WHERE id IN (${lPh})`, loanIds);
       const clientIds = [...new Set(loans.map(l => l.client_id))];
-      const clientNameById = {};
+      const clientNameById = {}; const clientIdNoById = {};
       if (clientIds.length) {
         const cPh = clientIds.map(() => '?').join(',');
-        (await all(`SELECT id, name FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientNameById[c.id] = c.name; });
+        (await all(`SELECT id, name, national_id FROM clients WHERE id IN (${cPh})`, clientIds)).forEach(c => { clientNameById[c.id] = c.name; clientIdNoById[c.id] = c.national_id; });
       }
-      loans.forEach(l => { clientNameByLoanId[l.id] = clientNameById[l.client_id]; clientIdByLoanId[l.id] = l.client_id; });
+      loans.forEach(l => { clientNameByLoanId[l.id] = clientNameById[l.client_id]; clientIdByLoanId[l.id] = l.client_id; clientIdNoByLoanId[l.id] = clientIdNoById[l.client_id]; });
     }
 
     const activeEnv = await mpesa.getActiveEnvironment();
@@ -209,7 +209,13 @@ function register(router) {
     // backs the topbar badge, which should always mean "needing attention
     // right now", not "needing attention within whatever date range is
     // currently selected in the panel".
-    const unmatchedRow = await get(`SELECT COUNT(*) as cnt FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
+    // The 💵 badge: payments still waiting to be posted (in this user's
+    // branches). It goes up as payments arrive and down as they are
+    // assigned or posted — by a person or by the system.
+    const waitClauses = ['processed = 0', 'payment_id IS NULL', `trans_id NOT IN (SELECT mpesa_receipt_number FROM loan_fee_payments WHERE mpesa_receipt_number IS NOT NULL)`];
+    const waitParams = [];
+    await c2bScope(req.user, waitClauses, waitParams);
+    const unmatchedRow = await get(`SELECT COUNT(*) as cnt FROM mpesa_c2b_transactions WHERE ${waitClauses.join(' AND ')}`, waitParams);
 
     // Payments made toward a loan application's processing fee, and the
     // likely client of an unassigned payment (by phone / ID / client code).
@@ -228,7 +234,9 @@ function register(router) {
     if (payIds.length) (await all(`SELECT p.id, u.name FROM payments p LEFT JOIN users u ON u.id = p.recorded_by WHERE p.id IN (${payIds.map(() => '?').join(',')})`, payIds)).forEach(p => { postedBy[p.id] = p.name || 'System'; });
     res.json({
       transactions: rows.map(r => ({
-        id: r.id, transId: r.trans_id, amount: r.amount, phone: r.msisdn, accountRef: r.bill_ref_number,
+        // Account: what the payer typed, else the client's ID number (the
+        // account number their M-Pesa prompt shows).
+        id: r.id, transId: r.trans_id, amount: r.amount, phone: r.msisdn, accountRef: r.bill_ref_number || (r.matched_loan_id ? (clientIdNoByLoanId[r.matched_loan_id] || null) : null),
         matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id, processed: !!r.processed, matchMethod: r.match_method,
         linkedApplication: !!linked[r.trans_id], paybill: (activeConfig && activeConfig.shortcode) || orgPaybill,
         clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : (linked[r.trans_id] || guess[r.id] || null),

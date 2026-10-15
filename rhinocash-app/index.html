@@ -245,7 +245,9 @@ table, .kpi-value, .adm-tile-value, .perf-tile-v{font-variant-numeric:tabular-nu
 .adm-kv span{color:var(--ink-soft); font-weight:700;}
 /* Summary figures: one slim strip instead of a card full of small cards. */
 .card:has(> .adm-tiles):not(:has(table, canvas, form, svg[viewBox])){background:transparent; border:none; padding:0; box-shadow:none;}
-.card:has(> .adm-tiles):not(:has(table, canvas, form, svg[viewBox])) > .card-title{display:none;}
+/* A summary-tile card drops its title — unless the title carries a button
+   (e.g. "✎ Settings & test" on the SMS/Email integration pages). */
+.card:has(> .adm-tiles):not(:has(table, canvas, form, svg[viewBox])) > .card-title:not(:has(button, .btn)){display:none;}
 .adm-tiles{display:flex; flex-wrap:wrap; gap:0; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:16px; box-shadow:0 1px 2px rgba(16,24,40,0.04);}
 .adm-tile{flex:1 1 150px; border:none; border-right:1px solid var(--line); border-radius:0; padding:12px 16px 12px 20px; background:transparent; position:relative; min-width:0;}
 .adm-tile:last-child{border-right:none;}
@@ -28964,7 +28966,13 @@ function startNotificationPolling(){
       const before = (DB.notifications || []).filter(n => !n.read && notifRecent(n)).length;
       DB.notifications = r.notifications.map(adaptNotification);
       const after = DB.notifications.filter(n => !n.read && notifRecent(n)).length;
-      if(after !== before || session.section === 'notifications') renderApp();
+      // The 💵 badge (payments waiting to be posted) refreshes on the same
+      // beat, so a new payment shows up and a posted one drops off.
+      let payChanged = false;
+      if(NAV_PERMISSIONS[session.role]?.includes('payments') || NAV_PERMISSIONS[session.role]?.includes('accounting')){
+        try { const p = await api.get('/api/mpesa/c2b/transactions?limit=1'); payChanged = p.totals.unmatchedCount !== DB.c2bUnmatchedCount; DB.c2bUnmatchedCount = p.totals.unmatchedCount; } catch(e){ /* next minute */ }
+      }
+      if(after !== before || payChanged || session.section === 'notifications') renderApp();
     } catch(e){ /* the next minute tries again */ }
   }, 60000);
 }

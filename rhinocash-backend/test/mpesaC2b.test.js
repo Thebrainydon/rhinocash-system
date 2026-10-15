@@ -181,6 +181,34 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     assert(managerStillCannotPostAdjustments.status === 403, "the Manager's real post_accounting_entries permission is unchanged — this fix did not accidentally widen it beyond assigning C2B payments");
   }
 
+  // ---- 💵 badge: payments waiting to be posted go up on arrival, down when posted ----
+  {
+    const count = async () => (await api('GET', '/api/mpesa/c2b/transactions?limit=1', { token: adminToken })).json.totals.unmatchedCount;
+    const before = await count();
+    const transId = 'QBD' + Math.floor(Math.random() * 90000000 + 10000000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '300', MSISDN: '254799' + Math.floor(Math.random() * 900000 + 100000), BillRefNumber: 'nobody-knows-this' } });
+    const during = await count();
+    assert(during === before + 1, 'a payment the system cannot post raises the 💵 count by one');
+    const list = await api('GET', '/api/mpesa/c2b/unmatched', { token: acctToken });
+    const tx = list.json.transactions.find(t => t.trans_id === transId);
+    await api('POST', `/api/mpesa/c2b/${tx.id}/match`, { token: acctToken, body: { loan_id: loanId } });
+    assert(await count() === before, 'assigning it lowers the 💵 count again');
+    const autoId = 'QAU' + Math.floor(Math.random() * 90000000 + 10000000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: autoId, TransAmount: '200', MSISDN: '254700000001', BillRefNumber: loanId } });
+    assert(await count() === before, 'a payment the system posts by itself does not stay on the 💵 count');
+  }
+  // ---- Account column falls back to the client's ID number ----
+  {
+    const { get, run } = require('../src/db');
+    const loanRow = await get('SELECT client_id FROM loans WHERE id = ?', [loanId]);
+    const client = await get('SELECT national_id FROM clients WHERE id = ?', [loanRow.client_id]);
+    const transId = 'QAC' + Math.floor(Math.random() * 90000000 + 10000000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '100', MSISDN: '254700000002', BillRefNumber: loanId } });
+    await run('UPDATE mpesa_c2b_transactions SET bill_ref_number = NULL WHERE trans_id = ?', [transId]);
+    const row = (await api('GET', `/api/mpesa/c2b/transactions?q=${transId}`, { token: adminToken })).json.transactions.find(t => t.transId === transId);
+    assert(row && client.national_id && row.accountRef === client.national_id, 'a payment with no account typed shows the client\'s ID number as its account');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })();
