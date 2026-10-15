@@ -1937,6 +1937,11 @@ async function initSchema() {
     kind TEXT NOT NULL DEFAULT 'comment', message TEXT NOT NULL, proposed_value NUMERIC(14,2), status TEXT NOT NULL DEFAULT 'Open',
     response TEXT, responded_by TEXT REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT iso_now(), responded_at TEXT)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_target_appeals_target ON target_appeals(target_id)`);
+  // Accounts the Admin permanently deleted (see removedAccounts.js).
+  await rawRun(`CREATE TABLE IF NOT EXISTS removed_accounts (
+    user_id TEXT PRIMARY KEY, email_hash TEXT, username_hash TEXT, removed_at TEXT NOT NULL DEFAULT iso_now())`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_removed_accounts_email ON removed_accounts(email_hash)`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_removed_accounts_username ON removed_accounts(username_hash)`);
   // Usernames for signing in (see usernames.js): every account without one
   // gets one made from the person's name.
   await ensureColumn('user_accounts', 'username TEXT');

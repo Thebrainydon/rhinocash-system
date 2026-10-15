@@ -674,8 +674,11 @@ function register(router) {
       'staff_interactions.user_id', 'hr_attendance.employee_id', 'payroll_lines.employee_id', 'notifications.user_id', 'hr_records.employee_id',
       'targets.recipient_user_id', 'staff_accounts.user_id', 'target_appeals.user_id']);
     const ident = x => /^[a-z_][a-z0-9_]*$/.test(x) ? x : null;
+    const acct = await get('SELECT login_email, username FROM user_accounts WHERE employee_id = ?', [user.id]);
     try {
       await transaction(async () => {
+        // Remembered (as hashes) so the removed person sees "site can't be reached".
+        await require('./../removedAccounts').recordRemoved(user.id, (acct && acct.login_email) || user.email, acct && acct.username);
         await run('DELETE FROM sessions WHERE user_id = ?', [user.id]);
         await run('DELETE FROM staff_account_transactions WHERE account_id IN (SELECT id FROM staff_accounts WHERE user_id = ?)', [user.id]);
         for (const r of refs) {

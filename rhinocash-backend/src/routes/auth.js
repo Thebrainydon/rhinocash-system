@@ -45,6 +45,14 @@ async function publicUser(u) {
 }
 
 function register(router) {
+  // A browser that last signed in as someone asks whether that account was
+  // removed, so the removed person sees the "can't be reached" screen as soon
+  // as they open the address. Answers only yes/no for an id it was given.
+  router.post('/api/auth/device-check', async (req, res) => {
+    const uid = String((req.body || {}).uid || '').slice(0, 100);
+    res.json({ removed: await require('./../removedAccounts').isRemovedUser(uid) });
+  });
+
   router.post('/api/auth/login', async (req, res, next) => {
     // The login box takes a username or an email address.
     const email = String(req.body.email || req.body.username || req.body.identifier || '').trim();
@@ -65,6 +73,11 @@ function register(router) {
       [byEmail ? email.toLowerCase() : require('./../usernames').usernameKey(email)]
     );
     if (!user) {
+      const { isRemovedLogin, REMOVED } = require('./../removedAccounts');
+      if (await isRemovedLogin(email)) {
+        await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'account removed', ip]);
+        return next({ status: 410, ...REMOVED });
+      }
       await run('INSERT INTO login_attempts (email, success, reason, ip) VALUES (?,0,?,?)', [email, 'no such user', ip]);
       return next({ status: 401, message: 'Invalid credentials' });
     }

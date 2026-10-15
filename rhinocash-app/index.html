@@ -2557,6 +2557,10 @@ async function apiRequestRaw(method, path, body){
   }
   let json = null;
   try{ json = await res.json(); }catch(e){ /* no/invalid body */ }
+  if(res.status === 401 && json && json.code === 'ACCOUNT_REMOVED' && sentToken && sentToken === authToken){
+    showAccountRemoved();
+    throw new ApiError(401, json.error, json.code);
+  }
   if(res.status === 401){
     // Session expired/revoked/invalid — force back to the login screen
     // rather than let the app carry on showing stale, now-inaccessible data.
@@ -3956,8 +3960,112 @@ function restoreSidebarScroll(){
   if(typeof sb.addEventListener === 'function') sb.addEventListener('scroll', () => { session.sidebarScroll = sb.scrollTop; session.sidebarScrollAt = Date.now(); }, { passive: true });
 }
 // The browser tab: "Rhinocash Ltd | Login Account" until signed in, then the page.
+// ---- Staying on the latest version ----
+// A phone can keep showing an old copy of this page after an update. The
+// page fetches a fresh copy when opened and every 10 minutes and compares
+// its code with the code running now: on the login screen it simply reloads
+// into the new version; while someone is signed in it offers a Reload bar
+// instead, so nobody loses what they were doing.
+const RUNNING_CODE = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') ? [...document.querySelectorAll('script:not([src])')].map(x => x.textContent).join('\n') : '';
+let newVersionReady = false;
+async function checkForNewVersion(){
+  if(typeof fetch !== 'function' || typeof DOMParser === 'undefined' || !RUNNING_CODE || newVersionReady) return;
+  try{
+    const res = await fetch(location.href.split('#')[0], { cache: 'reload' }); // also refreshes the browser's stored copy
+    if(!res.ok) return;
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    const fresh = [...doc.querySelectorAll('script:not([src])')].map(x => x.textContent).join('\n');
+    if(!fresh || fresh === RUNNING_CODE) return;
+    newVersionReady = true;
+    if(!session.authenticated){ location.reload(); return; }
+    if(!document.getElementById('rc-update-bar')){
+      const bar = document.createElement('div'); bar.id = 'rc-update-bar';
+      bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:99999;background:#1e3a5f;color:#fff;padding:10px 14px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center;font-size:14px;max-width:calc(100% - 32px);';
+      bar.innerHTML = '<span>Rhinocash has been updated.</span><button style="background:#fff;color:#1e3a5f;border:0;border-radius:8px;padding:6px 12px;font-weight:600;cursor:pointer;" onclick="location.reload()">Reload</button>';
+      document.body.appendChild(bar);
+    }
+  }catch(e){ /* offline: try again later */ }
+}
+function startVersionCheck(){
+  if(typeof window === 'undefined' || !window.location || !/^https?:/.test(location.protocol)) return;
+  setTimeout(checkForNewVersion, 3000);
+  setInterval(checkForNewVersion, 10 * 60 * 1000);
+}
+// ---- Accounts the Admin deleted ----
+// A person whose account was permanently deleted sees the browser's own
+// "This site can't be reached" page instead of the login screen: when they
+// try to sign in, when their old session's next request comes back, and
+// from then on whenever this browser opens the address. Only the user id
+// (never a token or password) is kept in this browser, to recognise it.
+const DEVICE_UID_KEY = 'rc_device_uid', DEVICE_REMOVED_KEY = 'rc_device_removed';
+function deviceRemember(uid){ try{ localStorage.setItem(DEVICE_UID_KEY, uid); }catch(e){} }
+function showAccountRemoved(){
+  authToken = null; session.loggedIn = false; session.authenticated = false; session.loggingIn = false; session.loginPhase = null;
+  DB = null; modal = null; loginError = '';
+  try{ inFlight.clear(); }catch(e){}
+  try{ if(sessionWarningTimer){ clearTimeout(sessionWarningTimer); sessionWarningTimer = null; } clearIdleLogoutTimer(); }catch(e){}
+  try{ if(notifPollTimer){ clearInterval(notifPollTimer); notifPollTimer = null; } }catch(e){}
+  try{ localStorage.setItem(DEVICE_REMOVED_KEY, '1'); }catch(e){}
+  session.accountRemoved = true;
+  renderApp();
+}
+// On opening the address: was the account last used in this browser removed?
+async function checkDeviceRemoved(){
+  let uid = null;
+  try{ if(localStorage.getItem(DEVICE_REMOVED_KEY) === '1'){ session.accountRemoved = true; return; } uid = localStorage.getItem(DEVICE_UID_KEY); }catch(e){ return; }
+  if(!uid) return;
+  try{
+    const r = await apiRequestRaw('POST', '/api/auth/device-check', { uid });
+    if(r && r.removed && !session.authenticated) showAccountRemoved();
+  }catch(e){ /* offline or older server: show the normal login */ }
+}
+function renderSiteUnreachable(){
+  const host = escapeHtml(location.hostname || 'this site');
+  return `<style>
+    .su{--su-bg:#fff;--su-h:#202124;--su-t:#5f6368;--su-ic:#5f6368;--su-btn:#1a73e8;--su-btn-t:#fff;--su-link:#1a73e8;
+      position:fixed; inset:0; z-index:2147483000; background:var(--su-bg); color:var(--su-t); overflow:auto;
+      font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif; font-weight:400; -webkit-font-smoothing:antialiased;}
+    @media (prefers-color-scheme: dark){ .su{--su-bg:#202124;--su-h:#bdc1c6;--su-t:#9aa0a6;--su-ic:#9aa0a6;--su-btn:#8ab4f8;--su-btn-t:#202124;--su-link:#8ab4f8;} }
+    .su-wrap{max-width:600px; margin:0 auto; padding:14vh 24px 160px;}
+    .su-icon{width:72px; height:72px; color:var(--su-ic); margin-bottom:40px;}
+    .su h1{color:var(--su-h); font-size:1.6em; font-weight:500; line-height:1.25; margin:0 0 16px;}
+    .su p{margin:0 0 14px; font-size:15px; line-height:1.55;}
+    .su p b{color:var(--su-h); font-weight:500;}
+    .su-try{margin-top:22px;} .su-try p{margin:0 0 6px;}
+    .su-code{font-size:12px; text-transform:uppercase; margin-top:26px; letter-spacing:.2px;}
+    .su-details{display:none; margin-top:18px; font-size:14px;} .su-details.on{display:block;}
+    .su-acts{display:flex; justify-content:flex-end; align-items:center; gap:24px; margin-top:44px;}
+    .su-btn{background:var(--su-btn); color:var(--su-btn-t); border:0; border-radius:999px; padding:10px 24px; font-family:inherit; font-size:14px; font-weight:500; line-height:1.4; cursor:pointer;}
+    .su-link{background:none; border:0; color:var(--su-link); font-family:inherit; font-size:14px; font-weight:500; cursor:pointer; padding:8px;}
+    @media (max-width:640px){
+      .su-wrap{padding-top:18vh;}
+      .su h1{font-size:1.55em;}
+      .su-acts{position:fixed; left:24px; right:24px; bottom:28px; margin:0; flex-direction:column; gap:18px;}
+      .su-btn{width:100%; padding:16px; font-size:16px;}
+      .su-link{font-size:16px;}
+    }
+  </style>
+  <div class="su" role="main">
+    <div class="su-wrap">
+      <svg class="su-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" shape-rendering="crispEdges" aria-hidden="true">
+        <path d="M5 2.75h9.25L19.25 7.75V21.25H5z"/><path d="M14 2.75V8h5.25"/>
+        <path d="M8.5 11.25h1.5M14 11.25h1.5M8.75 17h1.5v-1.5h3.5V17h1.5" stroke-linecap="square"/>
+      </svg>
+      <h1>This site can\u2019t be reached</h1>
+      <p><b>${host}</b> took too long to respond.</p>
+      <div class="su-try"><p>Try:</p><p>Checking the connection</p></div>
+      <div class="su-code">ERR_TIMED_OUT</div>
+      <div class="su-details" id="su-details"><p>Check any cables and reboot any routers, modems, or other network devices you may be using.</p></div>
+      <div class="su-acts">
+        <button class="su-btn" onclick="location.reload()">Reload</button>
+        <button class="su-link" onclick="document.getElementById('su-details').classList.toggle('on')">Details</button>
+      </div>
+    </div>
+  </div>`;
+}
 function setTabTitle(){
   if(typeof document === 'undefined') return;
+  if(session.accountRemoved){ document.title = location.hostname || 'This site can\u2019t be reached'; return; }
   const page = !session.authenticated ? 'Login Account' : session.subtab || ({ dashboard: 'Dashboard' })[session.section] || String(session.section || 'Dashboard').replace(/(^|-)(\w)/g, (m, d, c) => (d ? ' ' : '') + c.toUpperCase());
   document.title = 'Rhinocash Ltd | ' + page;
 }
@@ -3967,6 +4075,7 @@ function renderApp(){
   if(!session.authenticated){
     // A borrower or guarantor opening their signing link signs without logging in.
     const esTok = esignTokenFromHash(); if(esTok){ renderPublicEsign(root, esTok); return; }
+    if(session.accountRemoved){ root.innerHTML = renderSiteUnreachable(); return; }
     root.innerHTML = (forgotPasswordOpen ? renderForgotPassword() : renderLogin()) + (modal ? renderModal() : ""); return;
   }
   if(!DB){ root.innerHTML = `<div class="top-progress on"></div><div class="loading-screen dash-load"><div class="dash-loading-line">Loading Dashboard... ${DASH_SPIN_SVG}</div></div>`; return; }
@@ -4555,6 +4664,7 @@ async function doLogin(ev){
       session.subtab = defaultLanding.subtab || null;
     }
     session.loggedIn = true;
+    if(session.userId) deviceRemember(session.userId);
     // The real baseline history entry this real session's back button
     // walks back through — replaceState, not pushState: this is the
     // landing page, not a step away from one.
@@ -4578,6 +4688,7 @@ async function doLogin(ev){
     // bad-credentials one — it gets its own blocking alert rather than the
     // usual inline banner, so it reads as a deliberate account-status stop
     // rather than "try again".
+    if(e && e.code === 'ACCOUNT_REMOVED'){ showAccountRemoved(); return false; }
     if(e && e.code === 'ACCOUNT_NOT_ACTIVE'){
       loginError = "";
       renderApp();
@@ -29363,6 +29474,8 @@ function setTopProgress(on){
 initPullToRefresh();
 
 /* ---------------- Init ---------------- */
+checkDeviceRemoved(); // a browser whose account was deleted shows "can't be reached" (see showAccountRemoved)
+startVersionCheck(); // a phone holding an old copy of the page picks up the new one
 renderApp(); // shows the login screen immediately; real data loads only after a real login
 </script>
 </body>

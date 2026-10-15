@@ -171,6 +171,13 @@ async function loanRef(loan) {
   return [loan.application_no ? '#' + loan.application_no : null, c && c.name, 'KES ' + Number(loan.principal || 0).toLocaleString('en-KE')].filter(Boolean).join(' · ');
 }
 const LOAN_LINK = { section: 'loanbook', subtab: 'Loan Applications' };
+// Scope check for one loan: the branch rule, plus a Regional Manager may
+// open a loan waiting for them from a branch no Regional Manager oversees.
+async function assertLoanInScope(user, loan) {
+  const { assertRecordInScope, branchesWithoutRm } = require('./../rbac');
+  if (user.role_id === 'regional_manager' && loan.status === 'Waiting for Regional Manager' && (await branchesWithoutRm()).includes(loan.branch_id)) return;
+  await assertRecordInScope(user, loan.branch_id, 'loan');
+}
 async function notifyNextApprovers(loan, nextStep) {
   const { branchIdsInScope, hasPermission } = require('./../rbac');
   const ref = await loanRef(loan);
@@ -185,9 +192,11 @@ async function notifyNextApprovers(loan, nextStep) {
     return;
   }
   const candidates = await all('SELECT * FROM users WHERE role_id = ? AND status = ?', [nextStep.role_id, 'Active']);
+  // No Regional Manager oversees this branch: every Regional Manager is asked.
+  const anyone = nextStep.role_id === 'regional_manager' && (await require('./../rbac').branchesWithoutRm()).includes(loan.branch_id);
   for (const u of candidates) {
     const scope = await branchIdsInScope(u);
-    if (scope === null || scope.includes(loan.branch_id)) {
+    if (anyone || scope === null || scope.includes(loan.branch_id)) {
       await notify(u.id, 'loan', 'Loan awaiting your approval', `Loan ${ref} is now waiting for you (${nextStep.status_label}).`, { relatedType: 'loan', relatedId: loan.id, link: LOAN_LINK, action: 'approve' });
     }
   }
@@ -1810,6 +1819,9 @@ function register(router) {
   router.get('/api/loans', requireAuth, requireModule('loanbook'), requireMenuFeature('menu-loan-application'), async (req, res) => {
     const scope = await branchScopeSQL(req.user);
     let clause = scope.clause; const params = [...scope.params];
+    // A Regional Manager also gets loans waiting at their step from branches no Regional Manager oversees.
+    const orphan = req.user.role_id === 'regional_manager' ? await require('./../rbac').branchesWithoutRm() : [];
+    if (orphan.length) { clause = `((${clause}) OR (status = 'Waiting for Regional Manager' AND branch_id IN (${orphan.map(() => '?').join(',')})))`; params.push(...orphan); }
     if (req.query.status) { clause += ' AND status = ?'; params.push(req.query.status); }
     // Loan Officers only ever see their own portfolio, even within their branch.
     if (req.user.role_id === 'loan_officer') { clause += ' AND officer_id = ?'; params.push(req.user.id); }
@@ -1994,7 +2006,7 @@ function register(router) {
   router.get('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     const loan = await get('SELECT * FROM loans WHERE id = ?', [req.params.id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
-    await assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertLoanInScope(req.user, loan);
     if (req.user.role_id === 'loan_officer' && loan.officer_id !== req.user.id) {
       return next({ status: 403, message: 'This loan is not part of your portfolio' });
     }
@@ -2442,7 +2454,7 @@ function register(router) {
   // approver must have that loan's branch/region in scope, and nobody may
   // approve, reject, or return a loan they personally submitted.
   async function assertCanActOnLoan(req, loan, steps) {
-    await assertRecordInScope(req.user, loan.branch_id, 'loan');
+    await assertLoanInScope(req.user, loan);
     if (loan.officer_id === req.user.id) {
       const err = new Error('You cannot approve, reject, or return a loan you submitted yourself'); err.status = 403; throw err;
     }

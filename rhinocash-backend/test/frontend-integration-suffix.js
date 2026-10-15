@@ -206,7 +206,12 @@ apiRequest = async function(method, path, body){
     banned.forEach(term => {
       __assert(!__srcForBanCheck.includes(term), `frontend source contains no reference to "${term}"`);
     });
-    __assert(!/localStorage\s*\.\s*(setItem|getItem|removeItem)/.test(__srcForBanCheck), "frontend source never actually calls localStorage.setItem/getItem/removeItem (a comment mentioning why it's avoided is fine)");
+    // Browser storage may hold only the two non-secret device keys (which
+    // account last signed in here, and whether it was removed) — never the
+    // session token or anything else.
+    const __storageUses = [...__srcForBanCheck.matchAll(/(localStorage|sessionStorage)\s*\.\s*(setItem|getItem|removeItem)\s*\(\s*([^,)]+)/g)];
+    __assert(__storageUses.every(m => m[1] === 'localStorage' && ['DEVICE_UID_KEY', 'DEVICE_REMOVED_KEY'].includes(m[3].trim())), "browser storage is used only for the device keys (DEVICE_UID_KEY / DEVICE_REMOVED_KEY): " + __storageUses.map(m => m[0]).join(' | '));
+    __assert(!/(localStorage|sessionStorage)\s*\.\s*setItem\s*\([^)]*(authToken|token|password)/i.test(__srcForBanCheck), "the session token and passwords are never written to browser storage");
     __assert(!/sessionStorage\s*\.\s*(setItem|getItem|removeItem)/.test(__srcForBanCheck), "frontend source never actually calls sessionStorage.setItem/getItem/removeItem");
   }
 

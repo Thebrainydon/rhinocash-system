@@ -155,6 +155,25 @@ async function regionOfUser(user) {
   const b = await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]);
   return b ? b.region_id : null;
 }
+// The branches a Regional Manager oversees: every branch in their region,
+// in the region of their own branch (should the two differ), their own
+// branch, and any branch Admin has not put in a region yet — so a loan from
+// such a branch still reaches a Regional Manager instead of waiting forever.
+async function rmBranchRows(user) {
+  const own = user.branch_id ? await get('SELECT region_id FROM branches WHERE id = ?', [user.branch_id]) : null;
+  const regions = [...new Set([user.region_id, own && own.region_id].filter(Boolean))];
+  return all(`SELECT id FROM branches WHERE region_id IS NULL OR id = ?${regions.length ? ` OR region_id IN (${regions.map(() => '?').join(',')})` : ''}`,
+    [user.branch_id || '', ...regions]);
+}
+// Branches no active Regional Manager oversees. A loan from one of these
+// that reaches the Regional Manager step would otherwise wait forever, so
+// every Regional Manager may see and decide it (see loans.js).
+async function branchesWithoutRm() {
+  const rms = await all(`SELECT * FROM users WHERE role_id = 'regional_manager' AND status = 'Active'`);
+  const covered = new Set();
+  for (const u of rms) (await rmBranchRows(u)).forEach(b => covered.add(b.id));
+  return (await all('SELECT id FROM branches')).map(b => b.id).filter(id => !covered.has(id));
+}
 async function baseBranchScopeSQL(user, branchColumn = 'branch_id') {
   const roleId = user.role_id;
   // HR is a head-office role with no single-branch assignment of its own —
@@ -164,7 +183,7 @@ async function baseBranchScopeSQL(user, branchColumn = 'branch_id') {
     return { clause: '1=1', params: [] };
   }
   if (roleId === 'regional_manager') {
-    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [await regionOfUser(user)]);
+    const rows = await rmBranchRows(user);
     const branchIds = rows.map(b => b.id);
     if (branchIds.length === 0) return { clause: '1=0', params: [] };
     return { clause: `${branchColumn} IN (${branchIds.map(() => '?').join(',')})`, params: branchIds };
@@ -183,7 +202,7 @@ async function branchIdsInScope(user) {
   const roleId = user.role_id;
   if (['admin', 'ceo', 'director', 'accountant', 'operational_manager', 'hr'].includes(roleId)) return null;
   if (roleId === 'regional_manager') {
-    const rows = await all('SELECT id FROM branches WHERE region_id = ?', [await regionOfUser(user)]);
+    const rows = await rmBranchRows(user);
     return rows.map(b => b.id);
   }
   return user.branch_id ? [user.branch_id] : [];
@@ -281,5 +300,5 @@ module.exports = {
   INVESTOR_INTELLIGENCE_FEATURES, hasInvestorIntelligenceAccess,
   roleMenuFeatures, effectiveMenuFeatures, hasMenuAccess,
   branchScopeSQL, branchIdsInScope, isBranchAllowed, assertRecordInScope, resolveWriteBranchId,
-  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES, effectivePermissions, regionOfUser,
+  computeFinalAccess, canActOnStaffRecord, ADMIN_ONLY_ROLES, effectivePermissions, regionOfUser, branchesWithoutRm,
 };

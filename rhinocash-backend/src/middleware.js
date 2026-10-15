@@ -19,6 +19,7 @@ async function requireAuth(req, res, next) {
   const payload = verifyToken(token);
   if (!payload) return next({ status: 401, message: 'Invalid or expired session' });
   const session = await get('SELECT * FROM sessions WHERE token_hash = ?', [tokenHash(token)]);
+  if (!session && await require('./removedAccounts').isRemovedUser(payload.sub)) return next({ status: 401, ...require('./removedAccounts').REMOVED });
   if (!session || session.revoked_at) return next({ status: 401, message: 'Session has been revoked' });
   if (new Date(session.expires_at).getTime() < Date.now()) return next({ status: 401, message: 'Session expired' });
   // One real row, merged from Employee (users) + System Account

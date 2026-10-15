@@ -95,8 +95,25 @@ async function driveLoanToDisbursed(t, principal, term) {
     assert(blocked.status === 409 && /client/.test(blocked.json.error || ''), '2: a user who still holds clients cannot be deleted');
     await api('PATCH', `/api/clients/${c.json.client.id}`, { token: t.admin, body: { officer_id: 'usr_officer' } });
   }
+  const delLogin = await api('POST', '/api/auth/login', { body: { email: 'deleteme.officer@rhinocash.co.ke', password: mk.json.tempPassword } });
+  const oldTok = delLogin.json && delLogin.json.token;
+  const delUsername = mk.json.user && mk.json.user.username;
+  assert(!!oldTok, '2: the user to delete signs in once (an open session)');
+  assert((await api('POST', '/api/auth/device-check', { body: { uid } })).json.removed === false, '2: before deletion, their browser is not marked removed');
   const del = await api('POST', `/api/users/${uid}/permanent-delete`, { token: t.admin, body: { confirm: 'Delete Me Officer' } });
   assert(del.status === 200 && del.json.ok, '2: the System Administrator permanently deletes the user');
+  // The removed person is shown "This site can't be reached".
+  const stale = await api('GET', '/api/auth/me', { token: oldTok });
+  assert(stale.status === 401 && stale.json.code === 'ACCOUNT_REMOVED', '2: their still-open session is answered with ACCOUNT_REMOVED');
+  const again = await api('POST', '/api/auth/login', { body: { email: 'DeleteMe.Officer@rhinocash.co.ke', password: mk.json.tempPassword } });
+  assert(again.status === 410 && again.json.code === 'ACCOUNT_REMOVED' && /can.t be reached/.test(again.json.error), '2: signing in again (any letter case) gets ACCOUNT_REMOVED');
+  if (delUsername) assert((await api('POST', '/api/auth/login', { body: { email: delUsername, password: 'whatever' } })).json.code === 'ACCOUNT_REMOVED', '2: …by username too');
+  assert((await api('POST', '/api/auth/device-check', { body: { uid } })).json.removed === true, '2: their browser is recognised as removed');
+  assert((await api('POST', '/api/auth/device-check', { body: { uid: 'usr_officer' } })).json.removed === false, '2: an active user\'s browser is not');
+  const nobody = await api('POST', '/api/auth/login', { body: { email: 'never.existed@rhinocash.co.ke', password: 'x' } });
+  assert(nobody.status === 401 && !nobody.json.code, '2: an address that never existed still gets plain "Invalid credentials"');
+  const ra = await require('../src/db').get('SELECT * FROM removed_accounts WHERE user_id = ?', [uid]);
+  assert(ra && !JSON.stringify(ra).includes('deleteme'), '2: only hashes are kept, never the email address');
   assert((await api('GET', `/api/users/${uid}`, { token: t.admin })).status === 404, '2: the user is gone');
   const list = await api('GET', '/api/users?limit=200', { token: t.admin });
   assert(!(list.json.users || []).some(u => u.id === uid), '2: the user no longer appears in the staff list');

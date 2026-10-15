@@ -110,6 +110,36 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   assert(run2.status === 200 && run2.json.leftForPeople >= 1 && !run2.json.assigned.some(x => x.transaction === unknown), '5: a payment no loan fits is left for a person, never guessed');
 
   await run(`UPDATE users u SET region_id = b.region_id FROM branches b WHERE b.id = u.branch_id AND u.email = 'regional@rhinocash.co.ke'`);
+
+  // 6. A loan never gets stuck at the Regional Manager step: from a branch
+  //    with no region, or from a region no Regional Manager oversees.
+  const { get } = require('../src/db');
+  const rm0 = await get(`SELECT branch_id, region_id FROM users WHERE email = 'regional@rhinocash.co.ke'`);
+  const br0 = await get(`SELECT region_id FROM branches WHERE id = 'br_kisumu'`);
+  await run(`UPDATE users SET branch_id = NULL WHERE email = 'regional@rhinocash.co.ke'`); // the RM sits in no branch, only a region
+  await run(`INSERT INTO regions (id, name, status) VALUES ('rg_no_rm_test', 'No RM Test Region', 'Active') ON CONFLICT (id) DO NOTHING`);
+  const reachesRm = async label => {
+    const cl = await api('POST', '/api/clients', { token: t.officer, body: { name: 'Stuck Step Client ' + label.length, phone: '07' + String(Date.now() + label.length).slice(-8) } });
+    const mkLoan = await api('POST', '/api/loans', { token: t.officer, body: { client_id: cl.json.client.id, product_id: prod.id, principal: 12000, term_months: 3 } });
+    const ln = mkLoan.json.loan;
+    if (!ln) { assert(false, `6: ${label}: setup loan (${mkLoan.status} ${JSON.stringify(mkLoan.json).slice(0, 150)})`); return; }
+    await api('POST', `/api/loans/${ln.id}/approve`, { token: t.mgrK, body: {} });
+    const seen = ((await api('GET', '/api/loans', { token: t.regional })).json.loans || []).some(l => l.id === ln.id);
+    const told = about(await notes(t.regional), ln.id).some(n => n.title === 'Loan awaiting your approval');
+    const ap = await api('POST', `/api/loans/${ln.id}/approve`, { token: t.regional, body: {} });
+    assert(seen && told && ap.status === 200, `6: ${label}: the Regional Manager sees it, is notified and approves it (${seen}/${told}/${ap.status})`);
+  };
+  try {
+    await run(`UPDATE branches SET region_id = NULL WHERE id = 'br_kisumu'`);
+    await reachesRm('branch with no region');
+    await run(`UPDATE branches SET region_id = 'rg_no_rm_test' WHERE id = 'br_kisumu'`);
+    await reachesRm('branch in a region no Regional Manager oversees');
+    const other = (await api('GET', '/api/loans', { token: t.regional })).json.loans || [];
+    assert(!other.some(l => l.branch_id === 'br_kisumu' && l.status !== 'Waiting for Regional Manager'), "6: …but only loans at the Regional Manager's step, not that branch's whole book");
+  } finally {
+    await run(`UPDATE branches SET region_id = ? WHERE id = 'br_kisumu'`, [br0.region_id]);
+    await run(`UPDATE users SET branch_id = ?, region_id = ? WHERE email = 'regional@rhinocash.co.ke'`, [rm0.branch_id, rm0.region_id]);
+  }
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
