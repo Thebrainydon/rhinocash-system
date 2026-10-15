@@ -1645,7 +1645,7 @@ const SIDEBAR_MENUS = {
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "HR": [
-    {section:"Employees", icon:"👥", items:["Add Employee","View Employees","Employee Profiles","Staff Details Form","Employee Transfers","Employee Documents","Employee Status","Employee Directory","Employee History"]},
+    {section:"Employees", icon:"👥", items:["Add Employee","View Employees","Employee Profiles","Staff Details Form","Employment Contract","Employee Transfers","Employee Documents","Employee Status","Employee Directory","Employee History"]},
     {section:"User & Access Management", icon:"🔐", items:["User Accounts","User Profiles","Roles & Permissions","Role Assignments","Access Requests","Access Approvals","Account Activation","Account Suspension","Password & Security","Login Activity","Access Audit Log","User Access Reports"]},
     {section:"Recruitment", icon:"📋", items:["Job Vacancies","Create Vacancy","Applications","Shortlisted Candidates","Interviews","Recruitment Pipeline","Hiring Decisions"]},
     {section:"Attendance", icon:"🕒", items:["Attendance Overview","Daily Attendance","Attendance Records","Late Arrivals","Absence Tracking","Attendance Exceptions","Attendance Reports"]},
@@ -2248,7 +2248,7 @@ function sidebarNavigate(itemLabel){
   const ownSection = currentSidebarMenu().find(sec=>sec.items.includes(itemLabel));
   // Each page opens with its forms closed (a "+" button opens one).
   session.openForms = {};
-  session.sdf = null;
+  session.sdf = null; session.sct = null;
   rememberSidebarScroll();
   Object.keys(session.sidebarExpanded).forEach(label=>{
     if(!ownSection || label !== ownSection.section) session.sidebarExpanded[label] = false;
@@ -8047,6 +8047,7 @@ const HR_PAGES = {
   // Employees
   "Employee Profiles": { view:'profiles', sub:"Every employee's profile at a glance." },
   "Staff Details Form": { view:'staffForm', sub:'' },
+  "Employment Contract": { view:'staffContract', sub:'' },
   "Employee Transfers": { records:'transfer', sub:'Move staff between branches; completing a transfer updates their branch.' },
   "Employee Documents": { records:'employee_document', sub:'Statutory and personal documents held for each employee, with expiry tracking.' },
   "Employee Status": { view:'empStatus', sub:'Employment standing of every employee — active, on leave, suspended or terminated.' },
@@ -8523,7 +8524,7 @@ function sdfSaveCompany(ev){
   const f = Object.fromEntries(new FormData(ev.target));
   withRequest('sdf-company', async ()=>{
     const r = await api.put('/api/hr/staff-forms/company', f);
-    admForget('hr:staffFormCompany'); if(session.sdf && session.sdf.data) session.sdf.data.company = r.company;
+    admForget('hr:staffFormCompany'); if(session.sdf && session.sdf.data) session.sdf.data.company = r.company; if(session.sct && session.sct.data) session.sct.data.company = r.company;
     session.openForms = Object.assign(session.openForms || {}, { 'sdf-company': false });
     toast('Company details saved'); renderApp();
   }, { mutates: true });
@@ -8533,7 +8534,7 @@ function sdfCompanyForm(co){
   if(!hrCanWrite()) return '';
   const fld = (k, l) => `<div class="field"><label>${l}</label><input name="${k}" value="${escapeHtml(co[k] || '')}"></div>`;
   return fpWrap('sdf-company', '✎ Company details', `<div class="card"><div class="card-title">Company details on the form</div>
-    <form onsubmit="return sdfSaveCompany(event)"><div class="form-grid">${fld('name','Company name')}${fld('tagline','Tagline')}${fld('address','Address')}${fld('phone','Phone')}${fld('phone2','Second phone')}${fld('email','Email')}${fld('website','Website')}</div>
+    <form onsubmit="return sdfSaveCompany(event)"><div class="form-grid">${fld('name','Company name')}${fld('tagline','Tagline')}${fld('address','Address')}${fld('phone','Phone')}${fld('phone2','Second phone')}${fld('email','Email')}${fld('website','Website')}${fld('hr_email','HR email (offer letters)')}${fld('md_name','Managing Director')}</div>
     <button class="btn btn-primary btn-sm" type="submit">Save company details</button></form></div>`);
 }
 // The current form (or a blank one) as standalone pages for printing or the PDF.
@@ -8542,33 +8543,37 @@ function sdfDocHtml(){
   return staffFormHtml(st && st.data ? st.data.form : {}, co, false);
 }
 function sdfFileName(){ const st = session.sdf; const n = st && st.data && st.data.form && st.data.form.full_name; return 'staff-details-form' + (n ? '-' + String(n).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '') + '.pdf'; }
-function sdfPrint(){
+// Letterhead documents (Staff Details Form, Employment Contract): a print-ready
+// A4 copy in its own window, or a real PDF file.
+function docPrint(pagesHtml, title){
   if(typeof window === 'undefined' || typeof window.open !== 'function') return;
   const w = window.open('', '_blank');
-  if(!w){ toast('Allow pop-ups for this site to print the form'); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff Details Form</title><style>@page{size:A4;margin:0;}body{margin:0;background:#eef1f5;}${SDF_CSS}.sdf-wrap{padding:12px 0;}@media print{body{background:#fff;}.sdf-wrap{padding:0;gap:0;}}</style></head><body><div class="sdf-wrap sdf-fixed">${sdfDocHtml()}</div><script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
+  if(!w){ toast('Allow pop-ups for this site to print'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>@page{size:A4;margin:0;}body{margin:0;background:#eef1f5;}${SDF_CSS}${typeof SCT_CSS !== 'undefined' ? SCT_CSS : ''}.sdf-wrap{padding:12px 0;}@media print{body{background:#fff;}.sdf-wrap{padding:0;gap:0;}}</style></head><body><div class="sdf-wrap sdf-fixed">${pagesHtml}</div><script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
   w.document.close();
 }
+function sdfPrint(){ docPrint(sdfDocHtml(), 'Staff Details Form'); }
 // A real .pdf file, drawn in the browser; the library loads on first use.
 const SDF_PDF_LIB = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
 function sdfLoadPdfLib(){
   if(window.html2pdf) return Promise.resolve(window.html2pdf);
   return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = SDF_PDF_LIB; s.onload = () => window.html2pdf ? resolve(window.html2pdf) : reject(new Error('PDF library missing')); s.onerror = () => reject(new Error('Could not load the PDF library')); document.head.appendChild(s); });
 }
-async function sdfDownload(){
+function sdfDownload(){ return docDownload(sdfDocHtml(), sdfFileName(), sdfPrint); }
+async function docDownload(pagesHtml, fileName, fallback){
   try{
     toast('Preparing PDF…');
     const lib = await sdfLoadPdfLib();
     const holder = document.createElement('div');
     holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;';
-    holder.innerHTML = `<div class="sdf-wrap sdf-fixed" style="gap:0;">${sdfDocHtml()}</div>`;
+    holder.innerHTML = `<div class="sdf-wrap sdf-fixed" style="gap:0;">${pagesHtml}</div>`;
     holder.querySelectorAll('.sdf-page').forEach(p => { p.style.boxShadow = 'none'; p.style.width = '794px'; p.style.height = '1122px'; p.style.minHeight = '1122px'; });
     document.body.appendChild(holder);
     try{
-      await lib().set({ margin: 0, filename: sdfFileName(), image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      await lib().set({ margin: 0, filename: fileName, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'px', format: [794, 1123], orientation: 'portrait', hotfixes: ['px_scaling'] }, pagebreak: { mode: [] } }).from(holder.firstElementChild).save();
     } finally { holder.remove(); }
-  }catch(e){ toast((e && e.message ? e.message + ' — ' : '') + 'opening the print view instead; choose "Save as PDF"'); sdfPrint(); }
+  }catch(e){ toast((e && e.message ? e.message + ' — ' : '') + 'opening the print view instead; choose "Save as PDF"'); if(fallback) fallback(); }
 }
 function sdfFormPage(){
   const st = session.sdf;
@@ -8613,8 +8618,173 @@ function sdfPage(label){
       </table></div></div>
     ${admChart('sdf-status', 'Form completion', 'bar', ['Complete', 'Partly filled', 'Not started'], [{ label: 'Staff', data: counts }])}`;
 }
+// ==================== HR › Employment Contract ====================
+// The company's offer letter and fixed term employment contract, prepared
+// per employee on the same letterhead as the Staff Details Form. HR fills
+// the blanks (they start from the employee's record); the clauses are the
+// company's standard wording.
+const SCT_CSS = `
+.sct{font-family:Cambria,Georgia,'Times New Roman',serif;font-size:14px;line-height:1.5;color:#1d2433;padding-left:96px;padding-right:86px;}
+.sct.sct-p1{padding-top:300px;} .sct.sct-pn{padding-top:250px;}
+.sct p{margin:0 0 11px;text-align:justify;position:relative;z-index:1;}
+.sct h3{font-size:15px;margin:12px 0 5px;color:#1d2433;position:relative;z-index:1;}
+.sct h2{font-size:18px;letter-spacing:.3px;margin:0 0 8px;color:#2b3a1d;position:relative;z-index:1;}
+.sct .sct-rule{border-bottom:2px solid #2f5d9b;margin:0 0 22px;position:relative;z-index:1;}
+.sct .sct-re{font-weight:700;text-decoration:underline;margin:18px 0 14px;}
+.sct-blank{display:inline-block;min-width:120px;border-bottom:1.5px dotted #333;padding:0 4px;font-weight:700;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#14213d;text-align:center;line-height:1.35;}
+.sct-in{display:inline-block;width:190px;max-width:100%;border:0;border-bottom:1.5px dotted #333;background:#f5f9ff;padding:1px 6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:600;}
+.sct-in:focus{outline:none;background:#e8f1ff;border-bottom-color:#2f5d9b;}
+.sct-sig{margin-top:26px;position:relative;z-index:1;} .sct-sig div{margin-bottom:22px;}
+.sct-sig .sct-line{display:inline-block;width:300px;border-bottom:1.5px dotted #333;margin-left:6px;}
+@media (max-width:820px){ .sdf-wrap:not(.sdf-fixed) .sct{padding:140px 18px 150px;} .sdf-wrap:not(.sdf-fixed) .sct.sct-pn{padding-top:110px;} .sdf-wrap:not(.sdf-fixed) .sct-sig .sct-line{width:60%;} }`;
+if(typeof document !== 'undefined' && document.head && typeof document.createElement === 'function'){ const s = document.createElement('style'); s.textContent = SCT_CSS; document.head.appendChild(s); }
+const SCT_PRIMARY = { full_name: 1, position: 1, start_date: 1, salary: 1, place_of_employment: 1, period: 1, reports_to: 1, done_at: 1, done_day: 1, done_month: 1, done_year: 1, witness: 1, employer_rep: 1 };
+function sctShow(k, v){
+  if(!v) return '';
+  if(k === 'start_date') return laDate(v);
+  if(k === 'salary') return Number(v).toLocaleString('en-KE');
+  return v;
+}
+// One blank of the document: an input where it is first filled in (edit),
+// otherwise the value on a dotted line that follows what is typed.
+function sctBlank(f, k, editable, first, width){
+  if(editable && first){
+    const t = k === 'start_date' ? 'date' : k === 'salary' ? 'number' : 'text';
+    return `<input class="sct-in" name="${k}" type="${t}" value="${escapeHtml(f[k] || '')}" ${t === 'number' ? 'min="0" step="1"' : 'maxlength="120"'} style="${width ? 'width:' + width + 'px;' : ''}" oninput="sctDraft(this)" onchange="sctDraft(this)">`;
+  }
+  return `<span class="sct-blank" data-sct="${k}" style="${width ? 'min-width:' + width + 'px;' : ''}">${escapeHtml(sctShow(k, f[k]))}</span>`;
+}
+function contractHtml(f, co, editable){
+  f = f || {}; co = co || {};
+  const b = (k, first, w) => sctBlank(f, k, editable, first, w);
+  const NAME = `<b>${escapeHtml(String(co.name || 'Rhinocash Ltd').toUpperCase())}</b>`;
+  const head = `<div class="sdf-head"><img src="${LOGO_DATA_URI}" alt="Rhinocash"><div><div class="sdf-co-name">${escapeHtml(co.name || 'Rhinocash Ltd')}</div>${co.tagline ? `<div class="sdf-co-tag">${escapeHtml(co.tagline)}</div>` : ''}</div></div>`;
+  const page = (cls, body, withHead) => `<div class="sdf-page sct ${cls}">${SDF_DECO_TL}${withHead ? head : ''}${body}${SDF_DECO_BR}${sdfFoot(co)}</div>`;
+  const hrEmail = co.hr_email || co.email || '';
+  return page('sct-p1', `<div class="sct-rule"></div>
+      <p>Dear ${b('full_name', true, 220)},</p>
+      <p class="sct-re">RE: EMPLOYMENT OFFER LETTER</p>
+      <p>${NAME} is pleased to offer you the position of ${b('position', true, 180)}. Your skill and experience will be an ideal fit for our operations.</p>
+      <p>As we discussed, your starting date will be ${b('start_date', true, 150)}. Your salary will be Ksh ${b('salary', true, 120)} per month. Reviews and growing concerns will be communicated quarterly. You will be offered a flexible paid-time off plan which includes vacation, personal and sick leave. Time off accrues at the rate of 1.75 days per month. You will be required to take accrued vacation after 6 months of continuous employment.</p>
+      <p>To confirm your acceptance of this offer of employment, please sign below and return to me${hrEmail ? ` or by email at <b>${escapeHtml(hrEmail)}</b>` : ''} along with the fixed term contract form attached herewith.</p>
+      <div class="sct-sig"><div>Signature:<span class="sct-line"></span></div><div>Date:<span class="sct-line"></span></div></div>`, true)
+    + page('sct-pn', `<h2>FIXED TERM EMPLOYMENT CONTRACT</h2>
+      <p>${NAME} is a registered business with its principal place of business at ${escapeHtml(co.address || '')} hereinafter called “the company” hereby offer you employment with effect from ${b('start_date', false, 130)} with the following terms and conditions.</p>
+      <h3>1. Area of service</h3>
+      <p>Your principal place of employment shall be ${b('place_of_employment', true, 160)} and its environs and the company shall be entitled to require you from time to time to work at such other places within Kenya and may also in the performance of your duties be required to travel to various other places where the company conducts business.</p>
+      <h3>2. Date of commencement</h3>
+      <p>You will be required to take up the appointment effective ${b('start_date', false, 130)} and continue for a period of ${b('period', true, 110)} or until terminated in accordance with the provisions of this contract.</p>
+      <h3>3. Designation</h3>
+      <p>You shall serve the company in the capacity of a ${b('position', false, 160)}. You will, in the performance of your duties be responsible and answerable to and directly to the ${b('reports_to', true, 170)} beginning ${b('start_date', false, 130)}.</p>
+      <h3>4. Duties</h3>
+      <p>You will devote the whole of your time to the business of the company. A job description will be given to you and will be subject to periodic review. You will not be concerned or be engaged in any capacity in any business other than that of the company without the written permission of the company.</p>
+      <h3>5. Compensation and salary</h3>
+      <h3>a) Salary</h3>
+      <p>You will be paid a gross monthly pay of Ksh ${b('salary', false, 110)}. This wage will be paid in arrears at the end of each month after deduction of local taxes and other statutory charges as per the applicable rate from time to time.</p>`)
+    + page('sct-pn', `<h3>6. LEAVE AND TIME-OFF</h3>
+      <h3>a) Probation period</h3>
+      <p>The first three (3) consecutive months of your employment under this contract are agreed to constitute a period of probation during which the company will assess your suitability, performance and conduct. At any time during this period, the company may terminate your employment for any reason pertaining to this contract without any working notice or payment in lieu of.</p>
+      <h3>b) Annual leave</h3>
+      <p>You will be eligible for annual leave of 21 working days upon completion of 12 months of continued service. Annual leave is exclusive of Sundays and gazetted public holidays in Kenya. Application for any leave must be submitted to your manager at least one month in advance and will be taken as agreed or directed by the company. The periods that annual leave is proposed to be taken must be agreed with your manager so as to streamline the workflow. In your first year of employment after successful completion of your 3 months probation period, your leave entitlement will depend on the month in which confirmation of your employment started. You will be permitted to take leave actually accrued.</p>
+      <h3>c) Health and sick leave</h3>
+      <p>Sick leave will be granted in accordance with the basic conditions of the Employment Act. Every absence of two days (2 days) or more must be supported by a medical doctor’s certificate. The employer may verify the certificate.</p>
+      <h3>d) Family responsibility leave</h3>
+      <p>This type of leave is applicable for an employee who has been with the company for more than 6 months. As an employer, we grant during each annual cycle 3 days paid leave for family responsibility which the employee is entitled to take. This can be when a child is sick or in the event of death of a close family member.</p>
+      <h3>e) Maternity leave</h3>
+      <p>A female employee is entitled to 3 months maternity leave. Male employees are entitled to 14 days paternity leave.</p>`)
+    + page('sct-pn', `<h3>7. Confidential matters</h3>
+      <p>You will not, without written consent of the company, disclose any of its secrets, or other confidential matters relating to the company’s operations or clients’ details to anyone not authorized to receive them.</p>
+      <h3>8. Copyright</h3>
+      <p>Any copyright or intellectual property created by you during the continuance of your appointment hereunder (whether capable of registration or not) in conjunction with or in any way affecting or relating to the business of the company shall belong to and be the absolute property of the company.</p>
+      <h3>9. Working hours</h3>
+      <p>The working hours shall be as follows:<br>Monday to Friday – 7.30am to 5.00pm<br>Saturday – 9.00am to 12.00pm<br>You may be required to work extra hours depending on the nature of the job at times, for which you shall not be entitled to overtime.</p>
+      <h3>10. Standing orders</h3>
+      <p>You will be required to familiarize yourself with, and abide by such standing orders, rules, regulations and the code of conduct of the company, as shall be issued by the company from time to time. You are supposed to understand thoroughly the company policies effective from time to time and abide by them, failing which the employer has a right to take the necessary action including but not restricted to termination. You will be required to follow strictly professional ethics and code of conduct.</p>
+      <h3>11. Termination</h3>
+      <p>During your employment (i.e., after confirmation of appointment) either the company or you shall be entitled to terminate this contract by giving one month’s notice in writing or paying one month’s salary in lieu of notice.</p>
+      <h3>12. Deemed desertion</h3>
+      <p>If you shall be absent from office for three consecutive days without having reported to or informed the employer of reasons for such absence, you will be deemed to have absconded and you will be deemed to have terminated the contract of employment in lieu of satisfactory or reasonable explanation.</p>`)
+    + page('sct-pn', `<h3>Acceptance</h3>
+      <p>You understand and accept the terms and conditions of service contained herein, thus agree and done at ${b('done_at', true, 160)} on this ${b('done_day', true, 60)} day of ${b('done_month', true, 120)}, ${b('done_year', true, 70)}.</p>
+      <div class="sct-sig">
+        <div>Employee ${b('full_name', false, 220)} <span class="sct-line" style="width:180px;"></span></div>
+        <div>Employee witness ${b('witness', true, 220)} <span class="sct-line" style="width:140px;"></span></div>
+        <div style="margin-top:40px;">Employer ${b('employer_rep', true, 220)} <span class="sct-line" style="width:180px;"></span></div>
+        <div>The Managing Director<span class="sct-line" style="width:180px;"></span> <b>${escapeHtml(co.md_name || '')}</b></div>
+      </div>`);
+}
+const sctList = () => hrData('staffContracts', '/api/hr/staff-contracts', r => r);
+function sctOpen(userId, edit){
+  session.sct = { userId, edit: !!edit, data: null, draft: null };
+  renderApp(); if(typeof window !== 'undefined' && window.scrollTo) try{ window.scrollTo(0, 0); }catch(e){}
+  if(!userId){ session.sct.data = { form: { period: 'two years', reports_to: 'Operations Manager', done_year: String(new Date().getFullYear()) }, blank: true }; renderApp(); return; }
+  return withRequest('sct-load-' + userId, async ()=>{ session.sct.data = await api.get(`/api/hr/staff-contracts/${userId}`); renderApp(); });
+}
+function sctClose(){ session.sct = null; admForget('hr:staffContracts'); renderApp(); }
+function sctDraft(el){
+  const st = session.sct; if(!st || !st.edit) return;
+  st.draft = st.draft || {}; st.draft[el.name] = el.value;
+  if(typeof document !== 'undefined' && document.querySelectorAll) document.querySelectorAll(`[data-sct="${el.name}"]`).forEach(x => { x.textContent = sctShow(el.name, el.value); });
+}
+function sctSave(ev){
+  ev.preventDefault();
+  const st = session.sct; if(!st || !st.userId) return false;
+  const form = Object.fromEntries(new FormData(ev.target));
+  withRequest('sct-save-' + st.userId, async ()=>{
+    await api.put(`/api/hr/staff-contracts/${st.userId}`, { form });
+    st.data = await api.get(`/api/hr/staff-contracts/${st.userId}`); st.edit = false; st.draft = null;
+    admForget('hr:staffContracts'); toast('Employment contract saved'); renderApp();
+  }, { mutates: true });
+  return false;
+}
+function sctDocHtml(){ const st = session.sct; const co = (st && st.data && st.data.company) || sdfCompany() || {}; return contractHtml(st && st.data ? st.data.form : {}, co, false); }
+function sctFileName(){ const st = session.sct; const n = st && st.data && st.data.form && st.data.form.full_name; return 'employment-contract' + (n ? '-' + String(n).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '') + '.pdf'; }
+function sctPrint(){ docPrint(sctDocHtml(), 'Employment Contract'); }
+function sctDownload(){ return docDownload(sctDocHtml(), sctFileName(), sctPrint); }
+function sctFormPage(){
+  const st = session.sct;
+  const co = (st.data && st.data.company) || sdfCompany();
+  if(!st.data || co === undefined) return admLoading();
+  const canWrite = hrCanWrite() && !!st.userId;
+  const who = st.userId ? (st.data.form.full_name || hrEmpName(st.userId)) : 'Blank contract';
+  const bar = `<div class="sdf-bar"><button class="btn btn-sm btn-outline" onclick="sctClose()">← All staff</button><strong style="margin-right:auto;">${escapeHtml(who)}${st.data.updatedAt ? ` <small class="hint">updated ${escapeHtml(timeAgo(st.data.updatedAt))}${st.data.updatedBy ? ' by ' + escapeHtml(st.data.updatedBy) : ''}</small>` : st.userId ? ' <small class="hint">not saved yet</small>' : ''}</strong>
+    ${st.edit ? `<button class="btn btn-sm btn-primary" onclick="document.getElementById('sct-form').requestSubmit()">Save</button><button class="btn btn-sm btn-outline" onclick="session.sct.edit=false; session.sct.draft=null; renderApp();">Cancel</button>`
+      : `${canWrite ? `<button class="btn btn-sm btn-primary" onclick="session.sct.edit=true; renderApp();">✎ Edit</button>` : ''}<button class="btn btn-sm btn-outline" onclick="sctPrint()">🖨 Print</button><button class="btn btn-sm btn-outline" onclick="sctDownload()">⬇ Download PDF</button>`}</div>`;
+  return `<div class="card">${bar}${st.edit ? '' : sdfCompanyForm(co || {})}
+    ${st.edit ? `<form id="sct-form" onsubmit="return sctSave(event)"><div class="sdf-wrap">${contractHtml(Object.assign({}, st.data.form, st.draft || {}), co, true)}</div><div class="sdf-bar" style="justify-content:center;margin-top:12px;"><button class="btn btn-primary" type="submit">Save contract</button></div></form>`
+      : `<div class="sdf-wrap">${contractHtml(st.data.form, co, false)}</div>`}</div>`;
+}
+function sctPage(label){
+  if(session.sct) return sctFormPage();
+  const list = sctList(); const co = sdfCompany(); const emps = hrEmployees();
+  const g = hrGuard(list, co, emps); if(g) return g;
+  const f = hrFilter(label, { q:'', branch:'', state:'' });
+  const stateOf = r => r.saved ? 'Prepared' : 'Not prepared';
+  const q = (f.q || '').toLowerCase();
+  const rows = (list.contracts || []).filter(r => r.status !== 'Terminated' && (!f.branch || r.branchId === f.branch) && (!f.state || stateOf(r) === f.state) && (!q || [r.name, r.staffCode, r.position].some(x => String(x || '').toLowerCase().includes(q))));
+  const canWrite = hrCanWrite();
+  const set = (k, v) => `hrFilter('${label}', {})['${k}']=${v}; renderApp();`;
+  const headers = ['Staff', 'Staff ID', 'Branch', 'Position', 'Starting date', 'Salary (Ksh)', 'Status', 'Last updated'];
+  const data = rows.map(r => [r.name, r.staffCode || '', branchName(r.branchId), r.position || '', r.startDate || '', r.salary || '', stateOf(r), r.updatedAt ? String(r.updatedAt).slice(0, 10) : '']);
+  const counts = ['Prepared', 'Not prepared'].map(s => rows.filter(r => stateOf(r) === s).length);
+  return `<div class="card">
+      <div class="card-title"><span>Employment Contracts <small>${rows.length} staff</small></span><span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-sm btn-outline" onclick="sctOpen(null)">Blank contract</button>${hrGen('Employment Contracts', headers, data)}</span></div>
+      ${sdfCompanyForm(co)}
+      <div class="pill-row" style="flex-wrap:wrap;margin-bottom:10px;">
+        <input placeholder="Search name, staff ID or position" value="${escapeHtml(f.q)}" onchange="${set('q', 'this.value')}" style="width:220px;">
+        <select onchange="${set('branch', 'this.value')}" class="btn btn-sm btn-outline"><option value="">-- Branch --</option>${(DB.branches || []).slice().sort((a, b) => a.name.localeCompare(b.name)).map(b => `<option value="${b.id}" ${f.branch === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}</select>
+        <select onchange="${set('state', 'this.value')}" class="btn btn-sm btn-outline"><option value="">-- Status --</option>${['Prepared', 'Not prepared'].map(s => `<option ${f.state === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="table-wrap"><table><tr><th>#</th><th>Staff</th><th>Staff ID</th><th>Branch</th><th>Position</th><th>Starting date</th><th>Salary (Ksh)</th><th>Status</th><th>Last updated</th><th>Actions</th></tr>
+        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="clickable" onclick="sctOpen('${r.userId}')"><strong>${escapeHtml(r.name)}</strong></td><td>${escapeHtml(r.staffCode || '—')}</td><td>${escapeHtml(branchName(r.branchId))}</td><td>${escapeHtml(r.position || '—')}</td>
+          <td>${r.startDate ? escapeHtml(laDate(r.startDate)) : '—'}</td><td>${r.salary ? fmt(Number(r.salary)).replace(/^KES\s*/, '') : '—'}</td><td>${admBadge(stateOf(r), r.saved ? 'green' : 'grey')}</td><td>${r.updatedAt ? `${escapeHtml(laDate(r.updatedAt))}${r.updatedBy ? `<div class="hint">by ${escapeHtml(r.updatedBy)}</div>` : ''}` : '—'}</td>
+          <td class="ud-acts"><span class="ud-a" onclick="sctOpen('${r.userId}')">View</span>${canWrite ? ` <span class="ud-dot">·</span> <span class="ud-a" onclick="sctOpen('${r.userId}', true)">${r.saved ? 'Edit' : 'Prepare'}</span>` : ''}</td></tr>`).join('') || `<tr><td colspan="10" class="empty">No staff match these filters.</td></tr>`}
+      </table></div></div>
+    ${admChart('sct-status', 'Contracts prepared', 'bar', ['Prepared', 'Not prepared'], [{ label: 'Staff', data: counts }])}`;
+}
 const HR_VIEWS = {
   staffForm: (spec, label) => sdfPage(label),
+  staffContract: (spec, label) => sctPage(label),
   /* Employees */
   profiles: (spec, label) => {
     const emps = hrEmployees(); const g = hrGuard(emps); if(g) return g;

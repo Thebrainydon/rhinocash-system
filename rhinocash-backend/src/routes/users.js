@@ -682,7 +682,7 @@ function register(router) {
       'user_permission_overrides.user_id', 'user_workspace_preferences.user_id', 'report_filter_presets.user_id', 'ticket_filter_presets.user_id',
       'requisition_otps.user_id', 'salary_advance_otps.user_id', 'salary_advance_requests.user_id', 'leave_requests.user_id', 'daily_workplans.user_id',
       'staff_interactions.user_id', 'hr_attendance.employee_id', 'payroll_lines.employee_id', 'notifications.user_id', 'hr_records.employee_id',
-      'targets.recipient_user_id', 'staff_accounts.user_id', 'target_appeals.user_id', 'staff_detail_forms.user_id']);
+      'targets.recipient_user_id', 'staff_accounts.user_id', 'target_appeals.user_id', 'staff_detail_forms.user_id', 'staff_contracts.user_id']);
     const ident = x => /^[a-z_][a-z0-9_]*$/.test(x) ? x : null;
     const acct = await get('SELECT login_email, username FROM user_accounts WHERE employee_id = ?', [user.id]);
     try {

@@ -1782,6 +1782,18 @@ async function initSchema() {
       WHERE u.branch_id = b.id AND u.role_id <> 'regional_manager' AND b.region_id IS NOT NULL AND u.region_id IS DISTINCT FROM b.region_id`);
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('staff-region-follows-branch-v1') ON CONFLICT DO NOTHING`);
   }
+  // The company's letterhead details for HR documents, as given by the
+  // company: applied once over anything saved earlier; HR can change them
+  // afterwards (HR › Staff Details Form / Employment Contract › Company details).
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'hr-company-details-mombasa-v1'`))) {
+    const row = await rawGet(`SELECT value_json FROM admin_settings WHERE key = 'hr.staff-form-company'`);
+    if (row) {
+      let v = {}; try { v = JSON.parse(row.value_json) || {}; } catch { v = {}; }
+      Object.assign(v, { address: 'Mombasa, Rafiki Building, 3rd Floor', phone: '+254 758414779', email: 'info@rhinocash.co.ke' });
+      await rawRun(`UPDATE admin_settings SET value_json = ? WHERE key = 'hr.staff-form-company'`, [JSON.stringify(v)]);
+    }
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('hr-company-details-mombasa-v1') ON CONFLICT DO NOTHING`);
+  }
   // Loan Officers must be able to register clients and create loan
   // applications. Some deployments ended up without these menu grants (the
   // server then answered 403), so grant them to the role and to any officer
@@ -1947,6 +1959,10 @@ async function initSchema() {
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_target_appeals_target ON target_appeals(target_id)`);
   // HR › Staff Details Form, one per employee (see routes/staffForms.js).
   await rawRun(`CREATE TABLE IF NOT EXISTS staff_detail_forms (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL DEFAULT '{}',
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL, updated_at TEXT NOT NULL DEFAULT iso_now())`);
+  // HR › Employment Contract, one per employee (see routes/staffForms.js).
+  await rawRun(`CREATE TABLE IF NOT EXISTS staff_contracts (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL DEFAULT '{}',
     updated_by TEXT REFERENCES users(id) ON DELETE SET NULL, updated_at TEXT NOT NULL DEFAULT iso_now())`);
   // Accounts the Admin permanently deleted (see removedAccounts.js).

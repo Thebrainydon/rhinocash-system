@@ -26,6 +26,8 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
 
   const one = await api('GET', `/api/hr/staff-forms/${officerId}`, { token: hr });
   assert(one.status === 200 && one.json.form.full_name && one.json.form.phone && one.json.company && one.json.company.name, '2: a new form comes prefilled from the employee record, with the company letterhead');
+  const co0 = one.json.company;
+  assert(co0.address === 'Mombasa, Rafiki Building, 3rd Floor' && co0.phone === '+254 758414779' && co0.email === 'info@rhinocash.co.ke', "2: the letterhead carries the company's Mombasa address, phone and email by default");
 
   const form = Object.assign({}, one.json.form, { residential_address: 'Kisumu, Milimani', em_name: 'Jane Atieno', em_relationship: 'Sister', em_phone: '0711222333',
     nok_name: 'John Otieno', nok_relationship: 'Brother', nok_phone: '0722333444', declaration_date: '2026-10-15', bogus: 'ignored' });
@@ -45,6 +47,24 @@ const login = async (email, pw) => (await api('POST', '/api/auth/login', { body:
   assert((await api('GET', `/api/hr/staff-forms/${officerId}`, { token: hr })).json.company.phone === '+254 700 000 111', '4: every form shows the updated company details');
   assert((await api('PUT', '/api/hr/staff-forms/company', { token: officer, body: { name: 'X' } })).status === 403, '4: only HR changes the company details');
   assert((await api('GET', '/api/hr/staff-forms/usr_does_not_exist', { token: hr })).status === 404, '5: an unknown employee is not found');
+
+  // 6. Employment Contract: offer letter + fixed term contract per employee.
+  const cl = await api('GET', '/api/hr/staff-contracts', { token: hr });
+  const crow = cl.json && cl.json.contracts.find(c => c.userId === officerId);
+  assert(cl.status === 200 && crow && !crow.saved, '6: HR lists every employee with their contract status (not prepared yet)');
+  assert((await api('GET', '/api/hr/staff-contracts', { token: officer })).status === 403, '6: a loan officer cannot open employment contracts');
+  const c1 = await api('GET', `/api/hr/staff-contracts/${officerId}`, { token: hr });
+  assert(c1.status === 200 && c1.json.form.full_name && c1.json.form.period === 'two years' && c1.json.form.reports_to && c1.json.company.address, '6: a new contract starts from the employee record and the standard terms');
+  const cform = Object.assign({}, c1.json.form, { position: 'Loan Officer', start_date: '2026-11-01', salary: '35,000', place_of_employment: 'Mombasa', done_at: 'Mombasa', done_day: '15th', done_month: 'October', witness: 'Mary W', hacked: 'x' });
+  const cs = await api('PUT', `/api/hr/staff-contracts/${officerId}`, { token: hr, body: { form: cform } });
+  assert(cs.status === 200 && cs.json.form.salary === '35000' && cs.json.form.hacked === undefined, '6: HR saves the contract (salary kept as an amount; unknown fields dropped)');
+  assert((await api('PUT', `/api/hr/staff-contracts/${officerId}`, { token: hr, body: { form: Object.assign({}, cform, { salary: 'thirty' }) } })).status === 400, '6: the salary must be an amount');
+  assert((await api('PUT', `/api/hr/staff-contracts/${officerId}`, { token: hr, body: { form: Object.assign({}, cform, { start_date: 'next week' }) } })).status === 400, '6: the starting date must be a date');
+  assert((await api('PUT', `/api/hr/staff-contracts/${officerId}`, { token: officer, body: { form: cform } })).status === 403, '6: a loan officer cannot change a contract');
+  const crow2 = (await api('GET', '/api/hr/staff-contracts', { token: hr })).json.contracts.find(c => c.userId === officerId);
+  assert(crow2.saved && crow2.startDate === '2026-11-01' && crow2.salary === '35000' && crow2.updatedBy, '6: the list shows the prepared contract, its starting date and salary');
+  const cc = await api('PUT', '/api/hr/staff-forms/company', { token: hr, body: { md_name: 'Jane Director' } });
+  assert(cc.status === 200 && cc.json.company.md_name === 'Jane Director' && cc.json.company.address === 'Mombasa, Nkrumah Road', "6: HR names the Managing Director without touching the other company details");
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

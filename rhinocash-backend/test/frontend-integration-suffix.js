@@ -7963,6 +7963,19 @@ apiRequest = async function(method, path, body){
     sdfHtml = sdfPage('Staff Details Form');
     __assert(sdfHtml.includes('name="em_name" value="Jane Atieno"') && sdfHtml.includes('sdfSave(event)'), "editing shows fields to fill in, and what is typed survives a refresh");
     sdfClose();
+    // HR › Employment Contract: offer letter + fixed term contract on the letterhead.
+    __assert(SIDEBAR_MENUS.HR.some(sec => sec.section === 'Employees' && sec.items.includes('Employment Contract')), "HR › Employees has an Employment Contract page");
+    let sctHtml = sctPage('Employment Contract');
+    for(let i=0; i<250 && sctHtml.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); sctHtml = sctPage('Employment Contract'); }
+    __assert(sctHtml.includes('Employment Contracts') && sctHtml.includes('Blank contract') && sctHtml.includes("sctOpen('usr_officer', true)") && sctHtml.includes('>Actions<'), "the contracts list shows every employee with View / Prepare and a blank contract");
+    await sctOpen('usr_officer');
+    sctHtml = sctPage('Employment Contract');
+    __assert(['RE: EMPLOYMENT OFFER LETTER', 'FIXED TERM EMPLOYMENT CONTRACT', '1. Area of service', '6. LEAVE AND TIME-OFF', '12. Deemed desertion', 'Acceptance'].every(t => sctHtml.includes(t)) && (sctHtml.match(/class="sdf-page sct /g) || []).length === 5, "the contract has the offer letter and the contract's clauses over five A4 pages");
+    __assert(sctHtml.includes('sctPrint()') && sctHtml.includes('sctDownload()') && sctHtml.includes('Mombasa, Rafiki Building, 3rd Floor'), "the contract prints, downloads, and carries the company's Mombasa details");
+    session.sct.edit = true; sctDraft({ name: 'salary', value: '35000' });
+    sctHtml = sctPage('Employment Contract');
+    __assert(sctHtml.includes('name="salary" type="number" value="35000"') && (sctHtml.match(/name="start_date"/g) || []).length === 1 && sctHtml.includes('sctSave(event)'), "editing fills each blank once (repeats follow it), and typed values survive a refresh");
+    sctClose();
     sidebarNavigate('eSMS');
     for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
     renderApp(); html = document.getElementById('root').innerHTML;
