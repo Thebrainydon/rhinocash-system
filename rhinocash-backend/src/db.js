@@ -1920,6 +1920,16 @@ async function initSchema() {
     body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT iso_now(), read_at TEXT)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_to ON live_location_messages(to_user, read_at)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_live_msgs_pair ON live_location_messages(from_user, to_user, id)`);
+  // Notifications point at the record they are about, say what to do, and
+  // record the action taken (see audit.js notify/markActed).
+  await ensureColumn('notifications', 'related_type TEXT');
+  await ensureColumn('notifications', 'related_id TEXT');
+  await ensureColumn('notifications', 'link TEXT');
+  await ensureColumn('notifications', 'action TEXT');
+  await ensureColumn('notifications', 'acted_at TEXT');
+  await ensureColumn('notifications', 'action_taken TEXT');
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_notifications_related ON notifications(related_type, related_id) WHERE action IS NOT NULL`);
+  await rawRun(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)`);
   // Appeals and comments on a target, raised by the person or team it was
   // set for and answered by whoever manages that target.
   await rawRun(`CREATE TABLE IF NOT EXISTS target_appeals (

@@ -102,6 +102,7 @@ const SIG = 'data:image/png;base64,' + Buffer.alloc(400, 7).toString('base64');
   await api('POST', `/api/esign/${tok2b}/sign`, { body: { signature: SIG, otp: o3.json.otpForTesting } });
   const regen = await api('POST', `/api/loans/${l2.id}/esign/generate`, { token: t.officer, body: {} });
   assert(regen.status === 409 && regen.json.code === 'SIGNED_ALREADY', '4: regenerating after someone signed asks for confirmation first');
+  assert((await api('DELETE', `/api/loans/${l2.id}`, { token: t.officer, body: {} })).status === 403, '4: a Loan Officer cannot delete an application, even their own');
   assert((await api('DELETE', `/api/loans/${l2.id}`, { token: t.manager, body: {} })).status === 200, '4: an approver can delete an application that has not been approved');
   assert((await api('GET', `/api/loans/${l2.id}`, { token: t.officer })).json.loan.status === 'Cancelled' && (await api('GET', `/api/esign/${tok2b}`)).status === 410, '4: a deleted application is Cancelled and its links are withdrawn');
   assert((await api('DELETE', `/api/loans/${loan.id}`, { token: t.officer, body: {} })).status === 409, '4: an application already approved by someone cannot be deleted');

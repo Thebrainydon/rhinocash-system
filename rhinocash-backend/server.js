@@ -160,6 +160,17 @@ router.post('/api/mpesa/c2b/confirmation/:environment', async (req, res) => {
     const processResult = await mpesa.processC2bTransaction(result.id, null);
     if (processResult.created) {
       await logAction(req, { action: 'M-Pesa C2B transaction converted to real payment', module: 'mpesa', recordType: 'Payment', recordId: processResult.paymentId, newValue: { transId: body.TransID, matchMethod: result.matchMethod } });
+    } else if (processResult.unmatched) {
+      // Nobody could tell whose payment this is: Managers and above are asked
+      // to assign it (and the system tries again after the wait).
+      try {
+        const { notifyPaymentHandlers } = require('./src/routes/payments');
+        const { get } = require('./src/db');
+        const last9 = String(body.MSISDN || '').replace(/\D/g, '').slice(-9);
+        const client = last9.length === 9 ? await get('SELECT branch_id FROM clients WHERE phone LIKE ? LIMIT 1', ['%' + last9]) : null;
+        await notifyPaymentHandlers(client ? client.branch_id : null, 'Payment to assign', `KES ${body.TransAmount} (M-Pesa ${body.TransID}, account "${body.BillRefNumber || '—'}") could not be matched to a loan. Assign it, or the system will try again automatically.`,
+          { relatedType: 'c2b', relatedId: result.id, link: { panel: 'payments' }, action: 'assign' });
+      } catch (e) { console.warn('[c2b notify]', e.message); }
     }
   }
   res.json({ ResultCode: '0', ResultDesc: 'Accepted' });
@@ -349,6 +360,8 @@ if (require.main === module) {
       // Admin-configured SMS/email settings, so health checks see them at once.
       await require('./src/integrations/store').loadAll().catch(() => {});
       server.listen(PORT, () => console.log(`Rhinocash API listening on http://localhost:${PORT}`));
+      // Payments nobody assigned or posted in time (see paymentAutoAssign.js).
+      require('./src/paymentAutoAssign').start();
     })
     .catch((e) => {
       console.error(e.message);

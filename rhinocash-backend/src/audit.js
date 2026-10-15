@@ -40,11 +40,23 @@ async function logAction(req, { action, module, recordType, recordId, previousVa
 // and API existed but nothing ever inserted into it). `userId: null`
 // means a broadcast notification visible to everyone (see misc.js's
 // `user_id = ? OR user_id IS NULL` read query).
-async function notify(userId, type, title, message) {
+// extra (optional): what the notification is about and what to do —
+//   relatedType/relatedId: the record (e.g. 'loan', 'ln_…')
+//   link: where to open it, { label } (a sidebar item) or { section, subtab }
+//   action: what the recipient is asked to do (e.g. 'approve'); such a
+//   notification is marked done (markActed) when someone acts on the record.
+async function notify(userId, type, title, message, extra = {}) {
   await run(
-    'INSERT INTO notifications (user_id, type, title, message, read) VALUES (?,?,?,?,0)',
-    [userId, type, title, message]
+    'INSERT INTO notifications (user_id, type, title, message, read, related_type, related_id, link, action) VALUES (?,?,?,?,0,?,?,?,?)',
+    [userId, type, title, message, extra.relatedType || null, extra.relatedId != null ? String(extra.relatedId) : null,
+      extra.link ? JSON.stringify(extra.link) : null, extra.action || null]
   );
 }
+// Someone acted on a record: every notification still asking for an action
+// on it records what was done, by whom and when.
+async function markActed(relatedType, relatedId, actionTaken) {
+  await run(`UPDATE notifications SET acted_at = iso_now(), action_taken = ? WHERE related_type = ? AND related_id = ? AND action IS NOT NULL AND acted_at IS NULL`,
+    [String(actionTaken).slice(0, 200), relatedType, String(relatedId)]);
+}
 
-module.exports = { logAction, notify };
+module.exports = { logAction, notify, markActed };

@@ -125,14 +125,13 @@ async function completeIfAllSigned(loanId) {
   const steps = await workflowSteps();
   const first = steps[0];
   await run('UPDATE loans SET status = ?, current_step = 1 WHERE id = ?', [first ? first.status_label : 'Waiting for Manager', loanId]);
-  await notify(loan.officer_id, 'loan', 'Loan form signed', `All signatures are in for application #${loan.application_no || loan.id}. It is now waiting for approval.`);
-  if (first) { // whoever holds the first approval step for this branch
-    const { branchIdsInScope } = require('./../rbac');
-    for (const u of await all('SELECT * FROM users WHERE role_id = ? AND status = ?', [first.role_id, 'Active'])) {
-      const scope = await branchIdsInScope(u);
-      if (scope === null || scope.includes(loan.branch_id)) await notify(u.id, 'loan', 'Loan awaiting your approval', `Application #${loan.application_no || loan.id} has been signed and is waiting for you (${first.status_label}).`);
-    }
-  }
+  await notify(loan.officer_id, 'loan', 'Loan form signed', `All signatures are in for application #${loan.application_no || loan.id}. It is now waiting for approval.`,
+    { relatedType: 'loan', relatedId: loan.id, link: { section: 'loanbook', subtab: 'Loan Applications' } });
+  // Whoever holds the first approval step for this branch is asked to
+  // approve; the region's Regional Manager is told it has arrived.
+  const { notifyNextApprovers, notifyRegionOfNewApplication } = require('./loans');
+  if (first) await notifyNextApprovers(loan, first);
+  await notifyRegionOfNewApplication(loan);
   return true;
 }
 
@@ -210,8 +209,10 @@ function register(router) {
   router.delete('/api/loans/:id', requireAuth, requireModule('loanbook'), async (req, res, next) => {
     let loan; try { loan = await loadLoanForStaff(req); } catch (e) { return next(e); }
     if (!['Pending signatures', 'Waiting for Manager', 'Returned for Correction'].includes(loan.status) || loan.current_step > 1) return next({ status: 409, message: 'Only an application that has not been approved yet can be deleted' });
+    // Loan Officers do not delete; a Manager (or another approver) removes a wrong application.
+    if (req.user.role_id === 'loan_officer') return next({ status: 403, message: 'Loan Officers cannot delete applications — ask your Manager to remove it' });
     const canApprove = await require('./../rbac').hasPermission(req.user, 'approve_loans');
-    if (loan.officer_id !== req.user.id && loan.created_by !== req.user.id && !canApprove) return next({ status: 403, message: 'Only the loan officer who created it or an approver can delete this application' });
+    if (!canApprove) return next({ status: 403, message: 'Only an approver can delete this application' });
     await run(`UPDATE loans SET status = 'Cancelled', reject_reason = ? WHERE id = ?`, [String((req.body && req.body.reason) || 'Deleted before approval').slice(0, 300), loan.id]);
     await run(`UPDATE loan_fee_payments SET loan_id = NULL WHERE loan_id = ?`, [loan.id]); // the client's fee can be used for a new application
     await run(`UPDATE loan_esign_signers SET status = 'Revoked' WHERE loan_id = ? AND status <> 'Signed'`, [loan.id]);

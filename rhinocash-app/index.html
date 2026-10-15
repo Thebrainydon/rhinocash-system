@@ -510,6 +510,7 @@ table.rp-table td{text-align:center;} table.rp-table td.rp-item, table.rp-table 
 .tgr-grid-card{border:1px solid #D5DEE8; border-radius:10px; padding:14px; margin:4px 18px 14px; background:#F8FAFD;} .tgr-grid-h{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;} .tgr-grid-h strong{color:var(--navy); font-size:16px;}
 .tgr-grid td{padding:6px 8px;} .tgr-cell{width:100%; min-width:96px; text-align:right; font-weight:600;} .tgr-cell::placeholder{color:#90A4AE; text-align:center; font-weight:800;} .tgr-acts{display:inline-flex; gap:6px; flex-wrap:wrap;}
 .la-appr{margin-bottom:4px; white-space:nowrap;} .la-appr .hint{font-size:11px;} .la-appr-acts{display:flex; gap:6px; margin-top:4px;}
+.la-tile-on{outline:2px solid var(--blue,#2E5C8A);}
 .perf-card{padding:0; overflow:hidden;} .perf-card > *:not(.perf-banner){margin-left:18px; margin-right:18px;}
 .perf-banner{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; background:linear-gradient(180deg,#1E4B78,#1B4470); color:#fff; padding:18px 20px 16px; margin-bottom:14px;}
 .perf-title{font-size:22px; font-weight:800; letter-spacing:.3px;} .perf-sub{font-size:13.5px; opacity:.9; margin-top:4px;}
@@ -1491,7 +1492,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Loan Application","Loan Application","Collection MTD","Disbursements","Collection Sheet","Collection Report","Collection Rates","Loan Arrears","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Receipts","Payi Summary","Payments Report","Validate Payments"]},
     {section:"Performance & Targets", icon:"🎯", items:["My Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create a Ticket","Raised Ticket"]},
   ],
   "Manager": [
@@ -1503,7 +1504,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Operational Manager": [
@@ -1517,7 +1518,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions","M-Pesa Transactions"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","Operational Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Regional Manager": [
@@ -1530,7 +1531,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Undisbursed Loans","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Follow-Ups","Promises to Pay","Collection Activities","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Record Payment","Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","Regional Responsibilities","My Targets & Performance","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Admin": [
@@ -1538,7 +1539,7 @@ const SIDEBAR_MENUS = {
     {section:"Organization Setup", icon:"🏢", items:["Departments","Regions","Branches","Branch Setup","Branch Codes","Branch Working Hours","Branch Managers","Branch Transfers","Organization Structure"]},
     {section:"Loan Products Setup", icon:"📖", items:["Loan Products","Product Categories","Loan Types","Loan Amount Limits","Interest Rates","Interest Calculation Methods","Processing Fees","Other Loan Fees","Penalty Settings","Repayment Frequencies","Loan Terms","Installment Settings","Grace Periods","Eligibility Rules","Collateral Requirements","Guarantor Requirements","Loan Limits by Customer","Loan Cycle Settings","Top-Up Rules","Restructuring Rules","Refinancing Rules","Early Settlement Rules","Write-Off Rules","Product Change History"]},
     {section:"Client & KYC Setup", icon:"👥", items:["Client Types","Client Categories","Identification Types","KYC Requirements","Client Registration Fields","Required Documents","Client Risk Categories","Client Statuses","Customer Groups","KYC Configuration"]},
-    {section:"Payment & Collection Setup", icon:"💳", items:["Payment Methods","Payment Channels","M-Pesa Configuration","Bank Payments","Cash Payments","Payment Rules","Receipt Settings","Collection Settings","Payment Validation Rules","Payment Allocation Rules","Overpayment Rules","Prepayment Rules","Refund Rules","Payment Numbering"]},
+    {section:"Payment & Collection Setup", icon:"💳", items:["Payment Methods","Payment Channels","M-Pesa Configuration","Bank Payments","Cash Payments","Payment Rules","Receipt Settings","Collection Settings","Payment Validation Rules","Payment Allocation Rules","Overpayment Rules","Prepayment Rules","Refund Rules","Payment Numbering","Payment Auto-Assignment"]},
     {section:"Accounting Setup", icon:"📊", items:["Chart of Accounts","Accounting Periods","Transaction Categories","Loan Accounts","Fee Accounts","Penalty Accounts","Cash Accounts","Bank Accounts","Journal Settings","Tax Settings","Financial Statement Settings","Accounting Rules"]},
     {section:"HR & Payroll Setup", icon:"🧑‍💼", items:["Job Titles","Job Grades","Employment Types","Leave Types","Leave Rules","Attendance Rules","Payroll Settings","Salary Components","Allowances","Deductions","HR Configuration"]},
     {section:"User Management", icon:"👤", items:["All Users","Create User","User Profiles","Employee Account Requests","Role Assignments","Permissions","Account Activation","Account Suspension","Account Lock / Unlock","Password Reset","Force Password Change","Login Activity","User Sessions","User Audit Log"]},
@@ -1557,7 +1558,7 @@ const SIDEBAR_MENUS = {
     {section:"API & Developer Management", icon:"👨‍💻", items:["API Keys","API Clients","API Permissions","API Usage","API Logs","Webhook Management","Webhook Logs","API Rate Limits"]},
     {section:"Reports", icon:"📑", items:["System Reports","User Reports","Access Reports","Audit Reports","Security Reports","Configuration Reports","Data Reports"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","System Responsibilities","System Administration","M-Pesa Configuration","Governance Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","System Responsibilities","System Administration","M-Pesa Configuration","Governance Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Accountant": [
@@ -1573,7 +1574,7 @@ const SIDEBAR_MENUS = {
     {section:"Investor Accounts", icon:"💼", items:["Investor Directory","Investor Statements","Investor Ledger","Obligations"]},
     {section:"Budget & Planning", icon:"💰", items:["Annual Budget","Budget Monitoring","Budget Variance","Branch Budgets","Expense Budgets","Financial Forecasts"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Financial Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","Financial Responsibilities","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "CEO": [
@@ -1594,7 +1595,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Executive Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","Executive Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Director": [
@@ -1618,7 +1619,7 @@ const SIDEBAR_MENUS = {
     {section:"LoanBook", icon:"📖", items:["Create Application","Loan Applications","Pending Approvals","Collection MTD","Disbursements","Collection Sheet","Collection Reports","Collection Rates","Loan Arrears","Loan Transfers","Loan Portfolio Monitoring","View Loans"]},
     {section:"Payments", icon:"💳", items:["Unposted Payments","Processed Payments","Prepayments","Overpayments","Merged Payments","Receipts","Payment Summary","Payments Report","Validate Payment","Payment Reconciliation","Payment Exceptions"]},
     {section:"Performance & Targets", icon:"🎯", items:["Disbursement Report","Branch Performance Report","MTD Disbursement Performance","Officer Targets","Targets Register"]},
-    {section:"My Account", icon:"🪪", items:["View Details","Governance Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","Governance Responsibilities","System Administration","My Work Plan","Leave Application","Leave & Attendance","Salary Advance","Update Details","Security & Login"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
   "Investor": [
@@ -1648,7 +1649,7 @@ const SIDEBAR_MENUS = {
     {section:"HR Administration", icon:"🏢", items:["Departments","Job Titles","Job Grades","Employment Types","Branch Assignments","HR Policies","HR Documents"]},
     {section:"HR Analytics", icon:"📊", items:["Workforce Analytics","Headcount Analysis","Staff Turnover","Attendance Analytics","Leave Analytics","Payroll Analytics","Performance Analytics","HR Dashboard Reports"]},
     {section:"HR Compliance", icon:"⚖️", items:["Employment Compliance","Employee Documents","Contract Tracking","Policy Compliance","Compliance Calendar","Compliance Reports"]},
-    {section:"My Account", icon:"🪪", items:["View Details","My Work Plan","Leave Application","Salary Advance","Update Details"]},
+    {section:"My Account", icon:"🪪", items:["View Details","Notifications","My Work Plan","Leave Application","Salary Advance","Update Details"]},
     {section:"System & Help", icon:"🔧", items:["Create Ticket","Raised Ticket","Knowledge Base","System Announcements","Contact Support"]},
   ],
 };
@@ -2806,7 +2807,28 @@ function adaptStaff(u){
 function adaptBranch(b){ return { id:b.id, name:b.name, code:b.code, location:b.location, phone:b.phone, region:b.region_id, managerId:b.manager_id, status:b.status, createdAt:b.created_at }; }
 function adaptRegion(r){ return { id:r.id, name:r.name }; }
 function adaptProduct(p){ return { id:p.id, name:p.name, rateType:p.rate_type, rate:p.rate_pct, minAmt:p.min_amount, maxAmt:p.max_amount, minTerm:p.min_term_months, maxTerm:p.max_term_months, fee:p.fee_pct, penalty:p.penalty_pct||0, termWeeks:p.term_weeks||null, processingFeeAmount: p.processing_fee_amount!=null ? Number(p.processing_fee_amount) : null }; }
-function adaptNotification(n){ return { id:n.id, type:n.type, title:n.title, message:n.message, date:n.created_at, read: !!n.read }; }
+function adaptNotification(n){ let link = null; try { link = n.link ? JSON.parse(n.link) : null; } catch(e){ link = null; }
+  return { id:n.id, type:n.type, title:n.title, message:n.message, date:n.created_at, read: !!n.read, relatedType:n.related_type || null, relatedId:n.related_id || null, link, action:n.action || null, actedAt:n.acted_at || null, actionTaken:n.action_taken || null }; }
+// The bell shows the last hour only; everything stays on the Notifications page.
+const NOTIF_BELL_MS = 60 * 60 * 1000;
+const notifRecent = n => Date.now() - new Date(n.date).getTime() < NOTIF_BELL_MS;
+const NOTIF_ACTION_LABEL = { approve: 'Approve or reject', disburse: 'Disburse', correct: 'Correct and resubmit', decide: 'Approve or reject', assign: 'Assign to a loan', post: 'Post the payment' };
+// Open what a notification is about (and mark it read).
+function openNotification(id){
+  const n = (DB.notifications || []).find(x => String(x.id) === String(id)); if(!n) return;
+  if(!n.read){ n.read = true; api.post(`/api/notifications/${n.id}/read`, {}).catch(() => {}); }
+  if(typeof closeModal === 'function' && modal) closeModal();
+  const l = n.link || {};
+  if(l.panel === 'payments'){ openC2bPaymentsPanel(); return; }
+  if(l.label && currentSidebarMenu().some(sec => sec.items.includes(l.label))){ sidebarNavigate(l.label); return; }
+  if(l.section && isSectionAllowed(l.section)){ goTo(l.section, l.subtab || null); return; }
+  goTo('notifications');
+}
+function notifStatusHtml(n){
+  if(n.actedAt) return `<span class="badge green">✓ ${escapeHtml(n.actionTaken || 'Done')}</span>`;
+  if(n.action) return `<span class="badge amber">To do: ${escapeHtml(NOTIF_ACTION_LABEL[n.action] || n.action)}</span>`;
+  return '';
+}
 function adaptAudit(a){ return { id:a.id, user:a.user_name, role: ROLE_ID_TO_DISPLAY[a.role_id]||a.role_id||"", action:a.action, entity:a.record_type||a.module, entityId:a.record_id, details:a.reason || (a.new_value?String(a.new_value):"") || "", date:a.created_at }; }
 function adaptTicket(t){ return { id:t.id, subject:t.subject, message:t.message, category:t.category, priority:t.priority, status:t.status, createdBy:t.created_by, assignedTo:t.assigned_to, resolvedAt:t.resolved_at, date:t.created_at }; }
 function adaptExpense(e){ return { id:e.id, category:e.category, amount:e.amount, note:e.note, branchId:e.branch_id, status:e.status, submittedBy:e.submitted_by, approvedBy:e.approved_by, paidBy:e.paid_by, rejectionReason:e.rejection_reason, date:e.created_at }; }
@@ -3937,7 +3959,7 @@ function renderApp(){
   // Notifications live only in the real topbar bell now — no sidebar
   // entry, standalone or nested, for any role. The bell itself is
   // rendered for every role (Investor included) below.
-  const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read).length;
+  const unread = session.role==="Investor" ? investorNotifications(session.investorId).filter(n=>!n.read).length : (DB.notifications||[]).filter(n=>!n.read && notifRecent(n)).length;
 
   const sectionsHtml = menu.map(sec=>{
     const isOpen = !!session.sidebarExpanded[sec.section];
@@ -4518,6 +4540,7 @@ async function doLogin(ev){
     // landing page, not a step away from one.
     if(typeof history !== 'undefined' && history.replaceState) history.replaceState({ section: session.section, subtab: session.subtab }, '');
     resetIdleLogoutTimer();
+    startNotificationPolling();
     startNavLoading();
     renderApp();
     showWelcomeSplash();
@@ -6063,6 +6086,8 @@ Object.assign(ADMIN_PAGES, {
     cols:[aF("bank","Bank"),aF("branch","Bank branch"),aF("accountNo","Account no."),aF("accountName","Account name")] },
   "Cash Payments": { type:"settings", key:"payments.cash", sub:"Rules for cash received at branches.", related:["Payments · Record Payment","Accounting · Petty Cashbook"],
     groups:[aG("Cash Handling",[aTog("allowCash","Accept cash repayments",true),aNum("maxCash","Maximum single cash payment (KES)",50000),aTog("receiptRequired","Printed receipt required",true),aSel("receivedBy","Cash received by",ADM_STAFF_ROLES,"Accountant")])] },
+  "Payment Auto-Assignment": { type:"settings", key:"payments.auto-assign", sub:"What the system does with payments nobody assigned or posted.", related:["Payments · Unposted Payments","Notifications"], extra:"autoAssignRun",
+    groups:[aG("When a payment is left waiting",[aTog("enabled","Assign unassigned Paybill payments automatically",true),aNum("waitMinutes","Wait before acting (minutes)",60),aTog("postUnposted","Post payments recorded as Unposted automatically",true)])] },
   "Payment Rules": { type:"settings", key:"payments.rules", sub:"General rules every payment must follow.", related:["Payments (all roles)"],
     groups:[aG("Rules",[aNum("minPayment","Minimum payment (KES)",50),aNum("backdateDays","Backdating allowed (days)",0),aTog("closedLoanPayments","Accept payments on closed loans",false),aSel("reversalApprover","Reversals approved by",ADM_STAFF_ROLES,"Accountant")])] },
   "Receipt Settings": { type:"settings", key:"payments.receipts", sub:"How the printed receipt sheet looks for every user.", related:["Payments · Receipts"],
@@ -6743,6 +6768,9 @@ const admTerm = p => p.termWeeks ? `${p.termWeeks} week(s)` : `${p.minTerm}–${
 
 /* ---- extras appended to settings pages ---- */
 const ADMIN_EXTRAS = {
+  autoAssignRun: () => `<div class="card"><div class="card-title">How it works</div>
+    <div class="hint" style="margin-bottom:8px;">Managers and above are notified of every unassigned or unposted payment and can assign it from the 💵 icon or the bell. If nobody does within the wait above, a Paybill payment is assigned only when exactly one running loan matches its account number (loan, application or client ID number) or the payer's phone; anything uncertain stays for a person. Every automatic action is in the audit trail.</div>
+    ${admIsAdmin() ? `<button class="btn btn-sm btn-primary" onclick="admRunAutoAssign()">Run now</button>` : ''}${DB.adm && DB.adm.autoAssignLast ? `<span class="hint" style="margin-left:10px;">Last run: ${DB.adm.autoAssignLast.assigned.length} assigned, ${DB.adm.autoAssignLast.posted.length} posted, ${DB.adm.autoAssignLast.leftForPeople} left for people</span>` : ''}</div>`,
   businessLive: () => `<div class="card"><div class="card-title">Live Footprint</div><div class="adm-tiles">
     ${admTile('Regions', (DB.regions || []).length)}${admTile('Branches', (DB.branches || []).length)}
     ${admTile('Active staff', (DB.staff || []).filter(s => s.status === 'Active').length)}${admTile('Clients', fmtNum((DB.clients || []).length))}
@@ -7110,6 +7138,13 @@ async function admSaveBranchHours(ev){
   (DB.branches || []).forEach(b => { const h = {}; ['open','close','satOpen','satClose'].forEach(k => { const x = fd.get(`${k}__${b.id}`); if(x) h[k] = String(x); }); if(Object.keys(h).length) value[b.id] = h; });
   await withRequest('adm-branch-hours', async ()=>{ await api.put('/api/admin/settings/org.branch-hours', { value }); admForget('settings'); admForget('history:'); }, { mutates: true });
   return false;
+}
+async function admRunAutoAssign(){
+  await withRequest('adm-auto-assign', async ()=>{
+    const r = await api.post('/api/payments/auto-assign/run', {});
+    DB.adm = DB.adm || {}; DB.adm.autoAssignLast = r;
+    toast(r.skipped ? 'Automatic assignment is switched off' : `${r.assigned.length} assigned · ${r.posted.length} posted · ${r.leftForPeople} left for people`);
+  });
 }
 async function admSaveProduct(ev){
   ev.preventDefault(); if(!admIsAdmin()) return false;
@@ -16556,8 +16591,10 @@ function renderLoanBook(){
   if(active==="Disbursements" && session.role==='Manager') return renderDailyDisbursementsPage();
   if(active==="Disbursements" && session.role !== 'Loan Officer') return tabsHtml + renderDisbursementsOverviewPage();
   if(active==="Disbursements") return renderDailyDisbursementsPage();
-  if(active==="Loan Applications" && session.role==='Manager') return renderLoanApplications();
-  if(active==="Loan Applications" && session.role !== 'Loan Officer') return tabsHtml + renderApplicationsOverviewPage();
+  // Every role shares the Loan Applications page; its filters, tiles and
+  // row actions follow the role (see renderLoanApplications).
+  if(active==="Loan Applications") return renderLoanApplications();
+  if(active==="Applications Overview") return tabsHtml + renderApplicationsOverviewPage();
   if(active==="Collection Sheet" && session.role==='Manager') return renderCollectionSheet();
   if(active==="Collection Sheet" && session.role !== 'Loan Officer') return tabsHtml + renderSheetBranchPage();
   if(active==="Collection Sheet") return renderCollectionSheet();
@@ -16942,8 +16979,9 @@ function udStatusText(l){
   return l.status;
 }
 const udCanEdit = l => ['Waiting for Manager', 'Pending signatures'].includes(l.status) && l.officerId === session.userId;
-const udCanDelete = l => ['Pending signatures', 'Waiting for Manager', 'Returned for Correction'].includes(l.status) && !(l.approvals || []).some(a => a.decision === 'Approved' && l.status !== 'Returned for Correction')
-  && (l.officerId === session.userId || l.createdBy === session.userId || serverCan('approve_loans', 'Approve Loans'));
+// Loan Officers never delete; a Manager (or above) removes a wrong application.
+const udCanDelete = l => session.role !== 'Loan Officer' && ['Pending signatures', 'Waiting for Manager', 'Returned for Correction'].includes(l.status) && !(l.approvals || []).some(a => a.decision === 'Approved' && l.status !== 'Returned for Correction')
+  && serverCan('approve_loans', 'Approve Loans');
 function udDateCell(iso){ if(!iso) return '—'; const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}`; }
 function renderUndisbursedApprovalsPage(){
   const f = session.undisbFilter && session.undisbFilter.cat ? session.undisbFilter : (session.undisbFilter = { cat: 'all', month: pgCurMonth(), day: '', approval: '', q: '' });
@@ -17125,8 +17163,22 @@ function submitLoanEdit(ev){
     toast('Loan application updated');
   }, {mutates:true});
 }
+// The approval state of an application, as the filter and tiles see it.
+function laApprovalState(l){
+  if(l.status === 'Rejected') return 'rejected';
+  if(l.status === 'Returned for Correction') return 'returned';
+  if(STATUS_TO_REQUIRED_ROLE_ID[l.status]) return undisbMyStep(l) && l.officerId !== session.userId ? 'mine' : 'pending';
+  if(['Approved for Disbursement','Disbursement Pending'].includes(l.status)) return 'ready';
+  if(l.disbursedAt) return 'disbursed';
+  return 'other';
+}
 function loanApplicationsFiltered(st){
-  let rows = DB.loans;
+  let rows = DB.loans || [];
+  const brOf = id => (DB.branches || []).find(b => b.id === id) || {};
+  if(st.regionId) rows = rows.filter(l => brOf(l.branchId).region === st.regionId);
+  if(st.branchId) rows = rows.filter(l => l.branchId === st.branchId);
+  if(st.officerId) rows = rows.filter(l => l.officerId === st.officerId);
+  if(st.approval) rows = rows.filter(l => st.approval === 'pending' ? ['mine','pending'].includes(laApprovalState(l)) : laApprovalState(l) === (st.approval === 'others' ? 'pending' : st.approval));
   if(st.category === 'Undisbursed loans') rows = rows.filter(isUndisbursedLoan);
   else if(LOAN_APP_CATEGORY_STATUSES[st.category]) rows = rows.filter(l=>LOAN_APP_CATEGORY_STATUSES[st.category].includes(l.status));
   if(st.month) rows = rows.filter(l=> (l.createdAt||'').slice(0,7) === st.month);
@@ -17180,16 +17232,27 @@ function approvalCellHtml(l, showActions){
   }
   return (history + buttons) || '—';
 }
+const LA_APPROVAL_FILTERS = [['', '-- Approvals --'], ['mine', 'Waiting for me'], ['pending', 'Pending approval'], ['ready', 'Ready to disburse'], ['disbursed', 'Disbursed'], ['rejected', 'Rejected'], ['returned', 'Returned for correction']];
 function renderLoanApplications(){
   const st = session.loanAppFilterState || (session.loanAppFilterState = defaultLoanApplicationsFilterState());
   const rows = loanApplicationsFiltered(st);
   const monthOptions = loanStatusMonthOptions();
-  const showActions = st.category === 'Undisbursed loans' && session.role !== 'Loan Officer';
+  const isLO = session.role === 'Loan Officer';
+  const showActions = st.category === 'Undisbursed loans' && !isLO;
+  const canDisburse = !isLO && undisbCanDisburse();
+  // Everything in the user's scope (before the category/approval filters), for the tiles.
+  const scoped = loanApplicationsFiltered(Object.assign({}, st, { category: 'All templates', approval: '', month: '', day: '', search: '' }));
+  const cnt = k => scoped.filter(l => laApprovalState(l) === k).length;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const disbCell = l => {
+    if(canDisburse && l.status === 'Approved for Disbursement') return `<div class="ud-disb"><select id="undisb-ch-${l.id}"><option>Bank</option><option>Cash</option><option value="mpesa">M-Pesa</option></select><button class="btn btn-green btn-sm" onclick="undisbDisburse('${l.id}')">Disburse</button></div>`;
+    return `${loanDisbursementCellLabel(l)}${l.status==='Waiting for Manager' && l.officerId === session.userId ? `<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanEditModal('${l.id}')">Edit</span>` : ''}`;
+  };
   const rowsHtml = rows.map((l,i)=>`
     <tr>
       <td>${i+1}</td>
       <td>${fmtLoanDetailDateTime(l.createdAt)}</td>
-      <td class="clickable" onclick="openLoan('${l.id}')">${escapeHtml(clientName(l.clientId))}</td>
+      <td class="clickable" onclick="openLoan('${l.id}')">${escapeHtml(clientName(l.clientId))}${isLO ? '' : `<div class="hint">${escapeHtml(branchName(l.branchId))}</div>`}</td>
       <td>${escapeHtml(l.productName||'')}<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openInstallmentsModal('${l.id}')">Schedule</span></td>
       <td>${escapeHtml(staffName(l.officerId))}</td>
       <td>${fmt(l.principal)}<br><span class="hint">${loanTermDaysLabel(l)}</span></td>
@@ -17198,15 +17261,24 @@ function renderLoanApplications(){
       <td>${escapeHtml(l.loanSecurities||'—')}</td>
       <td>${l.processingFeeReceipt ? `${escapeHtml(l.processingFeeReceipt)}<br>` : ''}${fmt(l.processingFee||0)}</td>
       <td>${approvalCellHtml(l, showActions)}</td>
-      <td>${loanDisbursementCellLabel(l)}${l.status==='Waiting for Manager' ? `<br><span class="hint" style="cursor:pointer; text-decoration:underline; color:var(--blue);" onclick="openLoanEditModal('${l.id}')">Edit</span>` : ''}</td>
+      <td>${disbCell(l)}</td>
     </tr>`).join("");
+  const tiles = isLO ? '' : `<div class="adm-tiles" style="margin:10px 0 12px;">
+      ${[['mine', 'Waiting for me', cnt('mine')], ['others', 'Pending with others', cnt('pending')], ['ready', 'Ready to disburse', cnt('ready')], ['rejected', 'Rejected', cnt('rejected')], ['returned', 'Returned', cnt('returned')]]
+        .map(([k, label, n]) => `<div class="adm-tile clickable ${st.approval === k ? 'la-tile-on' : ''}" onclick="session.loanAppFilterState.approval = session.loanAppFilterState.approval === '${k}' ? '' : '${k}'; session.loanAppFilterState.category='All templates'; renderApp();"><div class="adm-tile-label">${label}</div><div class="adm-tile-value">${n}</div></div>`).join('')}
+      <div class="adm-tile"><div class="adm-tile-label">Applied this month</div><div class="adm-tile-value">${scoped.filter(l => String(l.createdAt || '').slice(0, 7) === thisMonth).length}</div></div>
+    </div>`;
   return `
     <div class="card">
-      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></span></div>
+      <div class="card-title" style="justify-content:flex-start; gap:8px;"><span onclick="goTo('dashboard')" style="cursor:pointer;">←</span><span>${escapeHtml(st.category)} <small>${rows.length} loan${rows.length===1?'':'s'}</small></span>
+        ${['Regional Manager','Operational Manager'].includes(session.role) ? `<span style="margin-left:auto;" class="hint"><a href="#" onclick="goTo('loanbook','Applications Overview'); return false;">Overview by branch →</a></span>` : ''}</div>
+      ${tiles}
       <div class="pill-row" style="align-items:center; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px;">
         <select onchange="session.loanAppFilterState.category=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           ${LOAN_APP_CATEGORIES.map(c=>`<option ${st.category===c?'selected':''}>${c}</option>`).join("")}
         </select>
+        ${isLO ? '' : `<select onchange="session.loanAppFilterState.approval=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">${LA_APPROVAL_FILTERS.map(o => `<option value="${o[0]}" ${(st.approval||'')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`}
+        ${scopeFilterSelects('loanAppFilterState', 'renderApp();')}
         <select onchange="session.loanAppFilterState.month=this.value; renderApp();" class="btn btn-sm btn-outline" style="flex-shrink:0;">
           <option value="">-- Month --</option>
           ${monthOptions.map(m=>`<option value="${m.value}" ${st.month===m.value?'selected':''}>${m.label}</option>`).join("")}
@@ -17224,8 +17296,32 @@ function renderLoanApplications(){
         ${rowsHtml || `<tr><td colspan="12" class="empty">No loans in this category.</td></tr>`}
       </table></div>
     </div>
+    ${isLO ? '' : laTrendChartHtml(scoped)}
+    ${session.role === 'Accountant' || session.role === 'Admin' ? laReadyByBranchHtml(scoped) : ''}
     ${session.selectedLoanId ? renderLoanDetail(session.selectedLoanId) : ""}
   `;
+}
+// Below the table: applications, approvals, disbursements and rejections
+// per month over the last six months, for the user's scope.
+function laTrendChartHtml(list){
+  const months = []; const d = new Date(); d.setDate(1);
+  for(let i = 5; i >= 0; i--){ const x = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`); }
+  const by = (fn) => months.map(m => list.filter(l => String(fn(l) || '').slice(0, 7) === m).length);
+  const lastApproval = l => { const a = (l.approvals || []).filter(x => x.decision === 'Approved'); return a.length ? (a[a.length - 1].createdAt || a[a.length - 1].created_at) : null; };
+  const rejectedAt = l => { if(l.status !== 'Rejected') return null; const a = (l.approvals || []).filter(x => x.decision === 'Rejected'); return a.length ? (a[a.length - 1].createdAt || a[a.length - 1].created_at) : l.createdAt; };
+  const label = m => new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  return admChart('la-trend', 'Applications — last 6 months', 'line', months.map(label), [
+    { label: 'Applied', data: by(l => l.createdAt), tension: 0.3 },
+    { label: 'Approved', data: by(lastApproval), tension: 0.3 },
+    { label: 'Disbursed', data: by(l => l.disbursedAt), tension: 0.3 },
+    { label: 'Rejected', data: by(rejectedAt), tension: 0.3 }]);
+}
+// For the Accountant: what is approved and waiting to be paid out, per branch.
+function laReadyByBranchHtml(list){
+  const ready = list.filter(l => ['Approved for Disbursement','Disbursement Pending','Waiting for Accountant'].includes(l.status));
+  const by = {}; ready.forEach(l => { const k = l.branchId || '—'; const e = by[k] || (by[k] = { n: 0, amt: 0, wait: 0 }); e.n++; e.amt += Number(l.principal || 0); if(l.status === 'Waiting for Accountant') e.wait++; });
+  const rows = Object.entries(by).sort((a, b) => b[1].amt - a[1].amt).map(([b, e]) => [escapeHtml(branchName(b)), e.wait, e.n - e.wait, fmt(e.amt)]);
+  return `<div class="card"><div class="card-title">Awaiting the Accountant <small>by branch</small></div>${admTable(['Branch', 'Waiting for approval', 'Ready to disburse', 'Amount'], rows, 'Nothing is waiting for the Accountant.')}</div>`;
 }
 // ==================== Loan application page ====================
 // Clicking a client's name on any loan list opens this page: four summary
@@ -23512,22 +23608,33 @@ function renderNotifications(){
         `).join("") || `<div class="empty">No notifications.</div>`}
       </div>`;
   }
-  return `
-    <div class="pill-row"><button class="btn btn-outline btn-sm" onclick="markAllRead()">Mark all as read</button></div>
-    <div class="card" style="padding:0;">
-      ${DB.notifications.map(n=>`
-        <div class="notif-item">
-          <div class="notif-dot ${n.read?'read':''}"></div>
-          <div style="flex:1;">
-            <div style="font-weight:700; font-size:13.5px;">${iconFor(n.type)} ${escapeHtml(n.title)}</div>
-            <div class="hint">${escapeHtml(n.message)}</div>
-            <div class="hint" style="margin-top:3px;">${new Date(n.date).toLocaleString()}</div>
-          </div>
-          ${!n.read? `<button class="btn btn-sm btn-outline" onclick="markRead('${n.id}')">Mark read</button>`:""}
-        </div>
-      `).join("") || `<div class="empty">No notifications.</div>`}
-    </div>
-  `;
+  if(!session.notifLoadedAt || Date.now() - session.notifLoadedAt > 60000){ session.notifLoadedAt = Date.now(); loadNotificationsPanel(); }
+  const f = session.notifFilter || (session.notifFilter = { show: '', type: '', q: '' });
+  const all = (DB.notifications || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  const types = [...new Set(all.map(n => n.type))].sort();
+  const list = all.filter(n => (!f.show || (f.show === 'todo' ? n.action && !n.actedAt : f.show === 'done' ? !!n.actedAt : !n.read)) && (!f.type || n.type === f.type)
+    && (!f.q || `${n.title} ${n.message}`.toLowerCase().includes(f.q.toLowerCase())));
+  const todo = all.filter(n => n.action && !n.actedAt).length;
+  return `<div class="card">
+      <div class="card-title"><span>Notifications <small>${all.length}</small></span><button class="btn btn-outline btn-sm" onclick="markAllRead()">Mark all as read</button></div>
+      <div class="adm-tiles" style="margin-bottom:10px;">${admTile('Waiting for you', todo)}${admTile('Done', all.filter(n => n.actedAt).length)}${admTile('Unread', all.filter(n => !n.read).length)}${admTile('Last hour', all.filter(notifRecent).length)}</div>
+      <div class="dt-filters">
+        <select onchange="session.notifFilter.show=this.value; renderApp();"><option value="">All</option><option value="todo" ${f.show==='todo'?'selected':''}>Waiting for me</option><option value="done" ${f.show==='done'?'selected':''}>Action taken</option><option value="unread" ${f.show==='unread'?'selected':''}>Unread</option></select>
+        <select onchange="session.notifFilter.type=this.value; renderApp();"><option value="">All kinds</option>${types.map(t => `<option ${f.type===t?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>
+        <input placeholder="🔍 Search" value="${escapeHtml(f.q)}" onchange="session.notifFilter.q=this.value; renderApp();">
+        ${generateMenuHtml('Notifications', () => ({ headers: ['Date', 'Kind', 'Notification', 'Details', 'Status', 'Action taken'], rows: list.map(n => [new Date(n.date).toLocaleString(), n.type, n.title, n.message, n.read ? 'Read' : 'Unread', n.actedAt ? n.actionTaken : (n.action ? 'Waiting: ' + (NOTIF_ACTION_LABEL[n.action] || n.action) : '')]) }))}
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th></th><th>Date</th><th>Notification</th><th>Action taken</th><th>Actions</th></tr>
+        ${list.map(n => `<tr>
+          <td><span class="notif-dot ${n.read ? 'read' : ''}" style="display:inline-block;"></span> ${iconFor(n.type)}</td>
+          <td class="hint" style="white-space:nowrap;">${escapeHtml(new Date(n.date).toLocaleString())}</td>
+          <td><strong>${escapeHtml(n.title)}</strong><div class="hint">${escapeHtml(n.message)}</div></td>
+          <td>${notifStatusHtml(n) || '—'}${n.actedAt ? `<div class="hint">${escapeHtml(new Date(n.actedAt).toLocaleString())}</div>` : ''}</td>
+          <td class="dt-act">${n.link ? `<button class="btn btn-sm ${n.action && !n.actedAt ? 'btn-primary' : 'btn-outline'}" onclick="openNotification('${n.id}')">${n.action === 'assign' && !n.actedAt ? 'Assign' : n.action === 'post' && !n.actedAt ? 'Post' : 'Open'}</button>` : ''}${!n.read ? `<button class="btn btn-sm btn-outline" onclick="markRead('${n.id}')">Mark read</button>` : ''}</td>
+        </tr>`).join('') || `<tr><td colspan="5" class="empty">No notifications match.</td></tr>`}
+      </table></div>
+    </div>`;
 }
 
 /* ---------- 8. Audit Logs ---------- */
@@ -27461,7 +27568,7 @@ function renderImageViewerModal(){
       <button class="btn btn-sm btn-outline" onclick="zoomImageViewer(0.25)" title="Zoom in">🔍+</button>
       <button class="btn btn-sm btn-outline" onclick="zoomImageViewer(-0.25)" title="Zoom out">🔍－</button>
       <button class="btn btn-sm btn-outline" onclick="rotateImageViewer(90)" title="Rotate">🔄</button>
-      <button class="btn btn-sm btn-outline" onclick="deleteImageViewerPhoto()" title="Delete photo">🗑</button>
+      ${session.role !== 'Loan Officer' ? `<button class="btn btn-sm btn-outline" onclick="deleteImageViewerPhoto()" title="Delete photo">🗑</button>` : ''}
     </div>
   `;
 }
@@ -28004,6 +28111,22 @@ function renderTicketsModal(){
 }
 
 // ==================== Notifications panel — real, reuses /api/notifications and its existing mark-read routes (topbar bell icon) ====================
+// The bell stays current: notifications are fetched again every minute
+// while signed in (quietly, no spinner), so a new task shows up without a reload.
+let notifPollTimer = null;
+function startNotificationPolling(){
+  if(notifPollTimer || typeof setInterval !== 'function' || session.role === 'Investor') return;
+  notifPollTimer = setInterval(async () => {
+    if(!session.loggedIn || !DB || session.role === 'Investor') return;
+    try {
+      const r = await api.get('/api/notifications');
+      const before = (DB.notifications || []).filter(n => !n.read && notifRecent(n)).length;
+      DB.notifications = r.notifications.map(adaptNotification);
+      const after = DB.notifications.filter(n => !n.read && notifRecent(n)).length;
+      if(after !== before || session.section === 'notifications') renderApp();
+    } catch(e){ /* the next minute tries again */ }
+  }, 60000);
+}
 async function loadNotificationsPanel(){
   return withRequest('load-notifications-panel', async ()=>{
     const r = await api.get('/api/notifications');
@@ -28041,17 +28164,21 @@ function renderNotificationsModal(){
       </div>
     `;
   }
-  const list = (DB.notifications||[]).slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  // The last hour only; older ones live on the Notifications page.
+  const list = (DB.notifications||[]).filter(notifRecent).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const older = (DB.notifications||[]).length - list.length;
   return `
-    <div class="modal-head"><h3>Previous Notifications</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
+    <div class="modal-head"><h3>Notifications <small class="hint">last hour</small></h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
     <div style="max-height:460px; overflow-y:auto;">
       ${list.length ? list.map(n=>`
-        <div class="notif-card" ${!n.read?`onclick="markRead('${n.id}')" style="cursor:pointer;"`:''}>
+        <div class="notif-card" onclick="openNotification('${n.id}')" style="cursor:pointer;">
           <div class="notif-card-head">${notifCardTimestamp(new Date(n.date))}${!n.read?' 🔴':''}</div>
-          <div class="notif-card-body">${escapeHtml(n.message||n.title||'')}</div>
+          <div class="notif-card-body"><strong>${escapeHtml(n.title||'')}</strong><div>${escapeHtml(n.message||'')}</div>${notifStatusHtml(n) ? `<div style="margin-top:6px;">${notifStatusHtml(n)}</div>` : ''}
+            ${n.action && !n.actedAt ? `<div style="margin-top:6px;"><button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openNotification('${n.id}')">${n.action === 'assign' ? 'Assign' : n.action === 'post' ? 'Post' : 'Open'} →</button></div>` : ''}</div>
         </div>
-      `).join("") : `<div class="notif-card"><div class="notif-card-head">${notifCardTimestamp(new Date())}</div><div class="notif-card-body">You have no notifications</div></div>`}
+      `).join("") : `<div class="notif-card"><div class="notif-card-head">${notifCardTimestamp(new Date())}</div><div class="notif-card-body">Nothing new in the last hour.</div></div>`}
     </div>
+    <div class="pill-row" style="margin-top:10px; justify-content:space-between;"><span class="hint">${older > 0 ? older + ' older notification' + (older === 1 ? '' : 's') : ''}</span><button class="btn btn-sm btn-outline" onclick="closeModal(); goTo('notifications');">All notifications →</button></div>
   `;
 }
 
@@ -28117,7 +28244,7 @@ function renderC2bPaymentsModal(){
   if(DB.c2bPaymentsBrowser.error) return `<div class="modal-head"><h3>Payments</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>${c2bErrorHtml()}`;
   const d = DB.c2bPaymentsBrowser;
   const { page, totalPages, total } = d.pagination;
-  const canAssign = hasPermission(session.role,"Post Accounting Entries") || session.role==='Manager';
+  const canAssign = payCanAssign();
   return `
     <div class="modal-head"><h3>Payments (Ksh ${fmtNum(d.totals.amount)})</h3><span class="btn btn-outline btn-sm" onclick="closeModal()">✕</span></div>
     <div class="pill-row" style="margin-bottom:10px; flex-wrap:wrap;">
@@ -28152,7 +28279,8 @@ function renderC2bPaymentsModal(){
 // reusing the identical state keeps the two views always in sync rather
 // than risking two copies drifting apart.
 // Shared by every payments page below.
-function payCanAssign(){ return ['Manager','Regional Manager','Operational Manager'].includes(session.role) || hasPermission(session.role,"Post Accounting Entries"); }
+// Manager and every role above can assign payments to loans.
+function payCanAssign(){ return ['Manager','Regional Manager','Operational Manager','CEO','Director','Admin'].includes(session.role) || hasPermission(session.role,"Post Accounting Entries"); }
 function payTime(iso, withDate){
   if(!iso) return '—';
   const t = new Date(iso).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }).toLowerCase();

@@ -34,7 +34,8 @@ async function requireMpesaViewAuth(req, res, next) {
 // unrelated accounting actions (expenses, adjustments, journal entries)
 // a Manager should not gain as a side effect of this one real ask.
 async function requireCanAssignC2bPayment(req, res, next) {
-  if (req.user.role_id === 'manager') return next();
+  // Manager and every role above (plus anyone who posts accounting entries).
+  if (['manager', 'regional_manager', 'operational_manager', 'ceo', 'director', 'admin'].includes(req.user.role_id)) return next();
   if (await hasPermission(req.user, 'post_accounting_entries')) return next();
   return next({ status: 403, message: 'Your role cannot assign M-Pesa payments to a loan' });
 }
@@ -259,6 +260,14 @@ function register(router) {
     });
   });
 
+  // Run the automatic assignment/posting now (Admin, Accountant).
+  router.post('/api/payments/auto-assign/run', requireAuth, async (req, res, next) => {
+    if (!['admin', 'accountant'].includes(req.user.role_id)) return next({ status: 403, message: 'Only the Administrator or Accountant can run automatic assignment' });
+    const r = await require('./../paymentAutoAssign').runOnce({ force: !!(req.body && req.body.now) });
+    await logAction(req, { action: 'Ran automatic payment assignment', module: 'payments', recordType: 'Job', recordId: 'payments.auto-assign', newValue: { assigned: r.assigned.length, posted: r.posted.length, left: r.leftForPeople } });
+    res.json(r);
+  });
+
   // Manual match + post — resolving a real unmatched Paybill payment (most
   // often one where the client typed the wrong account reference) by
   // pointing it at the correct real loan, then posting it through the
@@ -275,6 +284,7 @@ function register(router) {
     await logAction(req, { action: 'Manually matched M-Pesa C2B transaction', module: 'mpesa', recordType: 'MpesaC2b', recordId: tx.id, newValue: { loanId: loan.id } });
     const result = await mpesa.processC2bTransaction(tx.id, req.user.id);
     if (!result.ok) return next({ status: 409, message: result.message });
+    await require('./../audit').markActed('c2b', tx.id, `Assigned by ${req.user.name}`);
     res.json(result);
   });
 

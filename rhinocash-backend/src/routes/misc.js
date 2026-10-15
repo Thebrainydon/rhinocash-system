@@ -1,7 +1,7 @@
 'use strict';
 const { all, get, run } = require('./../db');
 const { requireAuth, requireModule, requirePermission, requireMenuFeature, requireAnyMenuFeature } = require('./../middleware');
-const { logAction, notify } = require('./../audit');
+const { logAction, notify, markActed } = require('./../audit');
 const { branchScopeSQL, hasPermission, assertRecordInScope } = require('./../rbac');
 const { tokenHash } = require('./../crypto');
 const crypto = require('node:crypto');
@@ -12,6 +12,13 @@ function nowIso() { return new Date().toISOString(); }
 // they hold real authority over the requester — their direct reporting
 // manager, or an Admin/HR-level 'manage_users' permission holder. No
 // authenticated user can approve an arbitrary (or their own) request.
+// Who is asked to decide a staff request: the requester's reporting
+// manager, or HR when none is set.
+async function requestApprovers(userId) {
+  const u = await get('SELECT reporting_manager_id FROM users WHERE id = ?', [userId]);
+  if (u && u.reporting_manager_id) return [u.reporting_manager_id];
+  return (await all(`SELECT id FROM users WHERE role_id = 'hr' AND status = 'Active'`)).map(r => r.id).filter(id => id !== userId);
+}
 async function canDecideOn(actor, requesterRecord) {
   if (actor.id === requesterRecord.user_id) return false; // never your own
   if (await hasPermission(actor, 'manage_users')) return true;
@@ -86,7 +93,8 @@ async function notifyTicketParticipant(userId, subject, body, relatedId, actorId
 function register(router) {
   // ---- Notifications ----
   router.get('/api/notifications', requireAuth, async (req, res) => {
-    const rows = await all('SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50', [req.user.id]);
+    // The bell shows the last hour; the Notifications page shows this history.
+    const rows = await all('SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 300', [req.user.id]);
     res.json({ notifications: rows });
   });
   router.post('/api/notifications/:id/read', requireAuth, async (req, res, next) => {
@@ -449,6 +457,7 @@ function register(router) {
     await run('INSERT INTO leave_requests (id, user_id, leave_type, start_date, end_date, reason) VALUES (?,?,?,?,?,?)',
       [id, req.user.id, b.leave_type, b.start_date, b.end_date, b.reason || null]);
     await logAction(req, { action: 'Applied for leave', module: 'staff', recordType: 'Leave', recordId: id, newValue: { type: b.leave_type, start: b.start_date, end: b.end_date } });
+    for (const a of await requestApprovers(req.user.id)) await notify(a, 'leave', 'Leave request to decide', `${req.user.name} applied for ${b.leave_type} leave (${b.start_date} to ${b.end_date}).`, { relatedType: 'leave', relatedId: id, link: { label: 'Staff Leaves' }, action: 'decide' });
     res.status(201).json({ leaveRequest: await get('SELECT * FROM leave_requests WHERE id = ?', [id]) });
   });
   router.post('/api/leave-requests/:id/decide', requireAuth, async (req, res, next) => {
@@ -460,6 +469,7 @@ function register(router) {
     if (!(await canDecideOn(req.user, request))) return next({ status: 403, message: 'You are not authorized to decide on this request — only the requester\'s reporting manager or an authorized administrator can' });
     await run('UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', [decision, req.user.id, nowIso(), req.params.id]);
     await logAction(req, { action: `Leave request ${decision}`, module: 'staff', recordType: 'Leave', recordId: req.params.id });
+    await markActed('leave', req.params.id, `${decision} by ${req.user.name}`);
     await notify(request.user_id, 'system', `Leave request ${decision}`, `Your ${request.leave_type} leave (${request.start_date} to ${request.end_date}) was ${decision.toLowerCase()}.`);
     res.json({ leaveRequest: await get('SELECT * FROM leave_requests WHERE id = ?', [req.params.id]) });
   });
@@ -479,6 +489,7 @@ function register(router) {
     const id = 'sa_' + crypto.randomUUID();
     await run('INSERT INTO salary_advance_requests (id, user_id, amount, reason) VALUES (?,?,?,?)', [id, req.user.id, b.amount, b.reason || null]);
     await logAction(req, { action: 'Applied for salary advance', module: 'staff', recordType: 'SalaryAdvance', recordId: id, newValue: b.amount });
+    for (const a of await requestApprovers(req.user.id)) await notify(a, 'salary_advance', 'Salary advance to decide', `${req.user.name} asked for a salary advance of ${b.amount}.`, { relatedType: 'salary_advance', relatedId: id, link: { label: 'Salary Advances' }, action: 'decide' });
 
     // Real, short-lived OTP sent right after applying — never blocks
     // creation of the real request itself (best-effort: a missing phone
@@ -514,6 +525,7 @@ function register(router) {
     if (!(await canDecideOn(req.user, request))) return next({ status: 403, message: 'You are not authorized to decide on this request — only the requester\'s reporting manager or an authorized administrator can' });
     await run('UPDATE salary_advance_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?', [decision, req.user.id, nowIso(), req.params.id]);
     await logAction(req, { action: `Salary advance ${decision}`, module: 'staff', recordType: 'SalaryAdvance', recordId: req.params.id });
+    await markActed('salary_advance', req.params.id, `${decision} by ${req.user.name}`);
     await notify(request.user_id, 'system', `Salary advance ${decision}`, `Your salary advance request of ${request.amount} was ${decision.toLowerCase()}.`);
 
     // Real SMS to the requester, same best-effort principle as above —

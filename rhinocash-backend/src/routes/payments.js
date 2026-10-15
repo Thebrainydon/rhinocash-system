@@ -1,7 +1,7 @@
 'use strict';
 const { all, get, run, transaction } = require('./../db');
 const { requireAuth, requireModule, requirePermission, requireAnyMenuFeature, requireMenuFeature } = require('./../middleware');
-const { logAction, notify } = require('./../audit');
+const { logAction, notify, markActed } = require('./../audit');
 const { assertRecordInScope, branchIdsInScope } = require('./../rbac');
 const crypto = require('node:crypto');
 
@@ -242,6 +242,33 @@ async function buildPaymentQuery(req) {
   return { from, where, params, orderBy };
 }
 
+// Posts an Unposted payment: allocate to the schedule and post the journal,
+// exactly like a payment posted when it was recorded. Shared by the Post
+// button and the automatic posting job (paymentAutoAssign.js).
+async function postUnpostedPayment(payment, loan, userId) {
+  let result;
+  await transaction(async () => {
+    result = await allocate(payment.loan_id, payment.amount, payment.id);
+    const status = result.remaining > 0 ? 'Overpayment' : 'Posted';
+    await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ?, allocated_penalty = ? WHERE id = ?', [status, result.allocPrincipal, result.allocInterest, result.allocPenalty, payment.id]);
+    // Posting a previously-unposted payment must hit the ledger exactly like
+    // an immediately-posted one does, or the money never appears in cash
+    // position / P&L.
+    await postPaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: result.allocPrincipal, allocInterest: result.allocInterest, allocPenalty: result.allocPenalty, overpay: result.remaining, userId, branchId: loan ? loan.branch_id : null });
+  });
+  return result;
+}
+// Manager and everyone above them in the payment's branch are asked to post
+// or assign it (see paymentAutoAssign.js for what happens if nobody does).
+async function notifyPaymentHandlers(branchId, title, message, extra) {
+  const { branchIdsInScope } = require('./../rbac');
+  const users = await all(`SELECT * FROM users WHERE status = 'Active' AND role_id IN ('manager','regional_manager','operational_manager','accountant','admin')`);
+  for (const u of users) {
+    const scope = await branchIdsInScope(u);
+    if (scope === null ? ['operational_manager','accountant','admin'].includes(u.role_id) : (branchId && scope.includes(branchId))) await notify(u.id, 'payment', title, message, extra);
+  }
+}
+
 function register(router) {
   const { assertPeriodOpen } = require('./accounting');
   router.get('/api/payments', requireAuth, requireModule('payments'), requireAnyMenuFeature('menu-unposted-payments', 'menu-processed-payments', 'menu-prepayments', 'menu-overpayments', 'menu-receipts', 'menu-payin-summary', 'menu-payments-report'), async (req, res) => {
@@ -358,6 +385,8 @@ function register(router) {
       }
     });
     await logAction(req, { action: post ? 'Recorded payment' : 'Recorded unposted payment', module: 'payments', recordType: 'Payment', recordId: id, newValue: { amount: b.amount, loan_id: loan.id } });
+    if (!post) await notifyPaymentHandlers(loan.branch_id, 'Payment to post', `${b.amount} for loan ${loan.application_no ? '#' + loan.application_no : loan.id} was recorded as Unposted. Post it, or it will be posted automatically.`,
+      { relatedType: 'payment', relatedId: id, link: { label: 'Unposted Payments' }, action: 'post' });
     if (loan.officer_id) await notify(loan.officer_id, 'payment', 'Payment received', `${b.amount} received for loan ${loan.id} via ${b.channel || 'Cash'}.`);
     res.status(201).json({ payment: await get('SELECT * FROM payments WHERE id = ?', [id]) });
   });
@@ -369,17 +398,9 @@ function register(router) {
     try { await assertRecordInScope(req.user, loan ? loan.branch_id : null, 'payment'); } catch (e) { return next(e); }
     if (payment.status !== 'Unposted') return next({ status: 409, message: 'Payment is not in an unposted state' });
     try { await assertPeriodOpen(); } catch (e) { return next(e); }
-    let result;
-    await transaction(async () => {
-      result = await allocate(payment.loan_id, payment.amount, payment.id);
-      const status = result.remaining > 0 ? 'Overpayment' : 'Posted';
-      await run('UPDATE payments SET status = ?, allocated_principal = ?, allocated_interest = ?, allocated_penalty = ? WHERE id = ?', [status, result.allocPrincipal, result.allocInterest, result.allocPenalty, payment.id]);
-      // This was missing before: posting a previously-unposted payment must
-      // hit the ledger exactly like an immediately-posted one does, or the
-      // money silently never appears in cash position / P&L.
-      await postPaymentJournal({ paymentId: payment.id, loanId: payment.loan_id, amount: payment.amount, channel: payment.channel, allocPrincipal: result.allocPrincipal, allocInterest: result.allocInterest, allocPenalty: result.allocPenalty, overpay: result.remaining, userId: req.user.id, branchId: loan.branch_id });
-    });
+    await postUnpostedPayment(payment, loan, req.user.id);
     await logAction(req, { action: 'Posted payment', module: 'payments', recordType: 'Payment', recordId: payment.id });
+    await markActed('payment', payment.id, `Posted by ${req.user.name}`);
     res.json({ payment: await get('SELECT * FROM payments WHERE id = ?', [payment.id]) });
   });
 
@@ -424,4 +445,4 @@ function register(router) {
   });
 }
 
-module.exports = { register, allocate, glAccountFor, postPaymentJournal, reversePaymentJournal, accrueOverduePenalties };
+module.exports = { register, allocate, glAccountFor, postPaymentJournal, reversePaymentJournal, accrueOverduePenalties, postUnpostedPayment, notifyPaymentHandlers };

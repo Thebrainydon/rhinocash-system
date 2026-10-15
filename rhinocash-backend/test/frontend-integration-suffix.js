@@ -2915,12 +2915,12 @@ apiRequest = async function(method, path, body){
     // the real page must highlight only itself, not the modal item too.
     goTo('clients','Client Leads');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Client Leads')">Client Leads</div>`), "the real 'Client Leads' sidebar item genuinely shows as active on its own real page");
+    __assert(/<div class="side-subitem active" onclick="sidebarNavigate\('Client Leads'\)">[\s\S]*?<span class="side-sub-label">Client Leads<\/span>/.test(html), "the real 'Client Leads' sidebar item genuinely shows as active on its own real page");
     __assert(!html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Create a Lead')">Create a Lead</div>`), "the real 'Create a Lead' sidebar item (a quick-action modal, not a real page) genuinely no longer shows as active just because 'Client Leads' is open");
 
     goTo('support','Raised Ticket');
     html = document.getElementById('root').innerHTML;
-    __assert(html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Raised Ticket')">Raised Ticket</div>`), "the real 'Raised Ticket' sidebar item genuinely shows as active on its own real page");
+    __assert(/<div class="side-subitem active" onclick="sidebarNavigate\('Raised Ticket'\)">[\s\S]*?<span class="side-sub-label">Raised Ticket<\/span>/.test(html), "the real 'Raised Ticket' sidebar item genuinely shows as active on its own real page");
     __assert(!html.includes(`<div class="side-subitem active" onclick="sidebarNavigate('Create a Ticket')">Create a Ticket</div>`), "the real Loan-Officer-only 'Create a Ticket' sidebar item (a quick-action modal, not a real page) genuinely no longer shows as active just because 'Raised Ticket' is open");
 
     // Sidebar auto-collapse: expanding one real section, then clicking a
@@ -4344,6 +4344,12 @@ apiRequest = async function(method, path, body){
     session.mgrAppOverviewState = { branchId:'', officerId:'', productId:'', status:'', cycle:'', from:'', to:'', minAmount:'', maxAmount:'', q:'[TEST] RM App Overview Client', page:1 };
     DB.applicationsOverview = null;
     goTo('loanbook','Loan Applications');
+    {
+      const laHtml = document.getElementById('root').innerHTML;
+      __assert(laHtml.includes('Waiting for me') && laHtml.includes('-- Approvals --') && laHtml.includes('-- Branch --') && laHtml.includes('Overview by branch'), "the Regional Manager's Loan Applications is the Manager-style list with approval tiles, approval and branch filters, and a link to the branch overview");
+      __assert(laHtml.includes('Applications — last 6 months'), "a line graph of applications sits below the Regional Manager's table");
+    }
+    goTo('loanbook','Applications Overview');
     for(let i=0; i<250 && !DB.applicationsOverview; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); } renderApp(); for(let j=0; j<250 && document.getElementById('root').innerHTML.includes('dots-spinner'); j++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let html = document.getElementById('root').innerHTML;
     __assert(html.includes('Region-wide application monitoring') && html.includes('Region:'), "Regional Manager's real Loan Applications page genuinely shows real region-wide framing and region context, not Manager's branch-level framing");
@@ -5559,7 +5565,7 @@ apiRequest = async function(method, path, body){
     __assert(spinnerHtml.includes('class="dots-spinner"') && (spinnerHtml.match(/<i style="transform:rotate\(/g)||[]).length === 8, "the real loadingDotsHtml() genuinely renders a real 8-dot ring, each with its own real static rotation");
     __assert(__rawIndexHtml.includes('@keyframes dotsSpinnerPulse'), "the real shared dots-spinner CSS pulse animation genuinely exists");
     __assert(!__srcForBanCheck.includes('class="empty">Loading'), "no real page/panel/table anywhere in the app still shows a bare 'Loading…' text placeholder — every one now genuinely uses the shared real dots spinner instead");
-    __assert(__srcForBanCheck.includes('<div class="top-progress on"></div><div class="loading-screen">${loadingDotsHtml().replace(\'dots-spinner\', \'dots-spinner big\')}</div>') && !__srcForBanCheck.includes('loading-screen-spinner') && !__srcForBanCheck.includes('<span>Loading Dashboard...'), "the one-time, full-page loading screen after login is just centred spinning dots plus the thin top loading line — no ring, no 'Loading Dashboard...' text");
+    __assert(__srcForBanCheck.includes('<div class="top-progress on"></div><div class="loading-screen dash-load"><div class="dash-loading-line">Loading Dashboard... ${DASH_SPIN_SVG}</div></div>') && !__srcForBanCheck.includes('loading-screen-spinner'), "the loading screen after login shows 'Loading Dashboard...' with a turning icon near the top, plus the thin top loading line");
     __assert(__rawIndexHtml.includes('<div class="loading-screen"><div class="dots-spinner big">') && __rawIndexHtml.includes('@keyframes dotsSpinnerPulse') && __rawIndexHtml.includes('@keyframes topProgress'), "the first page load also shows spinning dots, and the thin top loading line genuinely animates");
     // Opening a submenu: spinning dots until its data has loaded.
     navLoad.on = false; startNavLoading();
@@ -5611,7 +5617,7 @@ apiRequest = async function(method, path, body){
     __assert(html.includes('doLogout()'), "a real, working Logout control still exists in the sidebar even though the topbar button is gone");
     // Notifications genuinely has no sidebar entry of any kind — the real
     // bell icon is the one and only way to reach them now.
-    __assert(!html.includes('>Notifications<'), "the real sidebar genuinely has no standalone or nested Notifications entry — removed in favor of the real bell icon");
+    __assert((html.match(/<span class="side-sub-label">Notifications<\/span>/g) || []).length === 1, "the sidebar has one Notifications item, under My Account, beside the bell (the bell shows the last hour, the page keeps everything)");
     __assert(html.includes('openNotificationsPanel()') && html.includes('title="Notifications"'), "the real topbar bell icon genuinely remains the one real way to reach Notifications");
     goTo('dashboard');
   }
@@ -5832,7 +5838,7 @@ apiRequest = async function(method, path, body){
     __assert(modal && modal.type === 'notifications', "the real bell icon genuinely opens the real Notifications panel");
     for(let i=0; i<100 && !(DB.notifications||[]).length; i++){ await new Promise(r=>setTimeout(r,25)); renderApp(); }
     let notifHtml = renderModal();
-    __assert(notifHtml.includes('Previous Notifications'), "the real Notifications panel genuinely renders with the requested title");
+    __assert(notifHtml.includes('<h3>Notifications') && notifHtml.includes('All notifications →'), "the bell's panel shows the last hour, with a link to all notifications");
     const realNotif = DB.notifications.find(n=>n.title==='Loan rejected' && (n.message||'').includes('[TEST] not viable') && (n.message||'').includes('KES 5,000'));
     __assert(!!realNotif && !realNotif.read, "the real rejection notification genuinely appears here, genuinely unread");
 
