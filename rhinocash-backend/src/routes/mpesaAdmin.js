@@ -295,6 +295,9 @@ function register(router) {
     if (!req.body.loan_id) return next({ status: 400, message: 'loan_id is required' });
     const loan = await get('SELECT * FROM loans WHERE id = ?', [req.body.loan_id]);
     if (!loan) return next({ status: 404, message: 'Loan not found' });
+    // Only to a loan in the assigner's own branches / region.
+    const scopeIds = await branchIdsInScope(req.user);
+    if (scopeIds !== null && !scopeIds.includes(loan.branch_id)) return next({ status: 403, message: 'That loan is outside your branches' });
     await run(`UPDATE mpesa_c2b_transactions SET matched_loan_id = ?, match_method = 'manual' WHERE id = ?`, [loan.id, tx.id]);
     await logAction(req, { action: 'Manually matched M-Pesa C2B transaction', module: 'mpesa', recordType: 'MpesaC2b', recordId: tx.id, newValue: { loanId: loan.id } });
     const result = await mpesa.processC2bTransaction(tx.id, req.user.id);

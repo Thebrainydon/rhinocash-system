@@ -622,25 +622,36 @@ async function unmatchedCallbacks() {
 // An unmatched transaction is recorded and flagged for manual review —
 // never silently discarded, never guessed at with a fabricated match.
 async function matchC2bAccount(billRefNumber, msisdn) {
+  // A client's single running loan, or null when they have none or several
+  // (then a Manager decides which loan it is for).
+  const onlyRunningLoan = async (clientIds) => {
+    if (clientIds.length !== 1) return null;
+    const loans = await all(`SELECT id FROM loans WHERE client_id = ? AND status IN ('Active','Disbursed') ORDER BY created_at DESC`, [clientIds[0]]);
+    return loans.length === 1 ? loans[0].id : null;
+  };
   if (billRefNumber) {
     const loan = await get(`SELECT * FROM loans WHERE id = ? AND status IN ('Active','Disbursed')`, [billRefNumber.trim()]);
     if (loan) return { loanId: loan.id, method: 'loan_id' };
-    // The client's ID number — the account number their M-Pesa prompts show.
+    // The client's ID number (the account number their M-Pesa prompts show)
+    // or client code.
     const ref = billRefNumber.replace(/\s+/g, '');
-    const owners = ref ? await all(`SELECT id FROM clients WHERE REPLACE(national_id, ' ', '') = ?`, [ref]) : [];
-    if (owners.length === 1) {
-      const byId = await get(`SELECT * FROM loans WHERE client_id = ? AND status IN ('Active','Disbursed') ORDER BY created_at DESC`, [owners[0].id]);
-      if (byId) return { loanId: byId.id, method: 'id_number' };
+    if (ref) {
+      const byIdNo = (await all(`SELECT id FROM clients WHERE REPLACE(national_id, ' ', '') = ?`, [ref])).map(c => c.id);
+      const idLoan = await onlyRunningLoan(byIdNo);
+      if (idLoan) return { loanId: idLoan, method: 'id_number' };
+      const byCode = (await all(`SELECT id FROM clients WHERE UPPER(client_code) = UPPER(?)`, [ref])).map(c => c.id);
+      const codeLoan = await onlyRunningLoan(byCode);
+      if (codeLoan) return { loanId: codeLoan, method: 'client_code' };
     }
   }
   if (msisdn) {
-    // Real phone normalization: Safaricom sends 2547XXXXXXXX; clients are
-    // stored as locally-entered numbers — compare on the last 9 digits.
-    const last9 = String(msisdn).slice(-9);
-    const client = await get(`SELECT * FROM clients WHERE phone LIKE ?`, ['%' + last9]);
-    if (client) {
-      const loan = await get(`SELECT * FROM loans WHERE client_id = ? AND status IN ('Active','Disbursed') ORDER BY created_at DESC`, [client.id]);
-      if (loan) return { loanId: loan.id, method: 'phone' };
+    // Safaricom sends 2547XXXXXXXX; clients are stored as locally-entered
+    // numbers — compare on the last 9 digits. Only one client may own it.
+    const last9 = String(msisdn).replace(/\D/g, '').slice(-9);
+    if (last9.length === 9) {
+      const byPhone = (await all(`SELECT id FROM clients WHERE regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g') LIKE ?`, ['%' + last9])).map(c => c.id);
+      const phoneLoan = await onlyRunningLoan(byPhone);
+      if (phoneLoan) return { loanId: phoneLoan, method: 'phone' };
     }
   }
   return { loanId: null, method: 'unmatched' };
@@ -792,5 +803,5 @@ module.exports = {
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,
   statusFor, testConnection, effectiveConfig,
-  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL, toMsisdn, accountRefFor,
+  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL, toMsisdn, accountRefFor, matchC2bAccount,
 };

@@ -197,6 +197,45 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: autoId, TransAmount: '200', MSISDN: '254700000001', BillRefNumber: loanId } });
     assert(await count() === before, 'a payment the system posts by itself does not stay on the 💵 count');
   }
+  // ---- Automatic posting only when the payment points at exactly one client and loan ----
+  {
+    const { get, run } = require('../src/db');
+    const mpesa = require('../src/integrations/mpesa');
+    const loanRow = await get('SELECT client_id FROM loans WHERE id = ?', [loanId]);
+    const code = (await get('SELECT client_code FROM clients WHERE id = ?', [loanRow.client_id])).client_code;
+    if (code) {
+      const m = await mpesa.matchC2bAccount(code.toLowerCase(), null);
+      assert(m.loanId === loanId && m.method === 'client_code', 'a payment with the client code as account is matched to that client\'s loan');
+    }
+    // Two clients sharing a phone: the system does not guess.
+    const phone2547 = '254' + testPhone.slice(1);
+    const before = await mpesa.matchC2bAccount('no-such-account', phone2547);
+    assert(before.loanId === loanId && before.method === 'phone', 'a phone owned by one client with one running loan is matched');
+    const dupId = 'cl_dup_' + Date.now();
+    await run(`INSERT INTO clients (id, name, phone, branch_id) SELECT ?, 'Shares a phone', phone, branch_id FROM clients WHERE id = ?`, [dupId, loanRow.client_id]);
+    const ambiguous = await mpesa.matchC2bAccount('no-such-account', phone2547);
+    assert(ambiguous.method === 'unmatched', 'a phone shared by two clients is left for a Manager instead of guessed');
+    const transId = 'QAM' + Math.floor(Math.random() * 90000000 + 10000000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '100', MSISDN: phone2547, BillRefNumber: 'no-such-account' } });
+    const row = await get('SELECT processed, match_method FROM mpesa_c2b_transactions WHERE trans_id = ?', [transId]);
+    assert(row && row.processed === 0 && row.match_method === 'unmatched', 'so that payment waits on the 💵 list for someone to assign it');
+    await run('DELETE FROM clients WHERE id = ?', [dupId]);
+  }
+
+  // ---- A Manager can only assign a payment to a loan in their own branches ----
+  {
+    const otherManager = await login('manager@rhinocash.co.ke', process.env.SEEDED_MANAGER_PASSWORD);
+    const transId = 'QSC' + Math.floor(Math.random() * 90000000 + 10000000);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '75', MSISDN: '254799333444', BillRefNumber: 'mystery-ref' } });
+    const found = (await api('GET', '/api/mpesa/c2b/unmatched', { token: acctToken })).json.transactions.find(t => t.trans_id === transId);
+    const refused = await api('POST', `/api/mpesa/c2b/${found.id}/match`, { token: otherManager, body: { loan_id: loanId } });
+    assert(refused.status === 403, 'a Manager from another branch cannot post a payment to this branch\'s loan');
+    const ok = await api('POST', `/api/mpesa/c2b/${found.id}/match`, { token: managerToken, body: { loan_id: loanId } });
+    assert(ok.status === 200 && ok.json.created, 'the branch\'s own Manager can assign and post it');
+    const search = await api('GET', `/api/mpesa/c2b/transactions?q=${transId}`, { token: managerToken });
+    assert(search.json.transactions.length === 1 && search.json.transactions[0].transId === transId && search.json.transactions[0].processed, 'payments can be found by transaction code');
+  }
+
   // ---- Account column falls back to the client's ID number ----
   {
     const { get, run } = require('../src/db');

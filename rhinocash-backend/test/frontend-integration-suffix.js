@@ -5928,7 +5928,10 @@ apiRequest = async function(method, path, body){
     const unmatchedRow = DB.c2bPaymentsBrowser.transactions.find(t=>t.transId===unmatchedTransId);
     __assert(!!unmatchedRow && unmatchedRow.matched === false, "the real Manager genuinely sees the real unmatched payment (the 'wrong ID' case) rather than it being silently hidden");
     c2bHtml = renderModal();
-    __assert(c2bHtml.includes('Assign to loan'), "a real Manager genuinely gets the real Assign control, as requested — previously restricted to Admin/Accountant only");
+    __assert(c2bHtml.includes(`session.c2bAssignOpen='${unmatchedRow.id}'`) && c2bHtml.includes('>Assign<'), "a real Manager genuinely gets the real Assign control, as requested — previously restricted to Admin/Accountant only");
+    session.c2bAssignOpen = unmatchedRow.id;
+    __assert(renderModal().includes('Assign to loan') || renderModal().includes('No running loans in your branches'), "Assign opens the loan picker (or says there is no running loan to assign to)");
+    session.c2bAssignOpen = null;
 
     await assignC2bPayment(unmatchedRow.id, c2bLoan.id);
     const afterAssign = (DB.c2bPaymentsBrowser.transactions||[]).find(t=>t.transId===unmatchedTransId);
@@ -8366,7 +8369,7 @@ apiRequest = async function(method, path, body){
       __assert(new RegExp(`active==="${label}"\\) return ${fn}\\(\\)`).test(src), `every role's ${label} opens the reference-style page`);
     }
     __assert(String(renderLoanOfficerUnpostedPayments).includes('<th>Transaction</th><th>Client</th><th>Phone</th><th>Account</th><th>Amount</th><th>Paybill</th><th>Date</th><th>Action</th>'), "Unposted Payments shows Transaction | Client | Phone | Account | Amount | Paybill | Date | Action");
-    __assert(String(renderLoanOfficerUnpostedPayments).includes('Linked to application'), "paybill payments for an application read 'Linked to application'");
+    __assert(String(renderLoanOfficerUnpostedPayments).includes('payActionCell(') && payActionCell({ id:'la1', linkedApplication:true }, true).includes('Linked to application'), "paybill payments for an application read 'Linked to application'");
     __assert(String(renderLoanOfficerProcessedPayments).includes('Processed pays for') && String(renderLoanOfficerProcessedPayments).includes('payOfficerSelect('), "Processed Payments: title for the day, officer and pay-mode filters");
     __assert(String(renderLoanOfficerPrepayments).includes("'- Select Staff -'"), "Prepayments has the staff filter");
     __assert(String(renderLoanOfficerOverpayments).includes('assignOverpayment(') && typeof assignOverpayment === 'function', "Overpayments can be assigned to another loan");
@@ -8560,6 +8563,21 @@ apiRequest = async function(method, path, body){
     const h = renderLoanDetailsModal();
     __assert(h.includes('<li>Mathiahan Pepela</li>') && h.includes('<li>Daniel Munyoki</li>') && h.includes('Kelvin Muturi (Returned)') && !/<li>—<\/li>/.test(h), "Loan Details lists each approver's name, not dashes");
     DB.loans = savedLoans; modal = savedModal;
+  }
+
+  // ---- Payments Action column: Assign / Post for Managers ----
+  {
+    const savedOpen = session.c2bAssignOpen; session.c2bAssignOpen = null;
+    const posted = payActionCell({ id:'p1', processed:true, matched:true, postedBy:'System' }, true);
+    const waiting = payActionCell({ id:'p2', processed:false, matched:true, matchedLoanId:'ln7' }, true);
+    const unknown = payActionCell({ id:'p3', processed:false, matched:false }, true);
+    const officer = payActionCell({ id:'p3', processed:false, matched:false }, false);
+    __assert(posted.includes('Posted · System') && waiting.includes("assignC2bPayment('p2', 'ln7')") && waiting.includes('>Post<') && unknown.includes('>Assign<') && officer.includes('Unassigned') && !officer.includes('<button'),
+      "Action shows Posted · who, Post for a matched payment, Assign for an unknown one, and no buttons for staff who cannot assign");
+    session.c2bAssignOpen = 'p3';
+    __assert(payActionCell({ id:'p3', processed:false, matched:false }, true).includes('c2b-assign-p3'), "Assign opens a loan picker with Post");
+    session.c2bAssignOpen = savedOpen;
+    __assert(renderC2bPaymentsModal.toString().includes('<th>Action</th>'), "the 💵 Payments list has an Action column");
   }
 
   console.log(`\n${__pass} passed, ${__fail} failed`);
