@@ -8516,6 +8516,17 @@ apiRequest = async function(method, path, body){
     }
   }
 
+  // ---- Payments list: Approval shows "System" or the person who assigned it ----
+  {
+    const savedSt = session.c2bPaymentsState, savedB = DB.c2bPaymentsBrowser;
+    session.c2bPaymentsState = { period:'today', q:'', page:1 };
+    const tx = (id, postedBy) => ({ id, transId:'R'+id, amount:5, phone:'254758414779', accountRef:'42413801', matched:true, processed:true, matchedLoanId:'ln1', clientName:'Test Client', postedBy, createdAt:'2026-10-15T12:24:41Z' });
+    DB.c2bPaymentsBrowser = { stateKey: JSON.stringify(session.c2bPaymentsState), transactions:[tx('a','System'), tx('b','Jane Manager')], shortcode:'174379', pagination:{ page:1, limit:20, total:2, totalPages:1 }, totals:{ amount:10, count:2, unmatchedCount:0 } };
+    const h = renderC2bPaymentsModal();
+    __assert(h.includes('<th>Approval</th>') && h.includes('>System<') && h.includes('>Jane Manager<'), "the Payments list shows who approved each payment — System or the person who assigned it");
+    session.c2bPaymentsState = savedSt; DB.c2bPaymentsBrowser = savedB;
+  }
+
   console.log(`\n${__pass} passed, ${__fail} failed`);
   process.exit(__fail > 0 ? 1 : 0);
 })();

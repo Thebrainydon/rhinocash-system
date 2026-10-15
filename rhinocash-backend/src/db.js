@@ -1802,6 +1802,21 @@ async function initSchema() {
       WHERE b.id = m.branch_id AND b.manager_id IS NULL`);
     await rawRun(`INSERT INTO app_migrations (id) VALUES ('branch-manager-sync-v1') ON CONFLICT DO NOTHING`);
   }
+  // STK payments already posted are listed with the Paybill payments, and
+  // the ones the callback posted by itself are shown as posted by "System"
+  // (they had been credited to the staff member who sent the request).
+  if (!(await rawGet(`SELECT 1 FROM app_migrations WHERE id = 'stk-payments-listed-v1'`))) {
+    await rawRun(`INSERT INTO mpesa_c2b_transactions (id, trans_id, environment, amount, msisdn, bill_ref_number, matched_loan_id, match_method, payment_id, processed, created_at)
+      SELECT 'c2b_' || COALESCE(cb.mpesa_receipt_number, cb.checkout_request_id), COALESCE(cb.mpesa_receipt_number, cb.checkout_request_id), cb.environment, cb.amount, cb.phone,
+             r.account_ref, cb.loan_id, 'stk_push', cb.payment_id, 1, cb.created_at
+      FROM mpesa_callbacks cb LEFT JOIN mpesa_stk_requests r ON r.checkout_request_id = cb.checkout_request_id
+      WHERE cb.processed = 1 AND cb.payment_id IS NOT NULL AND cb.loan_id IS NOT NULL
+      ON CONFLICT DO NOTHING`);
+    await rawRun(`UPDATE payments p SET recorded_by = NULL FROM mpesa_callbacks cb
+      WHERE cb.payment_id = p.id AND p.recorded_by IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.record_type = 'MpesaCallback' AND a.record_id = cb.id AND a.action = 'Manually processed M-Pesa callback')`);
+    await rawRun(`INSERT INTO app_migrations (id) VALUES ('stk-payments-listed-v1') ON CONFLICT DO NOTHING`);
+  }
   // Loan Officers must be able to register clients and create loan
   // applications. Some deployments ended up without these menu grants (the
   // server then answered 403), so grant them to the role and to any officer

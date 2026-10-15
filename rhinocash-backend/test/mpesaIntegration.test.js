@@ -150,6 +150,38 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     // Duplicate callback at the recordCallback layer too (Safaricom literally POSTing the same CheckoutRequestID twice).
     const duplicateCallback = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 5000, mpesaReceiptNumber: 'NLJ7RT61SV', phone: '254712345678' });
     assert(duplicateCallback.duplicate === true, 'a real duplicate callback (same CheckoutRequestID) is recognized and never creates a second callback row');
+
+    // Posted automatically → approval "System"; listed with the Paybill payments.
+    assert(payment.recorded_by === null, 'a payment the callback posted by itself is recorded as posted by the system, not by the staff member who sent the request');
+    const listed = await get(`SELECT * FROM mpesa_c2b_transactions WHERE trans_id = 'NLJ7RT61SV'`);
+    assert(listed && listed.payment_id === processed.paymentId && listed.processed === 1 && listed.match_method === 'stk_push' && listed.matched_loan_id === loanId, 'the STK payment is listed with the Paybill payments, already posted to its loan');
+    const panel = await api('GET', '/api/mpesa/c2b/transactions?q=NLJ7RT61SV', { token: adminToken });
+    const row = panel.json && panel.json.transactions.find(t => t.transId === 'NLJ7RT61SV');
+    assert(row && row.matched && row.processed && row.postedBy === 'System', 'the Payments panel shows the STK payment with approval "System"');
+    // Safaricom's Paybill confirmation for the same receipt must not post it again.
+    const beforeC2b = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    const conf = await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: 'NLJ7RT61SV', TransAmount: '5000', MSISDN: '254712345678', BillRefNumber: loanId } });
+    const afterC2b = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    assert(conf.status === 200 && afterC2b === beforeC2b, 'a Paybill confirmation of an STK payment already posted does not post it twice');
+    const recon = await api('GET', '/api/mpesa/reconciliation/summary', { token: adminToken });
+    assert(recon.status === 200 && recon.json.stk.matched + recon.json.c2b.matched === recon.json.matched.count && recon.json.c2b.matched === 0, 'reconciliation counts the STK payment once, not again as a Paybill payment');
+  }
+
+  // ---- The STK callback arriving after the same payment was posted from the Paybill confirmation ----
+  {
+    const mpesa = require('../src/integrations/mpesa');
+    const crypto = require('node:crypto');
+    const { run, get } = require('../src/db');
+    const receipt = 'C2BFIRST' + Math.floor(Math.random() * 90 + 10);
+    await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: receipt, TransAmount: '700', MSISDN: '254712345678', BillRefNumber: loanId } });
+    const c2b = await get('SELECT payment_id FROM mpesa_c2b_transactions WHERE trans_id = ?', [receipt]);
+    const checkoutId = 'ws_CO_late_' + crypto.randomUUID();
+    await run(`INSERT INTO mpesa_stk_requests (checkout_request_id, loan_id, phone, amount, environment) VALUES (?,?,?,?,?)`, [checkoutId, loanId, '254712345678', 700, 'sandbox']);
+    const rec = await mpesa.recordCallback({ checkoutRequestId: checkoutId, environment: 'sandbox', resultCode: 0, resultDesc: 'Success', amount: 700, mpesaReceiptNumber: receipt, phone: '254712345678' });
+    const before = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    const res = await mpesa.processCallback(rec.id, null);
+    const after = (await get(`SELECT COUNT(*) as c FROM payments WHERE loan_id = ?`, [loanId])).c;
+    assert(c2b && c2b.payment_id && res.ok && res.created === false && res.paymentId === c2b.payment_id && after === before, 'an STK callback for a receipt the Paybill confirmation already posted links to that payment instead of posting it twice');
   }
 
   // =========================================================

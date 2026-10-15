@@ -92,6 +92,21 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
     // This should have matched via the real client phone fallback, not been left unmatched.
   }
 
+  // ---- The client's ID number (the account number on their M-Pesa prompt) matches their loan ----
+  {
+    const { get, run } = require('../src/db');
+    const mpesa = require('../src/integrations/mpesa');
+    const loanRow = await get('SELECT client_id FROM loans WHERE id = ?', [loanId]);
+    const idNo = String(Math.floor(Math.random() * 90000000 + 10000000));
+    await run('UPDATE clients SET national_id = ? WHERE id = ?', [idNo, loanRow.client_id]);
+    assert(mpesa.accountRefFor(' 1234 5678 ') === '12345678' && mpesa.accountRefFor('') === null && mpesa.accountRefFor('1234567890123456').length === 12, 'the M-Pesa account number is the ID number, spaces removed, at most 12 characters');
+    const transId = 'QID' + Math.floor(Math.random() * 90000000 + 10000000);
+    const otherPhone = '254798' + Math.floor(Math.random() * 900000 + 100000);
+    const confirm = await api('POST', '/api/mpesa/c2b/confirmation/sandbox', { body: { TransID: transId, TransAmount: '1000', MSISDN: otherPhone, BillRefNumber: idNo } });
+    const row = await get('SELECT matched_loan_id, match_method FROM mpesa_c2b_transactions WHERE trans_id = ?', [transId]);
+    assert(confirm.status === 200 && row && row.matched_loan_id === loanId && row.match_method === 'id_number', 'a Paybill payment with the client\'s ID number as account matches their loan, even from another phone');
+  }
+
   // =========================================================
   // 5. UNMATCHED TRANSACTION — real manual review + match workflow
   // =========================================================
@@ -113,6 +128,14 @@ async function driveLoanToDisbursed(officerToken, mgrToken, regionalToken, opsTo
 
     const doubleMatch = await api('POST', `/api/mpesa/c2b/${found.id}/match`, { token: acctToken, body: { loan_id: loanId } });
     assert(doubleMatch.status === 409, 'an already-processed C2B transaction cannot be matched/processed again');
+
+    const list = await api('GET', `/api/mpesa/c2b/transactions?q=${found.trans_id}`, { token: adminToken });
+    const me = await api('GET', '/api/auth/me', { token: acctToken });
+    const row = list.json && list.json.transactions.find(t => t.id === found.id);
+    const myName = me.json && (me.json.user ? me.json.user.name : me.json.name);
+    assert(row && myName && row.postedBy === myName, 'a payment assigned by hand shows who assigned it');
+    const auto = list.json && (await api('GET', `/api/mpesa/c2b/transactions?q=${loanId}`, { token: adminToken })).json.transactions.find(t => t.processed && t.id !== found.id);
+    assert(auto && auto.postedBy === 'System', 'a payment matched and posted automatically shows "System"');
   }
 
   // =========================================================

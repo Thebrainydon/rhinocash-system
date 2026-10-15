@@ -49,6 +49,13 @@ function toMsisdn(phone) {
   return /^254[17]\d{8}$/.test(d) ? d : null;
 }
 
+// The account number shown on a client's M-Pesa prompt is their ID number
+// (Daraja allows at most 12 characters).
+function accountRefFor(nationalId) {
+  const v = String(nationalId || '').replace(/\s+/g, '');
+  return v ? v.slice(0, 12) : null;
+}
+
 // The public address Safaricom calls back on. It is the company domain
 // (rhinocash.co.ke), not the hosting provider's address; PUBLIC_API_URL
 // overrides it when the backend is served from another subdomain.
@@ -618,6 +625,13 @@ async function matchC2bAccount(billRefNumber, msisdn) {
   if (billRefNumber) {
     const loan = await get(`SELECT * FROM loans WHERE id = ? AND status IN ('Active','Disbursed')`, [billRefNumber.trim()]);
     if (loan) return { loanId: loan.id, method: 'loan_id' };
+    // The client's ID number — the account number their M-Pesa prompts show.
+    const ref = billRefNumber.replace(/\s+/g, '');
+    const owners = ref ? await all(`SELECT id FROM clients WHERE REPLACE(national_id, ' ', '') = ?`, [ref]) : [];
+    if (owners.length === 1) {
+      const byId = await get(`SELECT * FROM loans WHERE client_id = ? AND status IN ('Active','Disbursed') ORDER BY created_at DESC`, [owners[0].id]);
+      if (byId) return { loanId: byId.id, method: 'id_number' };
+    }
   }
   if (msisdn) {
     // Real phone normalization: Safaricom sends 2547XXXXXXXX; clients are
@@ -724,6 +738,15 @@ async function processCallback(callbackId, actorUserId) {
   const { allocate, postPaymentJournal } = require('./../routes/payments');
   const loan = await get('SELECT * FROM loans WHERE id = ?', [cb.loan_id]);
   if (!loan) return { ok: false, message: 'The loan this callback was for no longer exists' };
+  // The same M-Pesa receipt already posted through the Paybill (C2B)
+  // confirmation: link to that payment instead of posting it twice.
+  if (cb.mpesa_receipt_number) {
+    const viaC2b = await get('SELECT payment_id FROM mpesa_c2b_transactions WHERE trans_id = ? AND payment_id IS NOT NULL', [cb.mpesa_receipt_number]);
+    if (viaC2b) {
+      await run('UPDATE mpesa_callbacks SET processed = 1, payment_id = ? WHERE id = ?', [viaC2b.payment_id, cb.id]);
+      return { ok: true, created: false, paymentId: viaC2b.payment_id, reason: 'Already posted from the Paybill confirmation' };
+    }
+  }
   const crypto = require('node:crypto');
   const paymentId = 'pm_' + crypto.randomUUID();
   const amount = cb.amount || 0;
@@ -736,7 +759,9 @@ async function processCallback(callbackId, actorUserId) {
     await run(
       `INSERT INTO payments (id, loan_id, client_id, amount, channel, reference, status, allocated_principal, allocated_interest, recorded_by)
        VALUES (?,?,?,?,'M-Pesa',?,'Unposted',0,0,?)`,
-      [paymentId, loan.id, loan.client_id, amount, cb.mpesa_receipt_number || cb.checkout_request_id, actorUserId || cb.initiated_by || null]
+      // recorded_by is who posted it: the staff member who processed it by
+      // hand, or nobody (shown as "System") when the callback posted it.
+      [paymentId, loan.id, loan.client_id, amount, cb.mpesa_receipt_number || cb.checkout_request_id, actorUserId || null]
     );
     result = await allocate(loan.id, amount, paymentId);
     status = result.remaining > 0 ? 'Overpayment' : 'Posted';
@@ -747,6 +772,16 @@ async function processCallback(callbackId, actorUserId) {
       userId: actorUserId || cb.initiated_by || null, branchId: loan.branch_id,
     });
     await run('UPDATE mpesa_callbacks SET processed = 1, payment_id = ? WHERE id = ?', [paymentId, cb.id]);
+    // Listed with the Paybill payments (Payments panel / Unposted Payments),
+    // already posted. Its receipt also blocks a later C2B confirmation of the
+    // same payment from posting it twice.
+    const req = await get('SELECT account_ref FROM mpesa_stk_requests WHERE checkout_request_id = ?', [cb.checkout_request_id]);
+    const ref = cb.mpesa_receipt_number || cb.checkout_request_id;
+    await run(
+      `INSERT INTO mpesa_c2b_transactions (id, trans_id, environment, amount, msisdn, bill_ref_number, matched_loan_id, match_method, payment_id, processed)
+       VALUES (?,?,?,?,?,?,?,'stk_push',?,1) ON CONFLICT DO NOTHING`,
+      ['c2b_' + ref, ref, cb.environment, amount, cb.phone, (req && req.account_ref) || null, loan.id, paymentId]
+    );
   });
   return { ok: true, created: true, paymentId, status };
 }
@@ -757,5 +792,5 @@ module.exports = {
   initiateB2C, processB2cResult, processB2cTimeout,
   getMaskedConfig, saveConfig, setActiveEnvironment, clearConfig, getActiveEnvironment,
   statusFor, testConnection, effectiveConfig,
-  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL, toMsisdn,
+  publicApiBase, mpesaUrls, b2cUrls, DEFAULT_PUBLIC_API_URL, toMsisdn, accountRefFor,
 };

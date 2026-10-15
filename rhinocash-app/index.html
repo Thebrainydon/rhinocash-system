@@ -29018,7 +29018,7 @@ function renderC2bPaymentsModal(){
       <input placeholder="🔍 Search payment" value="${escapeHtml(st.q)}" oninput="session.c2bPaymentsState.q=this.value; session.c2bPaymentsState.page=1; DB.c2bPaymentsBrowser=null; renderApp();">
     </div>
     <div class="table-wrap" style="max-height:420px; overflow-y:auto;"><table>
-      <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Account</th><th>Transaction</th><th>Amount</th><th>Date</th>${canAssign?'<th></th>':''}</tr>
+      <tr><th>Client</th><th>Phone</th><th>Paybill</th><th>Account</th><th>Transaction</th><th>Amount</th><th>Date</th><th>Approval</th>${canAssign?'<th></th>':''}</tr>
       ${d.transactions.map(t=>`<tr>
         <td>${t.matched ? escapeHtml(t.clientName||'—') : `<span class="badge red">Unassigned</span>`}</td>
         <td>${escapeHtml(t.phone||'—')}</td>
@@ -29027,9 +29027,10 @@ function renderC2bPaymentsModal(){
         <td>${escapeHtml(t.transId)}</td>
         <td>${fmtNum(t.amount)}</td>
         <td>${fmtDDMMYYYY(t.createdAt.slice(0,10))}</td>
+        <td>${t.postedBy ? escapeHtml(t.postedBy) : '<span class="hint">—</span>'}</td>
         ${canAssign ? (t.matched ? '<td></td>' : `<td><select id="c2b-assign-${t.id}"><option value="">Assign to loan…</option>${activeLoans().map(l=>`<option value="${l.id}">${l.id} — ${clientName(l.clientId)}</option>`).join("")}</select>
           <button class="btn btn-sm btn-primary" onclick="assignC2bPayment('${t.id}', document.getElementById('c2b-assign-${t.id}').value)">Assign</button></td>`) : ''}
-      </tr>`).join("") || `<tr><td colspan="${canAssign?8:7}" class="empty">No payments match the selected filters.</td></tr>`}
+      </tr>`).join("") || `<tr><td colspan="${canAssign?9:8}" class="empty">No payments match the selected filters.</td></tr>`}
     </table></div>
     ${total>d.pagination.limit ? `<div class="pill-row" style="margin-top:10px;"><button class="btn btn-sm btn-outline" ${page<=1?'disabled':''} onclick="session.c2bPaymentsState.page=${page-1}; DB.c2bPaymentsBrowser=null; renderApp();">← Prev</button><span>Page ${page} of ${totalPages} (${total})</span><button class="btn btn-sm btn-outline" ${page>=totalPages?'disabled':''} onclick="session.c2bPaymentsState.page=${page+1}; DB.c2bPaymentsBrowser=null; renderApp();">Next →</button></div>` : ""}
   `;
@@ -29081,7 +29082,9 @@ function renderLoanOfficerUnpostedPayments(){
   const canAssign = payCanAssign();
   const action = t => {
     if(t.linkedApplication) return `<span class="pay-link-note">Linked to application</span>`;
-    if(t.matched || t.processed) return '';
+    // Posted already: show who approved it — "System" when it was matched
+    // and posted automatically, otherwise the staff member who assigned it.
+    if(t.matched || t.processed) return t.postedBy ? `<span class="pay-link-note">Posted · ${escapeHtml(t.postedBy)}</span>` : '';
     if(!canAssign) return `<span class="badge red">Unassigned</span>`;
     if(session.c2bAssignOpen === t.id) return `<div class="dt-act"><select id="c2b-assign-${t.id}" style="max-width:220px;"><option value="">Assign to loan…</option>${assignLoanOptions(t.clientName)}</select>
       <button class="btn btn-sm btn-primary" onclick="assignC2bPayment('${t.id}', document.getElementById('c2b-assign-${t.id}').value)">Post</button><button class="btn btn-sm btn-outline" onclick="session.c2bAssignOpen=null; renderApp();">✕</button></div>`;

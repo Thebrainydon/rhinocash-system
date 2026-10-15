@@ -139,7 +139,7 @@ function register(router) {
     const stkMatched = await get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_callbacks WHERE processed = 1 AND payment_id IS NOT NULL`);
     const stkException = await get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) != 0`);
     const stkUnmatched = await get(`SELECT COUNT(*) as c FROM mpesa_callbacks WHERE CAST(result_code AS REAL) = 0 AND (loan_id IS NULL OR processed = 0) AND payment_id IS NULL`);
-    const c2bMatched = await get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_c2b_transactions WHERE processed = 1 AND payment_id IS NOT NULL`);
+    const c2bMatched = await get(`SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as amt FROM mpesa_c2b_transactions WHERE processed = 1 AND payment_id IS NOT NULL AND COALESCE(match_method, '') <> 'stk_push'`); // STK rows are counted above
     const c2bUnmatched = await get(`SELECT COUNT(*) as c FROM mpesa_c2b_transactions WHERE match_method = 'unmatched' AND processed = 0`);
     res.json({
       matched: { count: stkMatched.c + c2bMatched.c, amount: stkMatched.amt + c2bMatched.amt },
@@ -221,12 +221,18 @@ function register(router) {
         [String(r.msisdn || ''), String(r.msisdn || ''), r.bill_ref_number, r.bill_ref_number]);
       if (c) guess[r.id] = c.name;
     }
+    // Who posted each processed payment: the staff member who assigned it,
+    // or the system when it was matched and posted automatically.
+    const postedBy = {};
+    const payIds = rows.map(r => r.payment_id).filter(Boolean);
+    if (payIds.length) (await all(`SELECT p.id, u.name FROM payments p LEFT JOIN users u ON u.id = p.recorded_by WHERE p.id IN (${payIds.map(() => '?').join(',')})`, payIds)).forEach(p => { postedBy[p.id] = p.name || 'System'; });
     res.json({
       transactions: rows.map(r => ({
         id: r.id, transId: r.trans_id, amount: r.amount, phone: r.msisdn, accountRef: r.bill_ref_number,
         matched: !!r.matched_loan_id, matchedLoanId: r.matched_loan_id, processed: !!r.processed, matchMethod: r.match_method,
         linkedApplication: !!linked[r.trans_id], paybill: (activeConfig && activeConfig.shortcode) || orgPaybill,
         clientName: r.matched_loan_id ? (clientNameByLoanId[r.matched_loan_id] || null) : (linked[r.trans_id] || guess[r.id] || null),
+        postedBy: r.payment_id ? (postedBy[r.payment_id] || 'System') : null,
         createdAt: r.created_at,
       })),
       shortcode: (activeConfig && activeConfig.shortcode) || orgPaybill,

@@ -327,7 +327,10 @@ function register(router) {
     if (!b.phone || !b.amount || b.amount <= 0) return next({ status: 400, message: 'phone and a positive amount are required' });
     const mpesa = require('./../integrations/mpesa');
     try {
-      const result = await mpesa.initiateStkPush({ phone: b.phone, amount: b.amount, loanId: loan.id, accountRef: b.account_ref, initiatedBy: req.user.id });
+      // The account number on the client's M-Pesa prompt is their ID number.
+      const client = loan.client_id ? await get('SELECT national_id FROM clients WHERE id = ?', [loan.client_id]) : null;
+      const accountRef = mpesa.accountRefFor(client && client.national_id) || b.account_ref;
+      const result = await mpesa.initiateStkPush({ phone: b.phone, amount: b.amount, loanId: loan.id, accountRef, initiatedBy: req.user.id });
       await logAction(req, { action: 'Initiated M-Pesa STK push', module: 'mpesa', recordType: 'Loan', recordId: loan.id, newValue: { status: result.status, amount: b.amount } });
       res.json(result);
     } catch (e) { next(e); }

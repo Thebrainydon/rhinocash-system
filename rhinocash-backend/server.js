@@ -121,7 +121,7 @@ router.post('/api/mpesa/callback/:environment', async (req, res) => {
   // it. Idempotent (mpesa.processCallback checks `processed` itself), so
   // this is safe even if recordCallback above just returned `duplicate`.
   if (!result.duplicate) {
-    const processResult = await mpesa.processCallback(result.id, result.initiatedBy);
+    const processResult = await mpesa.processCallback(result.id, null); // posted by the system
     if (processResult.created) {
       await logAction(req, { action: 'M-Pesa callback converted to real payment', module: 'mpesa', recordType: 'Payment', recordId: processResult.paymentId, newValue: { checkoutRequestId: stk.CheckoutRequestID } });
     }

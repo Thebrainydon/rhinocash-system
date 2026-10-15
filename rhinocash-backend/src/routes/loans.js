@@ -2156,7 +2156,7 @@ function register(router) {
       [id, b.client_id, b.product_id, product.processing_fee_amount, b.phone, req.user.id]
     );
     const mpesa = require('./../integrations/mpesa');
-    const result = await mpesa.initiateLoanFeeStkPush({ feeId: id, phone: b.phone, amount: product.processing_fee_amount, accountRef: client.name, initiatedBy: req.user.id });
+    const result = await mpesa.initiateLoanFeeStkPush({ feeId: id, phone: b.phone, amount: product.processing_fee_amount, accountRef: mpesa.accountRefFor(client.national_id) || client.name, initiatedBy: req.user.id });
     await logAction(req, { action: 'Requested loan processing fee STK push', module: 'loanbook', recordType: 'LoanFeePayment', recordId: id, newValue: { amount: product.processing_fee_amount, phone: b.phone, status: result.status } });
     const fee = await get('SELECT * FROM loan_fee_payments WHERE id = ?', [id]);
     res.status(201).json({ feeId: fee.id, amount: fee.amount, status: fee.status, message: fee.stk_message || result.message });
