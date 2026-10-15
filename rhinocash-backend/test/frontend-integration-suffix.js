@@ -7950,6 +7950,19 @@ apiRequest = async function(method, path, body){
     session.brEdit = 'br_kisumu'; renderApp();
     __assert(document.getElementById('root').innerHTML.includes("submitBranchEdit(event, 'br_kisumu')"), "Edit opens the branch form (with its region) above the table");
     session.brEdit = null;
+    // HR › Staff Details Form: list, the paper form, edit / print / download.
+    __assert(SIDEBAR_MENUS.HR.some(sec => sec.section === 'Employees' && sec.items.includes('Staff Details Form')), "HR › Employees has a Staff Details Form page");
+    let sdfHtml = sdfPage('Staff Details Form');
+    for(let i=0; i<250 && sdfHtml.includes('dots-spinner'); i++){ await new Promise(r=>setTimeout(r,20)); sdfHtml = sdfPage('Staff Details Form'); }
+    __assert(sdfHtml.includes('Staff Details Forms') && sdfHtml.includes('Blank form') && sdfHtml.includes('>Actions<') && sdfHtml.includes("sdfOpen('usr_officer', true)") && sdfHtml.includes('Company details'), "the Staff Details Forms list shows every employee with View / Fill in, a blank form and the company details");
+    await sdfOpen('usr_officer');
+    sdfHtml = sdfPage('Staff Details Form');
+    __assert(sdfHtml.includes('STAFF DETAILS FORM') && sdfHtml.includes('1. STAFF PERSONAL DETAILS') && sdfHtml.includes('2. EMERGENCY CONTACT DETAILS') && sdfHtml.includes('3. NEXT OF KIN DETAILS') && sdfHtml.includes('4. DECLARATION') && sdfHtml.includes(LOGO_DATA_URI.slice(0, 40)), "the form has the paper's four sections and the Rhinocash logo");
+    __assert(sdfHtml.includes('sdfPrint()') && sdfHtml.includes('sdfDownload()') && sdfHtml.includes('✎ Edit'), "the form can be edited, printed and downloaded");
+    session.sdf.edit = true; sdfDraft({ name: 'em_name', value: 'Jane Atieno' });
+    sdfHtml = sdfPage('Staff Details Form');
+    __assert(sdfHtml.includes('name="em_name" value="Jane Atieno"') && sdfHtml.includes('sdfSave(event)'), "editing shows fields to fill in, and what is typed survives a refresh");
+    sdfClose();
     sidebarNavigate('eSMS');
     for(let i=0; i<200 && (!DB.adm || DB.adm.integrations === undefined); i++){ await new Promise(r=>setTimeout(r,20)); }
     renderApp(); html = document.getElementById('root').innerHTML;

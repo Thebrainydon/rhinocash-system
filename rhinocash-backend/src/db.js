@@ -1937,6 +1937,10 @@ async function initSchema() {
     kind TEXT NOT NULL DEFAULT 'comment', message TEXT NOT NULL, proposed_value NUMERIC(14,2), status TEXT NOT NULL DEFAULT 'Open',
     response TEXT, responded_by TEXT REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT iso_now(), responded_at TEXT)`);
   await rawRun(`CREATE INDEX IF NOT EXISTS idx_target_appeals_target ON target_appeals(target_id)`);
+  // HR › Staff Details Form, one per employee (see routes/staffForms.js).
+  await rawRun(`CREATE TABLE IF NOT EXISTS staff_detail_forms (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, data TEXT NOT NULL DEFAULT '{}',
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL, updated_at TEXT NOT NULL DEFAULT iso_now())`);
   // Accounts the Admin permanently deleted (see removedAccounts.js).
   await rawRun(`CREATE TABLE IF NOT EXISTS removed_accounts (
     user_id TEXT PRIMARY KEY, email_hash TEXT, username_hash TEXT, removed_at TEXT NOT NULL DEFAULT iso_now())`);
